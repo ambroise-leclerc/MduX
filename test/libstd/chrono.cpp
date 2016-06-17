@@ -1,9 +1,9 @@
-/// @file debug_policies.h
-/// @date 04/04/2014 16:04:23
+/// @file test/libstd/chrono.cpp
+/// @data 06/06/2016 22:23:53
 /// @author Ambroise Leclerc
-/// @brief Embedded Template Library debug policies
+/// @brief BDD tests for chrono
 //
-// Copyright (c) 2014, Ambroise Leclerc
+// Copyright (c) 2016, Ambroise Leclerc
 //   All rights reserved.
 //
 //   Redistribution and use in source and binary forms, with or without
@@ -29,42 +29,24 @@
 //  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 //  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 //  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-//  POSSIBILITY OF SUCH DAMAGE./*
-#pragma once
-#include <cstdint>
-namespace etl {
-  
-class FreeStoreNoDebug {
- public: 
-  enum operation { Allocation = 'A', DeallocationRequest = 'R', DeallocateChunk = 'C' };
-  static void Log(operation op, void* address) { };
-};  
+//  POSSIBILITY OF SUCH DAMAGE.
+#include <catch.hpp>
 
-template <uint8_t LOGSIZE>
-class FreeStoreDebugTrace {
- public:
-  enum operation { Allocation = 'A', DeallocationRequest = 'R', DeallocateChunk = 'C' };
-  static void Log(operation op, void* address) {
-    log_operation[log_counter] = op;
-    log_address[log_counter] = address;
-    log_counter++;
-    if (log_counter == LOGSIZE)
-      log_counter = 0;
-  }
+namespace etlTest {
+#include <libstd/include/chrono>
+} // namespace etlTest
+
+SCENARIO("std::chrono") {
+
+    using namespace etlTest::std::chrono;
+    using namespace etlTest::std::chrono_literals;    
+    auto dur_ns = 2153123456ns;
+    GIVEN("a duration in ns") {
+        REQUIRE(duration_cast<nanoseconds>(dur_ns) == 2153123456ns);
+        REQUIRE(duration_cast<microseconds>(dur_ns) == 2153123us);
+        REQUIRE(duration_cast<milliseconds>(dur_ns) == 2153ms);
+        REQUIRE(duration_cast<seconds>(dur_ns) == 2s);
+        REQUIRE(duration_cast<minutes>(dur_ns) == 0min);
+    }
     
-  static uint8_t log_counter;
-  static operation log_operation[LOGSIZE];
-  static void* log_address[LOGSIZE];
-};
-
-template <uint8_t LOGSIZE> uint8_t FreeStoreDebugTrace<LOGSIZE>::log_counter = 0;
-template <uint8_t LOGSIZE> typename FreeStoreDebugTrace<LOGSIZE>::operation FreeStoreDebugTrace<LOGSIZE>::log_operation[LOGSIZE];
-template <uint8_t LOGSIZE> void* FreeStoreDebugTrace<LOGSIZE>::log_address[LOGSIZE];
-
-#ifndef ETL_FREESTORE_LOG_DEPTH
-using FreeStoreTracePolicy = FreeStoreNoDebug;
-#else
-using FreeStoreTracePolicy = FreeStoreDebugTrace<ETL_FREESTORE_LOG_DEPTH>;
-#endif
-  
-} // namespace etl
+}
