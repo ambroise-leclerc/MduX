@@ -1,7 +1,7 @@
 /// @file test/libstd/memory.cpp
 /// @data 06/06/2016 22:23:53
 /// @author Ambroise Leclerc
-/// @brief BDD tests for <memory>
+/// @brief BDD tests for <tuple>
 //
 // Copyright (c) 2016, Ambroise Leclerc
 //   All rights reserved.
@@ -33,45 +33,26 @@
 #include <catch.hpp>
 
 namespace etlTest {
-#include <libstd/include/memory>
-#include <libstd/include/utility>
+#include <libstd/include/tuple2>
 } // namespace etlTest
 
-class MyClass {
-public:
-    MyClass(uint32_t id) : id(id) {
-        instances++;
-    }
-
-    ~MyClass() {
-        instances--;
-    }
-public:
-    static uint8_t instances;
-    uint32_t id;
-};
-
-uint8_t MyClass::instances = 0;
 using namespace etlTest::std;
 
-SCENARIO("std::unique_ptr") {
-    GIVEN("0 class instances") {
-        MyClass::instances = 0;
-        WHEN("a unique_ptr is created") {
-            THEN("") {
-                auto obj = make_unique<MyClass>(123456);
-                REQUIRE(MyClass::instances == 1);
-                auto obj2 = move(obj);
-                REQUIRE(MyClass::instances == 1);
-                REQUIRE(obj2->id == 123456);
-            }
-            REQUIRE(MyClass::instances == 0);
+class TupleTest {
+public:
+    using Etq = const tuple<const char*, int, bool>;
+
+    Etq static findEtiquette(uint8_t id) {
+        switch (id) {
+        case 0: return make_tuple("ADSC", 12, false);
+        case 1: return make_tuple("VTIC", 2, false);
         }
+        return make_tuple("UNDE", 0, false);
     }
-}
+};
 
-SCENARIO("std::shared_ptr") {
-        
+SCENARIO("std::tuple") {
+    GIVEN("0 class instances") {
 
-
+    }
 }
