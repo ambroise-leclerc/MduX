@@ -1,7 +1,7 @@
-/// @file test/libstd/memory.cpp
-/// @data 06/06/2016 22:23:53
+/// @file test/libstd/type_traits.cpp
+/// @data 19/08/2016 17:40:53
 /// @author Ambroise Leclerc
-/// @brief BDD tests for <tuple>
+/// @brief BDD tests for <type_traits>
 //
 // Copyright (c) 2016, Ambroise Leclerc
 //   All rights reserved.
@@ -33,67 +33,31 @@
 #include <catch.hpp>
 
 namespace etlTest {
-#include <libstd/include/tuple>
+#include <libstd/include/type_traits>
 } // namespace etlTest
 
-#include <string>
 using namespace etlTest::std;
-/*
-class TupleTest {
-public:
-    using Etq = const tuple<const char*, int, bool>;
 
-    Etq static findEtiquette(uint8_t id) {
-        switch (id) {
-        case 0: return make_tuple("ADSC", 12, false);
-        case 1: return make_tuple("VTIC", 2, false);
-        }
-        return make_tuple("UNDE", 0, false);
-    }
-};
-*/
+SCENARIO("std::signed") {
+    auto s1 = is_signed<uint8_t>::value;    REQUIRE(s1 == false);
+    auto s2 = is_signed<char>::value;       REQUIRE(s2 == true);
+    auto s3 = is_signed<int32_t>::value;    REQUIRE(s3 == true);
+    auto s4 = is_signed<uint64_t>::value;   REQUIRE(s4 == false);
+    REQUIRE(is_signed<uint8_t>::value == false);
 
-#include <iostream>
-
-
-class Serializer {
-public:
-    std::string output;
-
-    void f(etlTest::std::size_t s) { output += std::to_string(s); }
-
-    template<typename T, T... Indices>
-    void transform(integer_sequence<T, Indices...>) {
-        int ignore[]{ (f(Indices), 0)... };
-        (void)ignore;                       // avoid 'unused' warning
-    }
-
-};
-
-SCENARIO("std::integer_sequence") {
-    using seq5 = make_integer_sequence<int, 5>;
-    using seq10 = make_index_sequence<10>;
-    using seq18 = make_integer_sequence<char, 18>;
-    using seq140 = make_integer_sequence<uint64_t, 140>;
-    REQUIRE(seq5::size() == 5);
-    REQUIRE(seq10::size() == 10);
-    REQUIRE(seq18::size() == 18);
-    REQUIRE(seq140::size() == 140);
-
-
-    Serializer s;
-    s.transform(index_sequence<4, 2, 3, 1, 5>{});
-    REQUIRE(s.output == "42315");
-
-    s.transform(make_integer_sequence<uint8_t, 12>{});
-    REQUIRE(s.output == "4231501234567891011");
-
-    s.transform(make_index_sequence<13>{});
-    REQUIRE(s.output == "42315012345678910110123456789101112");
+#if (__GNUC__ > 4) 
+    REQUIRE(is_signed_v<int16_t> == true);
+    REQUIRE(is_signed_v<uint32_t> == false);
+#endif
 }
 
-SCENARIO("std::tuple") {
-    GIVEN("0 class instances") {
+SCENARIO("std::common_type, std::same_type") {
+    class Base {};
+    class Incarnation1 : Base {};
+    class Incarnation2 : Base {};
 
-    }
+    //using CommonType = common_type<Incarnation1, Incarnation2>::type;
+#if defined(__GNU_G__)
+    auto test = is_same<Base, common_type<Incarnation1, Incarnation2>::type >::value == true;
+#endif
 }

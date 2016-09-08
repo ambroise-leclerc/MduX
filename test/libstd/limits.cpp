@@ -1,7 +1,7 @@
-/// @file test/libstd/memory.cpp
-/// @data 06/06/2016 22:23:53
+/// @file test/libstd/limits.cpp
+/// @data 10/06/2016 22:23:53
 /// @author Ambroise Leclerc
-/// @brief BDD tests for <tuple>
+/// @brief BDD tests for <limits>
 //
 // Copyright (c) 2016, Ambroise Leclerc
 //   All rights reserved.
@@ -33,67 +33,30 @@
 #include <catch.hpp>
 
 namespace etlTest {
-#include <libstd/include/tuple>
+#include <libstd/include/limits>
 } // namespace etlTest
 
-#include <string>
 using namespace etlTest::std;
-/*
-class TupleTest {
-public:
-    using Etq = const tuple<const char*, int, bool>;
 
-    Etq static findEtiquette(uint8_t id) {
-        switch (id) {
-        case 0: return make_tuple("ADSC", 12, false);
-        case 1: return make_tuple("VTIC", 2, false);
-        }
-        return make_tuple("UNDE", 0, false);
-    }
-};
-*/
+SCENARIO("std::numeric_limits") {
+  
+    auto r1 = numeric_limits<uint32_t>::is_signed;      REQUIRE(r1 == false);
+    auto r2 = numeric_limits<uint32_t>::is_exact;       REQUIRE(r2 == true);
+    auto r3 = numeric_limits<uint32_t>::is_integer;     REQUIRE(r3 == true);
+    auto r4 = numeric_limits<uint32_t>::digits;         REQUIRE(r4 == 32);
+    auto r5 = numeric_limits<uint32_t>::digits10;       REQUIRE(r5 == 9);
+    auto r6 = numeric_limits<uint32_t>::max_digits10;   REQUIRE(r6 == 0);
+  
+    auto s1 = numeric_limits<uint8_t>::is_signed;       REQUIRE(s1 == false);
+    auto s2 = numeric_limits<uint8_t>::is_exact;        REQUIRE(s2 == true);
+    auto s3 = numeric_limits<uint8_t>::is_integer;      REQUIRE(s3 == true);
+    auto s4 = numeric_limits<uint8_t>::digits;          REQUIRE(s4 == 8);
+    auto s5 = numeric_limits<uint8_t>::digits10;        REQUIRE(s5 == 2);
+    auto s6 = numeric_limits<uint8_t>::max_digits10;    REQUIRE(s6 == 0);
+    auto s7 = numeric_limits<uint8_t>::min();           REQUIRE(s7 == 0);
+    auto s8 = numeric_limits<uint8_t>::max();           REQUIRE(s8 == 255);
+    auto s9 = numeric_limits<int8_t>::is_signed;        REQUIRE(s9 == true);
 
-#include <iostream>
-
-
-class Serializer {
-public:
-    std::string output;
-
-    void f(etlTest::std::size_t s) { output += std::to_string(s); }
-
-    template<typename T, T... Indices>
-    void transform(integer_sequence<T, Indices...>) {
-        int ignore[]{ (f(Indices), 0)... };
-        (void)ignore;                       // avoid 'unused' warning
-    }
-
-};
-
-SCENARIO("std::integer_sequence") {
-    using seq5 = make_integer_sequence<int, 5>;
-    using seq10 = make_index_sequence<10>;
-    using seq18 = make_integer_sequence<char, 18>;
-    using seq140 = make_integer_sequence<uint64_t, 140>;
-    REQUIRE(seq5::size() == 5);
-    REQUIRE(seq10::size() == 10);
-    REQUIRE(seq18::size() == 18);
-    REQUIRE(seq140::size() == 140);
-
-
-    Serializer s;
-    s.transform(index_sequence<4, 2, 3, 1, 5>{});
-    REQUIRE(s.output == "42315");
-
-    s.transform(make_integer_sequence<uint8_t, 12>{});
-    REQUIRE(s.output == "4231501234567891011");
-
-    s.transform(make_index_sequence<13>{});
-    REQUIRE(s.output == "42315012345678910110123456789101112");
-}
-
-SCENARIO("std::tuple") {
-    GIVEN("0 class instances") {
-
-    }
+    auto t1 = numeric_limits<int64_t>::is_signed;       REQUIRE(t1 == true);
+    auto t2 = numeric_limits<int64_t>::digits10;        REQUIRE(t2 == 18);
 }
