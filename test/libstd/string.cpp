@@ -1,7 +1,7 @@
-/// @file test/libstd/type_traits.cpp
-/// @data 19/08/2016 17:40:53
+/// @file test/libstd/string.cpp
+/// @data 28/09/2016 22:23:53
 /// @author Ambroise Leclerc
-/// @brief BDD tests for <type_traits>
+/// @brief BDD tests for <string>
 //
 // Copyright (c) 2016, Ambroise Leclerc
 //   All rights reserved.
@@ -30,36 +30,22 @@
 //  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 //  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 //  POSSIBILITY OF SUCH DAMAGE.
-#include <catch.hpp>
+#//include <catch.hpp>
+#define __Mock_Mock__
 
 #define ETLSTD etlstd
-
-#include <libstd/include/type_traits>
-
+#include <libstd/include/string>
 using namespace ETLSTD;
 
-SCENARIO("std::signed") {
-    auto s1 = is_signed<uint8_t>::value;    REQUIRE(s1 == false);
-    auto s2 = is_signed<char>::value;       REQUIRE(s2 == true);
-    auto s3 = is_signed<int32_t>::value;    REQUIRE(s3 == true);
-    auto s4 = is_signed<uint64_t>::value;   REQUIRE(s4 == false);
-    REQUIRE(is_signed<uint8_t>::value == false);
 
-#if (__GNUC__ > 4) 
-    REQUIRE(is_signed_v<int16_t> == true);
-    REQUIRE(is_signed_v<uint32_t> == false);
-#endif
+  /*
+SCENARIO("char_traits") {
 
-//    REQUIRE(is_unsigned)
+    REQUIRE(char_traits<char>::length("Test string") == 11);
+}
+*/
+
+static auto func() {
+    return char_traits<char>::length("Test string");
 }
 
-SCENARIO("std::common_type, std::same_type") {
-    class Base {};
-    class Incarnation1 : Base {};
-    class Incarnation2 : Base {};
-
-    //using CommonType = common_type<Incarnation1, Incarnation2>::type;
-#if defined(__GNU_G__)
-    auto test = is_same<Base, common_type<Incarnation1, Incarnation2>::type >::value == true;
-#endif
-}
