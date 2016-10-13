@@ -1,7 +1,7 @@
-/// @file ioports_ATtiny84.h
+/// @file ETLDevice.h
 /// @date 21/09/2016 21:17:16
 /// @author Ambroise Leclerc and Cécile Gomes
-/// @brief Microcontrollers peripherals handling classes
+/// @brief Microcontrollers architecture definitions
 //
 // Copyright (c) 2016, Ambroise Leclerc and Cécile Gomes
 //   All rights reserved.
@@ -37,36 +37,36 @@
 
 #if defined (__AVR_Dummy__)
 #elif defined (__ESP_ESP8266__)
-#include "architecture/ioports_ESP8266.h"
+#include "architecture/etldevice_ESP8266.h"
 #elif defined (__ESP_ESP07__)
-#include "architecture/ioports_ESP07.h"
+#include "architecture/etldevice_ESP07.h"
 #elif defined (__Mock_Mock__)
-#include "architecture/ioports_Mock.h"
+#include "architecture/etldevice_Mock.h"
 #elif defined (__AVR_ATmega32U4__)
-#include "architecture/ioports_ATmega32U4.h"
+#include "architecture/etldevice_ATmega32U4.h"
 #elif defined (__AVR_ATmega48A__)
-#include "architecture/ioports_ATmega48A.h"
+#include "architecture/etldevice_ATmega48A.h"
 #elif defined (__AVR_ATmega48PA__)
-#include "architecture/ioports_ATmega48PA.h"
+#include "architecture/etldevice_ATmega48PA.h"
 #elif defined (__AVR_ATmega88A__)
-#include "architecture/ioports_ATmega88A.h"
+#include "architecture/etldevice_ATmega88A.h"
 #elif defined (__AVR_ATmega88PA__)
-#include "architecture/ioports_ATmega88PA.h"
+#include "architecture/etldevice_ATmega88PA.h"
 #elif defined (__AVR_ATmega168A__)
-#include "architecture/ioports_ATmega168A.h"
+#include "architecture/etldevice_ATmega168A.h"
 #elif defined (__AVR_ATmega168PA__)
-#include "architecture/ioports_ATmega168PA.h"
+#include "architecture/etldevice_ATmega168PA.h"
 #elif defined (__AVR_ATmega168P__)
-#include "architecture/ioports_ATmega168P.h"
+#include "architecture/etldevice_ATmega168P.h"
 #elif defined (__AVR_ATmega328__)
-#include "architecture/ioports_ATmega328.h"
+#include "architecture/etldevice_ATmega328.h"
 #elif defined (__AVR_ATmega328P__)
-#include "architecture/ioports_ATmega328P.h"
+#include "architecture/etldevice_ATmega328P.h"
 #elif defined (__AVR_ATmega644P__)
-#include "architecture/ioports_ATmega644P.h"
+#include "architecture/etldevice_ATmega644P.h"
 #elif defined (__AVR_ATmega644A__)
-#include "architecture/ioports_ATmega644A.h"
+#include "architecture/etldevice_ATmega644A.h"
 #elif defined (__AVR_ATtiny84__)
-#include "architecture/ioports_ATtiny84.h"
+#include "architecture/etldevice_ATtiny84.h"
 #endif
 
