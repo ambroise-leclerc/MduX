@@ -1,9 +1,9 @@
-/// @file test/libstd/type_traits.cpp
-/// @data 19/08/2016 17:40:53
-/// @author Ambroise Leclerc
-/// @brief BDD tests for <type_traits>
+/// @file ETLDevice_ATmega48PA.h
+/// @date 11/05/2014 19:23:16
+/// @author Ambroise Leclerc and Cécile Gomes
+/// @brief Atmel AVR 8-bit microcontrollers architecture specifications and low level functions.
 //
-// Copyright (c) 2016, Ambroise Leclerc
+// Copyright (c) 2016, Ambroise Leclerc and Cécile Gomes
 //   All rights reserved.
 //
 //   Redistribution and use in source and binary forms, with or without
@@ -19,7 +19,7 @@
 //     contributors may be used to endorse or promote products derived
 //     from this software without specific prior written permission.
 //
-//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS' 
 //  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 //  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 //  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
@@ -30,36 +30,32 @@
 //  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 //  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 //  POSSIBILITY OF SUCH DAMAGE.
-#include <catch.hpp>
+#pragma once
 
-#define ETLSTD etlstd
 
-#include <libstd/include/type_traits>
+extern void __builtin_avr_delay_cycles(unsigned long);
 
-using namespace ETLSTD;
+namespace etl {
+class Device {
+public:
+    static void delayTicks(uint32_t ticks)            { __builtin_avr_delay_cycles(ticks); }
+    static const size_t flashSize = 4096;
+    static const size_t eepromSize = 256;
+    static const size_t sramSize = 512;
+    static const size_t architectureWidth = 8;
+    static const size_t defaultBufferSize = 8;
+    using OffType = uint16_t;
+    static const uint32_t McuFrequency = F_CPU;
 
-SCENARIO("std::signed") {
-    auto s1 = is_signed<uint8_t>::value;    REQUIRE(s1 == false);
-    auto s2 = is_signed<char>::value;       REQUIRE(s2 == true);
-    auto s3 = is_signed<int32_t>::value;    REQUIRE(s3 == true);
-    auto s4 = is_signed<uint64_t>::value;   REQUIRE(s4 == false);
-    REQUIRE(is_signed<uint8_t>::value == false);
+    /// Enables interrupts by setting the global interrupt mask.
+    /// This function generates a single 'sei' instruction with
+    /// no overhead.
+    static void enableInterrupts() { asm volatile("sei" ::: "memory"); }
 
-#if (__GNUC__ > 4) 
-    REQUIRE(is_signed_v<int16_t> == true);
-    REQUIRE(is_signed_v<uint32_t> == false);
-#endif
+    /// Disables interrupts by clearing the global interrupt mask.
+    /// This function generates a single 'cli' instruction with
+    /// no overhead.
+    static void disableInterrupts() { asm volatile("cli" ::: "memory"); }
+};
 
-//    REQUIRE(is_unsigned)
-}
-
-SCENARIO("std::common_type, std::same_type") {
-    class Base {};
-    class Incarnation1 : Base {};
-    class Incarnation2 : Base {};
-
-    //using CommonType = common_type<Incarnation1, Incarnation2>::type;
-#if defined(__GNU_G__)
-    auto test = is_same<Base, common_type<Incarnation1, Incarnation2>::type >::value == true;
-#endif
-}
+} // namespace etl
