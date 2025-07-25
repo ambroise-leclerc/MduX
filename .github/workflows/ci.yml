@@ -1,0 +1,161 @@
+name: MduX Medical Device UI Library CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Windows Build with Vulkan
+  windows-build:
+    name: Windows (MSVC, Vulkan)
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.0
+      with:
+        vulkan-query-version: 1.3.290.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+        
+    - name: Verify Vulkan installation
+      run: |
+        echo "VK_SDK_PATH: $env:VULKAN_SDK"
+        if (Test-Path "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe") {
+          & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
+        }
+        
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      
+    - name: Run Tests
+      run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+  # Linux Build with Vulkan
+  linux-build:
+    name: Linux (GCC, Vulkan)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          gcc-12 \
+          g++-12 \
+          vulkan-tools \
+          libvulkan-dev \
+          vulkan-validationlayers-dev \
+          spirv-tools \
+          libglfw3-dev \
+          xvfb
+          
+    - name: Setup GCC 12
+      run: |
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 60
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 60
+        gcc --version
+        g++ --version
+        
+    - name: Verify Vulkan installation
+      run: |
+        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+        
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      
+    - name: Run Tests
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+  # Compliance and Documentation Build
+  compliance-docs:
+    name: Compliance & Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          doxygen \
+          graphviz \
+          cmake \
+          gcc-12 \
+          g++-12 \
+          vulkan-tools \
+          libvulkan-dev
+          
+    - name: Setup GCC 12
+      run: |
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 60
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 60
+        
+    - name: Configure with regulatory documentation
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
+      
+    - name: Build documentation
+      run: cmake --build build --target doxygen-docs
+      
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: medical-device-documentation
+        path: build/html/
+        retention-days: 30
+
+  # Security and Code Quality
+  security-analysis:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          gcc-12 \
+          g++-12 \
+          vulkan-tools \
+          libvulkan-dev \
+          cppcheck \
+          clang-tidy-15
+          
+    - name: Run static analysis
+      run: |
+        # Static analysis with cppcheck
+        cppcheck --enable=all --std=c++23 --suppress=missingInclude include/ examples/ tests/ || true
+        
+        # Configure for clang-tidy
+        cmake -B build -S . -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
+        
+        # Run clang-tidy on key files
+        clang-tidy-15 include/mdux/mdux.hpp -p build || true

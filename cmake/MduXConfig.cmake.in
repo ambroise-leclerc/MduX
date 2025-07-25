@@ -1,0 +1,30 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(Threads REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/MduXTargets.cmake")
+
+# Provide information about the package
+set(MduX_VERSION @PROJECT_VERSION@)
+set(MduX_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
+set(MduX_VERSION_MINOR @PROJECT_VERSION_MINOR@)
+set(MduX_VERSION_PATCH @PROJECT_VERSION_PATCH@)
+
+# Check that all required components are available
+check_required_components(MduX)
+
+# Provide usage information
+if(NOT TARGET MduX::MduX)
+    message(FATAL_ERROR "MduX::MduX target not found")
+endif()
+
+# Set up medical device compliance information
+set(MduX_MEDICAL_DEVICE_COMPLIANCE ON)
+set(MduX_REGULATORY_STANDARDS "IEC 62304;IEC 62366")
+set(MduX_SAFETY_CLASS "Class B/C Medical Device Software")
+
+message(STATUS "Found MduX: ${MduX_VERSION} (Medical Device UI Library)")
