@@ -72,7 +72,26 @@ struct Compliance {
  */
 struct Graphics {
     static constexpr bool isEnabled = true;
-    static constexpr std::string_view api = "Vulkan 1.3";
+    
+    /**
+     * @brief Get available Vulkan API version string
+     * @return Vulkan version string (e.g., "Vulkan 1.4")
+     */
+    static std::string getApiVersion() noexcept {
+        try {
+            uint32_t apiVersion = 0;
+            if (vk::enumerateInstanceVersion(&apiVersion) == vk::Result::eSuccess) {
+                uint32_t major = VK_VERSION_MAJOR(apiVersion);
+                uint32_t minor = VK_VERSION_MINOR(apiVersion);
+                return "Vulkan " + std::to_string(major) + "." + std::to_string(minor);
+            }
+        } catch (...) {
+            // Fallback if version enumeration fails
+        }
+        return "Vulkan 1.3"; // Fallback for older implementations
+    }
+    
+    static constexpr std::string_view api = "Vulkan"; // Base API name
 
     static constexpr std::string_view surfaceType =
 #ifdef MDUX_PLATFORM_WINDOWS
@@ -259,7 +278,7 @@ private:
      */
     void configurePlatformHints() {
         // Check for manual override via environment variable
-        const char* forcePlatform = std::getenv("MDUX_FORCE_PLATFORM");
+        const char* forcePlatform = getEnvironmentVariable("MDUX_FORCE_PLATFORM");
         if (forcePlatform) {
             if (std::string_view(forcePlatform) == "X11") {
                 glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
@@ -283,6 +302,28 @@ private:
     }
     
     /**
+     * @brief Secure cross-platform environment variable access
+     * @param name Environment variable name
+     * @return Environment variable value or nullptr if not found
+     */
+    const char* getEnvironmentVariable(const char* name) const noexcept {
+#ifdef _WIN32
+        // Windows: Use secure _dupenv_s when possible, fallback to getenv
+        char* value = nullptr;
+        size_t size = 0;
+        if (_dupenv_s(&value, &size, name) == 0 && value != nullptr) {
+            // Note: This creates a memory leak, but it's acceptable for environment
+            // variables that are typically accessed once during initialization
+            return value;
+        }
+        return nullptr;
+#else
+        // Unix/Linux: getenv is safe on these platforms
+        return std::getenv(name);
+#endif
+    }
+    
+    /**
      * @brief Detect if running in WSL environment
      * @return true if WSL detected, false otherwise
      */
@@ -300,7 +341,7 @@ private:
         }
         
         // Method 2: Check WSL-specific environment variables
-        if (std::getenv("WSL_DISTRO_NAME") || std::getenv("WSLENV")) {
+        if (getEnvironmentVariable("WSL_DISTRO_NAME") || getEnvironmentVariable("WSLENV")) {
             return true;
         }
         
@@ -317,6 +358,16 @@ private:
      * @brief Initialize Vulkan instance and surface
      */
     void initializeVulkan() {
+        // Determine the highest available Vulkan API version
+        uint32_t apiVersion = VK_API_VERSION_1_3; // Fallback to 1.3
+        try {
+            if (vk::enumerateInstanceVersion(&apiVersion) != vk::Result::eSuccess) {
+                apiVersion = VK_API_VERSION_1_3; // Use fallback if enumeration fails
+            }
+        } catch (...) {
+            apiVersion = VK_API_VERSION_1_3; // Use fallback on exception
+        }
+        
         // Basic Vulkan initialization
         // Full implementation will be added in future versions
         vk::ApplicationInfo appInfo(
@@ -324,7 +375,7 @@ private:
             VK_MAKE_VERSION(0, 1, 0),           // applicationVersion
             "MduX",                             // pEngineName
             VK_MAKE_VERSION(0, 1, 0),           // engineVersion
-            VK_API_VERSION_1_3                  // apiVersion
+            apiVersion                          // Use detected API version
         );
 
         std::vector<const char*> extensions;

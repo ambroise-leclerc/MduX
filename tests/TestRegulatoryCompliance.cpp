@@ -9,9 +9,9 @@ bool testRegulatoryCompliance() {
     bool iec62304Compliant = true;
 
     // Verify version traceability (required by IEC 62304)
-    iec62304Compliant &= (mdux::Version::major >= 0);
-    iec62304Compliant &= (mdux::Version::minor >= 0);
-    iec62304Compliant &= (mdux::Version::patch >= 0);
+    iec62304Compliant &= (mdux::Version::major == 0);
+    iec62304Compliant &= (mdux::Version::minor == 1);
+    iec62304Compliant &= (mdux::Version::patch == 0);
     iec62304Compliant &= (!mdux::Version::getString().empty());
 
     // Test IEC 62366 compliance (Usability Engineering)
@@ -19,7 +19,7 @@ bool testRegulatoryCompliance() {
 
     // Verify graphics consistency (required for usability)
     iec62366Compliant &= mdux::Graphics::isEnabled;
-    iec62366Compliant &= (mdux::Graphics::api == "Vulkan 1.3");
+    iec62366Compliant &= (mdux::Graphics::api == "Vulkan");
     iec62366Compliant &= (mdux::Graphics::vulkanVersionMajor == 1);
     iec62366Compliant &= (mdux::Graphics::vulkanVersionMinor == 3);
     iec62366Compliant &= (mdux::Graphics::vulkanVersionPatch == 0);

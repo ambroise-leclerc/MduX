@@ -1,4 +1,5 @@
 /**
+ * @file BasicExample.cpp
  * @brief Basic example demonstrating MduX window creation with Vulkan
  */
 

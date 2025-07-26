@@ -29,7 +29,7 @@ int main() {
 
         std::cout << "=== MduX Medical Device UI Library ===" << std::endl;
         std::cout << "Version: " << mdux::Version::getString() << std::endl;
-        std::cout << "Graphics API: " << mdux::Graphics::api << std::endl;
+        std::cout << "Graphics API: " << mdux::Graphics::getApiVersion() << std::endl;
         std::cout << "Surface Type: " << mdux::Graphics::surfaceType << std::endl;
         std::cout << "Vulkan Version: " << mdux::Graphics::vulkanVersionMajor << "." 
                   << mdux::Graphics::vulkanVersionMinor << "." << mdux::Graphics::vulkanVersionPatch << std::endl;

@@ -16,7 +16,7 @@ bool testCompliance() {
 
     // Test graphics support
     bool graphicsEnabled = mdux::Graphics::isEnabled;
-    bool graphicsApiValid = mdux::Graphics::api == "Vulkan 1.3";
+    bool graphicsApiValid = mdux::Graphics::api == "Vulkan";
 
     return complianceEnabled && standardsValid && safetyClassValid && graphicsEnabled &&
            graphicsApiValid;
