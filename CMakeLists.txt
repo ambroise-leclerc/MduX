@@ -2,11 +2,28 @@ cmake_minimum_required(VERSION 4.0 FATAL_ERROR)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
-project(MduX VERSION 0.1.0 DESCRIPTION "Modern C++23 Header-Only UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
+project(MduX VERSION 0.1.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Compiler version requirements for C++23 modules support
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.40")
+        message(FATAL_ERROR "MSVC 17.14 (Visual Studio 2022 version 17.10) or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "15.0")
+        message(FATAL_ERROR "GCC 15 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
+        message(FATAL_ERROR "Clang 20 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+else()
+    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 15+, or Clang 20+ for C++23 modules support.")
+endif()
 
 # Platform validation
 if(NOT WIN32 AND NOT UNIX)
@@ -92,7 +109,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" "${CMAKE_CURRENT_BI
 message(STATUS "")
 message(STATUS "╔══════════════════════════════════════════════════╗")
 message(STATUS "║                    MduX v${PROJECT_VERSION}                   ║")
-message(STATUS "║        Medical Device UI Library (C++23)         ║")
+message(STATUS "║      Medical Device UI Library (C++23 Modules)   ║")
 message(STATUS "╠══════════════════════════════════════════════════╣")
 message(STATUS "║  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "║  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")

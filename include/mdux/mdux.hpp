@@ -208,7 +208,6 @@ class Window {
 private:
     GLFWwindow* window = nullptr;
     WindowConfig config;
-    bool shouldCloseFlag = false;
     vk::SurfaceKHR surface;
     vk::Instance instance;
     

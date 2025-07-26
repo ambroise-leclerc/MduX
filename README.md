@@ -4,14 +4,14 @@
 
 
 ## Introduction
-MduX is a modern, header-only C++23 user interface library purpose-built for medical device software using Vulkan graphics API. The name "MduX" stands for "Medical Device User eXperience," reflecting its mission to deliver exceptional, safe, and compliant user interfaces for medical technology.
+MduX is a modern, C++23 modules-based user interface library purpose-built for medical device software using Vulkan graphics API. The name "MduX" stands for "Medical Device User eXperience," reflecting its mission to deliver exceptional, safe, and compliant user interfaces for medical technology.
 
 MduX is designed to meet the highest standards of safety, usability, and regulatory compliance, empowering developers to create robust, maintainable, and visually consistent user interfaces for class B and class C medical devices with deterministic performance characteristics.
 
 With a focus on modularity, traceability, and comprehensive documentation, MduX streamlines the development process while supporting the rigorous requirements of IEC 62304 (software lifecycle), IEC 62366 (usability engineering), and cybersecurity best practices. The library is engineered for reliability, testability, and ease of integration into Windows and Linux medical device platforms.
 
 Key features include:
-- Header-only, Vulkan-based architecture for future-proof graphics
+- C++23 modules-based, Vulkan-powered architecture for future-proof graphics
 - Deterministic performance for real-time medical applications
 - Complete Doxygen documentation and regulatory traceability
 - Built-in version and dependency management
@@ -59,8 +59,8 @@ Update this table as features are implemented.
 ## Implementation Plan
 
 ### 1. Core Library Structure
-- Modular header-only design
-- Strict adherence to C++23 standards
+- Modular C++23 modules-based design
+- Strict adherence to C++23 standards with modules support
 - Clear separation of UI components, utilities, and platform abstractions
 
 ### 2. Dependency Management & Version Tracing
@@ -85,14 +85,14 @@ Update this table as features are implemented.
 - Theming and accessibility support
 
 ### 6. Testing Framework
-- Header-only UI testing utilities
+- C++23 modules-based UI testing utilities
 - Screen capture and image verification tools
 - Automated test runner for CI integration
 - Example test cases for all UI components
 
 ### 7. Build & Integration
 - CMake integration for easy inclusion in projects
-- Single-header distribution option
+- C++23 modules distribution
 - Platform abstraction for Windows, Linux, and embedded systems
 
 ### 8. Future Extensions
@@ -105,7 +105,10 @@ Update this table as features are implemented.
 ## Getting Started
 
 ### Prerequisites
-- C++23 compatible compiler (GCC 12+, Clang 15+, MSVC 2022+)
+- C++23 compatible compiler with modules support:
+  - **MSVC 17.14+** (Visual Studio 2022 version 17.10+)
+  - **GCC 15+**
+  - **Clang 20+**
 - Vulkan SDK 1.3+ installed
 - CMake 4.0+
 - Windows 10+ or Linux (Ubuntu 20.04+, RHEL 8+)

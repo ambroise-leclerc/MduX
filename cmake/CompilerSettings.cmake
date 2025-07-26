@@ -32,7 +32,6 @@ function(configure_compiler_settings target_name)
   target_compile_options(${target_name} INTERFACE
     $<$<CXX_COMPILER_ID:MSVC>:/permissive->
     $<$<CXX_COMPILER_ID:GNU>:-fconcepts-diagnostics-depth=2>
-    $<$<CXX_COMPILER_ID:Clang>:-fconcepts-diagnostics-depth=2>
   )
 
   # Platform-specific definitions
