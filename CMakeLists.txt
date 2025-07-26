@@ -49,6 +49,7 @@ configure_linker(MduX_options)
 set_project_warnings(MduX_warnings)
 enable_sanitizers(MduX_options)
 
+
 # Dependencies
 find_package(Vulkan REQUIRED)
 find_package(Threads REQUIRED)

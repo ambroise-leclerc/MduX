@@ -8,9 +8,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -19,6 +21,7 @@
 #include <fstream>
 #include <string>
 #include <cstdlib>
+#include <filesystem>
 
 // Platform-specific includes for Vulkan surface creation
 #ifdef MDUX_PLATFORM_WINDOWS
@@ -41,7 +44,71 @@
     #include <GLFW/glfw3.h>
 #endif
 
+// Forward declarations
 namespace mdux {
+    struct UiContent;
+    struct ReloadEvent;
+    class HtmlCssLoader;
+}
+
+// HTML/CSS support (include early to define types)
+#include "FileWatcher.hpp"
+#include "CssParser.hpp"
+#include "HtmlCssLoader.hpp"
+
+namespace mdux {
+
+/**
+ * @brief UI rendering modes for overlay/underlay support
+ */
+enum class UiRenderMode {
+    OVERLAY,    ///< UI rendered on top of 3D content
+    UNDERLAY,   ///< UI rendered behind 3D content  
+    INTEGRATED ///< UI integrated with 3D rendering
+};
+
+/**
+ * @brief UI rendering callback interface
+ */
+struct UiRenderer {
+    /**
+     * @brief Render UI content callback
+     * @param uiContent Current UI content to render
+     * @param renderMode How UI should be rendered relative to 3D content
+     * @param deltaTime Time since last frame for animations
+     */
+    std::function<void(const UiContent&, UiRenderMode, float)> renderCallback;
+    
+    /**
+     * @brief UI content update callback (optional)
+     * @param uiContent New UI content loaded from file
+     */
+    std::function<void(const UiContent&)> contentUpdateCallback;
+    
+    /**
+     * @brief Check if renderer is valid
+     */
+    bool isValid() const noexcept { 
+        return static_cast<bool>(renderCallback); 
+    }
+};
+
+/**
+ * @brief UI integration configuration
+ */
+struct UiIntegration {
+    UiRenderMode renderMode = UiRenderMode::OVERLAY;  ///< Default render mode
+    bool enableHotReload = true;                      ///< Enable hot-reload by default
+    std::filesystem::path htmlCssPath;                ///< Path to UI definition file
+    UiRenderer renderer;                              ///< UI renderer callbacks
+    
+    /**
+     * @brief Check if integration is properly configured
+     */
+    bool isConfigured() const noexcept {
+        return !htmlCssPath.empty() && renderer.isValid();
+    }
+};
 
 /**
  * @brief Version information for MduX library
@@ -115,15 +182,28 @@ struct Graphics {
 struct WindowConfig {
     std::uint32_t width = 800;
     std::uint32_t height = 600;
-    std::string_view title = "MduX Medical Device Application";
+    std::string title = "MduX Medical Device Application";
     bool resizable = true;
     bool vsync = true;
     bool fullscreen = false;
+    
+    /**
+     * @brief Create WindowConfig from HTML/CSS file
+     * @param htmlCssPath Path to HTML or CSS file
+     * @return WindowConfig with properties from file, or default values on error
+     */
+    static WindowConfig fromHtmlCss(const std::filesystem::path& htmlCssPath);
 };
 
 /**
  * @brief Cross-platform window class for medical device UI with Vulkan support
  */
+// GLFW reference counter for proper lifecycle management
+namespace detail {
+    static std::atomic<int> glfwRefCount{0};
+    static std::mutex glfwMutex;
+}
+
 class Window {
 private:
     GLFWwindow* window = nullptr;
@@ -131,8 +211,22 @@ private:
     bool shouldCloseFlag = false;
     vk::SurfaceKHR surface;
     vk::Instance instance;
+    
+    // UI integration support
+    std::unique_ptr<UiIntegration> uiIntegration;
+    std::unique_ptr<HtmlCssLoader> uiLoader;
+    UiContent currentUiContent;
+    std::chrono::steady_clock::time_point lastFrameTime;
 
 public:
+    /**
+     * @brief Create a new window with configuration from HTML/CSS file
+     * @param htmlCssPath Path to HTML or CSS file containing window configuration
+     */
+    explicit Window(const std::filesystem::path& htmlCssPath) 
+        : Window(WindowConfig::fromHtmlCss(htmlCssPath)) {
+    }
+    
     /**
      * @brief Create a new window with specified configuration
      * @param config Window configuration parameters
@@ -141,8 +235,15 @@ public:
         // Smart platform selection for cross-platform compatibility
         configurePlatformHints();
         
-        if (!glfwInit()) {
-            throw std::runtime_error("Failed to initialize GLFW");
+        // Thread-safe GLFW initialization with reference counting
+        {
+            std::lock_guard<std::mutex> lock(detail::glfwMutex);
+            if (detail::glfwRefCount.fetch_add(1) == 0) {
+                if (!glfwInit()) {
+                    detail::glfwRefCount.fetch_sub(1);
+                    throw std::runtime_error("Failed to initialize GLFW");
+                }
+            }
         }
 
         // Set Vulkan hints as per ADR-001 revision
@@ -155,7 +256,13 @@ public:
                                     windowConfig.fullscreen ? glfwGetPrimaryMonitor() : nullptr, nullptr);
 
         if (!window) {
-            glfwTerminate();
+            // Decrement ref count if window creation failed
+            {
+                std::lock_guard<std::mutex> lock(detail::glfwMutex);
+                if (detail::glfwRefCount.fetch_sub(1) == 1) {
+                    glfwTerminate();
+                }
+            }
             throw std::runtime_error("Failed to create GLFW window");
         }
 
@@ -187,27 +294,54 @@ public:
      * @brief Destructor - cleanup window resources
      */
     ~Window() {
+        stopUiIntegration();  // NEW: Clean up UI integration first
         cleanupVulkan();
         if (window) {
             glfwDestroyWindow(window);
         }
-        glfwTerminate();
+        // Thread-safe GLFW cleanup with reference counting
+        {
+            std::lock_guard<std::mutex> lock(detail::glfwMutex);
+            if (detail::glfwRefCount.fetch_sub(1) == 1) {
+                glfwTerminate();
+            }
+        }
     }
 
     // Non-copyable but movable
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
-    Window(Window&& other) noexcept : window(other.window), config(other.config) {
+    Window(Window&& other) noexcept 
+        : window(other.window), config(other.config), surface(other.surface), instance(other.instance),
+          uiIntegration(std::move(other.uiIntegration)), uiLoader(std::move(other.uiLoader)),
+          currentUiContent(std::move(other.currentUiContent)), lastFrameTime(other.lastFrameTime) {
         other.window = nullptr;
+        other.surface = nullptr;
+        other.instance = nullptr;
+        // No need to adjust ref count - just transferring ownership
     }
     Window& operator=(Window&& other) noexcept {
         if (this != &other) {
+            // Clean up current resources without adjusting ref count (will be transferred)
+            stopUiIntegration();  // NEW: Clean up UI integration
+            cleanupVulkan();
             if (window) {
                 glfwDestroyWindow(window);
             }
+            // Take ownership of other's resources
             window = other.window;
             config = other.config;
+            surface = other.surface;
+            instance = other.instance;
+            uiIntegration = std::move(other.uiIntegration);
+            uiLoader = std::move(other.uiLoader);
+            currentUiContent = std::move(other.currentUiContent);
+            lastFrameTime = other.lastFrameTime;
+            // Reset other's resources
             other.window = nullptr;
+            other.surface = nullptr;
+            other.instance = nullptr;
+            // No ref count adjustment needed - just transferring ownership
         }
         return *this;
     }
@@ -255,6 +389,54 @@ public:
     }
 
     /**
+     * @brief Set window size (resize existing window)
+     * @param width New window width
+     * @param height New window height
+     */
+    void setSize(int width, int height) noexcept {
+        if (window) {
+            glfwSetWindowSize(window, width, height);
+            // Update internal config to reflect new size
+            config.width = static_cast<std::uint32_t>(width);
+            config.height = static_cast<std::uint32_t>(height);
+        }
+    }
+
+    /**
+     * @brief Apply window configuration without recreation
+     * @param newConfig Configuration to apply
+     * @return true if applied successfully, false if recreation needed
+     */
+    bool applyConfig(const WindowConfig& newConfig) noexcept {
+        if (!window) return false;
+        
+        bool needsRecreation = false;
+        
+        // Check if any properties require window recreation
+        if (config.fullscreen != newConfig.fullscreen ||
+            config.resizable != newConfig.resizable ||
+            config.vsync != newConfig.vsync) {
+            needsRecreation = true;
+        }
+        
+        if (needsRecreation) {
+            return false; // Caller should recreate window
+        }
+        
+        // Apply properties that can be changed dynamically
+        if (config.width != newConfig.width || config.height != newConfig.height) {
+            setSize(static_cast<int>(newConfig.width), static_cast<int>(newConfig.height));
+        }
+        
+        if (config.title != newConfig.title) {
+            setTitle(newConfig.title);
+        }
+        
+        config = newConfig;
+        return true;
+    }
+
+    /**
      * @brief Get native GLFW window handle
      * @return GLFWwindow pointer
      */
@@ -271,6 +453,53 @@ public:
      * @return Vulkan instance handle
      */
     vk::Instance getInstance() const noexcept { return instance; }
+    
+    /**
+     * @brief Configure UI integration for overlay/underlay rendering
+     * @param integration UI integration configuration
+     * @return true if UI integration was set up successfully
+     */
+    bool setupUiIntegration(UiIntegration integration);
+    
+    /**
+     * @brief Update UI content manually (without hot-reload)
+     * @param uiContent New UI content to display
+     */
+    void updateUiContent(const UiContent& uiContent);
+    
+    /**
+     * @brief Get current UI content
+     * @return Current UI content being displayed
+     */
+    const UiContent& getCurrentUiContent() const noexcept { return currentUiContent; }
+    
+    /**
+     * @brief Check if UI integration is active
+     * @return true if UI integration is configured and active
+     */
+    bool hasUiIntegration() const noexcept { return uiIntegration && uiIntegration->isConfigured(); }
+    
+    /**
+     * @brief Get UI render mode
+     * @return Current UI render mode (overlay/underlay/integrated)
+     */
+    UiRenderMode getUiRenderMode() const noexcept {
+        return uiIntegration ? uiIntegration->renderMode : UiRenderMode::OVERLAY;
+    }
+    
+    /**
+     * @brief Render UI content (called during frame rendering)
+     * @param deltaTime Time since last frame for animations
+     * 
+     * This method should be called by the user's rendering loop at the
+     * appropriate point (before 3D content for underlay, after for overlay)
+     */
+    void renderUi(float deltaTime = 0.0f);
+    
+    /**
+     * @brief Stop UI integration and hot-reload
+     */
+    void stopUiIntegration();
 
 private:
     /**
@@ -406,13 +635,27 @@ private:
      * @brief Cleanup Vulkan resources
      */
     void cleanupVulkan() {
-        if (surface) {
-            instance.destroySurfaceKHR(surface);
-        }
-        if (instance) {
-            instance.destroy();
+        try {
+            if (surface && instance) {
+                instance.destroySurfaceKHR(surface);
+                surface = nullptr;
+            }
+            if (instance) {
+                instance.destroy();
+                instance = nullptr;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Vulkan cleanup error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Warning: Unknown Vulkan cleanup error" << std::endl;
         }
     }
+    
+    /**
+     * @brief Handle UI hot-reload events
+     * @param event Reload event with updated content
+     */
+    void onUiReload(const ReloadEvent& event);
 };
 #endif // MDUX_GLFW_AVAILABLE
 
@@ -433,5 +676,146 @@ inline void shutdown() noexcept {
     // Global cleanup if needed
     // Individual windows handle their own Vulkan cleanup
 }
+
+} // namespace mdux
+
+namespace mdux {
+
+#ifdef MDUX_GLFW_AVAILABLE
+// WindowConfig implementation (needs to be after includes)
+inline WindowConfig WindowConfig::fromHtmlCss(const std::filesystem::path& htmlCssPath) {
+    WindowConfig config;
+    
+    try {
+        auto windowStyle = loadWindowStyleFromFile(htmlCssPath);
+        
+        if (windowStyle.width) config.width = *windowStyle.width;
+        if (windowStyle.height) config.height = *windowStyle.height;
+        if (windowStyle.title) config.title = *windowStyle.title;
+        if (windowStyle.resizable) config.resizable = *windowStyle.resizable;
+        if (windowStyle.vsync) config.vsync = *windowStyle.vsync;
+        if (windowStyle.fullscreen) config.fullscreen = *windowStyle.fullscreen;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to load window config from " << htmlCssPath 
+                  << ": " << e.what() << ". Using defaults." << std::endl;
+    }
+    
+    return config;
+}
+
+// UI Integration implementation
+bool Window::setupUiIntegration(UiIntegration integration) {
+    if (!integration.isConfigured()) {
+        std::cerr << "Window: UI integration is not properly configured" << std::endl;
+        return false;
+    }
+    
+    // Stop any existing integration
+    stopUiIntegration();
+    
+    // Store integration config
+    uiIntegration = std::make_unique<UiIntegration>(std::move(integration));
+    
+    // Initialize UI loader if hot-reload is enabled
+    if (uiIntegration->enableHotReload) {
+        uiLoader = std::make_unique<HtmlCssLoader>();
+        
+        auto reloadCallback = [this](const ReloadEvent& event) {
+            this->onUiReload(event);
+        };
+        
+        if (!uiLoader->startWatching(uiIntegration->htmlCssPath, reloadCallback)) {
+            std::cerr << "Window: Failed to start UI hot-reload for " << uiIntegration->htmlCssPath << std::endl;
+            return false;
+        }
+    } else {
+        // Load UI content once without hot-reload
+        HtmlCssLoader loader;
+        auto event = loader.loadFile(uiIntegration->htmlCssPath);
+        if (event.isSuccess()) {
+            currentUiContent = event.uiContent;
+        } else {
+            std::cerr << "Window: Failed to load UI content: " << event.errorMessage << std::endl;
+            return false;
+        }
+    }
+    
+    // Initialize frame timing
+    lastFrameTime = std::chrono::steady_clock::now();
+    
+    std::cout << "Window: UI integration setup complete for " << uiIntegration->htmlCssPath.filename() << std::endl;
+    return true;
+}
+
+void Window::updateUiContent(const UiContent& uiContent) {
+    currentUiContent = uiContent;
+    
+    // Notify renderer of content update
+    if (uiIntegration && uiIntegration->renderer.contentUpdateCallback) {
+        uiIntegration->renderer.contentUpdateCallback(currentUiContent);
+    }
+}
+
+void Window::renderUi(float deltaTime) {
+    if (!hasUiIntegration() || !uiIntegration->renderer.renderCallback) {
+        return;  // No UI integration or renderer configured
+    }
+    
+    // Calculate delta time if not provided
+    if (deltaTime <= 0.0f) {
+        auto currentTime = std::chrono::steady_clock::now();
+        deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
+        lastFrameTime = currentTime;
+    }
+    
+    // Call user's UI render callback
+    uiIntegration->renderer.renderCallback(currentUiContent, uiIntegration->renderMode, deltaTime);
+}
+
+void Window::stopUiIntegration() {
+    if (uiLoader) {
+        uiLoader->stopWatching();
+        uiLoader.reset();
+    }
+    uiIntegration.reset();
+    currentUiContent = UiContent{};  // Clear UI content
+}
+
+void Window::onUiReload(const ReloadEvent& event) {
+    if (!event.isSuccess()) {
+        std::cerr << "Window: UI reload failed: " << event.errorMessage << std::endl;
+        return;
+    }
+    
+    // Check if window configuration changed
+    if (event.windowConfigChanged) {
+        std::cout << "Window: Window configuration changed, applying dynamic resize..." << std::endl;
+        
+        // Convert to WindowConfig and apply
+        WindowConfig newConfig = config;  // Start with current config
+        if (event.windowStyle.width) newConfig.width = *event.windowStyle.width;
+        if (event.windowStyle.height) newConfig.height = *event.windowStyle.height;
+        if (event.windowStyle.title) newConfig.title = *event.windowStyle.title;
+        if (event.windowStyle.resizable) newConfig.resizable = *event.windowStyle.resizable;
+        if (event.windowStyle.vsync) newConfig.vsync = *event.windowStyle.vsync;
+        if (event.windowStyle.fullscreen) newConfig.fullscreen = *event.windowStyle.fullscreen;
+        
+        // Apply configuration without recreation when possible
+        if (!applyConfig(newConfig)) {
+            std::cout << "Window: Window recreation required for configuration changes" << std::endl;
+            // Note: For full hot-reload, window recreation would need to be handled
+            // by the application, not the Window class itself
+        }
+    }
+    
+    // Update UI content if it changed
+    if (event.uiContentChanged) {
+        std::cout << "Window: UI content changed - updating without interrupting rendering" << std::endl;
+        updateUiContent(event.uiContent);
+    }
+}
+
+#endif // MDUX_GLFW_AVAILABLE
 
 } // namespace mdux
