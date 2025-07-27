@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 4.0.0)
 # Official UUID for CMake 4.0.3 import std support
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
@@ -14,10 +14,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Debug: Check if import std support was detected
 message(STATUS "CMAKE_EXPERIMENTAL_CXX_IMPORT_STD: ${CMAKE_EXPERIMENTAL_CXX_IMPORT_STD}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 if(TARGET __CMAKE::CXX23)
     message(STATUS "__CMAKE::CXX23 target available")
 else()
-    message(WARNING "__CMAKE::CXX23 target NOT available - import std; will not work")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.40")
+        message(STATUS "__CMAKE::CXX23 target NOT available, but MSVC ${CMAKE_CXX_COMPILER_VERSION} should support import std with /experimental:module")
+    else()
+        message(WARNING "__CMAKE::CXX23 target NOT available - import std; will not work")
+    endif()
 endif()
 
 # Compiler version requirements for C++23 modules support
@@ -42,12 +47,23 @@ if(NOT WIN32 AND NOT UNIX)
     message(FATAL_ERROR "MduX only supports Windows and Linux platforms.")
 endif()
 
+# Force 64-bit architecture on Windows for Vulkan compatibility
+if(WIN32)
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "MduX requires 64-bit build on Windows for Vulkan compatibility. Please use 64-bit compiler.")
+    endif()
+endif()
+
 # C++23 Modules support
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-# GCC-specific modules configuration
+# Compiler-specific modules configuration
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fmodules>)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # MSVC-specific modules configuration for C++23 and import std
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/experimental:module>)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/std:c++latest>)
 endif()
 
 # Module setup
@@ -85,8 +101,33 @@ target_sources(MduX
 )
 
 target_compile_features(MduX_options INTERFACE cxx_std_23)
-set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
+
+# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
+    message(STATUS "CXX_MODULE_STD enabled for MduX target")
+else()
+    message(STATUS "CXX_MODULE_STD disabled - __CMAKE::CXX23 target not available")
+    if(CMAKE_GENERATOR MATCHES "Visual Studio")
+        message(FATAL_ERROR 
+            "Visual Studio generator does not support import std; with C++23 modules.\n"
+            "Please use Ninja generator instead:\n"
+            "  1. Install Ninja: winget install Ninja-build.Ninja\n"
+            "  2. Use: cmake .. -G Ninja\n"
+            "  3. Build with: cmake --build .")
+    endif()
+endif()
+
 target_include_directories(MduX PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+
+# MSVC-specific import std configuration
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduX PRIVATE /experimental:module)
+    target_compile_options(MduX PRIVATE /std:c++latest)
+    # Ensure import std is available
+    target_compile_options(MduX_options INTERFACE /experimental:module)
+    target_compile_options(MduX_options INTERFACE /std:c++latest)
+endif()
 
 # Configuration application
 configure_compiler_settings(MduX_options)
@@ -99,8 +140,63 @@ set_project_warnings(MduX_warnings)
 enable_sanitizers(MduX_options)
 
 
-# Dependencies
+# Dependencies - Enhanced Vulkan detection for Windows
+if(WIN32)
+    # Common Vulkan SDK installation paths on Windows
+    set(VULKAN_SEARCH_PATHS
+        "$ENV{VULKAN_SDK}"
+        "C:/VulkanSDK/1.3.290.0"
+        "C:/VulkanSDK/1.3.280.0"
+        "C:/VulkanSDK/1.3.275.0"
+        "C:/VulkanSDK/1.3.270.0"
+        "C:/Program Files/VulkanSDK/1.3.290.0"
+        "C:/Program Files/VulkanSDK/1.3.280.0"
+        "C:/Program Files/VulkanSDK/1.3.275.0"
+        "C:/Program Files/VulkanSDK/1.3.270.0"
+    )
+    
+    # Try to find Vulkan in common locations
+    foreach(VULKAN_PATH ${VULKAN_SEARCH_PATHS})
+        if(EXISTS "${VULKAN_PATH}/Include/vulkan/vulkan.h")
+            set(Vulkan_INCLUDE_DIR "${VULKAN_PATH}/Include")
+            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+                # 64-bit build - prefer Lib over Lib32
+                if(EXISTS "${VULKAN_PATH}/Lib/vulkan-1.lib")
+                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib/vulkan-1.lib")
+                elseif(EXISTS "${VULKAN_PATH}/Lib32/vulkan-1.lib")
+                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib32/vulkan-1.lib")
+                    message(WARNING "Using 32-bit Vulkan library on 64-bit system")
+                endif()
+            else()
+                # 32-bit build
+                if(EXISTS "${VULKAN_PATH}/Lib32/vulkan-1.lib")
+                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib32/vulkan-1.lib")
+                elseif(EXISTS "${VULKAN_PATH}/Lib/vulkan-1.lib")
+                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib/vulkan-1.lib")
+                    message(WARNING "Using 64-bit Vulkan library on 32-bit system")
+                endif()
+            endif()
+            if(Vulkan_LIBRARY)
+                message(STATUS "Found Vulkan at: ${VULKAN_PATH}")
+                message(STATUS "Vulkan library: ${Vulkan_LIBRARY}")
+                break()
+            endif()
+        endif()
+    endforeach()
+endif()
+
 find_package(Vulkan REQUIRED)
+
+# Provide helpful error message for Windows Vulkan SDK installation
+if(WIN32 AND NOT Vulkan_FOUND)
+    message(FATAL_ERROR 
+        "Vulkan SDK not found on Windows. Please:\n"
+        "  1. Download from: https://vulkan.lunarg.com/sdk/home#windows\n"
+        "  2. Install the Vulkan SDK\n"
+        "  3. Set environment variable: set VULKAN_SDK=C:\\VulkanSDK\\1.3.xxx.x\n"
+        "  4. Or specify manually: cmake .. -DVulkan_INCLUDE_DIR=\"C:/VulkanSDK/1.3.xxx.x/Include\" -DVulkan_LIBRARY=\"C:/VulkanSDK/1.3.xxx.x/Lib/vulkan-1.lib\"\n"
+        "Current VULKAN_SDK: $ENV{VULKAN_SDK}")
+endif()
 find_package(Threads REQUIRED)
 target_link_libraries(MduX_options INTERFACE Vulkan::Vulkan Threads::Threads)
 

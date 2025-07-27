@@ -304,8 +304,8 @@ Window::Window(Window&& other) noexcept
       uiIntegration(std::move(other.uiIntegration)), uiLoader(std::move(other.uiLoader)),
       currentUiContent(std::move(other.currentUiContent)), lastFrameTime(other.lastFrameTime) {
     other.window = nullptr;
-    other.surface = nullptr;
-    other.instance = nullptr;
+    other.surface = VK_NULL_HANDLE;
+    other.instance = VK_NULL_HANDLE;
     // No need to adjust ref count - just transferring ownership
 }
 
@@ -328,8 +328,8 @@ Window& Window::operator=(Window&& other) noexcept {
         lastFrameTime = other.lastFrameTime;
         // Reset other's resources
         other.window = nullptr;
-        other.surface = nullptr;
-        other.instance = nullptr;
+        other.surface = VK_NULL_HANDLE;
+        other.instance = VK_NULL_HANDLE;
         // No ref count adjustment needed - just transferring ownership
     }
     return *this;
@@ -535,15 +535,12 @@ void Window::configurePlatformHints() {
 
 const char* Window::getEnvironmentVariable(const char* name) const noexcept {
 #ifdef _WIN32
-    // Windows: Use secure _dupenv_s when possible, fallback to getenv
-    char* value = nullptr;
-    size_t size = 0;
-    if (_dupenv_s(&value, &size, name) == 0 && value != nullptr) {
-        // Note: This creates a memory leak, but it's acceptable for environment
-        // variables that are typically accessed once during initialization
-        return value;
-    }
-    return nullptr;
+    // Windows: Use getenv for compatibility with import std
+    // Suppress deprecation warning as we need compatibility with import std
+    #pragma warning(push)
+    #pragma warning(disable: 4996)
+    return std::getenv(name);
+    #pragma warning(pop)
 #else
     // Unix/Linux: getenv is safe on these platforms
     return std::getenv(name);
@@ -679,8 +676,8 @@ Window::~Window() {
 
 Window::Window(Window&& other) noexcept 
     : config(other.config), surface(other.surface), instance(other.instance) {
-    other.surface = nullptr;
-    other.instance = nullptr;
+    other.surface = VK_NULL_HANDLE;
+    other.instance = VK_NULL_HANDLE;
 }
 
 Window& Window::operator=(Window&& other) noexcept {
@@ -688,8 +685,8 @@ Window& Window::operator=(Window&& other) noexcept {
         config = other.config;
         surface = other.surface;
         instance = other.instance;
-        other.surface = nullptr;
-        other.instance = nullptr;
+        other.surface = VK_NULL_HANDLE;
+        other.instance = VK_NULL_HANDLE;
     }
     return *this;
 }
