@@ -91,22 +91,56 @@ However, C++23 modules support varies significantly across compiler versions, an
 - **Regression Risk**: Newer compilers might introduce new issues
   - *Mitigation*: Comprehensive CI testing across all supported compiler versions
 
+## CMake Configuration Requirements
+
+### GCC 15+ Modules Configuration
+GCC 15 requires manual configuration for C++23 modules support. CMake doesn't have built-in logic for GCC modules, requiring explicit compiler flags:
+
+```cmake
+project(ModulesExample CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+add_executable(app main.cpp math.cppm)
+target_compile_options(app PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fmodules>)
+set_target_properties(app PROPERTIES CXX_MODULE_STD ON)
+```
+
+**Key Requirements:**
+- Use `-fmodules` instead of `-fmodules-ts` for GCC 15+
+- Enable `CMAKE_CXX_SCAN_FOR_MODULES` for module detection
+- Set `CXX_MODULE_STD ON` for standard library module support
+
+### Standard Library Modules (import std;)
+GCC supports `import std;` but requires precompilation of standard library modules:
+
+```bash
+# Precompile standard library module cache
+g++ -std=c++23 -fmodules -x c++-system-header iostream
+```
+
+This ensures the module cache is generated for standard library imports.
+
 ## Implementation Plan
 
 ### Phase 1: Build System Updates (Completed)
 - ✅ Update CMakeLists.txt with version checks
 - ✅ Add explicit error messages for unsupported compiler versions
 - ✅ Update CI configuration with new compiler versions
+- ✅ Add GCC-specific modules configuration with `-fmodules` flag
 
 ### Phase 2: Documentation Updates (Completed)
 - ✅ Update CLAUDE.md with new requirements
 - ✅ Update README.md with compiler version specifications
 - ✅ Update project descriptions to reflect modules-based architecture
+- ✅ Document CMake modules configuration requirements
 
 ### Phase 3: CI/CD Integration (Completed)
 - ✅ Add Clang 20 build job to GitHub Actions
 - ✅ Update existing jobs to use GCC 15
 - ✅ Update static analysis tools to latest versions
+- ✅ Configure GCC modules flags in CI builds
 
 ### Phase 4: Validation and Testing (Completed)
 - ✅ Verify CMake configuration works with updated requirements
@@ -115,6 +149,7 @@ However, C++23 modules support varies significantly across compiler versions, an
 - ✅ Clean up unused code (removed unused `shouldCloseFlag` member variable)
 - ✅ Validate examples and tests work with new toolchain
 - ✅ Confirm all unit tests pass with both GCC 15 and Clang 20
+- ✅ Verify GCC modules configuration and standard library module support
 
 ## Migration Guide
 
