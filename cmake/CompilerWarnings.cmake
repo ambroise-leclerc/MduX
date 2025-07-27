@@ -46,7 +46,6 @@ function(set_project_warnings project_name)
       -Woverloaded-virtual # warn if you overload (not override) a virtual function
       -Wconversion # warn on type conversions that may lose data
       -Wsign-conversion # warn on sign conversions
-      -Wnull-dereference # warn if a null dereference is detected
       -Wdouble-promotion # warn if float is implicit promoted to double
       -Wformat=2 # warn on security issues around functions that format output (ie printf)
       -Wimplicit-fallthrough # warn on statements that fallthrough without an explicit annotation

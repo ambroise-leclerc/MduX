@@ -2,9 +2,8 @@
  * @brief Main test runner for MduX unit tests
  */
 
-#include <cassert>
-#include <iostream>
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 // Simple test framework for basic testing
 class TestRunner {

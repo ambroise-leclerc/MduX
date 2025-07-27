@@ -2,21 +2,22 @@
  * @brief Compliance-related tests for MduX library
  */
 
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 bool testCompliance() {
     // Test medical device compliance flag
     bool complianceEnabled = mdux::Compliance::isMedicalDeviceCompliant;
 
     // Test standards information
-    bool standardsValid = mdux::Compliance::standards == "IEC 62304, IEC 62366";
+    bool standardsValid = mdux::Compliance::standards == std::string_view("IEC 62304, IEC 62366");
 
     // Test safety class information
-    bool safetyClassValid = mdux::Compliance::safetyClass == "Class B/C Medical Device Software";
+    bool safetyClassValid = mdux::Compliance::safetyClass == std::string_view("Class B/C Medical Device Software");
 
     // Test graphics support
     bool graphicsEnabled = mdux::Graphics::isEnabled;
-    bool graphicsApiValid = mdux::Graphics::api == "Vulkan";
+    bool graphicsApiValid = mdux::Graphics::api == std::string_view("Vulkan");
 
     return complianceEnabled && standardsValid && safetyClassValid && graphicsEnabled &&
            graphicsApiValid;

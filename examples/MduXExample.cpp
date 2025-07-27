@@ -1,6 +1,6 @@
 /**
  * @file MduXExample.cpp
- * @brief Comprehensive MduX example demonstrating all features
+ * @brief Comprehensive MduX example demonstrating all features with C++23 modules
  * 
  * This unified example demonstrates:
  * 1. Traditional WindowConfig approach
@@ -15,14 +15,8 @@
  *   ./MduXExample ui.html --hot      # Enables hot-reload
  */
 
-#include <iostream>
-#include <filesystem>
-#include <thread>
-#include <chrono>
-#include <string>
-#include <memory>
-
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 class MduXDemo {
 public:
@@ -127,11 +121,11 @@ private:
                 break;
             case Mode::HTML_STATIC:
                 std::cout << "\n📄 Mode: HTML/CSS Static Loading\n";
-                std::cout << "📁 HTML File: " << htmlPath << "\n";
+                std::cout << "📁 HTML File: " << htmlPath.string() << "\n";
                 break;
             case Mode::HTML_HOT_RELOAD:
                 std::cout << "\n🔥 Mode: HTML/CSS Hot-Reload\n";
-                std::cout << "📁 HTML File: " << htmlPath << " (watching for changes)\n";
+                std::cout << "📁 HTML File: " << htmlPath.string() << " (watching for changes)\n";
                 break;
         }
     }
@@ -179,7 +173,7 @@ private:
      */
     bool createHtmlStaticWindow() {
         if (!std::filesystem::exists(htmlPath)) {
-            std::cerr << "❌ HTML file not found: " << htmlPath << std::endl;
+            std::cerr << "❌ HTML file not found: " << htmlPath.string() << std::endl;
             std::cout << "🔄 Falling back to default configuration...\n";
             return createDefaultWindow();
         }
@@ -202,7 +196,7 @@ private:
      */
     bool createHtmlHotReloadWindow() {
         if (!std::filesystem::exists(htmlPath)) {
-            std::cerr << "❌ HTML file not found: " << htmlPath << std::endl;
+            std::cerr << "❌ HTML file not found: " << htmlPath.string() << std::endl;
             std::cout << "🔄 Falling back to default configuration...\n";
             return createDefaultWindow();
         }
@@ -220,7 +214,7 @@ private:
         };
         
         if (hotReloadLoader->startWatching(htmlPath, reloadCallback)) {
-            std::cout << "✅ Hot-reload enabled for: " << htmlPath.filename() << "\n";
+            std::cout << "✅ Hot-reload enabled for: " << htmlPath.filename().string() << "\n";
             std::cout << "💡 Modify the HTML file to see live updates!\n";
             return true;
         } else {
@@ -234,7 +228,7 @@ private:
      * @brief Handle HTML/CSS reload events
      */
     void onHtmlCssReload(const mdux::ReloadEvent& event) {
-        std::cout << "\n🔄 File change detected: " << event.filePath.filename() << "\n";
+        std::cout << "\n🔄 File change detected: " << event.filePath.filename().string() << "\n";
         
         if (!event.isSuccess()) {
             std::cerr << "❌ Reload failed: " << event.errorMessage << std::endl;
@@ -277,7 +271,7 @@ private:
     /**
      * @brief Convert WindowStyle to WindowConfig
      */
-    mdux::WindowConfig windowStyleToConfig(const mdux::WindowStyle& style) {
+    mdux::WindowConfig windowStyleToConfig(const mdux::ReloadEvent::WindowStyle& style) {
         mdux::WindowConfig config = currentConfig;
         
         if (style.width) config.width = *style.width;
@@ -400,12 +394,12 @@ private:
         std::cout << "║\n";
         
         if (mode == Mode::HTML_HOT_RELOAD) {
-            std::cout << "║ Hot-reload: ENABLED (" << htmlPath.filename() << ")";
+            std::cout << "║ Hot-reload: ENABLED (" << htmlPath.filename().string() << ")";
             auto pathPadding = static_cast<int>(60 - 17 - htmlPath.filename().string().length() - 1);
             for (int i = 0; i < pathPadding; i++) std::cout << " ";
             std::cout << "║\n";
         } else if (mode == Mode::HTML_STATIC) {
-            std::cout << "║ Loaded from: " << htmlPath.filename();
+            std::cout << "║ Loaded from: " << htmlPath.filename().string();
             auto pathPadding = static_cast<int>(60 - 14 - htmlPath.filename().string().length());
             for (int i = 0; i < pathPadding; i++) std::cout << " ";
             std::cout << "║\n";
@@ -424,7 +418,7 @@ private:
         std::cout << "  • Window shows medical device UI rendering\n";
         
         if (mode == Mode::HTML_HOT_RELOAD) {
-            std::cout << "  • Modify " << htmlPath.filename() << " to see live updates\n";
+            std::cout << "  • Modify " << htmlPath.filename().string() << " to see live updates\n";
             std::cout << "  • Watch the console for reload notifications\n";
         }
         
@@ -469,7 +463,7 @@ private:
             if (frameCount % 300 == 0) { // ~5 seconds at 60fps
                 std::cout << "⏱️  Runtime: " << (frameCount / 60) << " seconds";
                 if (mode == Mode::HTML_HOT_RELOAD) {
-                    std::cout << " (watching " << htmlPath.filename() << ")";
+                    std::cout << " (watching " << htmlPath.filename().string() << ")";
                 }
                 std::cout << "\n";
             }

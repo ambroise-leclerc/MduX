@@ -2,13 +2,8 @@
 
 # Unified comprehensive example demonstrating all MduX features
 add_executable(MduXExample MduXExample.cpp)
-target_link_libraries(MduXExample PRIVATE MduX::MduX glfw)
+target_link_libraries(MduXExample PRIVATE MduX::MduX)
 target_compile_definitions(MduXExample PRIVATE MDUX_GLFW_AVAILABLE=1)
-target_sources(MduXExample PRIVATE
-    ../include/mdux/FileWatcher.cpp
-    ../include/mdux/CssParser.cpp
-    ../include/mdux/HtmlCssLoader.cpp
-)
 
 # Platform-specific libraries for file watching
 if(UNIX)
@@ -17,5 +12,10 @@ if(UNIX)
     target_link_libraries(MduXExample PRIVATE Threads::Threads)
 endif()
 
-# Set C++23 standard for example
-set_target_properties(MduXExample PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+# Set C++23 standard for example and enable import std; support
+set_target_properties(MduXExample PROPERTIES 
+    CXX_STANDARD 23 
+    CXX_STANDARD_REQUIRED ON 
+    CXX_EXTENSIONS OFF
+    CXX_MODULE_STD ON
+)

@@ -2,7 +2,8 @@
  * @brief Regulatory compliance tests for MduX library
  */
 
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 bool testRegulatoryCompliance() {
     // Test IEC 62304 compliance (Software Lifecycle)
@@ -19,7 +20,7 @@ bool testRegulatoryCompliance() {
 
     // Verify graphics consistency (required for usability)
     iec62366Compliant &= mdux::Graphics::isEnabled;
-    iec62366Compliant &= (mdux::Graphics::api == "Vulkan");
+    iec62366Compliant &= (mdux::Graphics::api == std::string_view("Vulkan"));
     iec62366Compliant &= (mdux::Graphics::vulkanVersionMajor == 1);
     iec62366Compliant &= (mdux::Graphics::vulkanVersionMinor == 3);
     iec62366Compliant &= (mdux::Graphics::vulkanVersionPatch == 0);
@@ -28,11 +29,11 @@ bool testRegulatoryCompliance() {
     bool medicalDeviceCompliant = mdux::Compliance::isMedicalDeviceCompliant;
 
     // Test safety standards documentation
-    bool standardsDocumented = (mdux::Compliance::standards == "IEC 62304, IEC 62366");
+    bool standardsDocumented = (mdux::Compliance::standards == std::string_view("IEC 62304, IEC 62366"));
 
     // Test safety class classification
     bool safetyClassDefined =
-        (mdux::Compliance::safetyClass == "Class B/C Medical Device Software");
+        (mdux::Compliance::safetyClass == std::string_view("Class B/C Medical Device Software"));
 
     // Test library initialization (critical for medical devices)
     bool initializationWorks = mdux::initialize();

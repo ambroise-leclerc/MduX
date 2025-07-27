@@ -2,7 +2,8 @@
  * @brief Version-related tests for MduX library
  */
 
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 bool testVersion() {
     // Test version information

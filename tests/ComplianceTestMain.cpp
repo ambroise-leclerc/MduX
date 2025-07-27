@@ -2,9 +2,8 @@
  * @brief Main test runner for MduX compliance tests
  */
 
-#include <cassert>
-#include <iostream>
-#include <mdux/mdux.hpp>
+import std;
+import mdux;
 
 // Simple test framework for compliance testing
 class ComplianceTestRunner {

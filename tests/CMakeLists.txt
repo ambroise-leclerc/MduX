@@ -12,12 +12,13 @@ add_executable(unit_tests
 
 target_link_libraries(unit_tests PRIVATE MduX::MduX)
 
-# Set C++23 standard for tests
+# Set C++23 standard for tests and enable module imports
 set_target_properties(unit_tests
     PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
+        CXX_MODULE_STD ON
 )
 
 # Add tests to CTest
@@ -36,6 +37,7 @@ set_target_properties(compliance_tests
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
+        CXX_MODULE_STD ON
 )
 
 add_test(NAME MduXComplianceTests COMMAND compliance_tests)
