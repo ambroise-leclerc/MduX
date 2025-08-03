@@ -109,9 +109,31 @@ Update this table as features are implemented.
   - **MSVC 17.14+** (Visual Studio 2022 version 17.10+)
   - **GCC 15+**
   - **Clang 20+**
-- Vulkan SDK 1.3+ installed
-- CMake 4.0+
+- **Vulkan SDK 1.3+** installed and findable by CMake
+- **CMake 4.0+** with C++23 modules support
 - Windows 10+ or Linux (Ubuntu 20.04+, RHEL 8+)
+
+#### Linux Installation
+```bash
+# Ubuntu/Debian - Install Vulkan development tools
+sudo apt update
+sudo apt install vulkan-tools libvulkan-dev glslc glslang-tools
+
+# Install Vulkan SDK from LunarG (recommended for development)
+wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-$(lsb_release -cs).list \
+  https://packages.lunarg.com/vulkan/$(lsb_release -cs)/lunarg-vulkan-$(lsb_release -cs).list
+sudo apt update
+sudo apt install vulkan-sdk
+
+# Verify Vulkan installation
+vulkaninfo --summary
+```
+
+#### Windows Installation
+1. Download and install [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG
+2. Ensure the SDK is added to your system PATH
+3. Verify installation: `vulkaninfo.exe` in Command Prompt
 
 ### Platform Support
 - ✅ **Windows 10/11** - Full Vulkan support

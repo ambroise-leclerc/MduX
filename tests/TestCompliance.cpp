@@ -15,10 +15,10 @@ bool testCompliance() {
     // Test safety class information
     bool safetyClassValid = mdux::Compliance::safetyClass == std::string_view("Class B/C Medical Device Software");
 
-    // Test graphics support
-    bool graphicsEnabled = mdux::Graphics::isEnabled;
-    bool graphicsApiValid = mdux::Graphics::api == std::string_view("Vulkan");
+    // Test Vulkan support
+    bool vulkanEnabled = mdux::VulkanSupport::isAvailable;
+    bool vulkanApiValid = mdux::VulkanSupport::api == std::string_view("Vulkan");
 
-    return complianceEnabled && standardsValid && safetyClassValid && graphicsEnabled &&
-           graphicsApiValid;
+    return complianceEnabled && standardsValid && safetyClassValid && vulkanEnabled &&
+           vulkanApiValid;
 }

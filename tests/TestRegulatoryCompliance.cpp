@@ -18,12 +18,12 @@ bool testRegulatoryCompliance() {
     // Test IEC 62366 compliance (Usability Engineering)
     bool iec62366Compliant = true;
 
-    // Verify graphics consistency (required for usability)
-    iec62366Compliant &= mdux::Graphics::isEnabled;
-    iec62366Compliant &= (mdux::Graphics::api == std::string_view("Vulkan"));
-    iec62366Compliant &= (mdux::Graphics::vulkanVersionMajor == 1);
-    iec62366Compliant &= (mdux::Graphics::vulkanVersionMinor == 3);
-    iec62366Compliant &= (mdux::Graphics::vulkanVersionPatch == 0);
+    // Verify Vulkan consistency (required for usability)
+    iec62366Compliant &= mdux::VulkanSupport::isAvailable;
+    iec62366Compliant &= (mdux::VulkanSupport::api == std::string_view("Vulkan"));
+    iec62366Compliant &= (mdux::VulkanSupport::requiredVersionMajor == 1);
+    iec62366Compliant &= (mdux::VulkanSupport::requiredVersionMinor == 3);
+    iec62366Compliant &= (mdux::VulkanSupport::requiredVersionPatch == 0);
 
     // Test medical device compliance flag
     bool medicalDeviceCompliant = mdux::Compliance::isMedicalDeviceCompliant;

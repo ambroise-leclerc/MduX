@@ -1,96 +1,78 @@
 /**
  * @brief MduX C++23 Module Interface - Medical Device User eXperience Library
  * 
- * Ultra-sleek C++23 modules-based medical device UI library with Vulkan graphics.
- * This module provides safe, compliant, and efficient user interface components
+ * Pure Vulkan complement library for medical device user interfaces.
+ * Integrates with existing Vulkan applications to provide compliant UI rendering
  * for Class B and Class C medical devices.
  */
 
 module;
 
-// Platform-specific includes for Vulkan surface creation (minimal C includes only)
-#ifdef MDUX_PLATFORM_WINDOWS
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #include <windows.h>
-    #define VK_USE_PLATFORM_WIN32_KHR
-#elif defined(MDUX_PLATFORM_LINUX)
-    #define VK_USE_PLATFORM_XLIB_KHR
-    #define VK_USE_PLATFORM_WAYLAND_KHR
-#endif
-
-// Only include C headers that don't conflict with import std
-#include <vulkan/vulkan.h>  // Use C API instead of C++ API
+// Pure Vulkan integration - no windowing dependencies
+#include <vulkan/vulkan.h>  // Use C API for maximum compatibility
 #include <stdint.h>         // For uint32_t and other integer types
-
-// GLFW C API (doesn't conflict with import std)
-#ifdef MDUX_GLFW_AVAILABLE
-    #define GLFW_INCLUDE_VULKAN
-    #include <GLFW/glfw3.h>
-#endif
 
 export module mdux;
 
 // Import standard library modules (C++23 approach)
 import std;
 
-// Forward declarations and minimal definitions for UI types
+// Forward declarations for medical UI system
 export namespace mdux {
-    // UI content structure (minimal definition)
-    struct UiContent {
-        std::string title;
-        std::string htmlContent;
-        std::string cssContent;
-        std::vector<std::string> errors;
+    /**
+     * @brief Medical UI content structure for HTML/CSS-based interfaces
+     */
+    struct MedicalUiContent {
+        std::string identifier;        ///< Unique identifier for traceability
+        std::string htmlContent;      ///< HTML interface definition
+        std::string cssContent;       ///< CSS styling information
+        std::vector<std::string> validationErrors; ///< Compliance validation errors
+        std::string version;          ///< Content version for medical traceability
         
-        bool isValid() const noexcept { return errors.empty(); }
+        bool isValid() const noexcept { return validationErrors.empty(); }
+        bool hasContent() const noexcept { return !htmlContent.empty(); }
     };
     
-    // Reload event structure (minimal definition)
-    struct ReloadEvent {
+    /**
+     * @brief Hot-reload event for development workflows
+     */
+    struct UiReloadEvent {
         std::filesystem::path filePath;
-        UiContent uiContent;
-        bool windowConfigChanged = false;
-        bool uiContentChanged = false;
+        MedicalUiContent uiContent;
+        bool contentChanged = false;
         std::string errorMessage;
-        
-        struct WindowStyle {
-            std::optional<std::uint32_t> width;
-            std::optional<std::uint32_t> height;
-            std::optional<std::string> title;
-            std::optional<bool> resizable;
-            std::optional<bool> vsync;
-            std::optional<bool> fullscreen;
-        } windowStyle;
+        std::chrono::system_clock::time_point timestamp;
         
         bool isSuccess() const noexcept { return errorMessage.empty(); }
-        bool isUiOnlyChange() const noexcept { return uiContentChanged && !windowConfigChanged; }
     };
     
-    // File watcher callback type
-    using FileChangeCallback = std::function<void(const ReloadEvent&)>;
+    /**
+     * @brief File change callback for hot-reload functionality
+     */
+    using UiChangeCallback = std::function<void(const UiReloadEvent&)>;
     
-    // Simple file loader class (defined inline to avoid header dependencies)
-    class HtmlCssLoader {
+    /**
+     * @brief Hot-reload file watcher for development
+     */
+    class UiFileWatcher {
     public:
-        HtmlCssLoader() = default;
-        ~HtmlCssLoader() = default;
+        UiFileWatcher() = default;
+        ~UiFileWatcher();
         
         // Non-copyable but movable
-        HtmlCssLoader(const HtmlCssLoader&) = delete;
-        HtmlCssLoader& operator=(const HtmlCssLoader&) = delete;
-        HtmlCssLoader(HtmlCssLoader&&) = default;
-        HtmlCssLoader& operator=(HtmlCssLoader&&) = default;
+        UiFileWatcher(const UiFileWatcher&) = delete;
+        UiFileWatcher& operator=(const UiFileWatcher&) = delete;
+        UiFileWatcher(UiFileWatcher&&) noexcept;
+        UiFileWatcher& operator=(UiFileWatcher&&) noexcept;
         
-        ReloadEvent loadFile(const std::filesystem::path& filePath);
-        bool startWatching(const std::filesystem::path& filePath, FileChangeCallback callback);
+        bool startWatching(const std::filesystem::path& filePath, UiChangeCallback callback);
         void stopWatching();
         bool isWatching() const noexcept { return watching; }
+        MedicalUiContent loadContent(const std::filesystem::path& filePath);
         
     private:
         std::filesystem::path watchedFile;
-        FileChangeCallback changeCallback;
+        UiChangeCallback changeCallback;
         std::atomic<bool> watching{false};
         std::atomic<bool> shouldStop{false};
         std::thread watchThread;
@@ -132,14 +114,14 @@ struct Compliance {
 };
 
 /**
- * @brief Graphics support information
+ * @brief Vulkan integration capabilities
  */
-struct Graphics {
-    static constexpr bool isEnabled = true;
+struct VulkanSupport {
+    static constexpr bool isAvailable = true;
     
     /**
      * @brief Get available Vulkan API version string
-     * @return Vulkan version string (e.g., "Vulkan 1.4")
+     * @return Vulkan version string (e.g., "Vulkan 1.3")
      */
     static std::string getApiVersion() noexcept {
         uint32_t apiVersion = 0;
@@ -151,297 +133,248 @@ struct Graphics {
         return "Vulkan 1.3"; // Fallback for older implementations
     }
     
-    static constexpr std::string_view api = "Vulkan"; // Base API name
-
-    static constexpr std::string_view surfaceType =
-#ifdef MDUX_PLATFORM_WINDOWS
-        "Win32 Surface";
-#elif defined(MDUX_PLATFORM_LINUX)
-        "X11/Wayland Surface";
-#else
-        "Unknown";
-#endif
-
-    static constexpr std::uint32_t vulkanVersionMajor = MDUX_VULKAN_VERSION_MAJOR;
-    static constexpr std::uint32_t vulkanVersionMinor = MDUX_VULKAN_VERSION_MINOR;
-    static constexpr std::uint32_t vulkanVersionPatch = MDUX_VULKAN_VERSION_PATCH;
-    static constexpr bool validationLayersEnabled = MDUX_VULKAN_VALIDATION_LAYERS;
+    static constexpr std::string_view api = "Vulkan";
+    static constexpr std::uint32_t requiredVersionMajor = 1;
+    static constexpr std::uint32_t requiredVersionMinor = 3;
+    static constexpr std::uint32_t requiredVersionPatch = 0;
+    
+    /**
+     * @brief Check if a Vulkan device supports MduX requirements
+     * @param physicalDevice Vulkan physical device to check
+     * @return true if device is suitable for medical UI rendering
+     */
+    static bool isDeviceSuitable(VkPhysicalDevice physicalDevice) noexcept;
 };
 
 //=============================================================================
-// UI System Types
+// Vulkan Integration Types
 //=============================================================================
 
 /**
- * @brief UI rendering modes for overlay/underlay support
+ * @brief Vulkan rendering context provided by the user application
  */
-enum class UiRenderMode {
-    OVERLAY,    ///< UI rendered on top of 3D content
-    UNDERLAY,   ///< UI rendered behind 3D content  
-    INTEGRATED ///< UI integrated with 3D rendering
-};
-
-/**
- * @brief UI rendering callback interface
- */
-struct UiRenderer {
-    /**
-     * @brief Render UI content callback
-     * @param uiContent Current UI content to render
-     * @param renderMode How UI should be rendered relative to 3D content
-     * @param deltaTime Time since last frame for animations
-     */
-    std::function<void(const UiContent&, UiRenderMode, float)> renderCallback;
+struct VulkanContext {
+    VkDevice device;                   ///< Vulkan logical device
+    VkPhysicalDevice physicalDevice;   ///< Vulkan physical device  
+    VkCommandBuffer commandBuffer;     ///< Active command buffer for recording
+    VkRenderPass renderPass;          ///< Compatible render pass
+    VkExtent2D renderExtent;          ///< Render area dimensions
+    uint32_t currentFrame;            ///< Current frame index
+    float deltaTime;                  ///< Time since last frame (seconds)
     
     /**
-     * @brief UI content update callback (optional)
-     * @param uiContent New UI content loaded from file
+     * @brief Validate that context has all required handles
+     * @return true if context is valid for MduX rendering
      */
-    std::function<void(const UiContent&)> contentUpdateCallback;
-    
-    /**
-     * @brief Check if renderer is valid
-     */
-    bool isValid() const noexcept { 
-        return static_cast<bool>(renderCallback); 
+    bool isValid() const noexcept {
+        return device != VK_NULL_HANDLE && 
+               physicalDevice != VK_NULL_HANDLE &&
+               commandBuffer != VK_NULL_HANDLE && 
+               renderPass != VK_NULL_HANDLE;
     }
 };
 
 /**
- * @brief UI integration configuration
+ * @brief Medical device compliance metadata
  */
-struct UiIntegration {
-    UiRenderMode renderMode = UiRenderMode::OVERLAY;  ///< Default render mode
-    bool enableHotReload = true;                      ///< Enable hot-reload by default
-    std::filesystem::path htmlCssPath;                ///< Path to UI definition file
-    UiRenderer renderer;                              ///< UI renderer callbacks
+struct ComplianceMetadata {
+    std::string deviceClass;           ///< Medical device class (A/B/C)
+    std::string standardsCompliance;   ///< Standards compliance (e.g., "IEC 62304, IEC 62366")
+    std::string version;              ///< Software version for traceability
+    std::string buildId;              ///< Build identifier for regulatory tracking
+    bool auditTrailEnabled = true;    ///< Enable audit trail logging
     
     /**
-     * @brief Check if integration is properly configured
+     * @brief Check if compliance metadata is complete
      */
-    bool isConfigured() const noexcept {
-        return !htmlCssPath.empty() && renderer.isValid();
+    bool isComplete() const noexcept {
+        return !deviceClass.empty() && !standardsCompliance.empty() && !version.empty();
     }
 };
 
 //=============================================================================
-// Window System
+// Medical UI Rendering System
 //=============================================================================
 
 /**
- * @brief Window configuration structure
+ * @brief Medical UI rendering configuration
  */
-struct WindowConfig {
-    std::uint32_t width = 800;
-    std::uint32_t height = 600;
-    std::string title = "MduX Medical Device Application";
-    bool resizable = true;
-    bool vsync = true;
-    bool fullscreen = false;
+struct MedicalUiConfig {
+    std::filesystem::path uiDefinitionPath;   ///< Path to HTML/CSS UI definition
+    ComplianceMetadata compliance;            ///< Medical device compliance metadata
+    bool enableHotReload = false;             ///< Enable hot-reload for development
+    bool enableValidation = true;             ///< Enable medical compliance validation
+    std::string rendererId;                   ///< Unique renderer identifier for traceability
     
     /**
-     * @brief Create WindowConfig from HTML/CSS file
-     * @param htmlCssPath Path to HTML or CSS file
-     * @return WindowConfig with properties from file, or default values on error
+     * @brief Check if configuration is valid
      */
-    static WindowConfig fromHtmlCss(const std::filesystem::path& htmlCssPath);
+    bool isValid() const noexcept {
+        return !uiDefinitionPath.empty() && 
+               compliance.isComplete() && 
+               !rendererId.empty();
+    }
 };
 
-// GLFW reference counter for proper lifecycle management (when available)
-#ifdef MDUX_GLFW_AVAILABLE
-namespace detail {
-    extern std::atomic<int> glfwRefCount;
-    extern std::mutex glfwMutex;
-}
-#endif
-
 /**
- * @brief Cross-platform window class for medical device UI with Vulkan support
+ * @brief Medical UI render statistics for compliance monitoring
  */
-class Window {
+struct RenderStatistics {
+    uint64_t frameCount = 0;              ///< Total frames rendered
+    float averageFrameTime = 0.0f;       ///< Average frame time in milliseconds
+    uint64_t validationErrors = 0;       ///< Count of validation errors
+    std::chrono::system_clock::time_point lastRender; ///< Timestamp of last render
+    
+    /**
+     * @brief Update statistics with new frame timing
+     */
+    void updateFrame(float frameTime) noexcept {
+        frameCount++;
+        averageFrameTime = (averageFrameTime * static_cast<float>(frameCount - 1) + frameTime) / static_cast<float>(frameCount);
+        lastRender = std::chrono::system_clock::now();
+    }
+};
+
+//=============================================================================
+// Medical UI Renderer Core
+//=============================================================================
+
+class MedicalUiRenderer {
 private:
-#ifdef MDUX_GLFW_AVAILABLE
-    GLFWwindow* window = nullptr;
-#else
-    void* window = nullptr;  // Placeholder when GLFW not available
-#endif
-    WindowConfig config;
-    VkSurfaceKHR surface;
-    VkInstance instance;
+    // Core Vulkan resources (provided by user)
+    VkDevice device = VK_NULL_HANDLE;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     
-    // UI integration support
-    std::unique_ptr<UiIntegration> uiIntegration;
-    std::unique_ptr<HtmlCssLoader> uiLoader;
-    UiContent currentUiContent;
-    std::chrono::steady_clock::time_point lastFrameTime;
-
+    // MduX-managed resources
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline uiPipeline = VK_NULL_HANDLE;
+    
+    // UI content and configuration
+    MedicalUiConfig config;
+    MedicalUiContent currentContent;
+    std::unique_ptr<UiFileWatcher> fileWatcher;
+    RenderStatistics statistics;
+    
+    // Compliance and validation
+    std::vector<std::string> validationErrors;
+    bool complianceValidated = false;
+    
 public:
     /**
-     * @brief Create a new window with configuration from HTML/CSS file
-     * @param htmlCssPath Path to HTML or CSS file containing window configuration
+     * @brief Create medical UI renderer for existing Vulkan application
+     * @param vulkanContext User's Vulkan context
+     * @param config Medical UI configuration
      */
-    explicit Window(const std::filesystem::path& htmlCssPath);
+    explicit MedicalUiRenderer(const VulkanContext& vulkanContext, const MedicalUiConfig& config);
     
     /**
-     * @brief Create a new window with specified configuration
-     * @param config Window configuration parameters
+     * @brief Destructor - cleanup MduX resources
      */
-    explicit Window(const WindowConfig& windowConfig = {});
-
-    /**
-     * @brief Destructor - cleanup window resources
-     */
-    ~Window();
-
+    ~MedicalUiRenderer();
+    
     // Non-copyable but movable
-    Window(const Window&) = delete;
-    Window& operator=(const Window&) = delete;
-    Window(Window&& other) noexcept;
-    Window& operator=(Window&& other) noexcept;
-
-    /**
-     * @brief Check if window should close
-     * @return true if window should close, false otherwise
-     */
-    bool shouldClose() const noexcept;
-
-    /**
-     * @brief Process window events
-     */
-    void pollEvents() noexcept;
-
-    /**
-     * @brief Present rendered frame (Vulkan equivalent of swap buffers)
-     */
-    void presentFrame() noexcept;
-
-    /**
-     * @brief Get window size
-     * @return pair of width and height
-     */
-    std::pair<int, int> getSize() const noexcept;
-
-    /**
-     * @brief Set window title
-     * @param title New window title
-     */
-    void setTitle(std::string_view title) noexcept;
-
-    /**
-     * @brief Set window size (resize existing window)
-     * @param width New window width
-     * @param height New window height
-     */
-    void setSize(int width, int height) noexcept;
-
-    /**
-     * @brief Apply window configuration without recreation
-     * @param newConfig Configuration to apply
-     * @return true if applied successfully, false if recreation needed
-     */
-    bool applyConfig(const WindowConfig& newConfig) noexcept;
-
-    /**
-     * @brief Get native window handle
-     * @return Native window handle (GLFWwindow* when GLFW available, nullptr otherwise)
-     */
-#ifdef MDUX_GLFW_AVAILABLE
-    GLFWwindow* getNativeHandle() const noexcept;
-#else
-    void* getNativeHandle() const noexcept;
-#endif
-
-    /**
-     * @brief Get Vulkan surface
-     * @return Vulkan surface handle
-     */
-    VkSurfaceKHR getSurface() const noexcept;
-
-    /**
-     * @brief Get Vulkan instance
-     * @return Vulkan instance handle
-     */
-    VkInstance getInstance() const noexcept;
+    MedicalUiRenderer(const MedicalUiRenderer&) = delete;
+    MedicalUiRenderer& operator=(const MedicalUiRenderer&) = delete;
+    MedicalUiRenderer(MedicalUiRenderer&& other) noexcept;
+    MedicalUiRenderer& operator=(MedicalUiRenderer&& other) noexcept;
     
     /**
-     * @brief Configure UI integration for overlay/underlay rendering
-     * @param integration UI integration configuration
-     * @return true if UI integration was set up successfully
+     * @brief Load UI definition from file
+     * @param filePath Path to HTML/CSS UI definition
+     * @return true if loaded successfully
      */
-    bool setupUiIntegration(UiIntegration integration);
+    bool loadUiDefinition(const std::filesystem::path& filePath);
     
     /**
-     * @brief Update UI content manually (without hot-reload)
-     * @param uiContent New UI content to display
+     * @brief Render medical UI into user's command buffer
+     * @param context Current Vulkan rendering context
+     * @return true if rendered successfully
      */
-    void updateUiContent(const UiContent& uiContent);
+    bool render(const VulkanContext& context);
+    
+    /**
+     * @brief Update UI content programmatically
+     * @param content New UI content
+     * @return true if updated successfully
+     */
+    bool updateContent(const MedicalUiContent& content);
+    
+    /**
+     * @brief Enable/disable hot-reload for development
+     * @param enable Enable hot-reload functionality
+     * @return true if hot-reload state changed successfully
+     */
+    bool setHotReloadEnabled(bool enable);
     
     /**
      * @brief Get current UI content
-     * @return Current UI content being displayed
+     * @return Current medical UI content
      */
-    const UiContent& getCurrentUiContent() const noexcept;
+    const MedicalUiContent& getCurrentContent() const noexcept { return currentContent; }
     
     /**
-     * @brief Check if UI integration is active
-     * @return true if UI integration is configured and active
+     * @brief Get render statistics for compliance monitoring
+     * @return Current render statistics
      */
-    bool hasUiIntegration() const noexcept;
+    const RenderStatistics& getStatistics() const noexcept { return statistics; }
     
     /**
-     * @brief Get UI render mode
-     * @return Current UI render mode (overlay/underlay/integrated)
+     * @brief Get compliance metadata
+     * @return Medical device compliance metadata
      */
-    UiRenderMode getUiRenderMode() const noexcept;
+    const ComplianceMetadata& getCompliance() const noexcept { return config.compliance; }
     
     /**
-     * @brief Render UI content (called during frame rendering)
-     * @param deltaTime Time since last frame for animations
-     * 
-     * This method should be called by the user's rendering loop at the
-     * appropriate point (before 3D content for underlay, after for overlay)
+     * @brief Validate medical compliance
+     * @return true if all compliance requirements are met
      */
-    void renderUi(float deltaTime = 0.0f);
+    bool validateCompliance();
     
     /**
-     * @brief Stop UI integration and hot-reload
+     * @brief Get validation errors
+     * @return List of current validation errors
      */
-    void stopUiIntegration();
-
+    const std::vector<std::string>& getValidationErrors() const noexcept { return validationErrors; }
+    
 private:
     /**
-     * @brief Configure GLFW platform hints based on environment detection
+     * @brief Initialize Vulkan resources for UI rendering
+     * @param renderPass Compatible render pass from user
+     * @return true if initialization successful
      */
-    void configurePlatformHints();
+    bool initializeVulkanResources(VkRenderPass renderPass);
     
     /**
-     * @brief Secure cross-platform environment variable access
-     * @param name Environment variable name
-     * @return Environment variable value or nullptr if not found
+     * @brief Cleanup MduX Vulkan resources
      */
-    const char* getEnvironmentVariable(const char* name) const noexcept;
+    void cleanupVulkanResources();
     
     /**
-     * @brief Detect if running in WSL environment
-     * @return true if WSL detected, false otherwise
+     * @brief Create descriptor set layout for UI rendering
+     * @return true if successful
      */
-    bool isWslEnvironment() const noexcept;
-
-    /**
-     * @brief Initialize Vulkan instance and surface
-     */
-    void initializeVulkan();
-
-    /**
-     * @brief Cleanup Vulkan resources
-     */
-    void cleanupVulkan();
+    bool createDescriptorSetLayout();
     
     /**
-     * @brief Handle UI hot-reload events
-     * @param event Reload event with updated content
+     * @brief Create graphics pipeline for UI rendering
+     * @param renderPass Compatible render pass
+     * @return true if successful
      */
-    void onUiReload(const ReloadEvent& event);
+    bool createGraphicsPipeline(VkRenderPass renderPass);
+    
+    /**
+     * @brief Handle hot-reload events
+     * @param event UI reload event
+     */
+    void onHotReload(const UiReloadEvent& event);
+    
+    /**
+     * @brief Validate medical device compliance requirements
+     * @return true if compliant
+     */
+    bool performComplianceValidation();
 };
 
 //=============================================================================

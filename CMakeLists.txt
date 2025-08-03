@@ -200,16 +200,7 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(MduX_options INTERFACE Vulkan::Vulkan Threads::Threads)
 
-CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4 OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF" "GLFW_BUILD_WAYLAND ON" "GLFW_BUILD_X11 ON")
-
-# Configure GLFW integration when available
-if(TARGET glfw)
-    set_target_properties(glfw PROPERTIES CXX_MODULE_STD OFF)
-    # Define MDUX_GLFW_AVAILABLE when GLFW is available
-    target_compile_definitions(MduX_options INTERFACE MDUX_GLFW_AVAILABLE=1)
-    # Link privately to avoid export issues
-    target_link_libraries(MduX PRIVATE glfw)
-endif()
+# MduX is now a pure Vulkan complement library - no windowing dependencies needed
 
 # Windows runtime library configuration
 if(MSVC)

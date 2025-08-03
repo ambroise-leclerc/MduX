@@ -1,19 +1,16 @@
 /**
  * @brief MduX C++23 Module Implementation - Medical Device User eXperience Library
  * 
- * Implementation file for ultra-sleek C++23 modules-based medical device UI library.
- * This implementation provides the actual functionality for all exported interfaces.
+ * Pure Vulkan complement library implementation for medical device UI.
+ * Integrates with existing Vulkan applications without windowing dependencies.
  */
 
 // Global module fragment for implementation
 module;
 
-// Module implementation needs headers in global fragment too
-#ifdef MDUX_GLFW_AVAILABLE
-    #define GLFW_INCLUDE_VULKAN
-    #include <GLFW/glfw3.h>
-#endif
+// Pure Vulkan integration - no windowing dependencies
 #include <vulkan/vulkan.h>
+#include <cstring>  // For strcmp and memset
 
 // Module declaration
 module mdux;
@@ -23,89 +20,76 @@ import std;
 
 namespace mdux {
 
-#ifdef MDUX_GLFW_AVAILABLE
-// Define GLFW reference counter variables
-namespace detail {
-    std::atomic<int> glfwRefCount{0};
-    std::mutex glfwMutex;
-}
-#endif
-
 //=============================================================================
-// HtmlCssLoader Implementation
+// VulkanSupport Implementation
 //=============================================================================
 
-ReloadEvent HtmlCssLoader::loadFile(const std::filesystem::path& filePath) {
-    ReloadEvent event;
-    event.filePath = filePath;
-    
-    try {
-        if (!std::filesystem::exists(filePath)) {
-            event.errorMessage = "File does not exist: " + filePath.string();
-            return event;
-        }
-        
-        // Read file content
-        std::ifstream file(filePath);
-        if (!file.is_open()) {
-            event.errorMessage = "Cannot open file: " + filePath.string();
-            return event;
-        }
-        
-        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        
-        // Simple parsing for HTML and CSS content
-        event.uiContent.htmlContent = content;
-        event.uiContent.title = "MduX Application";
-        
-        // Extract window configuration from CSS
-        auto extractCssValue = [&](const std::string& property) -> std::string {
-            auto pos = content.find(property + ":");
-            if (pos != std::string::npos) {
-                auto start = content.find_first_not_of(" \t", pos + property.length() + 1);
-                auto end = content.find_first_of(";\n}", start);
-                if (start != std::string::npos && end != std::string::npos) {
-                    return content.substr(start, end - start);
-                }
-            }
-            return {};
-        };
-        
-        // Parse window properties
-        auto width = extractCssValue("width");
-        auto height = extractCssValue("height");
-        auto title = extractCssValue("title");
-        
-        if (!width.empty() && width.back() == 'x') width.pop_back();
-        if (!height.empty() && height.back() == 'x') height.pop_back();
-        if (!title.empty() && title.front() == '"' && title.back() == '"') {
-            title = title.substr(1, title.length() - 2);
-            event.uiContent.title = title;
-        }
-        
-        if (!width.empty()) {
-            event.windowStyle.width = static_cast<std::uint32_t>(std::stoi(width));
-            event.windowConfigChanged = true;
-        }
-        if (!height.empty()) {
-            event.windowStyle.height = static_cast<std::uint32_t>(std::stoi(height));
-            event.windowConfigChanged = true;
-        }
-        if (!title.empty()) {
-            event.windowStyle.title = title;
-            event.windowConfigChanged = true;
-        }
-        
-        event.uiContentChanged = true;
-        
-    } catch (const std::exception& e) {
-        event.errorMessage = "Error loading file: " + std::string(e.what());
+bool VulkanSupport::isDeviceSuitable(VkPhysicalDevice physicalDevice) noexcept {
+    if (physicalDevice == VK_NULL_HANDLE) {
+        return false;
     }
     
-    return event;
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+    
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
+    
+    // Check API version compatibility
+    uint32_t apiVersion = deviceProperties.apiVersion;
+    uint32_t major = VK_VERSION_MAJOR(apiVersion);
+    uint32_t minor = VK_VERSION_MINOR(apiVersion);
+    
+    if (major < requiredVersionMajor || 
+        (major == requiredVersionMajor && minor < requiredVersionMinor)) {
+        return false;
+    }
+    
+    // Check for required features for UI rendering
+    if (!deviceFeatures.samplerAnisotropy || !deviceFeatures.fillModeNonSolid) {
+        return false;
+    }
+    
+    return true;
 }
 
-bool HtmlCssLoader::startWatching(const std::filesystem::path& filePath, FileChangeCallback callback) {
+//=============================================================================
+// UiFileWatcher Implementation
+//=============================================================================
+
+UiFileWatcher::~UiFileWatcher() {
+    stopWatching();
+}
+
+UiFileWatcher::UiFileWatcher(UiFileWatcher&& other) noexcept
+    : watchedFile(std::move(other.watchedFile)),
+      changeCallback(std::move(other.changeCallback)),
+      watching(other.watching.load()),
+      shouldStop(other.shouldStop.load()),
+      watchThread(std::move(other.watchThread)),
+      lastWriteTime(other.lastWriteTime) {
+    other.watching.store(false);
+    other.shouldStop.store(false);
+}
+
+UiFileWatcher& UiFileWatcher::operator=(UiFileWatcher&& other) noexcept {
+    if (this != &other) {
+        stopWatching();
+        
+        watchedFile = std::move(other.watchedFile);
+        changeCallback = std::move(other.changeCallback);
+        watching.store(other.watching.load());
+        shouldStop.store(other.shouldStop.load());
+        watchThread = std::move(other.watchThread);
+        lastWriteTime = other.lastWriteTime;
+        
+        other.watching.store(false);
+        other.shouldStop.store(false);
+    }
+    return *this;
+}
+
+bool UiFileWatcher::startWatching(const std::filesystem::path& filePath, UiChangeCallback callback) {
     if (watching.load()) {
         return false; // Already watching
     }
@@ -116,13 +100,13 @@ bool HtmlCssLoader::startWatching(const std::filesystem::path& filePath, FileCha
     lastWriteTime = getFileTime(filePath);
     
     // Start watch thread
-    watchThread = std::thread(&HtmlCssLoader::watchLoop, this);
+    watchThread = std::thread(&UiFileWatcher::watchLoop, this);
     watching.store(true);
     
     return true;
 }
 
-void HtmlCssLoader::stopWatching() {
+void UiFileWatcher::stopWatching() {
     if (watching.load()) {
         shouldStop.store(true);
         if (watchThread.joinable()) {
@@ -132,7 +116,49 @@ void HtmlCssLoader::stopWatching() {
     }
 }
 
-void HtmlCssLoader::watchLoop() {
+MedicalUiContent UiFileWatcher::loadContent(const std::filesystem::path& filePath) {
+    MedicalUiContent content;
+    content.identifier = filePath.filename().string();
+    content.version = "1.0.0"; // Default version
+    
+    try {
+        if (!std::filesystem::exists(filePath)) {
+            content.validationErrors.push_back("File does not exist: " + filePath.string());
+            return content;
+        }
+        
+        // Read file content
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            content.validationErrors.push_back("Cannot open file: " + filePath.string());
+            return content;
+        }
+        
+        std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        
+        // Simple content parsing - in a real implementation, this would be more sophisticated
+        if (filePath.extension() == ".html" || fileContent.find("<html") != std::string::npos) {
+            content.htmlContent = fileContent;
+        } else if (filePath.extension() == ".css" || fileContent.find("{") != std::string::npos) {
+            content.cssContent = fileContent;
+        } else {
+            // Assume mixed HTML/CSS content
+            content.htmlContent = fileContent;
+        }
+        
+        // Basic validation
+        if (content.htmlContent.empty() && content.cssContent.empty()) {
+            content.validationErrors.push_back("No valid HTML or CSS content found");
+        }
+        
+    } catch (const std::exception& e) {
+        content.validationErrors.push_back("Error loading file: " + std::string(e.what()));
+    }
+    
+    return content;
+}
+
+void UiFileWatcher::watchLoop() {
     while (!shouldStop.load()) {
         try {
             auto currentTime = getFileTime(watchedFile);
@@ -140,7 +166,12 @@ void HtmlCssLoader::watchLoop() {
                 lastWriteTime = currentTime;
                 
                 // File changed, reload and notify
-                auto event = loadFile(watchedFile);
+                UiReloadEvent event;
+                event.filePath = watchedFile;
+                event.uiContent = loadContent(watchedFile);
+                event.contentChanged = true;
+                event.timestamp = std::chrono::system_clock::now();
+                
                 if (changeCallback) {
                     changeCallback(event);
                 }
@@ -154,7 +185,7 @@ void HtmlCssLoader::watchLoop() {
     }
 }
 
-std::filesystem::file_time_type HtmlCssLoader::getFileTime(const std::filesystem::path& path) {
+std::filesystem::file_time_type UiFileWatcher::getFileTime(const std::filesystem::path& path) {
     try {
         if (std::filesystem::exists(path)) {
             return std::filesystem::last_write_time(path);
@@ -166,638 +197,380 @@ std::filesystem::file_time_type HtmlCssLoader::getFileTime(const std::filesystem
 }
 
 //=============================================================================
-// WindowConfig Implementation
+// MedicalUiRenderer Implementation
 //=============================================================================
 
-WindowConfig WindowConfig::fromHtmlCss(const std::filesystem::path& htmlCssPath) {
-    WindowConfig config;
+MedicalUiRenderer::MedicalUiRenderer(const VulkanContext& vulkanContext, const MedicalUiConfig& uiConfig)
+    : device(vulkanContext.device), physicalDevice(vulkanContext.physicalDevice), config(uiConfig) {
     
-    // Minimal CSS parsing for window configuration
-    try {
-        if (std::filesystem::exists(htmlCssPath)) {
-            std::ifstream file(htmlCssPath);
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            
-            // Simple CSS property extraction
-            auto extractValue = [&](const std::string& property) -> std::string {
-                auto pos = content.find(property + ":");
-                if (pos != std::string::npos) {
-                    auto start = content.find_first_not_of(" \t", pos + property.length() + 1);
-                    auto end = content.find_first_of(";\n}", start);
-                    if (start != std::string::npos && end != std::string::npos) {
-                        return content.substr(start, end - start);
-                    }
-                }
-                return {};
-            };
-            
-            // Extract window properties
-            auto width = extractValue("width");
-            auto height = extractValue("height");
-            auto title = extractValue("title");
-            
-            if (!width.empty() && width.back() == 'x') width.pop_back();
-            if (!height.empty() && height.back() == 'x') height.pop_back();
-            if (!title.empty() && title.front() == '"' && title.back() == '"') {
-                title = title.substr(1, title.length() - 2);
-            }
-            
-            if (!width.empty()) config.width = static_cast<std::uint32_t>(std::stoi(width));
-            if (!height.empty()) config.height = static_cast<std::uint32_t>(std::stoi(height));
-            if (!title.empty()) config.title = title;
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Failed to load window config from " << htmlCssPath.string() 
-                  << ": " << e.what() << ". Using defaults." << std::endl;
+    if (!vulkanContext.isValid()) {
+        throw std::invalid_argument("Invalid Vulkan context provided to MedicalUiRenderer");
     }
     
-    return config;
-}
-
-//=============================================================================
-// Window Implementation
-//=============================================================================
-
-#ifdef MDUX_GLFW_AVAILABLE
-
-Window::Window(const std::filesystem::path& htmlCssPath) 
-    : Window(WindowConfig::fromHtmlCss(htmlCssPath)) {
-}
-
-Window::Window(const WindowConfig& windowConfig) : config(windowConfig) {
-    // Smart platform selection for cross-platform compatibility
-    configurePlatformHints();
+    if (!config.isValid()) {
+        throw std::invalid_argument("Invalid medical UI configuration provided");
+    }
     
-    // Thread-safe GLFW initialization with reference counting
-    {
-        std::lock_guard<std::mutex> lock(detail::glfwMutex);
-        if (detail::glfwRefCount.fetch_add(1) == 0) {
-            if (!glfwInit()) {
-                detail::glfwRefCount.fetch_sub(1);
-                throw std::runtime_error("Failed to initialize GLFW");
-            }
-        }
+    // Load initial UI content
+    if (!loadUiDefinition(config.uiDefinitionPath)) {
+        throw std::runtime_error("Failed to load UI definition from: " + config.uiDefinitionPath.string());
     }
-
-    // Set Vulkan hints as per ADR-001 revision
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, windowConfig.resizable ? GLFW_TRUE : GLFW_FALSE);
-
-    // Create window
-    window = glfwCreateWindow(static_cast<int>(windowConfig.width), static_cast<int>(windowConfig.height),
-                                windowConfig.title.data(),
-                                windowConfig.fullscreen ? glfwGetPrimaryMonitor() : nullptr, nullptr);
-
-    if (!window) {
-        // Decrement ref count if window creation failed
-        {
-            std::lock_guard<std::mutex> lock(detail::glfwMutex);
-            if (detail::glfwRefCount.fetch_sub(1) == 1) {
-                glfwTerminate();
-            }
-        }
-        throw std::runtime_error("Failed to create GLFW window");
-    }
-
-    // Set user pointer for callbacks
-    glfwSetWindowUserPointer(window, this);
-
-    // Show the window (required for visibility in some environments)
-    glfwShowWindow(window);
     
-    // WSL debug: Force window to front and center
-    glfwFocusWindow(window);
+    // Initialize Vulkan resources
+    if (!initializeVulkanResources(vulkanContext.renderPass)) {
+        throw std::runtime_error("Failed to initialize Vulkan resources for medical UI renderer");
+    }
     
-    // Center window on screen for better visibility
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    if (monitor) {
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-        if (mode) {
-            int xpos = (mode->width - static_cast<int>(windowConfig.width)) / 2;
-            int ypos = (mode->height - static_cast<int>(windowConfig.height)) / 2;
-            glfwSetWindowPos(window, xpos, ypos);
-        }
+    // Set up hot-reload if enabled
+    if (config.enableHotReload) {
+        setHotReloadEnabled(true);
     }
-
-    // Initialize Vulkan instance (basic setup)
-    initializeVulkan();
-}
-
-Window::~Window() {
-    stopUiIntegration();  // Clean up UI integration first
-    cleanupVulkan();
-    if (window) {
-        glfwDestroyWindow(window);
-    }
-    // Thread-safe GLFW cleanup with reference counting
-    {
-        std::lock_guard<std::mutex> lock(detail::glfwMutex);
-        if (detail::glfwRefCount.fetch_sub(1) == 1) {
-            glfwTerminate();
-        }
+    
+    // Perform initial compliance validation
+    if (config.enableValidation) {
+        validateCompliance();
     }
 }
 
-Window::Window(Window&& other) noexcept 
-    : window(other.window), config(other.config), surface(other.surface), instance(other.instance),
-      uiIntegration(std::move(other.uiIntegration)), uiLoader(std::move(other.uiLoader)),
-      currentUiContent(std::move(other.currentUiContent)), lastFrameTime(other.lastFrameTime) {
-    other.window = nullptr;
-    other.surface = VK_NULL_HANDLE;
-    other.instance = VK_NULL_HANDLE;
-    // No need to adjust ref count - just transferring ownership
+MedicalUiRenderer::~MedicalUiRenderer() {
+    if (fileWatcher) {
+        fileWatcher->stopWatching();
+    }
+    cleanupVulkanResources();
 }
 
-Window& Window::operator=(Window&& other) noexcept {
+MedicalUiRenderer::MedicalUiRenderer(MedicalUiRenderer&& other) noexcept
+    : device(other.device), physicalDevice(other.physicalDevice),
+      descriptorSetLayout(other.descriptorSetLayout), descriptorPool(other.descriptorPool),
+      pipelineLayout(other.pipelineLayout), uiPipeline(other.uiPipeline),
+      config(std::move(other.config)), currentContent(std::move(other.currentContent)),
+      fileWatcher(std::move(other.fileWatcher)), statistics(other.statistics),
+      validationErrors(std::move(other.validationErrors)), complianceValidated(other.complianceValidated) {
+    
+    other.device = VK_NULL_HANDLE;
+    other.physicalDevice = VK_NULL_HANDLE;
+    other.descriptorSetLayout = VK_NULL_HANDLE;
+    other.descriptorPool = VK_NULL_HANDLE;
+    other.pipelineLayout = VK_NULL_HANDLE;
+    other.uiPipeline = VK_NULL_HANDLE;
+    other.complianceValidated = false;
+}
+
+MedicalUiRenderer& MedicalUiRenderer::operator=(MedicalUiRenderer&& other) noexcept {
     if (this != &other) {
-        // Clean up current resources without adjusting ref count (will be transferred)
-        stopUiIntegration();  // Clean up UI integration
-        cleanupVulkan();
-        if (window) {
-            glfwDestroyWindow(window);
+        // Cleanup current resources
+        if (fileWatcher) {
+            fileWatcher->stopWatching();
         }
-        // Take ownership of other's resources
-        window = other.window;
-        config = other.config;
-        surface = other.surface;
-        instance = other.instance;
-        uiIntegration = std::move(other.uiIntegration);
-        uiLoader = std::move(other.uiLoader);
-        currentUiContent = std::move(other.currentUiContent);
-        lastFrameTime = other.lastFrameTime;
-        // Reset other's resources
-        other.window = nullptr;
-        other.surface = VK_NULL_HANDLE;
-        other.instance = VK_NULL_HANDLE;
-        // No ref count adjustment needed - just transferring ownership
+        cleanupVulkanResources();
+        
+        // Move other's resources
+        device = other.device;
+        physicalDevice = other.physicalDevice;
+        descriptorSetLayout = other.descriptorSetLayout;
+        descriptorPool = other.descriptorPool;
+        pipelineLayout = other.pipelineLayout;
+        uiPipeline = other.uiPipeline;
+        config = std::move(other.config);
+        currentContent = std::move(other.currentContent);
+        fileWatcher = std::move(other.fileWatcher);
+        statistics = other.statistics;
+        validationErrors = std::move(other.validationErrors);
+        complianceValidated = other.complianceValidated;
+        
+        // Reset other
+        other.device = VK_NULL_HANDLE;
+        other.physicalDevice = VK_NULL_HANDLE;
+        other.descriptorSetLayout = VK_NULL_HANDLE;
+        other.descriptorPool = VK_NULL_HANDLE;
+        other.pipelineLayout = VK_NULL_HANDLE;
+        other.uiPipeline = VK_NULL_HANDLE;
+        other.complianceValidated = false;
     }
     return *this;
 }
 
-bool Window::shouldClose() const noexcept { 
-    return window ? glfwWindowShouldClose(window) : true; 
-}
-
-void Window::pollEvents() noexcept { 
-    glfwPollEvents(); 
-}
-
-void Window::presentFrame() noexcept {
-    // Vulkan presentation will be implemented in future versions
-    // Currently a placeholder for API compatibility
-}
-
-std::pair<int, int> Window::getSize() const noexcept {
-    int width, height;
-    if (window) {
-        glfwGetWindowSize(window, &width, &height);
-        return {width, height};
-    }
-    return {0, 0};
-}
-
-void Window::setTitle(std::string_view title) noexcept {
-    if (window) {
-        glfwSetWindowTitle(window, title.data());
-    }
-}
-
-void Window::setSize(int width, int height) noexcept {
-    if (window) {
-        glfwSetWindowSize(window, width, height);
-        // Update internal config to reflect new size
-        config.width = static_cast<std::uint32_t>(width);
-        config.height = static_cast<std::uint32_t>(height);
-    }
-}
-
-bool Window::applyConfig(const WindowConfig& newConfig) noexcept {
-    if (!window) return false;
-    
-    bool needsRecreation = false;
-    
-    // Check if any properties require window recreation
-    if (config.fullscreen != newConfig.fullscreen ||
-        config.resizable != newConfig.resizable ||
-        config.vsync != newConfig.vsync) {
-        needsRecreation = true;
+bool MedicalUiRenderer::loadUiDefinition(const std::filesystem::path& filePath) {
+    if (!fileWatcher) {
+        fileWatcher = std::make_unique<UiFileWatcher>();
     }
     
-    if (needsRecreation) {
-        return false; // Caller should recreate window
-    }
+    currentContent = fileWatcher->loadContent(filePath);
     
-    // Apply properties that can be changed dynamically
-    if (config.width != newConfig.width || config.height != newConfig.height) {
-        setSize(static_cast<int>(newConfig.width), static_cast<int>(newConfig.height));
-    }
-    
-    if (config.title != newConfig.title) {
-        setTitle(newConfig.title);
-    }
-    
-    config = newConfig;
-    return true;
-}
-
-#ifdef MDUX_GLFW_AVAILABLE
-GLFWwindow* Window::getNativeHandle() const noexcept { 
-    return window; 
-}
-#else
-void* Window::getNativeHandle() const noexcept { 
-    return window; 
-}
-#endif
-
-VkSurfaceKHR Window::getSurface() const noexcept { 
-    return surface; 
-}
-
-VkInstance Window::getInstance() const noexcept { 
-    return instance; 
-}
-
-bool Window::setupUiIntegration(UiIntegration integration) {
-    if (!integration.isConfigured()) {
-        std::cerr << "Window: UI integration is not properly configured" << std::endl;
+    if (!currentContent.isValid()) {
+        validationErrors.insert(validationErrors.end(), 
+                              currentContent.validationErrors.begin(), 
+                              currentContent.validationErrors.end());
         return false;
     }
     
-    // Stop any existing integration
-    stopUiIntegration();
+    return true;
+}
+
+bool MedicalUiRenderer::render(const VulkanContext& context) {
+    if (!context.isValid()) {
+        validationErrors.push_back("Invalid Vulkan context provided for rendering");
+        return false;
+    }
     
-    // Store integration config
-    uiIntegration = std::make_unique<UiIntegration>(std::move(integration));
+    if (!currentContent.isValid()) {
+        validationErrors.push_back("No valid UI content available for rendering");
+        return false;
+    }
     
-    // Initialize UI loader if hot-reload is enabled
-    if (uiIntegration->enableHotReload) {
-        uiLoader = std::make_unique<HtmlCssLoader>();
-        
-        auto reloadCallback = [this](const ReloadEvent& event) {
-            this->onUiReload(event);
+    auto frameStart = std::chrono::high_resolution_clock::now();
+    
+    // Record UI rendering commands into the user's command buffer
+    // This is a simplified implementation - real UI rendering would involve:
+    // 1. Text rendering with font atlas
+    // 2. Shape rendering for CSS elements
+    // 3. Image rendering for media content
+    // 4. Interactive element handling
+    
+    // For now, we'll just record a basic clear command to demonstrate integration
+    // VkClearValue clearValue = {{{0.1f, 0.1f, 0.1f, 1.0f}}}; // Unused for now
+    
+    // The actual rendering would bind descriptor sets, pipeline, and draw UI elements
+    // This is a placeholder for medical UI rendering pipeline
+    
+    auto frameEnd = std::chrono::high_resolution_clock::now();
+    float frameTime = std::chrono::duration<float, std::milli>(frameEnd - frameStart).count();
+    
+    // Update statistics
+    statistics.updateFrame(frameTime);
+    
+    return true;
+}
+
+bool MedicalUiRenderer::updateContent(const MedicalUiContent& content) {
+    if (!content.isValid()) {
+        validationErrors.push_back("Invalid medical UI content provided for update");
+        return false;
+    }
+    
+    currentContent = content;
+    
+    // Revalidate compliance with new content
+    if (config.enableValidation) {
+        return validateCompliance();
+    }
+    
+    return true;
+}
+
+bool MedicalUiRenderer::setHotReloadEnabled(bool enable) {
+    if (enable && !fileWatcher) {
+        fileWatcher = std::make_unique<UiFileWatcher>();
+    }
+    
+    if (enable && fileWatcher && !fileWatcher->isWatching()) {
+        auto callback = [this](const UiReloadEvent& event) {
+            this->onHotReload(event);
         };
-        
-        if (!uiLoader->startWatching(uiIntegration->htmlCssPath, reloadCallback)) {
-            std::cerr << "Window: Failed to start UI hot-reload for " << uiIntegration->htmlCssPath.string() << std::endl;
-            return false;
-        }
-    } else {
-        // Load UI content once without hot-reload
-        HtmlCssLoader loader;
-        auto event = loader.loadFile(uiIntegration->htmlCssPath);
-        if (event.isSuccess()) {
-            currentUiContent = event.uiContent;
-        } else {
-            std::cerr << "Window: Failed to load UI content: " << event.errorMessage << std::endl;
-            return false;
-        }
+        return fileWatcher->startWatching(config.uiDefinitionPath, callback);
+    } else if (!enable && fileWatcher && fileWatcher->isWatching()) {
+        fileWatcher->stopWatching();
+        return true;
     }
     
-    // Initialize frame timing
-    lastFrameTime = std::chrono::steady_clock::now();
-    
-    std::cout << "Window: UI integration setup complete for " << uiIntegration->htmlCssPath.filename().string() << std::endl;
     return true;
 }
 
-void Window::updateUiContent(const UiContent& uiContent) {
-    currentUiContent = uiContent;
+bool MedicalUiRenderer::validateCompliance() {
+    validationErrors.clear();
     
-    // Notify renderer of content update
-    if (uiIntegration && uiIntegration->renderer.contentUpdateCallback) {
-        uiIntegration->renderer.contentUpdateCallback(currentUiContent);
-    }
-}
-
-const UiContent& Window::getCurrentUiContent() const noexcept { 
-    return currentUiContent; 
-}
-
-bool Window::hasUiIntegration() const noexcept { 
-    return uiIntegration && uiIntegration->isConfigured(); 
-}
-
-UiRenderMode Window::getUiRenderMode() const noexcept {
-    return uiIntegration ? uiIntegration->renderMode : UiRenderMode::OVERLAY;
-}
-
-void Window::renderUi(float deltaTime) {
-    if (!hasUiIntegration() || !uiIntegration->renderer.renderCallback) {
-        return;  // No UI integration or renderer configured
+    // Check compliance metadata completeness
+    if (!config.compliance.isComplete()) {
+        validationErrors.push_back("Incomplete medical device compliance metadata");
     }
     
-    // Calculate delta time if not provided
-    if (deltaTime <= 0.0f) {
-        auto currentTime = std::chrono::steady_clock::now();
-        deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
-        lastFrameTime = currentTime;
+    // Check UI content validity
+    if (!currentContent.hasContent()) {
+        validationErrors.push_back("No UI content available for compliance validation");
     }
     
-    // Call user's UI render callback
-    uiIntegration->renderer.renderCallback(currentUiContent, uiIntegration->renderMode, deltaTime);
-}
-
-void Window::stopUiIntegration() {
-    if (uiLoader) {
-        uiLoader->stopWatching();
-        uiLoader.reset();
+    // Check renderer configuration
+    if (config.rendererId.empty()) {
+        validationErrors.push_back("Missing renderer identifier for medical traceability");
     }
-    uiIntegration.reset();
-    currentUiContent = UiContent{};  // Clear UI content
+    
+    // Additional medical device specific validations would go here
+    // Example: Check for required accessibility features, contrast ratios, etc.
+    
+    complianceValidated = validationErrors.empty();
+    return complianceValidated;
 }
 
-void Window::configurePlatformHints() {
-    // Check for manual override via environment variable
-    const char* forcePlatform = getEnvironmentVariable("MDUX_FORCE_PLATFORM");
-    if (forcePlatform) {
-        if (std::string_view(forcePlatform) == "X11") {
-            glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
-            return;
-        } else if (std::string_view(forcePlatform) == "WAYLAND") {
-            glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
-            return;
+bool MedicalUiRenderer::initializeVulkanResources(VkRenderPass renderPass) {
+    // Create descriptor set layout for UI rendering
+    if (!createDescriptorSetLayout()) {
+        return false;
+    }
+    
+    // Create graphics pipeline for UI rendering
+    if (!createGraphicsPipeline(renderPass)) {
+        return false;
+    }
+    
+    // Create descriptor pool
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 10; // Allow for multiple textures
+    
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 10;
+    
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+        return false;
+    }
+    
+    return true;
+}
+
+void MedicalUiRenderer::cleanupVulkanResources() {
+    if (device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device);
+        
+        if (descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            descriptorPool = VK_NULL_HANDLE;
         }
-        // If invalid value, fall through to auto-detection
-    }
-    
-    // Detect WSL environment (needs X11 platform forcing)
-    if (isWslEnvironment()) {
-        glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
-        return;
-    }
-    
-    // For native Linux, let GLFW choose the best platform automatically
-    // This allows Wayland systems to use Wayland, X11 systems to use X11
-    // No platform hint = GLFW automatic selection
-}
-
-const char* Window::getEnvironmentVariable(const char* name) const noexcept {
-#ifdef _WIN32
-    // Windows: Use getenv for compatibility with import std
-    // Suppress deprecation warning as we need compatibility with import std
-    #pragma warning(push)
-    #pragma warning(disable: 4996)
-    return std::getenv(name);
-    #pragma warning(pop)
-#else
-    // Unix/Linux: getenv is safe on these platforms
-    return std::getenv(name);
-#endif
-}
-
-bool Window::isWslEnvironment() const noexcept {
-    // Method 1: Check /proc/version for Microsoft signature
-    std::ifstream procVersion("/proc/version");
-    if (procVersion.is_open()) {
-        std::string line;
-        if (std::getline(procVersion, line)) {
-            if (line.find("Microsoft") != std::string::npos || 
-                line.find("WSL") != std::string::npos) {
-                return true;
-            }
+        
+        if (uiPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, uiPipeline, nullptr);
+            uiPipeline = VK_NULL_HANDLE;
+        }
+        
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+        
+        if (descriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+            descriptorSetLayout = VK_NULL_HANDLE;
         }
     }
-    
-    // Method 2: Check WSL-specific environment variables
-    if (getEnvironmentVariable("WSL_DISTRO_NAME") || getEnvironmentVariable("WSLENV")) {
-        return true;
-    }
-    
-    // Method 3: Check for WSL filesystem signature
-    std::ifstream wslInterop("/proc/sys/fs/binfmt_misc/WSLInterop");
-    if (wslInterop.is_open()) {
-        return true;
-    }
-    
-    return false;
 }
 
-void Window::initializeVulkan() {
-    // Determine the highest available Vulkan API version
-    uint32_t apiVersion = VK_API_VERSION_1_3; // Fallback to 1.3
-    if (vkEnumerateInstanceVersion(&apiVersion) != VK_SUCCESS) {
-        apiVersion = VK_API_VERSION_1_3; // Use fallback if enumeration fails
+bool MedicalUiRenderer::createDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 0;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerLayoutBinding;
+    
+    return vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) == VK_SUCCESS;
+}
+
+bool MedicalUiRenderer::createGraphicsPipeline(VkRenderPass /* renderPass */) {
+    // Create pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        return false;
     }
     
-    // Basic Vulkan initialization using C API
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "MduX Medical Device Application";
-    appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.pEngineName = "MduX";
-    appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.apiVersion = apiVersion;
-
-    std::vector<const char*> extensions;
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-    extensions.assign(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledLayerCount = 0;
-    createInfo.ppEnabledLayerNames = nullptr;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan instance");
-    }
-
-    // Create surface
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan surface");
-    }
+    // This is a placeholder - real implementation would create vertex/fragment shaders
+    // for rendering HTML/CSS content as Vulkan geometry
+    
+    // For now, just create a minimal pipeline structure
+    // Real implementation would involve:
+    // 1. Vertex shader for UI quad rendering
+    // 2. Fragment shader for text/shape rendering
+    // 3. Vertex input descriptions
+    // 4. Rasterization state for UI rendering
+    // 5. Blend state for transparency
+    
+    return true;
 }
 
-void Window::cleanupVulkan() {
-    if (surface && instance) {
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        surface = VK_NULL_HANDLE;
-    }
-    if (instance) {
-        vkDestroyInstance(instance, nullptr);
-        instance = VK_NULL_HANDLE;
-    }
-}
-
-void Window::onUiReload(const ReloadEvent& event) {
+void MedicalUiRenderer::onHotReload(const UiReloadEvent& event) {
     if (!event.isSuccess()) {
-        std::cerr << "Window: UI reload failed: " << event.errorMessage << std::endl;
+        validationErrors.push_back("Hot-reload failed: " + event.errorMessage);
         return;
     }
     
-    // Check if window configuration changed
-    if (event.windowConfigChanged) {
-        std::cout << "Window: Window configuration changed, applying dynamic resize..." << std::endl;
-        
-        // Convert to WindowConfig and apply
-        WindowConfig newConfig = config;  // Start with current config
-        if (event.windowStyle.width) newConfig.width = *event.windowStyle.width;
-        if (event.windowStyle.height) newConfig.height = *event.windowStyle.height;
-        if (event.windowStyle.title) newConfig.title = *event.windowStyle.title;
-        if (event.windowStyle.resizable) newConfig.resizable = *event.windowStyle.resizable;
-        if (event.windowStyle.vsync) newConfig.vsync = *event.windowStyle.vsync;
-        if (event.windowStyle.fullscreen) newConfig.fullscreen = *event.windowStyle.fullscreen;
-        
-        // Apply configuration without recreation when possible
-        if (!applyConfig(newConfig)) {
-            std::cout << "Window: Window recreation required for configuration changes" << std::endl;
-            // Note: For full hot-reload, window recreation would need to be handled
-            // by the application, not the Window class itself
-        }
+    if (event.contentChanged) {
+        updateContent(event.uiContent);
     }
+}
+
+bool MedicalUiRenderer::performComplianceValidation() {
+    // This would implement comprehensive medical device compliance validation
+    // Including but not limited to:
+    // - IEC 62304 software lifecycle compliance
+    // - IEC 62366 usability engineering compliance
+    // - FDA 21 CFR Part 820 quality system compliance
+    // - Accessibility standards (Section 508, WCAG)
+    // - Risk management (ISO 14971)
     
-    // Update UI content if it changed
-    if (event.uiContentChanged) {
-        std::cout << "Window: UI content changed - updating without interrupting rendering" << std::endl;
-        updateUiContent(event.uiContent);
-    }
+    return validateCompliance();
 }
-
-#else // !MDUX_GLFW_AVAILABLE
-
-// Stub implementations when GLFW is not available
-Window::Window(const std::filesystem::path& htmlCssPath) 
-    : config(WindowConfig::fromHtmlCss(htmlCssPath)) {
-    // Stub implementation - no actual window creation
-}
-
-Window::Window(const WindowConfig& windowConfig) : config(windowConfig) {
-    // Stub implementation - no actual window creation
-}
-
-Window::~Window() {
-    // Stub implementation - no cleanup needed
-}
-
-Window::Window(Window&& other) noexcept 
-    : config(other.config), surface(other.surface), instance(other.instance) {
-    other.surface = VK_NULL_HANDLE;
-    other.instance = VK_NULL_HANDLE;
-}
-
-Window& Window::operator=(Window&& other) noexcept {
-    if (this != &other) {
-        config = other.config;
-        surface = other.surface;
-        instance = other.instance;
-        other.surface = VK_NULL_HANDLE;
-        other.instance = VK_NULL_HANDLE;
-    }
-    return *this;
-}
-
-bool Window::shouldClose() const noexcept { 
-    return false; // Stub - never closes
-}
-
-void Window::pollEvents() noexcept { 
-    // Stub implementation
-}
-
-void Window::presentFrame() noexcept {
-    // Stub implementation
-}
-
-std::pair<int, int> Window::getSize() const noexcept {
-    return {static_cast<int>(config.width), static_cast<int>(config.height)};
-}
-
-void Window::setTitle(std::string_view title) noexcept {
-    config.title = title;
-}
-
-void Window::setSize(int width, int height) noexcept {
-    config.width = static_cast<std::uint32_t>(width);
-    config.height = static_cast<std::uint32_t>(height);
-}
-
-bool Window::applyConfig(const WindowConfig& newConfig) noexcept {
-    config = newConfig;
-    return true;
-}
-
-VkSurfaceKHR Window::getSurface() const noexcept { 
-    return surface; 
-}
-
-VkInstance Window::getInstance() const noexcept { 
-    return instance; 
-}
-
-bool Window::setupUiIntegration(UiIntegration /*integration*/) {
-    // Stub implementation
-    return false;
-}
-
-void Window::updateUiContent(const UiContent& /*uiContent*/) {
-    // Stub implementation
-}
-
-const UiContent& Window::getCurrentUiContent() const noexcept { 
-    static UiContent empty;
-    return empty; 
-}
-
-bool Window::hasUiIntegration() const noexcept { 
-    return false; 
-}
-
-UiRenderMode Window::getUiRenderMode() const noexcept {
-    return UiRenderMode::OVERLAY;
-}
-
-void Window::renderUi(float /*deltaTime*/) {
-    // Stub implementation
-}
-
-void Window::stopUiIntegration() {
-    // Stub implementation
-}
-
-void Window::configurePlatformHints() {
-    // Stub implementation
-}
-
-const char* Window::getEnvironmentVariable(const char* /*name*/) const noexcept {
-    return nullptr; // Stub implementation
-}
-
-bool Window::isWslEnvironment() const noexcept {
-    return false; // Stub implementation
-}
-
-void Window::initializeVulkan() {
-    // Stub implementation
-}
-
-void Window::cleanupVulkan() {
-    // Stub implementation
-}
-
-void Window::onUiReload(const ReloadEvent& /*event*/) {
-    // Stub implementation
-}
-
-#endif // MDUX_GLFW_AVAILABLE
 
 //=============================================================================
 // Library Management Functions
 //=============================================================================
 
+static ComplianceMetadata globalCompliance;
+static bool libraryInitialized = false;
+
 bool initialize() noexcept {
-    // Vulkan initialization is handled per-window for better resource management
-    // This function can be used for global library initialization if needed
+    if (libraryInitialized) {
+        return true;
+    }
+    
+    // Use default compliance metadata
+    ComplianceMetadata defaultCompliance;
+    defaultCompliance.deviceClass = "Class B";
+    defaultCompliance.standardsCompliance = "IEC 62304, IEC 62366";
+    defaultCompliance.version = "1.0.0";
+    defaultCompliance.auditTrailEnabled = true;
+    
+    globalCompliance = defaultCompliance;
+    libraryInitialized = true;
+    
+    return true;
+}
+
+bool initialize(const ComplianceMetadata& compliance) noexcept {
+    if (libraryInitialized) {
+        return true;
+    }
+    
+    if (!compliance.isComplete()) {
+        return false;
+    }
+    
+    globalCompliance = compliance;
+    libraryInitialized = true;
+    
     return true;
 }
 
 void shutdown() noexcept {
-    // Global cleanup if needed
-    // Individual windows handle their own Vulkan cleanup
+    libraryInitialized = false;
+    globalCompliance = ComplianceMetadata{};
+}
+
+Version getVersion() noexcept {
+    return Version{};
+}
+
+bool checkVulkanCompatibility(VkPhysicalDevice physicalDevice) noexcept {
+    return VulkanSupport::isDeviceSuitable(physicalDevice);
 }
 
 } // namespace mdux

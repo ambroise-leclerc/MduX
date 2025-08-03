@@ -15,8 +15,12 @@
  *   ./MduXExample ui.html --hot      # Enables hot-reload
  */
 
+// Include Vulkan headers before modules for type definitions
+#include <vulkan/vulkan.h>
+
 import std;
 import mdux;
+import VulkanCubeRenderer;
 
 class MduXDemo {
 public:
@@ -59,6 +63,9 @@ public:
             // Display current configuration info
             displayConfigInfo();
             
+            // Setup Vulkan cube rendering demo
+            setupCubeRendering();
+            
             // Run main loop
             runMainLoop();
             
@@ -87,6 +94,9 @@ private:
     std::unique_ptr<mdux::HtmlCssLoader> hotReloadLoader;
     mdux::WindowConfig currentConfig;
     bool enableAnimation = true;
+    
+    // Vulkan cube rendering integration
+    std::unique_ptr<VulkanCubeRenderer> cubeRenderer;
     
     /**
      * @brief Parse command line arguments
@@ -380,6 +390,53 @@ private:
     }
     
     /**
+     * @brief Setup Vulkan cube rendering integration
+     */
+    void setupCubeRendering() {
+        std::cout << "\n╔═════════════════ Vulkan Cube Demo Setup ══════════════════╗\n";
+        std::cout << "║ Setting up Vulkan user rendering integration...          ║\n";
+        std::cout << "╚════════════════════════════════════════════════════════════╝\n";
+        
+        // Create cube renderer
+        cubeRenderer = std::make_unique<VulkanCubeRenderer>();
+        
+        // Initialize with IEC62304 logo
+        std::filesystem::path logoPath = "inputs/Logo.png";
+        if (!cubeRenderer->initialize(window->getInstance(), window->getSurface(), logoPath)) {
+            std::cerr << "❌ Failed to initialize cube renderer\n";
+            cubeRenderer.reset();
+            return;
+        }
+        
+        // Setup user rendering callbacks
+        mdux::UserRendering userRendering;
+        userRendering.preUiCallback = [this](const mdux::UserRenderContext& context, void* userData) {
+            // Update animation
+            if (cubeRenderer && enableAnimation) {
+                cubeRenderer->updateAnimation(context.deltaTime);
+            }
+            
+            // Render the textured cube before UI
+            if (cubeRenderer) {
+                cubeRenderer->renderCube(context, userData);
+            }
+        };
+        
+        userRendering.enableDepthTesting = true;
+        userRendering.enableMsaa = false; // Disabled for medical device performance
+        
+        if (window->setupUserRendering(std::move(userRendering))) {
+            std::cout << "✅ User rendering integration configured successfully!\n";
+            std::cout << "🎮 Cube will render behind UI content (pre-UI callback)\n";
+            std::cout << "🎯 IEC62304 logo texture will be applied to cube faces\n";
+            std::cout << "⏱️  Medical-appropriate slow rotation animation enabled\n";
+        } else {
+            std::cerr << "❌ Failed to setup user rendering integration\n";
+            cubeRenderer.reset();
+        }
+    }
+    
+    /**
      * @brief Display current window configuration
      */
     void displayConfigInfo() {
@@ -417,6 +474,12 @@ private:
         std::cout << "  • Close window or press ESC to exit\n";
         std::cout << "  • Window shows medical device UI rendering\n";
         
+        if (window->hasUserRendering()) {
+            std::cout << "  • 🎮 Vulkan cube demo: Vulkan user rendering integration\n";
+            std::cout << "  • 🎯 IEC62304 logo textured on rotating cube faces\n";
+            std::cout << "  • ⚡ Demonstrates pre-UI and post-UI callback system\n";
+        }
+        
         if (mode == Mode::HTML_HOT_RELOAD) {
             std::cout << "  • Modify " << htmlPath.filename().string() << " to see live updates\n";
             std::cout << "  • Watch the console for reload notifications\n";
@@ -451,9 +514,8 @@ private:
                 }
             }
             
-            // Present rendered frame (Vulkan presentation)
-            // Note: Actual rendering will be implemented in future versions
-            window->presentFrame();
+            // Execute full rendering pipeline (user callbacks + UI + presentation)
+            window->renderFrame(deltaTime);
             
             // Medical device stability: Limit to 60 FPS maximum
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
