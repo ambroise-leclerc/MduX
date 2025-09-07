@@ -45,8 +45,12 @@ jobs:
           & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
         }
         
-    - name: Configure CMake (MSVC)
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+    - name: Install Ninja
+      run: |
+        winget install Ninja-build.Ninja --accept-source-agreements --accept-package-agreements --disable-interactivity
+        
+    - name: Configure CMake (MSVC with Ninja)
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
       
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -83,11 +87,14 @@ jobs:
           
     - name: Install latest CMake
       run: |
-        # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
-        apt-get update
-        apt-get install -y cmake
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
         
     - name: Verify compiler and tools
       run: |
@@ -199,11 +206,14 @@ jobs:
           
     - name: Install latest CMake
       run: |
-        # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
-        apt-get update
-        apt-get install -y cmake
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
         
     - name: Configure with regulatory documentation
       run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
@@ -244,11 +254,14 @@ jobs:
           
     - name: Install latest CMake
       run: |
-        # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
-        apt-get update
-        apt-get install -y cmake
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
           
     - name: Run static analysis
       run: |
