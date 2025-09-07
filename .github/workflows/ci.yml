@@ -45,8 +45,8 @@ jobs:
           & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
         }
         
-    - name: Configure CMake
-      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+    - name: Configure CMake (MSVC)
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
       
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -77,13 +77,15 @@ jobs:
           spirv-tools \
           libglfw3-dev \
           xvfb \
-          wget
+          wget \
+          gnupg \
+          gnupg
           
     - name: Install latest CMake
       run: |
         # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
-        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
         apt-get update
         apt-get install -y cmake
         
@@ -154,7 +156,7 @@ jobs:
       run: |
         export CC=clang-20
         export CXX=clang++-20
-        cmake -B build -S . \
+        cmake -B build -S . -G Ninja \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_C_COMPILER=clang-20 \
           -DCMAKE_CXX_COMPILER=clang++-20 \
@@ -192,13 +194,14 @@ jobs:
           pkg-config \
           libvulkan-dev \
           vulkan-tools \
-          wget
+          wget \
+          gnupg
           
     - name: Install latest CMake
       run: |
         # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
-        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
         apt-get update
         apt-get install -y cmake
         
@@ -236,13 +239,14 @@ jobs:
           vulkan-tools \
           cppcheck \
           clang-tidy \
-          wget
+          wget \
+          gnupg
           
     - name: Install latest CMake
       run: |
         # Install CMake 4.x for C++23 import std support
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
-        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+        echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
         apt-get update
         apt-get install -y cmake
           
