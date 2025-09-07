@@ -2,7 +2,7 @@
 
 # Pure Vulkan medical UI integration example (NEW ARCHITECTURE)
 add_executable(MedicalUiExample 
-    MedicalUiExample.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MedicalUiExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
