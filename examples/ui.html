@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MduX Medical Device UI</title>
+    <style>
+        /* MduX Window Configuration */
+        body {
+            /* Window dimensions */
+            width: 1100px;
+            height: 750px;
+            
+            /* Window constraints */
+            min-width: 600px;
+            min-height: 600px;
+            max-width: 1920px;
+            max-height: 1080px;
+            
+            /* Window properties */
+            title: "MduX Medical Device - Development UI";
+            resizable: true;
+            vsync: true;
+            fullscreen: false;
+            
+            /* Visual styling (for future UI rendering) */
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        /* Medical device UI styling */
+        .header {
+            background-color: #2c5282;
+            color: white;
+            padding: 15px;
+            margin: -20px -20px 20px -20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .status-panel {
+            background-color: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2d3748;
+        }
+        
+        .value {
+            background-color: #edf2f7;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #cbd5e0;
+            font-family: monospace;
+        }
+        
+        .button {
+            background-color: #3182ce;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        
+        .button:hover {
+            background-color: #2c5282;
+        }
+        
+        .alert {
+            background-color: #fed7d7;
+            border: 1px solid #feb2b2;
+            color: #c53030;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            body {
+                padding: 10px;
+            }
+            
+            .header {
+                margin: -10px -10px 15px -10px;
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        🏥 Medical Device Control Interface
+    </div>
+    
+    <div class="alert">
+        <strong>Development Mode:</strong> This UI is running in development mode with hot-reload enabled. 
+        Modify this HTML file to see changes in real-time.
+    </div>
+    
+    <div class="status-panel">
+        <h2>System Status</h2>
+        
+        <div class="control-group">
+            <label class="label">Device Status:</label>
+            <div class="value">OPERATIONAL</div>
+        </div>
+        
+        <div class="control-group">
+            <label class="label">Battery Level:</label>
+            <div class="value">87%</div>
+        </div>
+        
+        <div class="control-group">
+            <label class="label">Last Calibration:</label>
+            <div class="value">2025-07-26 14:30:00</div>
+        </div>
+        
+        <div class="control-group">
+            <label class="label">Operating Temperature:</label>
+            <div class="value">22.5°C</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <h2>Control Actions</h2>
+        <p>Primary device controls and monitoring functions.</p>
+        
+        <button class="button">Start Procedure</button>
+        <button class="button">Calibrate</button>
+        <button class="button">View Logs</button>
+        <button class="button">Emergency Stop</button>
+    </div>
+    
+    <div class="status-panel">
+        <h2>Hot-Reload Instructions</h2>
+        <p>Try modifying the window properties in the CSS above:</p>
+        <ul>
+            <li>Change <code>width</code> and <code>height</code> to resize the window</li>
+            <li>Modify the <code>title</code> to change the window title</li>
+            <li>Set <code>resizable: false</code> to make the window fixed size</li>
+            <li>Adjust <code>min-width</code> and <code>max-width</code> to set size limits</li>
+        </ul>
+        <p>The window will automatically update when you save this file!</p>
+    </div>
+</body>
+</html>
