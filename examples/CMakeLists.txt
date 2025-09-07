@@ -1,8 +1,8 @@
 # Examples for MduX Medical Device UI Library
 
-# Medical UI integration example using existing MduXExample
+# Simple Medical UI integration example using committed module interface
 add_executable(MedicalUiExample 
-    MduXExample.cpp
+    SimpleMedicalUiExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)

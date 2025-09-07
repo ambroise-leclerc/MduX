@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Device Control Panel</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .control-panel {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #667eea;
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .compliance-badge {
+            background: #28a745;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+        
+        .metric-label {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .controls-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .control-group {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .control-group h3 {
+            color: #667eea;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            margin: 15px 0;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            flex: 1;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-active {
+            background: #28a745;
+            box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+        }
+        
+        .status-warning {
+            background: #ffc107;
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+        }
+        
+        .status-inactive {
+            background: #6c757d;
+        }
+        
+        .alert {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        @media (max-width: 768px) {
+            .controls-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="control-panel">
+        <div class="header">
+            <h1>Medical Device Control Panel</h1>
+            <div class="compliance-badge">IEC 62304 Class B Compliant</div>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Patient Heart Rate</div>
+                <div class="metric-value">72</div>
+                <div class="metric-label">BPM</div>
+                <span class="status-indicator status-active"></span>Normal
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Blood Pressure</div>
+                <div class="metric-value">120/80</div>
+                <div class="metric-label">mmHg</div>
+                <span class="status-indicator status-active"></span>Normal
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Temperature</div>
+                <div class="metric-value">98.6</div>
+                <div class="metric-label">°F</div>
+                <span class="status-indicator status-active"></span>Normal
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">SpO2 Level</div>
+                <div class="metric-value">98</div>
+                <div class="metric-label">%</div>
+                <span class="status-indicator status-active"></span>Normal
+            </div>
+        </div>
+        
+        <div class="controls-section">
+            <div class="control-group">
+                <h3>Device Settings</h3>
+                
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Alarm Volume</span>
+                        <span>75%</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="75" class="slider">
+                </div>
+                
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Display Brightness</span>
+                        <span>90%</span>
+                    </div>
+                    <input type="range" min="10" max="100" value="90" class="slider">
+                </div>
+                
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Update Frequency</span>
+                        <span>1Hz</span>
+                    </div>
+                    <input type="range" min="1" max="10" value="1" class="slider">
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-primary">Apply Settings</button>
+                    <button class="btn btn-success">Save Profile</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>System Controls</h3>
+                
+                <div class="alert alert-info">
+                    <strong>System Status:</strong> All systems operational. 
+                    Last calibration: 2024-01-15 09:30 UTC
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <div style="margin-bottom: 10px;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Monitoring System:</strong> Active
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Network Connection:</strong> Connected
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <span class="status-indicator status-warning"></span>
+                        <strong>Battery Level:</strong> 85% (AC Connected)
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <span class="status-indicator status-active"></span>
+                        <strong>Data Logging:</strong> Recording
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-success">Start Monitoring</button>
+                    <button class="btn btn-danger">Emergency Stop</button>
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn btn-primary">Calibrate</button>
+                    <button class="btn btn-primary">Run Diagnostics</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
