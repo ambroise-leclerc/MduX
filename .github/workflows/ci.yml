@@ -1,0 +1,299 @@
+name: MduX Medical Device UI Library CI
+
+# NOTE: This project requires C++23 import std support:
+# - MSVC 17.14+ (Visual Studio 2022 v17.10+) ✅ Available in CI  
+# - GCC 15+ ✅ Available via gcc:15 Docker container
+# - Clang 20+ ✅ Available via LLVM repositories
+#
+# All builds are enabled using appropriate containers/toolchains.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Windows Build with Vulkan
+  windows-build:
+    name: Windows (MSVC, Vulkan)
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
+    - name: Setup Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-query-version: 1.3.204.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+        
+    - name: Verify Vulkan installation
+      run: |
+        echo "VK_SDK_PATH: $env:VULKAN_SDK"
+        if (Test-Path "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe") {
+          & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
+        }
+        
+    - name: Install Ninja
+      run: |
+        $NINJA_URL = "https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip"
+        $NINJA_ZIP = "$env:TEMP\ninja.zip"
+        $NINJA_DIR = "$env:TEMP\ninja"
+        Invoke-WebRequest -Uri $NINJA_URL -OutFile $NINJA_ZIP
+        Expand-Archive -Path $NINJA_ZIP -DestinationPath $NINJA_DIR -Force
+        echo "$NINJA_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        
+    - name: Configure CMake (MSVC with Ninja)
+      run: |
+        # Setup MSVC environment and configure with explicit compiler paths
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      shell: cmd
+      
+    - name: Build
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        cmake --build build --config ${{ env.BUILD_TYPE }}
+      shell: cmd
+      
+    - name: Run Tests
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+      shell: cmd
+
+  # Linux Build with GCC 15 container
+  linux-build:
+    name: Linux (GCC 15, Vulkan)
+    runs-on: ubuntu-latest
+    container: gcc:15
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          libglfw3-dev \
+          libwayland-dev \
+          wayland-protocols \
+          wayland-utils \
+          libwayland-egl1 \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          xvfb \
+          wget \
+          gnupg
+          
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+        
+    - name: Verify compiler and tools
+      run: |
+        gcc --version
+        g++ --version
+        cmake --version
+        ninja --version
+        
+    - name: Configure CMake
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      
+    - name: Run Tests
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+  # Clang Build with Vulkan
+  clang-build:
+    name: Linux (Clang, Vulkan)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
+    - name: Install LLVM/Clang 20
+      run: |
+        sudo apt-get update
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
+        sudo apt-get update
+        sudo apt-get install -y \
+          ninja-build \
+          build-essential \
+          clang-20 \
+          libc++-20-dev \
+          libc++abi-20-dev \
+          vulkan-tools \
+          libvulkan-dev \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          libglfw3-dev \
+          xvfb
+          
+    - name: Setup Clang 20
+      run: |
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
+        clang --version
+        clang++ --version
+        
+    - name: Verify Vulkan installation
+      run: |
+        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+        
+    - name: Configure CMake
+      run: |
+        export CC=clang-20
+        export CXX=clang++-20
+        cmake -B build -S . -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_C_COMPILER=clang-20 \
+          -DCMAKE_CXX_COMPILER=clang++-20 \
+          -DMDUX_BUILD_EXAMPLES=ON \
+          -DMDUX_BUILD_TESTS=ON \
+          -DMDUX_BUILD_DOCS=OFF
+      
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      
+    - name: Run Tests
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+  # Compliance and Documentation Build
+  compliance-docs:
+    name: Compliance & Documentation
+    runs-on: ubuntu-latest
+    container: gcc:15
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          doxygen \
+          graphviz \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          wget \
+          gnupg
+          
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+        
+    - name: Configure with regulatory documentation
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
+      
+    - name: Build documentation
+      run: cmake --build build --target doxygen-docs
+      
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: medical-device-documentation
+        path: build/html/
+        retention-days: 30
+
+  # Security and Code Quality
+  security-analysis:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    container: gcc:15
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          cppcheck \
+          clang-tidy \
+          wget \
+          gnupg
+          
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+          
+    - name: Run static analysis
+      run: |
+        # Static analysis with cppcheck
+        cppcheck --enable=all --std=c++23 --suppress=missingInclude include/ examples/ tests/ || true
+        
+        # Configure for clang-tidy
+        cmake -B build -S . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
+        
+        # Run clang-tidy on key files (if available)
+        if command -v clang-tidy &> /dev/null; then
+          find include/ -name "*.hpp" -exec clang-tidy {} -p build \; || true
+        fi
