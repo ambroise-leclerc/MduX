@@ -2,6 +2,18 @@
 
 # MduX: Medical Device Software Manufacturer Framework
 
+> **⚠️ EXPERIMENTAL PROJECT WARNING**
+> 
+> This project is an **experimental early evaluation** of C++23 modules feasibility for cross-platform development with rich dependencies (Vulkan graphics, medical device compliance frameworks). 
+> 
+> **Current Status:**
+> - C++23 modules support requires cutting-edge toolchains (GCC 15+, MSVC 17.14+, Clang 20+)
+> - CMake 4.x+ experimental support for `import std;` 
+> - Cross-platform compatibility still evolving
+> - Medical device compliance framework is conceptual/educational
+> 
+> **Not recommended for production use.** This project serves as a technical proof-of-concept for modern C++ module systems in complex, regulated software environments.
+
 ## Introduction
 
 MduX represents a comprehensive **Medical Device Software Manufacturer** framework built on modern C++23 modules and Vulkan graphics API. As a complete regulatory compliance architecture, MduX integrates three foundational medical device standards:
