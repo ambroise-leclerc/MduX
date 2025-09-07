@@ -1,5 +1,12 @@
 name: MduX Medical Device UI Library CI
 
+# NOTE: This project requires C++23 import std support:
+# - MSVC 17.14+ (Visual Studio 2022 v17.10+) ✅ Available in CI  
+# - GCC 15+ ✅ Available via gcc:15 Docker container
+# - Clang 20+ ✅ Available via LLVM repositories
+#
+# All builds are enabled using appropriate containers/toolchains.
+
 on:
   push:
     branches: [ main, develop ]
@@ -39,7 +46,7 @@ jobs:
         }
         
     - name: Configure CMake
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
       
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -47,50 +54,48 @@ jobs:
     - name: Run Tests
       run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
 
-  # Linux Build with Vulkan
+  # Linux Build with GCC 15 container
   linux-build:
-    name: Linux (GCC, Vulkan)
+    name: Linux (GCC 15, Vulkan)
     runs-on: ubuntu-latest
+    container: gcc:15
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
       
-    - name: Setup CMake (latest)
-      uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: 'latest'
-        
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
-        sudo apt-get update
-        # Add GCC 15 repository
-        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          gcc-15 \
-          g++-15 \
-          vulkan-tools \
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
           libvulkan-dev \
+          vulkan-tools \
           vulkan-utility-libraries-dev \
           spirv-tools \
           libglfw3-dev \
-          xvfb
+          xvfb \
+          wget
           
-    - name: Setup GCC 15
+    - name: Install latest CMake
       run: |
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 60
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 60
+        # Install CMake 4.x for C++23 import std support
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
+        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        apt-get update
+        apt-get install -y cmake
+        
+    - name: Verify compiler and tools
+      run: |
         gcc --version
         g++ --version
-        
-    - name: Verify Vulkan installation
-      run: |
-        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+        cmake --version
+        ninja --version
         
     - name: Configure CMake
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
       
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -119,9 +124,10 @@ jobs:
       run: |
         sudo apt-get update
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
+        sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
         sudo apt-get update
         sudo apt-get install -y \
+          ninja-build \
           build-essential \
           clang-20 \
           libc++-20-dev \
@@ -169,37 +175,35 @@ jobs:
   compliance-docs:
     name: Compliance & Documentation
     runs-on: ubuntu-latest
+    container: gcc:15
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
       
-    - name: Setup CMake (latest)
-      uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: 'latest'
-        
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        # Add GCC 15 repository  
-        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-        sudo apt-get update
-        sudo apt-get install -y \
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
           doxygen \
           graphviz \
-          gcc-15 \
-          g++-15 \
+          pkg-config \
+          libvulkan-dev \
           vulkan-tools \
-          libvulkan-dev
+          wget
           
-    - name: Setup GCC 15
+    - name: Install latest CMake
       run: |
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 60
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 60
+        # Install CMake 4.x for C++23 import std support
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
+        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        apt-get update
+        apt-get install -y cmake
         
     - name: Configure with regulatory documentation
-      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
       
     - name: Build documentation
       run: cmake --build build --target doxygen-docs
@@ -215,32 +219,32 @@ jobs:
   security-analysis:
     name: Security Analysis
     runs-on: ubuntu-latest
+    container: gcc:15
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
       
-    - name: Setup CMake (latest)
-      uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: 'latest'
-        
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        # Add GCC 15 repository
-        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-        # Add LLVM repository for clang-tidy-20
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
-        sudo apt-get update
-        sudo apt-get install -y \
-          gcc-15 \
-          g++-15 \
-          vulkan-tools \
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
           libvulkan-dev \
+          vulkan-tools \
           cppcheck \
-          clang-tidy-20
+          clang-tidy \
+          wget
+          
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support
+        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add -
+        echo 'deb https://apt.kitware.com/ubuntu/ focal main' > /etc/apt/sources.list.d/kitware.list
+        apt-get update
+        apt-get install -y cmake
           
     - name: Run static analysis
       run: |
@@ -248,7 +252,9 @@ jobs:
         cppcheck --enable=all --std=c++23 --suppress=missingInclude include/ examples/ tests/ || true
         
         # Configure for clang-tidy
-        cmake -B build -S . -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
+        cmake -B build -S . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
         
-        # Run clang-tidy on key files
-        clang-tidy-20 include/mdux/mdux.hpp -p build || true
+        # Run clang-tidy on key files (if available)
+        if command -v clang-tidy &> /dev/null; then
+          find include/ -name "*.hpp" -exec clang-tidy {} -p build \; || true
+        fi
