@@ -1,8 +1,8 @@
 # Examples for MduX Medical Device UI Library
 
-# Pure Vulkan medical UI integration example (NEW ARCHITECTURE)
+# Medical UI integration example using existing MduXExample
 add_executable(MedicalUiExample 
-    ${CMAKE_CURRENT_SOURCE_DIR}/MedicalUiExample.cpp
+    MduXExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
