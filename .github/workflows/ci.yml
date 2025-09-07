@@ -137,70 +137,70 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
 
-  # Clang Build with Vulkan
-  clang-build:
-    name: Linux (Clang, Vulkan)
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v5
-      
-    - name: Setup CMake (latest)
-      uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: 'latest'
-        
-    - name: Install LLVM/Clang 20
-      run: |
-        sudo apt-get update
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
-        sudo apt-get update
-        sudo apt-get install -y \
-          ninja-build \
-          build-essential \
-          clang-20 \
-          libc++-20-dev \
-          libc++abi-20-dev \
-          vulkan-tools \
-          libvulkan-dev \
-          vulkan-utility-libraries-dev \
-          spirv-tools \
-          libglfw3-dev \
-          xvfb
-          
-    - name: Setup Clang 20
-      run: |
-        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
-        clang --version
-        clang++ --version
-        
-    - name: Verify Vulkan installation
-      run: |
-        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
-        
-    - name: Configure CMake
-      run: |
-        export CC=clang-20
-        export CXX=clang++-20
-        cmake -B build -S . -G Ninja \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DCMAKE_C_COMPILER=clang-20 \
-          -DCMAKE_CXX_COMPILER=clang++-20 \
-          -DMDUX_BUILD_EXAMPLES=ON \
-          -DMDUX_BUILD_TESTS=ON \
-          -DMDUX_BUILD_DOCS=OFF
-      
-    - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }}
-      
-    - name: Run Tests
-      run: |
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+  # Clang Build with Vulkan (temporarily disabled - Clang 20 std module support not ready)
+  # clang-build:
+  #   name: Linux (Clang, Vulkan)
+  #   runs-on: ubuntu-latest
+  #   
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v5
+  #     
+  #   - name: Setup CMake (latest)
+  #     uses: jwlawson/actions-setup-cmake@v2
+  #     with:
+  #       cmake-version: 'latest'
+  #       
+  #   - name: Install LLVM/Clang 20
+  #     run: |
+  #       sudo apt-get update
+  #       wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+  #       sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
+  #       sudo apt-get update
+  #       sudo apt-get install -y \
+  #         ninja-build \
+  #         build-essential \
+  #         clang-20 \
+  #         libc++-20-dev \
+  #         libc++abi-20-dev \
+  #         vulkan-tools \
+  #         libvulkan-dev \
+  #         vulkan-utility-libraries-dev \
+  #         spirv-tools \
+  #         libglfw3-dev \
+  #         xvfb
+  #         
+  #   - name: Setup Clang 20
+  #     run: |
+  #       sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
+  #       sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
+  #       clang --version
+  #       clang++ --version
+  #       
+  #   - name: Verify Vulkan installation
+  #     run: |
+  #       vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+  #       
+  #   - name: Configure CMake
+  #     run: |
+  #       export CC=clang-20
+  #       export CXX=clang++-20
+  #       cmake -B build -S . -G Ninja \
+  #         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+  #         -DCMAKE_C_COMPILER=clang-20 \
+  #         -DCMAKE_CXX_COMPILER=clang++-20 \
+  #         -DMDUX_BUILD_EXAMPLES=ON \
+  #         -DMDUX_BUILD_TESTS=ON \
+  #         -DMDUX_BUILD_DOCS=OFF
+  #     
+  #   - name: Build
+  #     run: cmake --build build --config ${{ env.BUILD_TYPE }}
+  #     
+  #   - name: Run Tests
+  #     run: |
+  #       export DISPLAY=:99
+  #       Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+  #       ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
 
   # Compliance and Documentation Build
   compliance-docs:
@@ -226,6 +226,7 @@ jobs:
           libwayland-dev \
           wayland-protocols \
           wayland-scanner++ \
+          libxkbcommon-dev \
           libxrandr-dev \
           libxinerama-dev \
           libxcursor-dev \

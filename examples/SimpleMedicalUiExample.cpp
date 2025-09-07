@@ -11,6 +11,8 @@ import std;
 
 // GLFW for windowing (user's responsibility in real applications)
 #include <GLFW/glfw3.h>
+// Include Vulkan for constants
+#include <vulkan/vulkan.h>
 
 int main() {
     // Initialize MduX library
@@ -70,7 +72,7 @@ int main() {
     uiContent.cssContent = ".medical-ui { background: #f0f0f0; }";
     uiContent.version = "1.0.0";
 
-    std::cout << "UI content valid: " << (uiContent.isValid() ? "Yes" : "Yes") << std::endl;
+    std::cout << "UI content valid: " << (uiContent.isValid() ? "Yes" : "No") << std::endl;
     std::cout << "UI has content: " << (uiContent.hasContent() ? "Yes" : "No") << std::endl;
 
     // Demonstrate file watcher (without actual file operations for CI)
