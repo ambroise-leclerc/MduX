@@ -19,6 +19,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
     - name: Setup Vulkan SDK
       uses: humbletim/setup-vulkan-sdk@v1.2.1
       with:
@@ -51,17 +56,24 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
     - name: Install system dependencies
       run: |
         sudo apt-get update
+        # Add GCC 15 repository
+        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+        sudo apt-get update
         sudo apt-get install -y \
           build-essential \
-          cmake \
           gcc-15 \
           g++-15 \
           vulkan-tools \
           libvulkan-dev \
-          vulkan-validationlayers-dev \
+          vulkan-utility-libraries-dev \
           spirv-tools \
           libglfw3-dev \
           xvfb
@@ -98,21 +110,25 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
     - name: Install LLVM/Clang 20
       run: |
         sudo apt-get update
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
+        sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
-          cmake \
           clang-20 \
           libc++-20-dev \
           libc++abi-20-dev \
           vulkan-tools \
           libvulkan-dev \
-          vulkan-validationlayers-dev \
+          vulkan-utility-libraries-dev \
           spirv-tools \
           libglfw3-dev \
           xvfb
@@ -158,13 +174,20 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
     - name: Install dependencies
       run: |
+        sudo apt-get update
+        # Add GCC 15 repository  
+        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
         sudo apt-get update
         sudo apt-get install -y \
           doxygen \
           graphviz \
-          cmake \
           gcc-15 \
           g++-15 \
           vulkan-tools \
@@ -197,11 +220,21 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: 'latest'
+        
     - name: Install dependencies
       run: |
         sudo apt-get update
+        # Add GCC 15 repository
+        sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+        # Add LLVM repository for clang-tidy-20
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main"
+        sudo apt-get update
         sudo apt-get install -y \
-          cmake \
           gcc-15 \
           g++-15 \
           vulkan-tools \
