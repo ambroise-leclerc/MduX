@@ -5,8 +5,8 @@
 
 module;
 
+#include <stdint.h>
 #include <vulkan/vulkan.h>
-#include <cstdint>
 
 module mdux.vulkansc.objects;
 
