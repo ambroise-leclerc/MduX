@@ -6,10 +6,8 @@
  * @compliance Vulkan SC 1.0 Conformance Testing
  */
 
-module;
-
+#include <stdint.h>
 #include <vulkan/vulkan.h>
-#include <cstdint>
 
 import std;
 import mdux.vulkansc.memory;
@@ -97,21 +95,9 @@ private:
 };
 
 //=============================================================================
-// Mock Vulkan Device (for testing without real GPU)
+// Note: Tests use VK_NULL_HANDLE for physical devices to avoid Vulkan API calls
+// This tests the calculation logic without requiring real Vulkan hardware
 //=============================================================================
-
-class MockVulkanDevice {
-public:
-    static VkPhysicalDevice createMockPhysicalDevice() {
-        // Return a non-null handle for testing
-        return reinterpret_cast<VkPhysicalDevice>(0x1);
-    }
-
-    static VkDevice createMockDevice() {
-        // Return a non-null handle for testing
-        return reinterpret_cast<VkDevice>(0x2);
-    }
-};
 
 //=============================================================================
 // MemoryPoolManager Tests
@@ -155,8 +141,8 @@ void testMemoryPoolCalculatorBasic() {
     profile.maxImageResolution = 2048;
     profile.safetyMarginMultiplier = 2.0f;
 
-    auto physicalDevice = MockVulkanDevice::createMockPhysicalDevice();
-    auto config = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    // Use VK_NULL_HANDLE to test calculation logic without Vulkan API calls
+    auto config = MemoryPoolCalculator::calculate(profile);
 
     if (!config.isValid()) {
         throw runtime_error("Calculator produced invalid configuration");
@@ -177,8 +163,7 @@ void testMemoryPoolCalculatorWithSafetyMargin() {
     profile.maxUIElementsPerScreen = 100;
     profile.safetyMarginMultiplier = 2.0f;  // 100% safety margin (Class B/C)
 
-    auto physicalDevice = MockVulkanDevice::createMockPhysicalDevice();
-    auto config = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    auto config = MemoryPoolCalculator::calculate(profile);
 
     // Verify safety margin was applied
     if (config.safetyMargin != 2.0f) {
@@ -243,12 +228,11 @@ void testMemoryPoolCalculatorRedundancy() {
     profile.safetyMarginMultiplier = 1.0f;
     profile.requiresRedundancy = true;
 
-    auto physicalDevice = MockVulkanDevice::createMockPhysicalDevice();
-    auto config = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    auto config = MemoryPoolCalculator::calculate(profile);
 
     // With redundancy, memory should be doubled
     profile.requiresRedundancy = false;
-    auto configNoRedundancy = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    auto configNoRedundancy = MemoryPoolCalculator::calculate(profile);
 
     // Redundant config should have approximately 2× memory
     // (allowing for rounding differences)
@@ -334,8 +318,7 @@ void testCalculatorLargeApplicationProfile() {
     profile.maxFramesInFlight = 3;             // Triple buffering
     profile.safetyMarginMultiplier = 2.0f;     // Class B/C safety
 
-    auto physicalDevice = MockVulkanDevice::createMockPhysicalDevice();
-    auto config = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    auto config = MemoryPoolCalculator::calculate(profile);
 
     // Should produce large memory requirements
     if (config.maxTotalMemory < 100 * 1024 * 1024) {  // At least 100 MB
@@ -361,8 +344,7 @@ void testCalculatorMinimalApplicationProfile() {
     profile.maxFramesInFlight = 1;
     profile.safetyMarginMultiplier = 1.0f;     // Minimal margin
 
-    auto physicalDevice = MockVulkanDevice::createMockPhysicalDevice();
-    auto config = MemoryPoolCalculator::calculate(profile, physicalDevice);
+    auto config = MemoryPoolCalculator::calculate(profile);
 
     if (!config.isValid()) {
         throw runtime_error("Minimal profile produced invalid configuration");

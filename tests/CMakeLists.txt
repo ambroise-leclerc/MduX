@@ -61,3 +61,57 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 add_test(NAME MduXComplianceTests COMMAND compliance_tests)
+
+# Vulkan SC specific tests
+add_executable(vulkansc_memory_tests
+    vulkansc/MemoryPoolManagerTests.cpp
+)
+
+target_link_libraries(vulkansc_memory_tests PRIVATE MduX::MduX)
+
+set_target_properties(vulkansc_memory_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(vulkansc_memory_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+# MSVC-specific configuration for import std support
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(vulkansc_memory_tests PRIVATE /experimental:module)
+    target_compile_options(vulkansc_memory_tests PRIVATE /std:c++latest)
+endif()
+
+add_test(NAME VulkanSCMemoryPoolTests COMMAND vulkansc_memory_tests)
+
+# Vulkan SC device object tests
+add_executable(vulkansc_object_tests
+    vulkansc/DeviceObjectManagerTests.cpp
+)
+
+target_link_libraries(vulkansc_object_tests PRIVATE MduX::MduX)
+
+set_target_properties(vulkansc_object_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(vulkansc_object_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+# MSVC-specific configuration for import std support
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(vulkansc_object_tests PRIVATE /experimental:module)
+    target_compile_options(vulkansc_object_tests PRIVATE /std:c++latest)
+endif()
+
+add_test(NAME VulkanSCDeviceObjectTests COMMAND vulkansc_object_tests)
