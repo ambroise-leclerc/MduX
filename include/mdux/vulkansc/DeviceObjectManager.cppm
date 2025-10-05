@@ -15,8 +15,8 @@
 
 module;
 
+#include <stdint.h>
 #include <vulkan/vulkan.h>
-#include <cstdint>
 
 export module mdux.vulkansc.objects;
 
@@ -25,6 +25,50 @@ import std;
 using namespace std;
 
 export namespace mdux::vulkansc {
+
+// Forward declaration of Vulkan SC types (not in standard Vulkan headers)
+// TODO: Replace with actual Vulkan SC headers when available
+inline constexpr VkStructureType VK_STRUCTURE_TYPE_DEVICE_OBJECT_RESERVATION_CREATE_INFO = static_cast<VkStructureType>(1000298000);
+
+struct VkDeviceObjectReservationCreateInfo {
+    VkStructureType sType;
+    const void* pNext;
+    uint32_t pipelineCacheCreateInfoCount;
+    uint32_t pipelinePoolSizeCount;
+    uint32_t semaphoreRequestCount;
+    uint32_t commandBufferRequestCount;
+    uint32_t fenceRequestCount;
+    uint32_t deviceMemoryRequestCount;
+    VkDeviceSize maxMemoryAllocationSize;
+    uint32_t bufferRequestCount;
+    uint32_t imageRequestCount;
+    uint32_t bufferViewRequestCount;
+    uint32_t imageViewRequestCount;
+    uint32_t layeredImageViewRequestCount;
+    uint32_t eventRequestCount;
+    uint32_t queryPoolRequestCount;
+    uint32_t descriptorSetLayoutRequestCount;
+    uint32_t samplerRequestCount;
+    uint32_t pipelineLayoutRequestCount;
+    uint32_t renderPassRequestCount;
+    uint32_t framebufferRequestCount;
+    uint32_t graphicsPipelineRequestCount;
+    uint32_t computePipelineRequestCount;
+    uint32_t descriptorPoolRequestCount;
+    uint32_t descriptorSetRequestCount;
+    uint32_t commandPoolRequestCount;
+    uint32_t descriptorSetLayoutBindingRequestCount;
+    uint32_t descriptorSetLayoutBindingLimit;
+    uint32_t maxImageViewMipLevels;
+    uint32_t maxImageViewArrayLayers;
+    uint32_t maxLayeredImageViewMipLevels;
+    uint32_t maxOcclusionQueriesPerPool;
+    uint32_t maxPipelineStatisticsQueriesPerPool;
+    uint32_t maxTimestampQueriesPerPool;
+    uint32_t maxImmutableSamplersPerDescriptorSetLayout;
+};
+
+
 
 //=============================================================================
 // Object Reservation Configuration

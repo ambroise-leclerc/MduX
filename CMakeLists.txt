@@ -96,8 +96,12 @@ target_sources(MduX
     PUBLIC
         FILE_SET CXX_MODULES FILES
             include/mdux/mdux.cppm
+            include/mdux/vulkansc/MemoryPoolManager.cppm
+            include/mdux/vulkansc/DeviceObjectManager.cppm
     PRIVATE
         src/mdux.cpp
+        src/vulkansc/MemoryPoolManager.cpp
+        src/vulkansc/DeviceObjectManager.cpp
 )
 
 target_compile_features(MduX_options INTERFACE cxx_std_23)

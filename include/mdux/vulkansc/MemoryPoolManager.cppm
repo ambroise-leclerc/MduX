@@ -12,9 +12,8 @@
 
 module;
 
+#include <stdint.h>
 #include <vulkan/vulkan.h>
-#include <cstdint>
-#include <cstring>
 
 export module mdux.vulkansc.memory;
 
@@ -291,12 +290,12 @@ public:
      * @brief Calculate memory configuration from application profile
      *
      * @param profile Medical application profile
-     * @param physicalDevice Vulkan physical device for memory properties
+     * @param physicalDevice Vulkan physical device for memory properties (optional, VK_NULL_HANDLE for testing)
      * @return Memory pool configuration for device creation
      */
     static MemoryPoolConfiguration calculate(
         const MedicalApplicationProfile& profile,
-        VkPhysicalDevice physicalDevice
+        VkPhysicalDevice physicalDevice = VK_NULL_HANDLE
     );
 
     /**

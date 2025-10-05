@@ -5,9 +5,9 @@
 
 module;
 
+#include <stdint.h>
+#include <time.h>
 #include <vulkan/vulkan.h>
-#include <cstdint>
-#include <cstring>
 
 module mdux.vulkansc.memory;
 
@@ -241,7 +241,13 @@ string MemoryPoolManager::generateAuditReport() const {
         report << "        \"inUse\": " << (record.inUse ? "true" : "false") << ",\n";
 
         auto timestamp = chrono::system_clock::to_time_t(record.timestamp);
-        report << "        \"timestamp\": \"" << ctime(&timestamp) << "\",\n";
+        char timeStr[26];
+        #ifdef _WIN32
+        ctime_s(timeStr, sizeof(timeStr), &timestamp);
+        #else
+        ctime_r(&timestamp, timeStr);
+        #endif
+        report << "        \"timestamp\": \"" << timeStr << "\",\n";
         report << "        \"source\": \"" << record.allocatedFrom << "\"\n";
         report << "      }";
     }
@@ -273,7 +279,7 @@ void MemoryPoolManager::cleanup() noexcept {
     initialized = false;
 }
 
-void MemoryPoolManager::updateStatistics(VkDeviceSize size, uint32_t memoryTypeIndex) noexcept {
+void MemoryPoolManager::updateStatistics(VkDeviceSize size, uint32_t /*memoryTypeIndex*/) noexcept {
     statistics.totalAllocations++;
     statistics.totalMemoryAllocated += size;
     statistics.lastAllocation = chrono::system_clock::now();
@@ -301,10 +307,6 @@ MemoryPoolConfiguration MemoryPoolCalculator::calculate(
     config.safetyClass = "Class B"; // Default to Class B
     config.safetyMargin = profile.safetyMarginMultiplier;
 
-    // Get physical device memory properties
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
     // Calculate total memory requirements
     VkDeviceSize geometryMemory = estimateGeometryMemory(profile);
     VkDeviceSize uniformMemory = estimateUniformMemory(profile);
@@ -326,24 +328,37 @@ MemoryPoolConfiguration MemoryPoolCalculator::calculate(
     config.maxTotalAllocations = 100; // Conservative estimate
 
     // Distribute memory across memory types
-    // Heuristic: Host-visible for 20%, Device-local for 80%
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        VkMemoryPropertyFlags props = memProperties.memoryTypes[i].propertyFlags;
+    if (physicalDevice != VK_NULL_HANDLE) {
+        // Use actual physical device memory properties
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
-        if (props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-            // Device-local memory for textures and framebuffers
-            config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.8);
-            config.maxAllocationsPerType[i] = 50;
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+            VkMemoryPropertyFlags props = memProperties.memoryTypes[i].propertyFlags;
+
+            if (props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+                // Device-local memory for textures and framebuffers
+                config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.8);
+                config.maxAllocationsPerType[i] = 50;
+            }
+            else if (props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+                // Host-visible for staging and uniform buffers
+                config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.2);
+                config.maxAllocationsPerType[i] = 30;
+            }
+            else {
+                config.poolSizes[i] = 0;
+                config.maxAllocationsPerType[i] = 0;
+            }
         }
-        else if (props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-            // Host-visible for staging and uniform buffers
-            config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.2);
-            config.maxAllocationsPerType[i] = 30;
-        }
-        else {
-            config.poolSizes[i] = 0;
-            config.maxAllocationsPerType[i] = 0;
-        }
+    } else {
+        // Testing mode: Use default distribution without querying device
+        // Assume 2 memory types: device-local (index 0) and host-visible (index 1)
+        config.poolSizes[0] = static_cast<VkDeviceSize>(totalRequired * 0.8);  // Device-local
+        config.maxAllocationsPerType[0] = 50;
+
+        config.poolSizes[1] = static_cast<VkDeviceSize>(totalRequired * 0.2);  // Host-visible
+        config.maxAllocationsPerType[1] = 30;
     }
 
     return config;
