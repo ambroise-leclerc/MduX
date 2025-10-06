@@ -184,12 +184,23 @@ endif()
 ```
 
 ### Status
-- **Core Library (MduX)**: ✅ Builds successfully on GCC 15
-- **Tests**: ✅ Build and pass on GCC 15
-- **SimpleMedicalUiExample**: ✅ Builds successfully on GCC 15 (with header ordering workaround)
-- **VulkanSCTriangleExample**: ❌ Disabled on GCC 15 (ICE in `std::array` with modules)
+- **Core Library (MduX)**: ❌ Disabled `import std` on GCC 15 (module conflicts)
+- **Tests**: ❌ Failing due to module conflicts
+- **SimpleMedicalUiExample**: ❌ Module conflicts
+- **VulkanSCTriangleExample**: ❌ Disabled on GCC 15 (ICE in `std::array`)
 
-These limitations will be removed once GCC fixes these ICE bugs in future versions.
+### Root Cause
+GCC 15's `import std` implementation has critical bugs that cause "conflicting imported declaration" errors when:
+1. Module A uses `import std`
+2. Module B imports Module A
+3. Module B also includes traditional headers (`#include <vector>`, etc.)
+
+This affects the entire MduX library since all modules use `import std`.
+
+### Current Solution
+Disabled `import std` support on GCC 15 in CMakeLists.txt. Modules will use traditional headers on GCC 15.
+
+These limitations will be removed once GCC fixes these critical bugs in future versions.
 
 ## Related Documentation
 
