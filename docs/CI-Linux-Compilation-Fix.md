@@ -164,6 +164,33 @@ import std;
 
 This workaround only applies to regular `.cpp` files that use module imports. Module interface files (`.cppm`) must still use the global module fragment pattern shown above.
 
+## GCC 15 Severe ICE Limitations
+
+### Issue
+GCC 15 has multiple severe Internal Compiler Errors with C++23 modules that make some complex code uncompilable:
+
+1. **Segmentation fault in `std::array`** when used with modules and `std::make_unique`
+2. **ICE in `finish_member_declaration`** when Vulkan headers included after module imports
+3. These are **GCC compiler bugs**, not issues with our code
+
+### Workaround
+The `VulkanSCTriangleExample` is temporarily disabled on GCC 15 via CMake:
+```cmake
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
+    add_executable(VulkanSCTriangleExample ...)
+else()
+    message(STATUS "Skipping VulkanSCTriangleExample on GCC 15 due to compiler ICE bugs")
+endif()
+```
+
+### Status
+- **Core Library (MduX)**: ✅ Builds successfully on GCC 15
+- **Tests**: ✅ Build and pass on GCC 15
+- **SimpleMedicalUiExample**: ✅ Builds successfully on GCC 15 (with header ordering workaround)
+- **VulkanSCTriangleExample**: ❌ Disabled on GCC 15 (ICE in `std::array` with modules)
+
+These limitations will be removed once GCC fixes these ICE bugs in future versions.
+
 ## Related Documentation
 
 - [VulkanSC-vs-Vulkan.md](VulkanSC-vs-Vulkan.md) - Differences between Vulkan SC and standard Vulkan

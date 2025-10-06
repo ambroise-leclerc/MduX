@@ -54,40 +54,46 @@ else()
 endif()
 
 # Vulkan SC Triangle Demo - Visual rendering with static memory
-add_executable(VulkanSCTriangleExample
-    VulkanSCTriangleExample.cpp
-)
+# Temporarily disabled on GCC 15 due to compiler ICE bugs with C++23 modules
+# (Segmentation fault in std::array with modules, fixed in future GCC versions)
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
+    add_executable(VulkanSCTriangleExample
+        VulkanSCTriangleExample.cpp
+    )
 
-if(GLSL_VALIDATOR)
-    add_dependencies(VulkanSCTriangleExample CompileShaders)
-endif()
+    if(GLSL_VALIDATOR)
+        add_dependencies(VulkanSCTriangleExample CompileShaders)
+    endif()
 
-target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
+    target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
 
-# GLFW for windowing
-if(glfw3_FOUND)
-    target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
+    # GLFW for windowing
+    if(glfw3_FOUND)
+        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
+    else()
+        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
+    endif()
+
+    # Set C++23 standard
+    set_target_properties(VulkanSCTriangleExample PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    if(TARGET __CMAKE::CXX23)
+        set_target_properties(VulkanSCTriangleExample PROPERTIES CXX_MODULE_STD ON)
+    endif()
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(VulkanSCTriangleExample PRIVATE /experimental:module /std:c++latest)
+    endif()
+
+    if(UNIX)
+        target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
+    endif()
 else()
-    target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
-endif()
-
-# Set C++23 standard
-set_target_properties(VulkanSCTriangleExample PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
-)
-
-if(TARGET __CMAKE::CXX23)
-    set_target_properties(VulkanSCTriangleExample PROPERTIES CXX_MODULE_STD ON)
-endif()
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(VulkanSCTriangleExample PRIVATE /experimental:module /std:c++latest)
-endif()
-
-if(UNIX)
-    target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
+    message(STATUS "Skipping VulkanSCTriangleExample on GCC 15 due to compiler ICE bugs with C++23 modules")
 endif()
 
 # Platform-specific libraries for file watching
