@@ -90,25 +90,6 @@ if(UNIX)
     target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
 endif()
 
-# Legacy example (disabled during architecture transition)
-# The MduXExample uses the old windowing architecture and needs to be updated
-# Use MedicalUiExample instead, which demonstrates the new pure Vulkan integration
-# 
-# add_executable(MduXExample 
-#     MduXExample.cpp
-# )
-# 
-# # Add VulkanCubeRenderer module for legacy example
-# target_sources(MduXExample
-#     PUBLIC
-#         FILE_SET CXX_MODULES FILES
-#             VulkanCubeRenderer.cppm
-#     PRIVATE
-#         VulkanCubeRenderer.cpp
-# )
-# 
-# target_link_libraries(MduXExample PRIVATE MduX::MduX)
-
 # Platform-specific libraries for file watching
 if(UNIX)
     # Linux needs pthread for threading support
