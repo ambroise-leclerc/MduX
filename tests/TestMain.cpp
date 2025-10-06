@@ -5,6 +5,8 @@
 import std;
 import mdux;
 
+namespace {  // Anonymous namespace to avoid ODR violations
+
 // Simple test framework for basic testing
 class TestRunner {
 private:
@@ -28,6 +30,8 @@ public:
         return failed > 0 ? 1 : 0;
     }
 };
+
+}  // anonymous namespace
 
 // Forward declarations of test functions
 bool testVersion();
