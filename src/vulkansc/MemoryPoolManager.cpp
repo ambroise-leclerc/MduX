@@ -337,12 +337,12 @@ MemoryPoolConfiguration MemoryPoolCalculator::calculate(
 
             if (props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
                 // Device-local memory for textures and framebuffers
-                config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.8);
+                config.poolSizes[i] = static_cast<VkDeviceSize>(static_cast<double>(totalRequired) * 0.8);
                 config.maxAllocationsPerType[i] = 50;
             }
             else if (props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
                 // Host-visible for staging and uniform buffers
-                config.poolSizes[i] = static_cast<VkDeviceSize>(totalRequired * 0.2);
+                config.poolSizes[i] = static_cast<VkDeviceSize>(static_cast<double>(totalRequired) * 0.2);
                 config.maxAllocationsPerType[i] = 30;
             }
             else {
@@ -353,10 +353,10 @@ MemoryPoolConfiguration MemoryPoolCalculator::calculate(
     } else {
         // Testing mode: Use default distribution without querying device
         // Assume 2 memory types: device-local (index 0) and host-visible (index 1)
-        config.poolSizes[0] = static_cast<VkDeviceSize>(totalRequired * 0.8);  // Device-local
+        config.poolSizes[0] = static_cast<VkDeviceSize>(static_cast<double>(totalRequired) * 0.8);  // Device-local
         config.maxAllocationsPerType[0] = 50;
 
-        config.poolSizes[1] = static_cast<VkDeviceSize>(totalRequired * 0.2);  // Host-visible
+        config.poolSizes[1] = static_cast<VkDeviceSize>(static_cast<double>(totalRequired) * 0.2);  // Host-visible
         config.maxAllocationsPerType[1] = 30;
     }
 
@@ -409,7 +409,7 @@ VkDeviceSize MemoryPoolCalculator::applySafetyMargin(
     VkDeviceSize baseSize,
     const MedicalApplicationProfile& profile) noexcept
 {
-    return static_cast<VkDeviceSize>(baseSize * profile.safetyMarginMultiplier);
+    return static_cast<VkDeviceSize>(static_cast<double>(baseSize) * profile.safetyMarginMultiplier);
 }
 
 } // namespace mdux::vulkansc
