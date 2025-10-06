@@ -101,7 +101,7 @@ public:
 
         std::cout << "\nPerformance:\n";
         std::cout << "  Total time: " << totalTime.count() << " μs\n";
-        std::cout << "  Average:    " << (results.empty() ? 0 : totalTime.count() / results.size()) << " μs/test\n";
+        std::cout << "  Average:    " << (results.empty() ? 0 : totalTime.count() / static_cast<long>(results.size())) << " μs/test\n";
         std::cout << "=============================================================================\n";
     }
 
