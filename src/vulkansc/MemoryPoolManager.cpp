@@ -5,9 +5,8 @@
 
 module;
 
-#include <stdint.h>
-#include <time.h>
 #include <vulkan/vulkan.h>
+#include <ctime>  // For ctime_s/ctime_r
 
 module mdux.vulkansc.memory;
 
