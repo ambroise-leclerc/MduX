@@ -1,15 +1,25 @@
 /**
  * @file VulkanSCTriangleExample.cpp
- * @brief Minimal Vulkan SC rendering example - Triangle with static memory
+ * @brief Vulkan SC Pattern Demo - Triangle with Static Memory Management
  *
- * Demonstrates:
- * - Vulkan SC device creation with object reservations
- * - Static memory pool allocation
- * - Device-lifetime command pools
- * - Simple triangle rendering
+ * IMPORTANT: This is NOT true Vulkan SC. It demonstrates Vulkan SC patterns
+ * using standard Vulkan 1.3 API for development/testing purposes.
  *
+ * Vulkan SC Patterns Demonstrated:
+ * - Pre-calculated object reservations (VkDeviceObjectReservationCreateInfo)
+ * - Static memory pool allocation (no runtime vkFreeMemory)
+ * - Device-lifetime object management (command pools)
+ * - Medical application profiling for resource sizing
+ * - Audit trail and compliance tracking
+ *
+ * Standard Vulkan Used For (NOT in true Vulkan SC):
+ * - VK_KHR_swapchain (doesn't exist in Vulkan SC)
+ * - Runtime pipeline creation (Vulkan SC requires offline PCC compilation)
+ * - VK_API_VERSION_1_3 (should be variant=1 for true Vulkan SC)
+ *
+ * @see docs/VulkanSC-vs-Vulkan.md for migration path to true Vulkan SC
  * @compliance IEC 62304 Class B - Medical Device Example
- * @compliance Vulkan SC 1.0 - Safety Critical Rendering
+ * @compliance Vulkan SC 1.0 Patterns - NOT true Vulkan SC API
  */
 
 #define GLFW_INCLUDE_VULKAN
@@ -28,7 +38,7 @@ using namespace mdux::vulkansc;
 
 constexpr uint32_t WINDOW_WIDTH = 800;
 constexpr uint32_t WINDOW_HEIGHT = 600;
-constexpr char WINDOW_TITLE[] = "MduX Vulkan SC - Medical Device Triangle Demo";
+constexpr char WINDOW_TITLE[] = "MduX - Vulkan SC Pattern Demo (Standard Vulkan)";
 
 //=============================================================================
 // Vulkan SC Triangle Application
@@ -38,8 +48,9 @@ class VulkanSCTriangleApp {
 public:
     void run() {
         cout << "╔══════════════════════════════════════════════════╗\n";
-        cout << "║  MduX Vulkan SC Medical Device Rendering Demo   ║\n";
-        cout << "║  IEC 62304 Class B Compliance                    ║\n";
+        cout << "║  MduX Vulkan SC Pattern Demonstration            ║\n";
+        cout << "║  IEC 62304 Class B - Using Standard Vulkan 1.3   ║\n";
+        cout << "║  (Not true Vulkan SC - see docs for migration)   ║\n";
         cout << "╚══════════════════════════════════════════════════╝\n\n";
 
         initWindow();
@@ -77,8 +88,8 @@ private:
     uint32_t currentFrame = 0;
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
-    uint32_t graphicsFamily = 0;
-    uint32_t presentFamily = 0;
+    uint32_t graphicsFamily = UINT32_MAX;
+    uint32_t presentFamily = UINT32_MAX;
 
     // Vulkan SC managers
     unique_ptr<MemoryPoolManager> memoryManager;
@@ -104,7 +115,7 @@ private:
     }
 
     void initVulkan() {
-        cout << "\nInitializing Vulkan SC...\n";
+        cout << "\nInitializing Vulkan (with SC patterns)...\n";
 
         createInstance();
         createSurface();
@@ -119,7 +130,7 @@ private:
         createCommandBuffers();
         createSyncObjects();
 
-        cout << "✓ Vulkan SC initialized successfully\n";
+        cout << "✓ Vulkan initialized successfully (SC patterns applied)\n";
     }
 
     void createInstance() {
@@ -201,12 +212,20 @@ private:
             }
         }
 
+        // Validate queue families were found
+        if (graphicsFamily == UINT32_MAX) {
+            throw runtime_error("Failed to find graphics queue family");
+        }
+        if (presentFamily == UINT32_MAX) {
+            throw runtime_error("Failed to find present queue family");
+        }
+
         cout << "  ✓ Queue families: graphics=" << graphicsFamily
              << ", present=" << presentFamily << "\n";
     }
 
     void createLogicalDevice() {
-        cout << "\n  Creating Vulkan SC device with object reservations...\n";
+        cout << "\n  Creating Vulkan device with SC-style object reservations...\n";
 
         // Calculate object reservations for medical UI
         MedicalApplicationProfile profile;
