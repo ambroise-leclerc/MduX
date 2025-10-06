@@ -442,7 +442,7 @@ private:
         vector<char> buffer(fileSize);
 
         file.seekg(0);
-        file.read(buffer.data(), fileSize);
+        file.read(buffer.data(), static_cast<streamsize>(fileSize));
         file.close();
 
         return buffer;
@@ -749,7 +749,7 @@ private:
             auto currentTime = chrono::high_resolution_clock::now();
             auto elapsed = chrono::duration_cast<chrono::milliseconds>(currentTime - startTime).count();
             if (elapsed >= 1000) {
-                float fps = frameCount * 1000.0f / elapsed;
+                float fps = static_cast<float>(frameCount) * 1000.0f / static_cast<float>(elapsed);
                 cout << "FPS: " << fixed << setprecision(1) << fps
                      << " | Memory: " << memoryManager->getStatistics().totalMemoryAllocated / 1024 << " KB"
                      << " | Objects: " << objectManager->getStatistics().buffersActive << "\r" << flush;
