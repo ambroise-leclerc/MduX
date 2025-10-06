@@ -1,0 +1,713 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iso13485/measurement-improvement.schema.json",
+  "title": "ISO 13485 Measurement, Analysis and Improvement Automation Schema",
+  "description": "Comprehensive schema for automating ISO 13485 measurement, analysis, and improvement processes with AI-powered analytics, predictive systems, and intelligent automation",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["measurement_id", "monitoring_systems", "feedback_management", "complaint_handling", "regulatory_reporting", "improvement_systems"],
+  
+  "properties": {
+    "measurement_id": {
+      "type": "string",
+      "description": "Unique identifier for the measurement and improvement system",
+      "pattern": "^MAI-[0-9]{4}-[0-9]{3}$"
+    },
+    
+    "monitoring_systems": {
+      "type": "object",
+      "description": "Comprehensive monitoring and measurement systems",
+      "required": ["feedback_systems", "process_monitoring", "product_monitoring"],
+      "properties": {
+        "feedback_systems": {
+          "type": "object",
+          "properties": {
+            "data_sources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "source_name": {"type": "string"},
+                  "source_type": {"type": "string", "enum": ["production", "post_production", "clinical", "customer", "regulatory", "supplier"]},
+                  "data_collection_method": {"type": "string", "enum": ["automated", "manual", "survey", "interview", "observation"]},
+                  "collection_frequency": {"type": "string"},
+                  "data_format": {"type": "string"},
+                  "ai_processing": {"type": "boolean"},
+                  "real_time_processing": {"type": "boolean"}
+                }
+              }
+            },
+            "data_integration": {
+              "type": "object",
+              "properties": {
+                "integration_platform": {"type": "string"},
+                "data_standardization": {"type": "boolean"},
+                "real_time_aggregation": {"type": "boolean"},
+                "data_quality_controls": {"type": "array", "items": {"type": "string"}},
+                "ai_data_fusion": {"type": "boolean"}
+              }
+            },
+            "analysis_systems": {
+              "type": "object",
+              "properties": {
+                "sentiment_analysis": {"type": "boolean"},
+                "trend_analysis": {"type": "boolean"},
+                "pattern_recognition": {"type": "boolean"},
+                "anomaly_detection": {"type": "boolean"},
+                "predictive_analytics": {"type": "boolean"},
+                "natural_language_processing": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "process_monitoring": {
+          "type": "object",
+          "properties": {
+            "process_metrics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "process_name": {"type": "string"},
+                  "metric_name": {"type": "string"},
+                  "measurement_method": {"type": "string"},
+                  "target_value": {"type": "string"},
+                  "control_limits": {"type": "object"},
+                  "measurement_frequency": {"type": "string"},
+                  "data_source": {"type": "string"},
+                  "automated_collection": {"type": "boolean"},
+                  "ai_analysis": {"type": "boolean"}
+                }
+              }
+            },
+            "statistical_process_control": {
+              "type": "object",
+              "properties": {
+                "control_chart_types": {"type": "array", "items": {"type": "string"}},
+                "capability_analysis": {"type": "boolean"},
+                "process_stability_monitoring": {"type": "boolean"},
+                "automated_alerts": {"type": "boolean"},
+                "ai_spc_enhancement": {"type": "boolean"}
+              }
+            },
+            "process_capability": {
+              "type": "object",
+              "properties": {
+                "capability_studies": {"type": "array", "items": {"type": "string"}},
+                "performance_indices": {"type": "array", "items": {"type": "string"}},
+                "improvement_opportunities": {"type": "boolean"},
+                "predictive_capability": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "product_monitoring": {
+          "type": "object",
+          "properties": {
+            "product_characteristics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "characteristic_name": {"type": "string"},
+                  "measurement_method": {"type": "string"},
+                  "specification_limits": {"type": "object"},
+                  "measurement_frequency": {"type": "string"},
+                  "acceptance_criteria": {"type": "string"},
+                  "automated_measurement": {"type": "boolean"},
+                  "ai_quality_prediction": {"type": "boolean"}
+                }
+              }
+            },
+            "release_criteria": {
+              "type": "object",
+              "properties": {
+                "release_procedures": {"type": "array", "items": {"type": "string"}},
+                "authorization_requirements": {"type": "array", "items": {"type": "string"}},
+                "documentation_requirements": {"type": "array", "items": {"type": "string"}},
+                "automated_release_systems": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "feedback_management": {
+      "type": "object",
+      "description": "AI-enhanced feedback collection and analysis system",
+      "properties": {
+        "collection_optimization": {
+          "type": "object",
+          "properties": {
+            "multi_channel_collection": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "channel_name": {"type": "string"},
+                  "channel_type": {"type": "string", "enum": ["web", "mobile", "email", "phone", "social_media", "clinical", "field"]},
+                  "automated_processing": {"type": "boolean"},
+                  "ai_analysis": {"type": "boolean"},
+                  "response_automation": {"type": "boolean"}
+                }
+              }
+            },
+            "intelligent_filtering": {
+              "type": "object",
+              "properties": {
+                "relevance_scoring": {"type": "boolean"},
+                "duplicate_detection": {"type": "boolean"},
+                "sentiment_classification": {"type": "boolean"},
+                "priority_assignment": {"type": "boolean"},
+                "category_classification": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "analysis_automation": {
+          "type": "object",
+          "properties": {
+            "content_analysis": {
+              "type": "object",
+              "properties": {
+                "text_analytics": {"type": "boolean"},
+                "sentiment_analysis": {"type": "boolean"},
+                "topic_modeling": {"type": "boolean"},
+                "trend_detection": {"type": "boolean"},
+                "correlation_analysis": {"type": "boolean"}
+              }
+            },
+            "pattern_recognition": {
+              "type": "object",
+              "properties": {
+                "anomaly_detection": {"type": "boolean"},
+                "cluster_analysis": {"type": "boolean"},
+                "temporal_patterns": {"type": "boolean"},
+                "geographic_patterns": {"type": "boolean"},
+                "product_patterns": {"type": "boolean"}
+              }
+            },
+            "predictive_modeling": {
+              "type": "object",
+              "properties": {
+                "trend_forecasting": {"type": "boolean"},
+                "issue_prediction": {"type": "boolean"},
+                "customer_satisfaction_prediction": {"type": "boolean"},
+                "regulatory_risk_prediction": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "complaint_handling": {
+      "type": "object",
+      "description": "AI-powered complaint handling and management system",
+      "properties": {
+        "intake_automation": {
+          "type": "object",
+          "properties": {
+            "multi_channel_intake": {
+              "type": "object",
+              "properties": {
+                "supported_channels": {"type": "array", "items": {"type": "string"}},
+                "automated_routing": {"type": "boolean"},
+                "priority_assessment": {"type": "boolean"},
+                "initial_classification": {"type": "boolean"},
+                "acknowledgment_automation": {"type": "boolean"}
+              }
+            },
+            "data_validation": {
+              "type": "object",
+              "properties": {
+                "completeness_checking": {"type": "boolean"},
+                "accuracy_verification": {"type": "boolean"},
+                "standardization": {"type": "boolean"},
+                "enrichment": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "classification_system": {
+          "type": "object",
+          "properties": {
+            "classification_categories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "category_name": {"type": "string"},
+                  "definition": {"type": "string"},
+                  "severity_levels": {"type": "array", "items": {"type": "string"}},
+                  "regulatory_implications": {"type": "array", "items": {"type": "string"}},
+                  "response_requirements": {"type": "array", "items": {"type": "string"}},
+                  "ai_classification": {"type": "boolean"}
+                }
+              }
+            },
+            "automated_classification": {
+              "type": "object",
+              "properties": {
+                "classification_algorithms": {"type": "array", "items": {"type": "string"}},
+                "confidence_thresholds": {"type": "object"},
+                "human_review_triggers": {"type": "array", "items": {"type": "string"}},
+                "continuous_learning": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "investigation_automation": {
+          "type": "object",
+          "properties": {
+            "investigation_planning": {
+              "type": "object",
+              "properties": {
+                "scope_determination": {"type": "boolean"},
+                "resource_allocation": {"type": "boolean"},
+                "timeline_optimization": {"type": "boolean"},
+                "stakeholder_coordination": {"type": "boolean"}
+              }
+            },
+            "evidence_collection": {
+              "type": "object",
+              "properties": {
+                "data_aggregation": {"type": "boolean"},
+                "document_retrieval": {"type": "boolean"},
+                "witness_coordination": {"type": "boolean"},
+                "physical_evidence_tracking": {"type": "boolean"}
+              }
+            },
+            "root_cause_analysis": {
+              "type": "object",
+              "properties": {
+                "causal_analysis_algorithms": {"type": "array", "items": {"type": "string"}},
+                "pattern_analysis": {"type": "boolean"},
+                "system_analysis": {"type": "boolean"},
+                "multi_factor_analysis": {"type": "boolean"},
+                "ai_rca_tools": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "response_automation": {
+          "type": "object",
+          "properties": {
+            "response_generation": {
+              "type": "object",
+              "properties": {
+                "template_automation": {"type": "boolean"},
+                "personalization": {"type": "boolean"},
+                "multi_language_support": {"type": "boolean"},
+                "regulatory_compliance_checking": {"type": "boolean"}
+              }
+            },
+            "escalation_management": {
+              "type": "object",
+              "properties": {
+                "escalation_criteria": {"type": "array", "items": {"type": "string"}},
+                "automated_escalation": {"type": "boolean"},
+                "stakeholder_notification": {"type": "boolean"},
+                "timeline_management": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "regulatory_reporting": {
+      "type": "object",
+      "description": "AI-enhanced regulatory reporting and compliance system",
+      "properties": {
+        "regulatory_intelligence": {
+          "type": "object",
+          "properties": {
+            "requirement_monitoring": {
+              "type": "object",
+              "properties": {
+                "jurisdictions_monitored": {"type": "array", "items": {"type": "string"}},
+                "change_detection": {"type": "boolean"},
+                "impact_assessment": {"type": "boolean"},
+                "timeline_tracking": {"type": "boolean"},
+                "automated_alerts": {"type": "boolean"}
+              }
+            },
+            "reporting_criteria": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "jurisdiction": {"type": "string"},
+                  "event_types": {"type": "array", "items": {"type": "string"}},
+                  "severity_criteria": {"type": "array", "items": {"type": "string"}},
+                  "timeframes": {"type": "object"},
+                  "reporting_format": {"type": "string"},
+                  "automated_determination": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "event_detection": {
+          "type": "object",
+          "properties": {
+            "adverse_event_detection": {
+              "type": "object",
+              "properties": {
+                "detection_algorithms": {"type": "array", "items": {"type": "string"}},
+                "data_sources": {"type": "array", "items": {"type": "string"}},
+                "severity_assessment": {"type": "boolean"},
+                "causality_assessment": {"type": "boolean"},
+                "automated_classification": {"type": "boolean"}
+              }
+            },
+            "reportability_assessment": {
+              "type": "object",
+              "properties": {
+                "assessment_algorithms": {"type": "array", "items": {"type": "string"}},
+                "jurisdiction_mapping": {"type": "boolean"},
+                "timeline_calculation": {"type": "boolean"},
+                "confidence_scoring": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "report_generation": {
+          "type": "object",
+          "properties": {
+            "automated_report_creation": {
+              "type": "object",
+              "properties": {
+                "template_automation": {"type": "boolean"},
+                "data_compilation": {"type": "boolean"},
+                "narrative_generation": {"type": "boolean"},
+                "quality_checking": {"type": "boolean"},
+                "multi_format_output": {"type": "boolean"}
+              }
+            },
+            "submission_management": {
+              "type": "object",
+              "properties": {
+                "submission_preparation": {"type": "boolean"},
+                "regulatory_portal_integration": {"type": "boolean"},
+                "submission_tracking": {"type": "boolean"},
+                "follow_up_management": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "nonconformance_management": {
+      "type": "object",
+      "description": "AI-powered nonconformance detection and management",
+      "properties": {
+        "detection_systems": {
+          "type": "object",
+          "properties": {
+            "automated_detection": {
+              "type": "object",
+              "properties": {
+                "statistical_monitoring": {"type": "boolean"},
+                "anomaly_detection": {"type": "boolean"},
+                "pattern_recognition": {"type": "boolean"},
+                "predictive_detection": {"type": "boolean"},
+                "multi_source_integration": {"type": "boolean"}
+              }
+            },
+            "detection_criteria": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "criterion_name": {"type": "string"},
+                  "detection_method": {"type": "string"},
+                  "threshold_values": {"type": "object"},
+                  "alert_level": {"type": "string", "enum": ["information", "warning", "critical", "emergency"]},
+                  "automated_response": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "classification_system": {
+          "type": "object",
+          "properties": {
+            "classification_categories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "category": {"type": "string"},
+                  "severity_levels": {"type": "array", "items": {"type": "string"}},
+                  "impact_assessment": {"type": "string"},
+                  "response_requirements": {"type": "array", "items": {"type": "string"}},
+                  "ai_classification": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "disposition_intelligence": {
+          "type": "object",
+          "properties": {
+            "decision_support": {
+              "type": "object",
+              "properties": {
+                "risk_assessment": {"type": "boolean"},
+                "cost_analysis": {"type": "boolean"},
+                "regulatory_impact": {"type": "boolean"},
+                "customer_impact": {"type": "boolean"},
+                "recommendation_engine": {"type": "boolean"}
+              }
+            },
+            "disposition_options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "disposition_type": {"type": "string", "enum": ["use_as_is", "rework", "repair", "scrap", "return_to_supplier"]},
+                  "approval_requirements": {"type": "array", "items": {"type": "string"}},
+                  "documentation_requirements": {"type": "array", "items": {"type": "string"}},
+                  "automated_processing": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "data_analysis_platform": {
+      "type": "object",
+      "description": "Comprehensive AI-powered data analysis and intelligence platform",
+      "properties": {
+        "data_integration": {
+          "type": "object",
+          "properties": {
+            "data_sources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "source_name": {"type": "string"},
+                  "source_type": {"type": "string"},
+                  "data_format": {"type": "string"},
+                  "integration_method": {"type": "string"},
+                  "real_time_integration": {"type": "boolean"},
+                  "data_quality_controls": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            },
+            "data_processing": {
+              "type": "object",
+              "properties": {
+                "real_time_processing": {"type": "boolean"},
+                "batch_processing": {"type": "boolean"},
+                "data_cleansing": {"type": "boolean"},
+                "data_enrichment": {"type": "boolean"},
+                "data_standardization": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "analytics_engines": {
+          "type": "object",
+          "properties": {
+            "descriptive_analytics": {
+              "type": "object",
+              "properties": {
+                "statistical_summaries": {"type": "boolean"},
+                "trend_analysis": {"type": "boolean"},
+                "pattern_recognition": {"type": "boolean"},
+                "visualization": {"type": "boolean"}
+              }
+            },
+            "diagnostic_analytics": {
+              "type": "object",
+              "properties": {
+                "root_cause_analysis": {"type": "boolean"},
+                "correlation_analysis": {"type": "boolean"},
+                "anomaly_detection": {"type": "boolean"},
+                "process_capability": {"type": "boolean"}
+              }
+            },
+            "predictive_analytics": {
+              "type": "object",
+              "properties": {
+                "failure_prediction": {"type": "boolean"},
+                "quality_forecasting": {"type": "boolean"},
+                "risk_prediction": {"type": "boolean"},
+                "performance_forecasting": {"type": "boolean"}
+              }
+            },
+            "prescriptive_analytics": {
+              "type": "object",
+              "properties": {
+                "optimization_algorithms": {"type": "boolean"},
+                "recommendation_engines": {"type": "boolean"},
+                "decision_support": {"type": "boolean"},
+                "action_planning": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "improvement_systems": {
+      "type": "object",
+      "description": "AI-powered continuous improvement and action management",
+      "properties": {
+        "corrective_action": {
+          "type": "object",
+          "properties": {
+            "root_cause_intelligence": {
+              "type": "object",
+              "properties": {
+                "causal_analysis": {"type": "boolean"},
+                "pattern_analysis": {"type": "boolean"},
+                "system_analysis": {"type": "boolean"},
+                "multi_factor_analysis": {"type": "boolean"},
+                "ai_rca_algorithms": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            "action_recommendation": {
+              "type": "object",
+              "properties": {
+                "solution_generation": {"type": "boolean"},
+                "effectiveness_prediction": {"type": "boolean"},
+                "resource_optimization": {"type": "boolean"},
+                "timeline_optimization": {"type": "boolean"},
+                "ai_recommendation_engine": {"type": "boolean"}
+              }
+            },
+            "implementation_support": {
+              "type": "object",
+              "properties": {
+                "project_management": {"type": "boolean"},
+                "resource_allocation": {"type": "boolean"},
+                "progress_monitoring": {"type": "boolean"},
+                "barrier_identification": {"type": "boolean"},
+                "automated_tracking": {"type": "boolean"}
+              }
+            },
+            "effectiveness_monitoring": {
+              "type": "object",
+              "properties": {
+                "outcome_measurement": {"type": "boolean"},
+                "impact_assessment": {"type": "boolean"},
+                "sustainability_monitoring": {"type": "boolean"},
+                "ai_effectiveness_analysis": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "preventive_action": {
+          "type": "object",
+          "properties": {
+            "predictive_identification": {
+              "type": "object",
+              "properties": {
+                "trend_analysis": {"type": "boolean"},
+                "risk_modeling": {"type": "boolean"},
+                "pattern_recognition": {"type": "boolean"},
+                "scenario_modeling": {"type": "boolean"},
+                "ai_prediction_models": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            "opportunity_detection": {
+              "type": "object",
+              "properties": {
+                "improvement_opportunities": {"type": "boolean"},
+                "innovation_potential": {"type": "boolean"},
+                "efficiency_gains": {"type": "boolean"},
+                "quality_enhancements": {"type": "boolean"},
+                "ai_opportunity_mining": {"type": "boolean"}
+              }
+            },
+            "prevention_optimization": {
+              "type": "object",
+              "properties": {
+                "intervention_timing": {"type": "boolean"},
+                "resource_efficiency": {"type": "boolean"},
+                "impact_maximization": {"type": "boolean"},
+                "sustainability_planning": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "continuous_improvement": {
+          "type": "object",
+          "properties": {
+            "improvement_lifecycle": {
+              "type": "object",
+              "properties": {
+                "opportunity_identification": {"type": "boolean"},
+                "prioritization": {"type": "boolean"},
+                "planning": {"type": "boolean"},
+                "execution": {"type": "boolean"},
+                "evaluation": {"type": "boolean"},
+                "standardization": {"type": "boolean"}
+              }
+            },
+            "knowledge_management": {
+              "type": "object",
+              "properties": {
+                "lesson_capture": {"type": "boolean"},
+                "best_practice_identification": {"type": "boolean"},
+                "knowledge_sharing": {"type": "boolean"},
+                "experience_reuse": {"type": "boolean"},
+                "ai_knowledge_systems": {"type": "boolean"}
+              }
+            },
+            "culture_enhancement": {
+              "type": "object",
+              "properties": {
+                "engagement_optimization": {"type": "boolean"},
+                "idea_management": {"type": "boolean"},
+                "recognition_systems": {"type": "boolean"},
+                "capability_building": {"type": "boolean"}
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "performance_metrics": {
+      "type": "object",
+      "description": "System performance monitoring and optimization metrics",
+      "properties": {
+        "system_metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric_name": {"type": "string"},
+              "metric_category": {"type": "string", "enum": ["efficiency", "effectiveness", "quality", "compliance", "satisfaction"]},
+              "measurement_method": {"type": "string"},
+              "target_value": {"type": "string"},
+              "measurement_frequency": {"type": "string"},
+              "automated_collection": {"type": "boolean"},
+              "ai_analysis": {"type": "boolean"}
+            }
+          }
+        },
+        "improvement_tracking": {
+          "type": "object",
+          "properties": {
+            "baseline_establishment": {"type": "boolean"},
+            "progress_monitoring": {"type": "boolean"},
+            "impact_measurement": {"type": "boolean"},
+            "roi_calculation": {"type": "boolean"},
+            "predictive_modeling": {"type": "boolean"}
+          }
+        }
+      }
+    }
+  }
+}
