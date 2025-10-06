@@ -409,7 +409,7 @@ VkDeviceSize MemoryPoolCalculator::applySafetyMargin(
     VkDeviceSize baseSize,
     const MedicalApplicationProfile& profile) noexcept
 {
-    return static_cast<VkDeviceSize>(static_cast<double>(baseSize) * profile.safetyMarginMultiplier);
+    return static_cast<VkDeviceSize>(static_cast<double>(baseSize) * static_cast<double>(profile.safetyMarginMultiplier));
 }
 
 } // namespace mdux::vulkansc
