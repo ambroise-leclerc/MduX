@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <vulkan/vulkan.h>
+#include "../TestRunner.h"
 
 import std;
 import mdux.vulkansc.objects;
@@ -18,85 +19,7 @@ import mdux.vulkansc.memory;
 
 using namespace std;
 using namespace mdux::vulkansc;
-
-//=============================================================================
-// Test Framework
-//=============================================================================
-
-class TestRunner {
-public:
-    struct TestResult {
-        string testName;
-        bool passed;
-        string errorMessage;
-        chrono::microseconds duration;
-    };
-
-    void runTest(const string& name, function<void()> testFunc) {
-        auto start = chrono::high_resolution_clock::now();
-
-        try {
-            testFunc();
-            auto end = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-
-            results.push_back({
-                .testName = name,
-                .passed = true,
-                .errorMessage = "",
-                .duration = duration
-            });
-
-            cout << "✅ PASS: " << name << " (" << duration.count() << " µs)\n";
-        }
-        catch (const exception& e) {
-            auto end = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-
-            results.push_back({
-                .testName = name,
-                .passed = false,
-                .errorMessage = e.what(),
-                .duration = duration
-            });
-
-            cout << "❌ FAIL: " << name << "\n";
-            cout << "   Error: " << e.what() << "\n";
-        }
-    }
-
-    void printSummary() const {
-        size_t passed = static_cast<size_t>(count_if(results.begin(), results.end(),
-                                                     [](const TestResult& r) { return r.passed; }));
-        size_t failed = results.size() - passed;
-
-        cout << "\n=============================================================================\n";
-        cout << "Test Summary\n";
-        cout << "=============================================================================\n";
-        cout << "Total:  " << results.size() << " tests\n";
-        cout << "Passed: " << passed << " (" << (passed * 100 / results.size()) << "%)\n";
-        cout << "Failed: " << failed << "\n";
-
-        if (failed > 0) {
-            cout << "\nFailed Tests:\n";
-            for (const auto& result : results) {
-                if (!result.passed) {
-                    cout << "  - " << result.testName << ": " << result.errorMessage << "\n";
-                }
-            }
-        }
-
-        cout << "=============================================================================\n";
-    }
-
-    bool allTestsPassed() const {
-        return all_of(results.begin(), results.end(),
-                     [](const TestResult& r) { return r.passed; });
-    }
-
-private:
-    vector<TestResult> results;
-};
+using mdux::test::TestRunner;
 
 //=============================================================================
 // ObjectReservationConfiguration Tests
