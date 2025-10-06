@@ -15,6 +15,8 @@ import mdux.vulkansc.memory;
 using namespace std;
 using namespace mdux::vulkansc;
 
+namespace {  // Anonymous namespace to avoid ODR violations
+
 //=============================================================================
 // Test Framework
 //=============================================================================
@@ -93,6 +95,8 @@ public:
 private:
     vector<TestResult> results;
 };
+
+}  // anonymous namespace
 
 //=============================================================================
 // Note: Tests use VK_NULL_HANDLE for physical devices to avoid Vulkan API calls
