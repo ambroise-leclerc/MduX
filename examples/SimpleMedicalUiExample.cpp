@@ -1,18 +1,17 @@
 /**
  * @file SimpleMedicalUiExample.cpp
  * @brief Simple Medical UI Example using committed MduX module interface
- * 
+ *
  * This example demonstrates basic usage of the MduX Medical Device UI Library
  * using only the committed and exported module interface.
  */
 
+// Include headers before module imports to avoid GCC 15 ICE
+#include <GLFW/glfw3.h>  // GLFW for windowing (user's responsibility)
+#include <vulkan/vulkan.h>  // Vulkan constants like VK_NULL_HANDLE
+
 import mdux;
 import std;
-
-// GLFW for windowing (user's responsibility in real applications)
-#include <GLFW/glfw3.h>
-// Include Vulkan for constants
-#include <vulkan/vulkan.h>
 
 int main() {
     // Initialize MduX library
