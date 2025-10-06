@@ -140,6 +140,30 @@ export namespace mdux::vulkansc {
 }
 ```
 
+## GCC 15 Internal Compiler Error (ICE) Workaround
+
+### Issue
+GCC 15 has an internal compiler error when Vulkan headers are included **after** module imports:
+```cpp
+// This triggers GCC 15 ICE:
+import mdux;
+import std;
+#include <vulkan/vulkan.h>  // ICE: in finish_member_declaration
+```
+
+### Workaround
+Include Vulkan and other C headers **before** module imports in non-module source files:
+```cpp
+// Correct order for GCC 15:
+#include <GLFW/glfw3.h>
+#include <vulkan/vulkan.h>
+
+import mdux;
+import std;
+```
+
+This workaround only applies to regular `.cpp` files that use module imports. Module interface files (`.cppm`) must still use the global module fragment pattern shown above.
+
 ## Related Documentation
 
 - [VulkanSC-vs-Vulkan.md](VulkanSC-vs-Vulkan.md) - Differences between Vulkan SC and standard Vulkan
