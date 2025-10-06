@@ -9,11 +9,12 @@
  *       These tests focus on configuration validation without Vulkan API calls
  */
 
+// Include all headers before module imports to avoid GCC 15 conflicts
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 #include "../TestRunner.h"
 
-import std;
+// Use module imports for MduX modules only (not import std; due to GCC 15 issues)
 import mdux.vulkansc.objects;
 import mdux.vulkansc.memory;
 

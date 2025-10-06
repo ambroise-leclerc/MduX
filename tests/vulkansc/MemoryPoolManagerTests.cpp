@@ -6,11 +6,12 @@
  * @compliance Vulkan SC 1.0 Conformance Testing
  */
 
+// Include all headers before module imports to avoid GCC 15 conflicts
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 #include "../TestRunner.h"
 
-import std;
+// Use module imports for MduX modules only (not import std; due to GCC 15 issues)
 import mdux.vulkansc.memory;
 
 using namespace std;
