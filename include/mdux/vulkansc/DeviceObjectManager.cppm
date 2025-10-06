@@ -21,6 +21,7 @@ module;
 export module mdux.vulkansc.objects;
 
 import std;
+import mdux.vulkansc.memory;  // For MedicalApplicationProfile
 
 using namespace std;
 
@@ -502,7 +503,7 @@ public:
      * @return Object reservation configuration
      */
     static ObjectReservationConfiguration calculate(
-        const struct MedicalApplicationProfile& profile
+        const MedicalApplicationProfile& profile
     );
 
     /**
