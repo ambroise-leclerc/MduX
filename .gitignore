@@ -1,0 +1,43 @@
+# Build directories
+build/
+buildWindows/
+examples/build/
+tests/build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Compiled shaders
+*.spv
+
+# IDE and editor files
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+
+# Documentation files (large PDFs, proprietary standards)
+inputs/Documentation/*.pdf
+inputs/Documentation/*.epub
+inputs/Documentation/ISO\ 13485/
+inputs/Documentation/ISO\ 14971\ The\ Definitive\ Guide/
+inputs/Documentation/Medical\ Device\ Cybersecurity\ for\ Engineers\ and\ Manufacturers/
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+*~

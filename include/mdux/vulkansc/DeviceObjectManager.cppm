@@ -15,8 +15,8 @@
 
 module;
 
-#include <stdint.h>
 #include <vulkan/vulkan.h>
+#include <cstdint>
 
 export module mdux.vulkansc.objects;
 
@@ -513,7 +513,7 @@ public:
      * @return Adjusted count with safety margin
      */
     static uint32_t applySafetyMargin(uint32_t baseCount, float safetyMargin) noexcept {
-        return static_cast<uint32_t>(baseCount * safetyMargin);
+        return static_cast<uint32_t>(static_cast<float>(baseCount) * safetyMargin);
     }
 };
 

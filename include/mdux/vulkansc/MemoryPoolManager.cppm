@@ -12,8 +12,8 @@
 
 module;
 
-#include <stdint.h>
 #include <vulkan/vulkan.h>
+#include <cstdint>
 
 export module mdux.vulkansc.memory;
 
