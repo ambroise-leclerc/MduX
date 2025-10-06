@@ -62,8 +62,8 @@ public:
     }
 
     void printSummary() const {
-        size_t passed = count_if(results.begin(), results.end(),
-                                [](const TestResult& r) { return r.passed; });
+        size_t passed = static_cast<size_t>(count_if(results.begin(), results.end(),
+                                                     [](const TestResult& r) { return r.passed; }));
         size_t failed = results.size() - passed;
 
         cout << "\n=============================================================================\n";
