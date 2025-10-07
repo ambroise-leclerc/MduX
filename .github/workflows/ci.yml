@@ -286,6 +286,8 @@ jobs:
           libxkbcommon-dev \
           libx11-dev \
           libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
           libxi-dev
           
     - name: Install latest CMake
