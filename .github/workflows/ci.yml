@@ -280,7 +280,13 @@ jobs:
           cppcheck \
           clang-tidy \
           wget \
-          gnupg
+          gnupg \
+          libwayland-dev \
+          wayland-protocols \
+          libxkbcommon-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxi-dev
           
     - name: Install latest CMake
       run: |
