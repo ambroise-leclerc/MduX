@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62304/software-lifecycle-process.schema.json",
+  "title": "IEC 62304 Software Lifecycle Process Schema",
+  "description": "Schema for automating IEC 62304 software lifecycle processes for medical device software",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["process_id", "software_system", "safety_classification", "lifecycle_phases"],
+  
+  "properties": {
+    "process_id": {
+      "type": "string",
+      "description": "Unique identifier for the software lifecycle process",
+      "pattern": "^SLP-[0-9]{4}-[0-9]{3}$"
+    },
+    
+    "software_system": {
+      "type": "object",
+      "description": "Software system information",
+      "required": ["name", "version", "description", "intended_use"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the software system"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version identifier following semantic versioning",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)*$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the software system"
+        },
+        "intended_use": {
+          "type": "string",
+          "description": "Intended medical use of the software"
+        },
+        "target_environment": {
+          "type": "object",
+          "properties": {
+            "hardware_platform": {"type": "string"},
+            "operating_system": {"type": "string"},
+            "memory_requirements": {"type": "string"},
+            "performance_requirements": {"type": "string"}
+          }
+        }
+      }
+    },
+    
+    "safety_classification": {
+      "type": "string",
+      "enum": ["Class_A", "Class_B", "Class_C"],
+      "description": "IEC 62304 safety classification"
+    },
+    
+    "classification_rationale": {
+      "type": "object",
+      "description": "Rationale for safety classification",
+      "properties": {
+        "hazard_analysis": {"type": "string"},
+        "potential_harm": {"type": "string"},
+        "harm_probability": {"type": "string"},
+        "risk_control_measures": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    
+    "lifecycle_phases": {
+      "type": "array",
+      "description": "Software lifecycle phases",
+      "items": {
+        "type": "object",
+        "required": ["phase_name", "phase_number", "deliverables", "entry_criteria", "exit_criteria"],
+        "properties": {
+          "phase_name": {
+            "type": "string",
+            "enum": [
+              "Planning", 
+              "Requirements_Analysis", 
+              "Architectural_Design", 
+              "Detailed_Design", 
+              "Implementation", 
+              "Integration_Testing", 
+              "System_Testing", 
+              "Release"
+            ]
+          },
+          "phase_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "deliverables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "deliverable_name": {"type": "string"},
+                "deliverable_type": {"type": "string"},
+                "template_reference": {"type": "string"},
+                "approval_required": {"type": "boolean"}
+              }
+            }
+          },
+          "entry_criteria": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "exit_criteria": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "verification_activities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "activity_name": {"type": "string"},
+                "activity_type": {
+                  "type": "string",
+                  "enum": ["Review", "Testing", "Analysis", "Inspection"]
+                },
+                "required_for_safety_class": {
+                  "type": "array",
+                  "items": {"type": "string", "enum": ["Class_A", "Class_B", "Class_C"]}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "process_tailoring": {
+      "type": "object",
+      "description": "Process tailoring based on safety classification",
+      "properties": {
+        "class_a_requirements": {
+          "type": "object",
+          "properties": {
+            "documentation_level": {"type": "string", "enum": ["Basic", "Standard", "Comprehensive"]},
+            "review_requirements": {"type": "array", "items": {"type": "string"}},
+            "testing_requirements": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "class_b_requirements": {
+          "type": "object",
+          "properties": {
+            "documentation_level": {"type": "string", "enum": ["Standard", "Comprehensive", "Exhaustive"]},
+            "review_requirements": {"type": "array", "items": {"type": "string"}},
+            "testing_requirements": {"type": "array", "items": {"type": "string"}},
+            "additional_verification": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "class_c_requirements": {
+          "type": "object",
+          "properties": {
+            "documentation_level": {"type": "string", "enum": ["Comprehensive", "Exhaustive"]},
+            "review_requirements": {"type": "array", "items": {"type": "string"}},
+            "testing_requirements": {"type": "array", "items": {"type": "string"}},
+            "additional_verification": {"type": "array", "items": {"type": "string"}},
+            "independent_verification": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    
+    "supporting_processes": {
+      "type": "object",
+      "description": "Supporting process integration",
+      "properties": {
+        "risk_management": {
+          "type": "object",
+          "properties": {
+            "risk_management_file_reference": {"type": "string"},
+            "risk_analysis_integration": {"type": "boolean"},
+            "risk_control_implementation": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "configuration_management": {
+          "type": "object",
+          "properties": {
+            "configuration_management_plan": {"type": "string"},
+            "baseline_strategy": {"type": "string"},
+            "change_control_process": {"type": "string"}
+          }
+        },
+        "problem_resolution": {
+          "type": "object",
+          "properties": {
+            "problem_resolution_process": {"type": "string"},
+            "problem_tracking_system": {"type": "string"},
+            "escalation_procedures": {"type": "string"}
+          }
+        }
+      }
+    },
+    
+    "quality_assurance": {
+      "type": "object",
+      "description": "Quality assurance integration",
+      "properties": {
+        "quality_management_system": {"type": "string"},
+        "quality_metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric_name": {"type": "string"},
+              "measurement_method": {"type": "string"},
+              "target_value": {"type": "string"},
+              "acceptable_range": {"type": "string"}
+            }
+          }
+        },
+        "review_process": {
+          "type": "object",
+          "properties": {
+            "review_types": {"type": "array", "items": {"type": "string"}},
+            "review_criteria": {"type": "array", "items": {"type": "string"}},
+            "reviewer_qualifications": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    
+    "traceability": {
+      "type": "object",
+      "description": "Requirements traceability configuration",
+      "properties": {
+        "traceability_strategy": {"type": "string"},
+        "traceability_tools": {"type": "array", "items": {"type": "string"}},
+        "traceability_matrix_template": {"type": "string"},
+        "bidirectional_tracing": {"type": "boolean"}
+      }
+    },
+    
+    "automation_configuration": {
+      "type": "object",
+      "description": "AI/Agent automation configuration",
+      "properties": {
+        "automated_processes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "requirements_analysis",
+              "design_verification",
+              "code_review",
+              "test_generation",
+              "compliance_checking",
+              "documentation_generation",
+              "traceability_maintenance",
+              "risk_assessment"
+            ]
+          }
+        },
+        "automation_tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool_name": {"type": "string"},
+              "tool_purpose": {"type": "string"},
+              "integration_method": {"type": "string"}
+            }
+          }
+        },
+        "validation_gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "gate_name": {"type": "string"},
+              "gate_criteria": {"type": "array", "items": {"type": "string"}},
+              "automated_validation": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    },
+    
+    "regulatory_compliance": {
+      "type": "object",
+      "description": "Regulatory compliance configuration",
+      "properties": {
+        "target_jurisdictions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "regulatory_standards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "standard_name": {"type": "string"},
+              "standard_version": {"type": "string"},
+              "compliance_level": {"type": "string", "enum": ["Required", "Recommended", "Optional"]}
+            }
+          }
+        },
+        "submission_requirements": {
+          "type": "object",
+          "properties": {
+            "required_documentation": {"type": "array", "items": {"type": "string"}},
+            "evidence_packages": {"type": "array", "items": {"type": "string"}},
+            "submission_timeline": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  
+  "definitions": {
+    "iso_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Date in ISO 8601 format (YYYY-MM-DD)"
+    },
+    "iso_datetime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z?$",
+      "description": "Date-time in ISO 8601 format"
+    },
+    "person": {
+      "type": "object",
+      "required": ["name", "role"],
+      "properties": {
+        "name": {"type": "string"},
+        "role": {"type": "string"},
+        "qualifications": {"type": "array", "items": {"type": "string"}},
+        "contact_information": {"type": "string"}
+      }
+    }
+  }
+}

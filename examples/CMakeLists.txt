@@ -1,8 +1,8 @@
 # Examples for MduX Medical Device UI Library
 
-# Pure Vulkan medical UI integration example (NEW ARCHITECTURE)
+# Simple Medical UI integration example using committed module interface
 add_executable(MedicalUiExample 
-    MedicalUiExample.cpp
+    SimpleMedicalUiExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
@@ -20,24 +20,81 @@ else()
     message(STATUS "Using CPM GLFW for MedicalUiExample")
 endif()
 
-# Legacy example (disabled during architecture transition)
-# The MduXExample uses the old windowing architecture and needs to be updated
-# Use MedicalUiExample instead, which demonstrates the new pure Vulkan integration
-# 
-# add_executable(MduXExample 
-#     MduXExample.cpp
-# )
-# 
-# # Add VulkanCubeRenderer module for legacy example
-# target_sources(MduXExample
-#     PUBLIC
-#         FILE_SET CXX_MODULES FILES
-#             VulkanCubeRenderer.cppm
-#     PRIVATE
-#         VulkanCubeRenderer.cpp
-# )
-# 
-# target_link_libraries(MduXExample PRIVATE MduX::MduX)
+# Compile shaders for triangle demo
+find_program(GLSL_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/Bin)
+
+set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+
+file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
+
+set(VERT_SHADER ${SHADER_DIR}/triangle.vert)
+set(FRAG_SHADER ${SHADER_DIR}/triangle.frag)
+set(VERT_SPV ${SHADER_BINARY_DIR}/triangle.vert.spv)
+set(FRAG_SPV ${SHADER_BINARY_DIR}/triangle.frag.spv)
+
+if(GLSL_VALIDATOR)
+    add_custom_command(
+        OUTPUT ${VERT_SPV}
+        COMMAND ${GLSL_VALIDATOR} -V ${VERT_SHADER} -o ${VERT_SPV}
+        DEPENDS ${VERT_SHADER}
+        COMMENT "Compiling vertex shader"
+    )
+
+    add_custom_command(
+        OUTPUT ${FRAG_SPV}
+        COMMAND ${GLSL_VALIDATOR} -V ${FRAG_SHADER} -o ${FRAG_SPV}
+        DEPENDS ${FRAG_SHADER}
+        COMMENT "Compiling fragment shader"
+    )
+
+    add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV})
+else()
+    message(WARNING "glslangValidator not found. Shaders will not be compiled.")
+endif()
+
+# Vulkan SC Triangle Demo - Visual rendering with static memory
+# Temporarily disabled on GCC 15 due to compiler ICE bugs with C++23 modules
+# (Segmentation fault in std::array with modules, fixed in future GCC versions)
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
+    add_executable(VulkanSCTriangleExample
+        VulkanSCTriangleExample.cpp
+    )
+
+    if(GLSL_VALIDATOR)
+        add_dependencies(VulkanSCTriangleExample CompileShaders)
+    endif()
+
+    target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
+
+    # GLFW for windowing
+    if(glfw3_FOUND)
+        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
+    else()
+        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
+    endif()
+
+    # Set C++23 standard
+    set_target_properties(VulkanSCTriangleExample PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    if(TARGET __CMAKE::CXX23)
+        set_target_properties(VulkanSCTriangleExample PROPERTIES CXX_MODULE_STD ON)
+    endif()
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(VulkanSCTriangleExample PRIVATE /experimental:module /std:c++latest)
+    endif()
+
+    if(UNIX)
+        target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
+    endif()
+else()
+    message(STATUS "Skipping VulkanSCTriangleExample on GCC 15 due to compiler ICE bugs with C++23 modules")
+endif()
 
 # Platform-specific libraries for file watching
 if(UNIX)
