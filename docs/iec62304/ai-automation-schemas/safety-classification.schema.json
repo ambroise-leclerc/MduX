@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62304/safety-classification.schema.json",
+  "title": "IEC 62304 Software Safety Classification Schema",
+  "description": "Schema for automating IEC 62304 software safety classification processes",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["classification_id", "software_system", "hazard_analysis", "classification_result"],
+  
+  "properties": {
+    "classification_id": {
+      "type": "string",
+      "description": "Unique identifier for the safety classification process",
+      "pattern": "^SC-[0-9]{4}-[0-9]{3}$"
+    },
+    
+    "software_system": {
+      "type": "object",
+      "description": "Software system being classified",
+      "required": ["name", "version", "description", "medical_device_context"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "description": {"type": "string"},
+        "medical_device_context": {
+          "type": "object",
+          "properties": {
+            "device_type": {"type": "string"},
+            "intended_use": {"type": "string"},
+            "patient_population": {"type": "string"},
+            "clinical_environment": {"type": "string"}
+          }
+        }
+      }
+    },
+    
+    "hazard_analysis": {
+      "type": "object",
+      "description": "Hazard analysis for safety classification",
+      "required": ["hazards_identified", "analysis_method", "analysis_date"],
+      "properties": {
+        "analysis_method": {
+          "type": "string",
+          "enum": ["Failure_Mode_Analysis", "Hazard_Analysis", "Risk_Analysis", "Fault_Tree_Analysis"]
+        },
+        "analysis_date": {"$ref": "#/definitions/iso_date"},
+        "analysts": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/person"}
+        },
+        "hazards_identified": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["hazard_id", "hazard_description", "potential_causes", "potential_consequences"],
+            "properties": {
+              "hazard_id": {
+                "type": "string",
+                "pattern": "^H-[0-9]{3}$"
+              },
+              "hazard_description": {"type": "string"},
+              "hazard_category": {
+                "type": "string",
+                "enum": ["Energy", "Biological", "Chemical", "Information", "Functional"]
+              },
+              "potential_causes": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "potential_consequences": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "consequence_description": {"type": "string"},
+                    "severity": {
+                      "type": "string",
+                      "enum": ["Catastrophic", "Critical", "Serious", "Minor", "Negligible"]
+                    },
+                    "affected_population": {"type": "string"}
+                  }
+                }
+              },
+              "software_contribution": {
+                "type": "object",
+                "required": ["can_contribute", "contribution_analysis"],
+                "properties": {
+                  "can_contribute": {"type": "boolean"},
+                  "contribution_analysis": {"type": "string"},
+                  "contribution_mechanism": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "Software_Malfunction",
+                        "Incorrect_Output",
+                        "Delayed_Output", 
+                        "No_Output",
+                        "Incorrect_Algorithm",
+                        "Data_Corruption",
+                        "Interface_Failure",
+                        "Timing_Error"
+                      ]
+                    }
+                  },
+                  "failure_probability": {
+                    "type": "string",
+                    "enum": ["Very_High", "High", "Medium", "Low", "Very_Low"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    
+    "classification_analysis": {
+      "type": "object",
+      "description": "Analysis process for determining safety classification",
+      "required": ["analysis_approach", "classification_criteria", "decision_matrix"],
+      "properties": {
+        "analysis_approach": {
+          "type": "string",
+          "enum": ["Hazard_Based", "Risk_Based", "Function_Based", "System_Based"]
+        },
+        "classification_criteria": {
+          "type": "object",
+          "properties": {
+            "class_a_criteria": {
+              "type": "string",
+              "default": "Software that cannot contribute to a hazardous situation"
+            },
+            "class_b_criteria": {
+              "type": "string", 
+              "default": "Software that could contribute to a non-life-threatening injury"
+            },
+            "class_c_criteria": {
+              "type": "string",
+              "default": "Software that could contribute to death or serious injury"
+            }
+          }
+        },
+        "decision_matrix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["hazard_id", "severity_assessment", "software_contribution_assessment", "classification_determination"],
+            "properties": {
+              "hazard_id": {"type": "string"},
+              "severity_assessment": {
+                "type": "object",
+                "properties": {
+                  "maximum_harm": {
+                    "type": "string",
+                    "enum": ["Death", "Serious_Injury", "Non_Serious_Injury", "No_Injury"]
+                  },
+                  "harm_probability": {
+                    "type": "string",
+                    "enum": ["Certain", "Probable", "Possible", "Remote", "Improbable"]
+                  }
+                }
+              },
+              "software_contribution_assessment": {
+                "type": "object",
+                "properties": {
+                  "contribution_level": {
+                    "type": "string",
+                    "enum": ["Direct", "Indirect", "Remote", "None"]
+                  },
+                  "contribution_probability": {
+                    "type": "string",
+                    "enum": ["High", "Medium", "Low", "Negligible"]
+                  }
+                }
+              },
+              "classification_determination": {
+                "type": "string",
+                "enum": ["Class_A", "Class_B", "Class_C"]
+              },
+              "rationale": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    
+    "classification_result": {
+      "type": "object",
+      "description": "Final safety classification result",
+      "required": ["overall_classification", "classification_rationale", "approval"],
+      "properties": {
+        "overall_classification": {
+          "type": "string",
+          "enum": ["Class_A", "Class_B", "Class_C"]
+        },
+        "classification_rationale": {
+          "type": "object",
+          "properties": {
+            "primary_justification": {"type": "string"},
+            "contributing_hazards": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "worst_case_scenario": {"type": "string"},
+            "conservative_approach_applied": {"type": "boolean"}
+          }
+        },
+        "classification_by_component": {
+          "type": "array",
+          "description": "Classification of individual software components if segregation is applied",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component_name": {"type": "string"},
+              "component_classification": {
+                "type": "string",
+                "enum": ["Class_A", "Class_B", "Class_C"]
+              },
+              "segregation_method": {
+                "type": "string",
+                "enum": ["Physical_Separation", "Temporal_Separation", "Logical_Separation"]
+              },
+              "segregation_verification": {"type": "string"}
+            }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "required": ["approved_by", "approval_date"],
+          "properties": {
+            "approved_by": {"$ref": "#/definitions/person"},
+            "approval_date": {"$ref": "#/definitions/iso_date"},
+            "approval_conditions": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "review_board": {
+              "type": "array",
+              "items": {"$ref": "#/definitions/person"}
+            }
+          }
+        }
+      }
+    },
+    
+    "classification_evidence": {
+      "type": "object",
+      "description": "Evidence supporting the safety classification",
+      "properties": {
+        "hazard_analysis_documents": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "risk_analysis_documents": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "clinical_evaluation_data": {
+          "type": "array", 
+          "items": {"type": "string"}
+        },
+        "expert_opinions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "expert": {"$ref": "#/definitions/person"},
+              "opinion": {"type": "string"},
+              "justification": {"type": "string"}
+            }
+          }
+        },
+        "regulatory_precedents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "precedent_description": {"type": "string"},
+              "regulatory_body": {"type": "string"},
+              "relevance": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    
+    "maintenance_and_monitoring": {
+      "type": "object",
+      "description": "Ongoing maintenance of safety classification",
+      "properties": {
+        "review_schedule": {
+          "type": "object",
+          "properties": {
+            "regular_review_frequency": {"type": "string"},
+            "next_review_date": {"$ref": "#/definitions/iso_date"},
+            "review_triggers": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "change_impact_assessment": {
+          "type": "object",
+          "properties": {
+            "change_types_requiring_review": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "assessment_process": {"type": "string"},
+            "approval_requirements": {"type": "string"}
+          }
+        },
+        "post_market_surveillance": {
+          "type": "object",
+          "properties": {
+            "surveillance_plan": {"type": "string"},
+            "feedback_incorporation": {"type": "string"},
+            "reclassification_triggers": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    
+    "automation_support": {
+      "type": "object",
+      "description": "AI/Agent automation configuration for classification",
+      "properties": {
+        "automated_classification_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule_name": {"type": "string"},
+              "condition": {"type": "string"},
+              "classification_result": {
+                "type": "string",
+                "enum": ["Class_A", "Class_B", "Class_C"]
+              },
+              "confidence_level": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        },
+        "validation_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "check_name": {"type": "string"},
+              "check_type": {
+                "type": "string",
+                "enum": ["Consistency", "Completeness", "Logic", "Evidence"]
+              },
+              "automated": {"type": "boolean"}
+            }
+          }
+        },
+        "decision_support_features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Hazard_Impact_Analysis",
+              "Software_Contribution_Assessment", 
+              "Classification_Recommendation",
+              "Evidence_Gap_Analysis",
+              "Regulatory_Precedent_Search"
+            ]
+          }
+        }
+      }
+    }
+  },
+  
+  "definitions": {
+    "iso_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Date in ISO 8601 format (YYYY-MM-DD)"
+    },
+    "person": {
+      "type": "object",
+      "required": ["name", "role"],
+      "properties": {
+        "name": {"type": "string"},
+        "role": {"type": "string"},
+        "qualifications": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "organization": {"type": "string"},
+        "contact_information": {"type": "string"}
+      }
+    }
+  }
+}

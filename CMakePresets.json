@@ -1,0 +1,39 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "ninja-msvc",
+            "displayName": "Ninja with MSVC",
+            "description": "Ninja generator with MSVC compiler for import std support",
+            "generator": "Ninja",
+            "binaryDir": "build",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [ "Windows" ]
+                }
+            },
+            "toolset": {
+                "value": "host=x64",
+                "strategy": "external"
+            },
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "CMAKE_GENERATOR_PLATFORM": "x64"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "ninja-msvc",
+            "configurePreset": "ninja-msvc"
+        }
+    ]
+}
