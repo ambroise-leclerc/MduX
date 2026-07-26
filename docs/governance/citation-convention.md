@@ -35,17 +35,19 @@ Valid standard identifiers (closed set):
 - `IEC 62366-1:2015`
 - `IEC 81001-5-1:2021`
 
-Use the exact string verbatim wherever a clause is cited — as a module heading, an `AI-Reference.md`
-row, or a `clause_ref` field — so it can eventually be checked mechanically (issue #7, S6).
+Use the exact string wherever a clause is cited — as a module heading, an `AI-Reference.md` row, or
+a `clause_ref` field — so it can eventually be checked mechanically (issue #7, S6).
 
 MduX keeps IEC 62304 Class A in scope (its sibling project TrustSC models Class B/C only) — state
 this explicitly wherever safety classification is discussed, rather than assuming one or the other.
 
 ## The `Justification` object (preview)
 
-Use this shape whenever a design decision needs a formal link to a clause:
+Use this shape whenever a design decision needs a formal link to a clause. This is an illustrative
+example with placeholder values, not a binding Justification — fenced as `jsonc` rather than `json`
+so `mdux-docs-lint` doesn't validate it as one:
 
-```json
+```jsonc
 {
   "justification_id": "JUS-001",
   "standard": "IEC 62304:2006",
@@ -62,10 +64,10 @@ with issue #8, S1 — this preview exists so early citations already use the rig
 
 ## Known gap this document does not yet close
 
-Removing the two files that self-described as *"a comprehensive markdown version of"* IEC 62304 and
-ISO 13485 (issue #22) does not mean the rest of `docs/iec62304/` and `docs/iso13485/` are already
-clean. Spot-checking `docs/iec62304/01-scope-and-classification.md` during that removal found
-sentences reading as close paraphrase of the standard's own §1.1 wording (e.g. *"This document
+Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) does
+not mean the rest of `docs/iec62304/` and `docs/iso13485/` are already clean. Spot-checking
+`docs/iec62304/01-scope-and-classification.md` during that removal found sentences reading as close
+paraphrase of the standard's own §1.1 wording (e.g. *"This document
 specifies life cycle processes for medical device software..."*). **The full clause-accurate
 rewrite of both directories — which is needed regardless, since today's modules use a flat
 "sections 1-16" numbering that doesn't match either standard's real clause structure — is tracked as

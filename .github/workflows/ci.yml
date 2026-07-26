@@ -305,11 +305,24 @@ jobs:
       run: |
         # Static analysis with cppcheck
         cppcheck --enable=all --std=c++23 --suppress=missingInclude include/ examples/ tests/ || true
-        
+
         # Configure for clang-tidy
         cmake -B build -S . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
-        
+
         # Run clang-tidy on key files (if available)
         if command -v clang-tidy &> /dev/null; then
           find include/ -name "*.hpp" -exec clang-tidy {} -p build \; || true
         fi
+
+  # Documentation and regulatory citation lint - no C++ toolchain needed, so a
+  # docs-only PR gets fast feedback without waiting on the full build matrix.
+  docs-lint:
+    name: Documentation Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run mdux-docs-lint
+      run: python3 tools/docs-lint/mdux_docs_lint.py
