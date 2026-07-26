@@ -26,6 +26,18 @@ All ADRs in this project must consider:
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform Low-Level Graphics Framework Selection | Accepted | 2025-07-15 |
+| [ADR-002](ADR-002-testing-framework-selection.md) | Testing Framework Selection for Medical Device Compliance | Proposed (never implemented) | — |
+| [ADR-003](ADR-003-compiler-modernization.md) | Compiler Modernization for C++23 Modules Support | Accepted | 2025-07-26 |
+| [ADR-004](ADR-004-trust-zones-in-cpp.md) | Trust zones in C++ | Accepted | 2026-07-26 |
+| [ADR-005](ADR-005-error-handling-and-exceptions-policy.md) | Error handling and exceptions policy | Accepted | 2026-07-26 |
+
+Note: `ADR-002-implementation-plan.md` shares its number with `ADR-002-testing-framework-selection.md`
+(a pre-existing duplication in this directory) and is not an independently numbered ADR — it is the
+implementation plan for the testing-framework decision. Re-baselining this directory's numbering is
+tracked separately (issue #10, S1); ADR-004 and ADR-005 were assigned the next free numbers rather
+than waiting on that rebaseline. ADR-002's Catch2 selection was never implemented and is expected to
+be superseded by an in-repo test framework decision (issue #11, S5) once that ADR is written — until
+then it remains "Proposed" in the sense that the decision it recorded was never carried out.
 
 ## Creating New ADRs
 
