@@ -10,6 +10,7 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 *.cmake
+!cmake/*.cmake
 
 # Compiled binaries
 *.exe
@@ -21,6 +22,11 @@ Makefile
 
 # Compiled shaders
 *.spv
+
+# Evidence pipeline: baked, byte-verified artifacts under generated/ are
+# committed on purpose (package.json / report.json / sidecar payloads,
+# which may include *.spv, *.cmake, or other otherwise-ignored extensions).
+!generated/**
 
 # IDE and editor files
 .vs/
