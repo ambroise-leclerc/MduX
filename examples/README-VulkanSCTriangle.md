@@ -558,7 +558,7 @@ createInfo.ppEnabledLayerNames = validationLayers.data();
 - **Vulkan SC Migration Plan**: `docs/Vulkan-SC-Only-Migration-Plan.md`
 - **Memory Pool Manager**: `include/mdux/vulkansc/MemoryPoolManager.cppm`
 - **Device Object Manager**: `include/mdux/vulkansc/DeviceObjectManager.cppm`
-- **IEC 62304 Reference**: `docs/MduX-ISO-13485-AI-Reference.md`
+- **IEC 62304 Reference**: `docs/iec62304/README.md`
 
 ---
 
@@ -621,7 +621,7 @@ vkCmdDraw(commandBuffer, 6, 1, 0, 0);  // Draw 6 vertices (2 triangles)
 
 For questions about:
 - **Vulkan SC**: See `docs/Vulkan-SC-Only-Migration-Plan.md`
-- **Medical compliance**: See `docs/MduX-ISO-13485-AI-Reference.md`
+- **Medical compliance**: See `docs/iec62304/README.md` and `docs/iso13485/README.md`
 - **Build issues**: Check CMakeLists.txt configuration
 - **Shader errors**: Review `examples/shaders/` source files
 
