@@ -37,6 +37,27 @@ ISO 13485 risk-management and quality-management frameworks as "Completed" with 
 namespaces (`risk::`, `qms::`, `lifecycle::`). No such code exists in `include/` or `src/` today —
 treat that table as aspirational/planned, not implemented, per the precedence order above.
 
+### The TrustSC parity programme
+
+MduX has a Rust sibling, [TrustSC](https://github.com/ambroise-leclerc/TrustSC), targeting the same
+problem (a medical-device UI SDK with IEC 62304 Class B/C compliance modelling built in) with a more
+coherent architecture. MduX is being deliberately steered toward structural parity with it. The full
+roadmap is tracked as GitHub epics `#7`-`#19` on `ambroise-leclerc/MduX`, each with child issues.
+Three decisions from that programme apply repository-wide and are **not** yet reflected in the code:
+
+1. **`.medui` will replace the HTML/CSS UI story entirely.** `UiFileWatcher`, `MedicalUiContent`,
+   and `MedicalUiRenderer` in `include/mdux/mdux.cppm` / `src/mdux.cpp` are slated for deletion, not
+   extension (issue `#13`). Do not add HTML/CSS parsing capability to that path.
+2. **A trust-zone split is coming**: a new governed `MduXCore` target that never receives Vulkan's
+   include directories, so `#include <vulkan/vulkan.h>` in governed code becomes a compile error
+   (issue `#11`). Until that lands, the single `MduX` target described in § 3 below remains accurate.
+3. **Reproduced normative standard text is being purged** from `docs/` and from git history
+   (issue `#7`) — see `regulatory-citations` in § 7. Do not add new material that reproduces or
+   closely paraphrases a standard's wording, even though older files in the tree still do.
+
+Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
+code*; treat this subsection as the direction that code is moving in.
+
 ## 3. Verified architecture summary
 
 **Module layout** (C++23 `import`/`export` modules, verified against `CMakeLists.txt`):
@@ -180,6 +201,10 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 | [`mdux-build-and-test`](.agents/skills/mdux-build-and-test/SKILL.md) | Configuring, compiling, testing, running examples, or diagnosing a local build failure. | Toolchain/SDK checks, verified configure/build/test commands, target list, evidence to report. |
 | [`mdux-cpp23-vulkan-development`](.agents/skills/mdux-cpp23-vulkan-development/SKILL.md) | Changing module interfaces/implementations, Vulkan or Vulkan SC integration, rendering resources, examples, or public APIs. | Module file placement and CMake registration, import/export conventions, the Vulkan/Vulkan SC resource-ownership model, windowing policy, required test/doc updates. |
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
+| [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
+| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Planned** — no baker exists yet (issue `#12`). |
+| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Planned** — no `.medui` compiler exists yet (issue `#15`). |
+| [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Planned** — `software_development_file/` doesn't exist yet (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.
 
