@@ -7,6 +7,35 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# Governed-zone module tests. Deliberately links MduX::Core only, not MduX::MduX -
+# this is itself a check that the governed modules are usable without pulling in
+# Vulkan (see ADR-004).
+add_executable(core_tests
+    core/CoreTests.cpp
+)
+
+target_sources(core_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(core_tests PRIVATE MduX::Core)
+target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(core_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(core_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(core_tests PRIVATE /experimental:module)
+    target_compile_options(core_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(core_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp

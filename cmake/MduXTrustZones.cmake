@@ -1,0 +1,95 @@
+# MduXTrustZones.cmake
+#
+# Mechanical enforcement of the governed/adapter/tools split from ADR-004: a
+# governed target's link graph must never reach Vulkan or a windowing library.
+# This is deliberately a link-graph check, not just "don't #include vulkan.h" -
+# the point is to catch the dependency arriving transitively through some other
+# target just as reliably as directly.
+#
+# Usage:
+#   mdux_declare_governed(MduXCore)     # once, right after the target is created
+#   ...
+#   mdux_verify_trust_zones()           # once, at the end of the top-level
+#                                        # CMakeLists.txt, after every
+#                                        # add_subdirectory() so the full link
+#                                        # graph is established
+
+define_property(GLOBAL PROPERTY MDUX_GOVERNED_TARGETS
+    BRIEF_DOCS "Targets declared governed under ADR-004"
+    FULL_DOCS "Targets whose link graph mdux_verify_trust_zones() checks for Vulkan/windowing dependencies. Populated by mdux_declare_governed()."
+)
+
+set(_MDUX_FORBIDDEN_TARGET_PATTERNS
+    "^Vulkan::"
+    "^glfw$"
+    "^glfw3$"
+)
+
+function(mdux_declare_governed TARGET)
+    if(NOT TARGET ${TARGET})
+        message(FATAL_ERROR "mdux_declare_governed: '${TARGET}' is not a target")
+    endif()
+    set_property(GLOBAL APPEND PROPERTY MDUX_GOVERNED_TARGETS ${TARGET})
+endfunction()
+
+# Recursively walks TARGET's link interface looking for a forbidden dependency.
+# ROOT is the originally-declared-governed target, threaded through for the
+# error message; VISITED guards against revisiting a target in a cyclic or
+# diamond-shaped link graph.
+function(_mdux_check_link_graph TARGET ROOT VISITED_VAR)
+    set(visited "${${VISITED_VAR}}")
+    if(TARGET IN_LIST visited)
+        return()
+    endif()
+    list(APPEND visited "${TARGET}")
+    set(${VISITED_VAR} "${visited}" PARENT_SCOPE)
+
+    foreach(pattern ${_MDUX_FORBIDDEN_TARGET_PATTERNS})
+        if(TARGET MATCHES "${pattern}")
+            message(FATAL_ERROR
+                "Trust zone violation (ADR-004): governed target '${ROOT}' "
+                "reaches forbidden dependency '${TARGET}'. Governed targets "
+                "must not link Vulkan or a windowing library, directly or "
+                "transitively.")
+        endif()
+    endforeach()
+
+    if(NOT TARGET ${TARGET})
+        # A plain library name/path (not a CMake target) - nothing further to walk.
+        return()
+    endif()
+
+    foreach(prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(deps ${TARGET} ${prop})
+        if(deps)
+            foreach(dep ${deps})
+                # Strip generator-expression wrappers like $<LINK_ONLY:...> down to
+                # the bare target name; this check runs at configure time so it
+                # cannot evaluate config-dependent genexes, but the common cases
+                # (plain names, $<LINK_ONLY:name>, $<BUILD_INTERFACE:name>) are
+                # exactly the forms this project's own CMakeLists.txt files use.
+                string(REGEX REPLACE "^\\$<[A-Z_]+:(.*)>$" "\\1" dep_name "${dep}")
+                if(NOT dep_name STREQUAL "")
+                    set(_visited_copy "${${VISITED_VAR}}")
+                    _mdux_check_link_graph("${dep_name}" "${ROOT}" _visited_copy)
+                    set(${VISITED_VAR} "${_visited_copy}" PARENT_SCOPE)
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+endfunction()
+
+function(mdux_verify_trust_zones)
+    get_property(governed GLOBAL PROPERTY MDUX_GOVERNED_TARGETS)
+    if(NOT governed)
+        message(WARNING "mdux_verify_trust_zones: no targets declared governed - "
+                         "nothing to check. Did mdux_declare_governed() run?")
+        return()
+    endif()
+    foreach(target ${governed})
+        set(visited "")
+        _mdux_check_link_graph("${target}" "${target}" visited)
+    endforeach()
+    list(LENGTH governed count)
+    message(STATUS "mdux_verify_trust_zones: ${count} governed target(s) clean of Vulkan/windowing dependencies")
+endfunction()
