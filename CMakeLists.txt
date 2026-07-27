@@ -116,6 +116,9 @@ target_sources(MduXCore
         FILES
             include/mdux/core/Units.cppm
             include/mdux/core/Result.cppm
+            include/mdux/evidence/Digest.cppm
+    PRIVATE
+        src/evidence/Digest.cpp
 )
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
