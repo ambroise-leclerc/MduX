@@ -65,10 +65,10 @@ with issue #8, S1 — this preview exists so early citations already use the rig
 Removing the two files that self-described as *"a comprehensive markdown version of"* IEC 62304 and
 ISO 13485 (issue #22) does not mean the rest of `docs/iec62304/` and `docs/iso13485/` are already
 clean. Spot-checking `docs/iec62304/01-scope-and-classification.md` during that removal found
-sentences reading as close paraphrase of the standard's own §1.1 wording (e.g. *"This document
-specifies life cycle processes for medical device software..."*). **The full clause-accurate
+sentences that may closely paraphrase §1.1; the suspected wording is deliberately not repeated
+here. **The required file-by-file inventory remains open in issue #21.** The full clause-accurate
 rewrite of both directories — which is needed regardless, since today's modules use a flat
-"sections 1-16" numbering that doesn't match either standard's real clause structure — is tracked as
-issue #8 and is where this gets fixed properly**, rather than patched piecemeal here. Treat
+"sections 1-16" numbering that does not match either standard's real clause structure — is tracked
+as issue #8 and is where confirmed problems are fixed, rather than patched piecemeal here. Treat
 `docs/iec62304/` and `docs/iso13485/` as not yet compliant with this convention until issue #8
 lands.
