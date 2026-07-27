@@ -274,6 +274,12 @@ target_link_libraries(MduX PRIVATE MduX_warnings)
 target_link_libraries(MduXCore PRIVATE MduX_warnings)
 
 # Subdirectories
+#
+# tools/ comes before tests/ so the test targets can link MduX::ToolsCommon. It is not gated on
+# an option: the bakers under tools/ are what produce every committed artifact, so a build that
+# skipped them could not run `ctest -L evidence` at all (ADR-007).
+add_subdirectory(tools)
+
 if(MDUX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
