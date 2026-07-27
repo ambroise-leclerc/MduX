@@ -87,6 +87,17 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(vulkansc_memory_tests PRIVATE /std:c++latest)
 endif()
 
+# Work around a GCC internal compiler error in this specific translation unit at
+# optimization levels above -O0 (GIMPLE ealias pass, "internal compiler error: in
+# nonnull_arg_p, at tree.cc"). Reproduced deterministically on both GCC 15.2.0 and
+# GCC 16 with C++23 modules + import std + <vulkan/vulkan.h>; -O1/-O2/-O3/-Og all
+# trigger it, -O0 does not. -fno-tree-pta and dropping -Wformat=2 do not help. See
+# issue #48 for the investigation. A later -O flag wins on GCC's command line, so
+# this override is safe to append regardless of CMAKE_BUILD_TYPE.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(vulkansc_memory_tests PRIVATE -O0)
+endif()
+
 add_test(NAME VulkanSCMemoryPoolTests COMMAND vulkansc_memory_tests)
 
 # Vulkan SC device object tests
