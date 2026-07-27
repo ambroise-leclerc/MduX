@@ -35,7 +35,6 @@ cmake --build build
 # Build specific targets
 cmake --build build --target MduX
 cmake --build build --target MedicalUiExample  # NEW: Pure Vulkan integration example
-cmake --build build --target MduXExample       # LEGACY: Will be deprecated
 cmake --build build --target unit_tests
 ```
 
@@ -52,10 +51,7 @@ ctest --test-dir build
 **Examples:**
 ```bash
 # NEW: Pure Vulkan medical UI integration
-./build/examples/MedicalUiExample medical_interface.html
-
-# LEGACY: Window-based example (deprecated)
-./build/examples/MduXExample examples/ui.html --hot
+./build/examples/MedicalUiExample
 ```
 
 **Documentation:**
