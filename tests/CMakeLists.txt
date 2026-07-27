@@ -68,6 +68,36 @@ endif()
 
 mdux_discover_tests(evidence_tests)
 
+# Host-tools tests (ADR-004 host-tools zone). Links MduX::ToolsCommon, which is deliberately not
+# a governed target - these tests exercise code permitted to throw (ADR-005).
+add_executable(tools_tests
+    tools/ToolsTestMain.cpp
+    tools/TomlTests.cpp
+    tools/CliTests.cpp
+)
+
+target_sources(tools_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(tools_tests PRIVATE MduX::ToolsCommon)
+target_include_directories(tools_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(tools_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(tools_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(tools_tests PRIVATE /experimental:module)
+    target_compile_options(tools_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(tools_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp
