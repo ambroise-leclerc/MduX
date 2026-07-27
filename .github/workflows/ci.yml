@@ -26,11 +26,20 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
-    - name: Setup CMake (latest)
+    # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # to a specific UUID that only matches CMake's `import std` experimental-feature
+    # ABI as of 4.1.1 - CMake changes that UUID as the feature evolves release to
+    # release, so newer CMake versions reject it ("CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # is set to incorrect value") and import std silently stops working, cascading
+    # into hundreds of "could not find module 'std'" errors at compile time. Every
+    # other job in this workflow already pins 4.1.1 for the same reason (grep
+    # CMAKE_VERSION="4.1.1" below) - 'latest' here was the one job that floated,
+    # and it broke as soon as 'latest' moved past 4.1.1.
+    - name: Setup CMake (4.1.1, matching every other job in this workflow)
       uses: jwlawson/actions-setup-cmake@v2
       with:
-        cmake-version: 'latest'
-        
+        cmake-version: '4.1.1'
+
     - name: Setup Vulkan SDK
       uses: humbletim/setup-vulkan-sdk@v1.2.1
       with:
@@ -53,25 +62,42 @@ jobs:
         Invoke-WebRequest -Uri $NINJA_URL -OutFile $NINJA_ZIP
         Expand-Archive -Path $NINJA_ZIP -DestinationPath $NINJA_DIR -Force
         echo "$NINJA_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        
+
+    # Locates whatever MSVC version is actually installed on the runner image via
+    # vswhere and exports its environment (INCLUDE/LIB/PATH/etc.) into GITHUB_ENV
+    # for every later step in this job. Replaces a hardcoded
+    # ".../Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat" call that
+    # broke silently when GitHub's windows-latest image moved to a newer Visual
+    # Studio release with a different install path - the failure mode was `call`
+    # failing to find the batch file, followed by a *different*, misleading error
+    # ("'#' is not recognized...") from the now-garbled command line, not a clear
+    # "path not found". Never hardcode a VS version/edition path here again.
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      with:
+        arch: x64
+
     - name: Configure CMake (MSVC with Ninja)
-      run: |
-        # Setup MSVC environment and configure with explicit compiler paths
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
       shell: cmd
-      
+
     - name: Build
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        cmake --build build --config ${{ env.BUILD_TYPE }}
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
       shell: cmd
-      
+
     - name: Run Tests
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+      run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
       shell: cmd
+
+    - name: Verify no source-tree writes
+      shell: pwsh
+      run: |
+        $status = git status --porcelain
+        if ($status) {
+          Write-Host "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
+          Write-Host $status
+          exit 1
+        }
 
   # Linux Build with GCC 15 container
   linux-build:
@@ -112,8 +138,9 @@ jobs:
         # Install CMake 4.x for C++23 import std support via direct download
         # Avoid libssl1.1 dependency issues in Debian containers
         CMAKE_VERSION="4.1.1"
-        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
-        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf "$CMAKE_ARCHIVE" -C /opt/
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
         cmake --version
@@ -136,6 +163,16 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+    - name: Verify no source-tree writes
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        status="$(git status --porcelain)"
+        if [ -n "$status" ]; then
+          echo "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
+          echo "$status"
+          exit 1
+        fi
 
   # Clang Build with Vulkan (temporarily disabled - Clang 20 std module support not ready)
   # clang-build:
