@@ -10,6 +10,7 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 *.cmake
+!cmake/*.cmake
 
 # Compiled binaries
 *.exe
@@ -21,6 +22,20 @@ Makefile
 
 # Compiled shaders
 *.spv
+
+# Evidence pipeline: baked, byte-verified artifacts under generated/ are
+# committed on purpose (package.json / report.json / sidecar payloads,
+# which may include *.spv, *.cmake, or other otherwise-ignored extensions).
+!generated/**
+
+# CI-downloaded SDKs that land inside the checkout instead of a temp dir.
+# humbletim/setup-vulkan-sdk extracts to $GITHUB_WORKSPACE/VULKAN_SDK on Windows
+# (confirmed from a real CI run: VULKAN_SDK=D:/a/MduX/MduX/VULKAN_SDK, i.e. the
+# repo root) rather than $RUNNER_TEMP, which the "Verify no source-tree writes"
+# check below correctly flagged as an untracked write. Ignoring it here is the
+# fix, not changing the action - there's no documented input to redirect its
+# extraction path.
+/VULKAN_SDK/
 
 # IDE and editor files
 .vs/
@@ -41,3 +56,26 @@ inputs/Documentation/Medical\ Device\ Cybersecurity\ for\ Engineers\ and\ Manufa
 *.tmp
 *.temp
 *~
+
+# Vendor-specific AI coding agent instructions (local only).
+# AGENTS.md is the canonical, vendor-neutral instruction source - keep it tracked.
+CLAUDE.md
+.clauderules
+.cursorrules
+.cursor/
+.windsurfrules
+.windsurf/
+.aider.conf.yml
+.aiderrules
+.aider.chat.history.md
+.clinerules
+.clinerules/
+.continuerules
+.continue/
+.codeium/
+.amazonq/
+.junie/
+.roorules
+.roo/
+GEMINI.md
+.github/copilot-instructions.md
