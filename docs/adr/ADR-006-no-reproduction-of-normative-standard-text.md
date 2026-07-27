@@ -55,8 +55,8 @@ clause numbers and titles, never a transcription. This ADR adopts the same rule 
 2. **Citation-key format**: `<Standard> §<clause> <Short clause title>` — e.g.
    `IEC 62304:2006 §5.2 Software development planning`. Valid standard identifiers (closed set):
    `IEC 62304:2006`, `ISO 13485:2016`, `ISO 14971:2019`, `IEC 62366-1:2015`, `IEC 81001-5-1:2021`.
-   Use this string verbatim as a module heading, an `AI-Reference.md` row, or a `clause_ref` field,
-   so it can be checked mechanically. The full convention document and machine-readable JSON Schema
+   Use this exact, unmodified string as a module heading, an `AI-Reference.md` row, or a
+   `clause_ref` field, so it can be checked mechanically. The full convention document and machine-readable JSON Schema
    are tracked separately (issue #8, S1); the semantic fields are fixed here.
 
 3. **Justification object**: every formal link from a design decision to a clause contains:
