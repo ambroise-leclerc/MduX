@@ -78,15 +78,15 @@ jobs:
         arch: x64
 
     - name: Configure CMake (MSVC with Ninja)
-      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake --preset ninja-msvc
       shell: cmd
 
     - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      run: cmake --build --preset ninja-msvc
       shell: cmd
 
     - name: Run Tests
-      run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+      run: ctest --preset ninja-msvc
       shell: cmd
 
     - name: Verify no source-tree writes
@@ -153,16 +153,16 @@ jobs:
         ninja --version
         
     - name: Configure CMake
-      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake --preset ninja-gcc
       
     - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      run: cmake --build --preset ninja-gcc
       
     - name: Run Tests
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+        ctest --preset ninja-gcc
 
     - name: Verify no source-tree writes
       run: |
