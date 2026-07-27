@@ -3,6 +3,7 @@
 include(CMakeFindDependencyMacro)
 
 # Find required dependencies
+find_dependency(Vulkan REQUIRED)
 find_dependency(Threads REQUIRED)
 
 # Include the targets file
