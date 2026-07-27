@@ -174,6 +174,84 @@ jobs:
           exit 1
         fi
 
+  # Linux Build with GCC 16 container - never let CI depend on a single compiler
+  # (see issue #48: GCC 15 and 16 both hit the same modules-related ICE, so this
+  # leg is not "the fix", but it is what catches a regression that only shows up
+  # on one GCC version and not the other).
+  linux-build-gcc16:
+    name: Linux (GCC 16, Vulkan)
+    runs-on: ubuntu-latest
+    container: gcc:16
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          libglfw3-dev \
+          libwayland-dev \
+          wayland-protocols \
+          wayland-utils \
+          libwayland-egl1 \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          xvfb \
+          wget \
+          gnupg
+
+    - name: Install latest CMake
+      run: |
+        # Download to RUNNER_TEMP, not the checkout root - the archive would
+        # otherwise trip "Verify no source-tree writes" below.
+        CMAKE_VERSION="4.1.1"
+        CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf "$CMAKE_ARCHIVE" -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+
+    - name: Verify compiler and tools
+      run: |
+        gcc --version
+        g++ --version
+        cmake --version
+        ninja --version
+
+    - name: Configure CMake
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+    - name: Run Tests
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+
+    - name: Verify no source-tree writes
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        status="$(git status --porcelain)"
+        if [ -n "$status" ]; then
+          echo "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
+          echo "$status"
+          exit 1
+        fi
+
   # Clang Build with Vulkan (temporarily disabled - Clang 20 std module support not ready)
   # clang-build:
   #   name: Linux (Clang, Vulkan)
