@@ -26,7 +26,12 @@
                 "strategy": "external"
             },
             "cacheVariables": {
-                "CMAKE_GENERATOR_PLATFORM": "x64"
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "MDUX_BUILD_EXAMPLES": "ON",
+                "MDUX_BUILD_TESTS": "ON",
+                "MDUX_BUILD_DOCS": "OFF"
             }
         },
         {
