@@ -4,14 +4,34 @@
 
 import std;
 import mdux;
+import mdux.test;
 
-bool testVersion() {
-    // Test version information
-    bool versionValid =
-        mdux::Version::major == 0 && mdux::Version::minor == 1 && mdux::Version::patch == 0;
+#include "framework/MduXTest.hpp"
 
-    // Test version string
-    bool versionStringValid = mdux::Version::getString() == "0.1.0";
+TEST_CASE("Version Test") {
+    CHECK(mdux::Version::major == 0);
+    CHECK(mdux::Version::minor == 1);
+    CHECK(mdux::Version::patch == 0);
+    CHECK(mdux::Version::getString() == "0.1.0");
+}
 
-    return versionValid && versionStringValid;
+TEST_CASE("Version Test Sections") {
+    // Exercises SECTION-lite: unlike Catch2, both siblings run in the same pass
+    // rather than re-entering the TEST_CASE once per section, so a shared local
+    // is expected to see both increments by the time the case ends.
+    int sectionsRun = 0;
+
+    SECTION("major and minor") {
+        sectionsRun += 1;
+        CHECK(mdux::Version::major == 0);
+        CHECK(mdux::Version::minor == 1);
+    }
+
+    SECTION("patch and string") {
+        sectionsRun += 1;
+        CHECK(mdux::Version::patch == 0);
+        CHECK(mdux::Version::getString() == "0.1.0");
+    }
+
+    CHECK(sectionsRun == 2);
 }

@@ -4,21 +4,14 @@
 
 import std;
 import mdux;
+import mdux.test;
 
-bool testCompliance() {
-    // Test medical device compliance flag
-    bool complianceEnabled = mdux::Compliance::isMedicalDeviceCompliant;
+#include "framework/MduXTest.hpp"
 
-    // Test standards information
-    bool standardsValid = mdux::Compliance::standards == std::string_view("IEC 62304, IEC 62366");
-
-    // Test safety class information
-    bool safetyClassValid = mdux::Compliance::safetyClass == std::string_view("Class B/C Medical Device Software");
-
-    // Test Vulkan support
-    bool vulkanEnabled = mdux::VulkanSupport::isAvailable;
-    bool vulkanApiValid = mdux::VulkanSupport::api == std::string_view("Vulkan");
-
-    return complianceEnabled && standardsValid && safetyClassValid && vulkanEnabled &&
-           vulkanApiValid;
+TEST_CASE("Compliance Test") {
+    CHECK(mdux::Compliance::isMedicalDeviceCompliant);
+    CHECK(mdux::Compliance::standards == std::string_view("IEC 62304, IEC 62366"));
+    CHECK(mdux::Compliance::safetyClass == std::string_view("Class B/C Medical Device Software"));
+    CHECK(mdux::VulkanSupport::isAvailable);
+    CHECK(mdux::VulkanSupport::api == std::string_view("Vulkan"));
 }
