@@ -25,8 +25,17 @@ foreach(name ${test_names})
         # Escape characters CTest test names / CMake strings care about.
         string(REPLACE "\\" "\\\\" escaped_name "${name}")
         string(REPLACE "\"" "\\\"" escaped_name "${escaped_name}")
+        # Deliberately the old-style positional add_test(<name> <command> [args...])
+        # rather than add_test(NAME ... COMMAND ...). Verified empirically (CMake/
+        # CTest 4.2.3 on Ubuntu 26.04): the keyword form silently mis-parses in a
+        # generated CTestTestfile.cmake - "NAME" itself becomes the displayed test
+        # name and the actual name is treated as the executable to run ("Could not
+        # find executable <name>"). The positional form works correctly, including
+        # with spaces/colons in the name, confirmed by a minimal isolated repro
+        # before changing this. Do not "modernize" this back without re-verifying
+        # against the CTest version(s) actually in use.
         string(APPEND content
-            "add_test(NAME \"${TEST_TARGET}::${escaped_name}\" COMMAND \"${TEST_EXECUTABLE}\" \"--run=${escaped_name}\")\n")
+            "add_test(\"${TEST_TARGET}::${escaped_name}\" \"${TEST_EXECUTABLE}\" \"--run=${escaped_name}\")\n")
     endif()
 endforeach()
 
