@@ -94,6 +94,7 @@ option(MDUX_ENABLE_REGULATORY_DOCS "Generate regulatory compliance documentation
 # existing consumers of MduX::MduX are unaffected and get MduXCore transitively.
 add_library(MduXCore)
 add_library(MduX::Core ALIAS MduXCore)
+set_target_properties(MduXCore PROPERTIES EXPORT_NAME Core)
 
 add_library(MduX)
 add_library(MduX::MduX ALIAS MduX)
@@ -110,7 +111,9 @@ mdux_declare_governed(MduX_warnings)
 # below), which a governed target must never reach, transitively or otherwise.
 target_sources(MduXCore
     PUBLIC
-        FILE_SET CXX_MODULES FILES
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+        FILES
             include/mdux/core/Units.cppm
             include/mdux/core/Result.cppm
 )
@@ -128,7 +131,9 @@ endif()
 # C++23 modules configuration
 target_sources(MduX
     PUBLIC
-        FILE_SET CXX_MODULES FILES
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+        FILES
             include/mdux/mdux.cppm
             include/mdux/vulkansc/MemoryPoolManager.cppm
             include/mdux/vulkansc/DeviceObjectManager.cppm
@@ -246,8 +251,9 @@ if(MSVC)
 endif()
 
 # Target linking
-target_link_libraries(MduX PUBLIC MduX::Core MduX_options MduX_warnings)
-target_link_libraries(MduXCore PUBLIC MduX_warnings)
+target_link_libraries(MduX PUBLIC MduX::Core MduX_options)
+target_link_libraries(MduX PRIVATE MduX_warnings)
+target_link_libraries(MduXCore PRIVATE MduX_warnings)
 
 # Subdirectories
 if(MDUX_BUILD_EXAMPLES)
@@ -256,6 +262,21 @@ endif()
 if(MDUX_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+
+    # Proves the install tree actually works end-to-end (issue #47): installs to
+    # a scratch prefix, then configures/builds/runs a tiny external consumer
+    # project against it via find_package(MduX). Old-style positional add_test()
+    # deliberately, not add_test(NAME ... COMMAND ...) - see
+    # cmake/MduXTestDiscoveryImpl.cmake's comment for why the keyword form
+    # mis-parses on this project's CTest version.
+    add_test(InstallTreeConsumer
+        "${CMAKE_COMMAND}"
+        -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
+        -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "GENERATOR=${CMAKE_GENERATOR}"
+        -D "EXPECTED_VERSION=${PROJECT_VERSION}"
+        -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"
+    )
 endif()
 if(MDUX_BUILD_DOCS)
     enable_doxygen($<IF:$<BOOL:${MDUX_ENABLE_REGULATORY_DOCS}>,"awesome-sidebar","awesome">)
@@ -266,18 +287,24 @@ endif()
 # link a governed target to something Vulkan-adjacent) is established.
 mdux_verify_trust_zones()
 
-# Installation (temporarily disabled for import std testing)
-# include(GNUInstallDirs)
-# install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.cppm")
-# install(TARGETS MduX MduX_options MduX_warnings EXPORT MduXTargets 
-#         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-#         FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mdux)
-# install(EXPORT MduXTargets FILE MduXTargets.cmake NAMESPACE MduX:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+# Installation
+#
+# No separate install(DIRECTORY include/ ...) - the FILE_SET CXX_MODULES install
+# below already copies exactly the module interface files, preserving their
+# mdux/... relative path via each target's BASE_DIRS. A parallel DIRECTORY install
+# duplicated every .cppm at a second, incorrectly-nested path (verified by
+# inspecting an actual installed tree while testing issue #47 - do not re-add it
+# without checking the result).
+include(GNUInstallDirs)
+install(TARGETS MduXCore MduX MduX_options MduX_warnings EXPORT MduXTargets
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT MduXTargets FILE MduXTargets.cmake NAMESPACE MduX:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
 
-# include(CMakePackageConfigHelpers)
-# configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MduXConfig.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
-# write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
-# install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+include(CMakePackageConfigHelpers)
+configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MduXConfig.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
 
 # Status display
 message(STATUS "")
