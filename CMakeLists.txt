@@ -106,7 +106,9 @@ add_library(MduX_warnings INTERFACE)
 # below), which a governed target must never reach, transitively or otherwise.
 target_sources(MduXCore
     PUBLIC
-        FILE_SET CXX_MODULES FILES
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+        FILES
             include/mdux/core/Units.cppm
             include/mdux/core/Result.cppm
 )
@@ -124,7 +126,9 @@ endif()
 # C++23 modules configuration
 target_sources(MduX
     PUBLIC
-        FILE_SET CXX_MODULES FILES
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+        FILES
             include/mdux/mdux.cppm
             include/mdux/vulkansc/MemoryPoolManager.cppm
             include/mdux/vulkansc/DeviceObjectManager.cppm
@@ -277,11 +281,17 @@ endif()
 mdux_verify_trust_zones()
 
 # Installation
+#
+# No separate install(DIRECTORY include/ ...) - the FILE_SET CXX_MODULES install
+# below already copies exactly the module interface files, preserving their
+# mdux/... relative path via each target's BASE_DIRS. A parallel DIRECTORY install
+# duplicated every .cppm at a second, incorrectly-nested path (verified by
+# inspecting an actual installed tree while testing issue #47 - do not re-add it
+# without checking the result).
 include(GNUInstallDirs)
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.cppm")
 install(TARGETS MduXCore MduX MduX_options MduX_warnings EXPORT MduXTargets
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mdux)
+        FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT MduXTargets FILE MduXTargets.cmake NAMESPACE MduX:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
 
 include(CMakePackageConfigHelpers)
