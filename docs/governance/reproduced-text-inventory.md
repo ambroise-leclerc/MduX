@@ -7,10 +7,13 @@ walking full git history rather than only the current tree. It is the scope docu
 
 ## Status of what it lists
 
-Every path below is **already gone from the working tree** on `develop` — removed by issue #22
-(working tree) and issue #24 (deleting `inputs/` and `libstd/` outright). None of it is still
-**history**: all 482 paths remain reachable through old commits on every branch that carried them,
-which is exactly what issue #23 has to address.
+**Resolved.** Every path below was already gone from the working tree on `develop` — removed by
+issue #22 (working tree) and issue #24 (deleting `inputs/` and `libstd/` outright). Issue #23 has
+since purged all 482 paths from history as well, via `git filter-repo`, across every branch that
+still carried them (`master`, `develop`, `metautilsCecile`, and any open PR branch at the time).
+Verified after the rewrite: zero remaining matches on every surviving ref, and the GitHub-reported
+repository size dropped from 92 MB to 1.5 MB. See issue #23 for the branch-disposition decisions
+and the execution record.
 
 ## What "reproduced or paraphrased" turned out to mean
 
@@ -28,26 +31,29 @@ files.
 | Vendored library headers | 74 files | `libstd/include/**` (plus a `readme.md`) — a full copied C++ standard-library header set of unclear provenance and licence. Not a *standard's* text, but the same "should never have been committed" class of problem, and issue #24 already scoped its removal alongside `inputs/`. |
 | Unrelated cruft swept into the same tree | 5 files | `inputs/CMake`, `inputs/CompilerSettings.cmake`, `inputs/Linker.cmake`, `inputs/webfrontCmakelists.txt`, `inputs/Logo.png` — not a copyright problem, but tracked under the same directory issue #24 deleted, and included here so history matches what the tree removal actually covered.
 
-## A second, larger problem this inventory surfaces
+## A second, larger problem this inventory surfaced — since resolved
 
-Removing these paths from `develop`'s working tree and from `develop`'s history is not the same
-as removing them from the repository. A history purge only removes content that no reachable ref
-still carries. At the time of this inventory, **32 other remote branches still had `inputs/` and
-`libstd/` present at their current tip** — not merely in old history, but checked out at HEAD
-right now, on every clone that fetches them:
+Removing these paths from `develop`'s working tree and history is not the same as removing them
+from the repository. A history purge only removes content that no reachable ref still carries. At
+the time of this inventory, **32 other remote branches still had `inputs/` and `libstd/` present
+at their current tip** — not merely in old history, but checked out at HEAD right now, on every
+clone that fetched them:
 
-- **18 are fully merged into `develop` already** (zero commits `develop` doesn't have — fully
-  superseded, deletable with no loss): `5-configure-an-agentsmd-for-ai-support`, `57bitset`,
-  `8string_view`, `=r`, `BiggerPR`, `ambroise-leclerc-patch-1`, `ambroise-leclerc-patch-2`, all
-  nine `foundations/*` branches, `regulatory/adr-no-reproduction-of-standard-text`, `uartEsp`.
-- **14 carry commits `develop` does not have** — from 1 to 15 apiece — and are not this
-  inventory's call to discard: `#17` (2), `35tuple` (2), `45uniqueptr` (1), `77bitset` (1),
-  `8stringview` (3), `BigPR` (15), `LLVMStyle` (1), `_vTraits` (11), `gcc16` (1), `inline` (3),
-  `metautilsCecile` (2), `ostream` (4), `pin16` (1), `wifi` (6).
+- **18 were fully merged into `develop` already** (zero commits `develop` didn't have — fully
+  superseded): `5-configure-an-agentsmd-for-ai-support`, `57bitset`, `8string_view`, `=r`,
+  `BiggerPR`, `ambroise-leclerc-patch-1`, `ambroise-leclerc-patch-2`, all nine `foundations/*`
+  branches, `regulatory/adr-no-reproduction-of-standard-text`, `uartEsp`.
+- **14 carried commits `develop` didn't have** — from 1 to 15 apiece: `#17` (2), `35tuple` (2),
+  `45uniqueptr` (1), `77bitset` (1), `8stringview` (3), `BigPR` (15), `LLVMStyle` (1), `_vTraits`
+  (11), `gcc16` (1), `inline` (3), `metautilsCecile` (2), `ostream` (4), `pin16` (1), `wifi` (6).
+  Thirteen were 2015–2018 work from an unrelated prior project (embedded-library experiments,
+  referencing "ETL", Atmel Studio, ESP8266 code); `gcc16` was a stale MduX snapshot superseded by
+  the CI work landed in issue #48.
 
-A purge that rewrites `develop`/`master` alone while these 31 branches still exist unchanged
-removes nothing in practice: every path above stays one `git fetch` away. Issue #23's execution
-plan has to include a decision on these branches, not just a `git filter-repo` invocation.
+**Resolution:** 31 of the 32 were deleted outright (the 18 merged plus 13 of the 14, all
+maintainer-confirmed as abandoned or superseded). `metautilsCecile` was kept, at the maintainer's
+request, for its own unrelated content — it went through the same `git filter-repo` pass as every
+other branch, so it survives without the copyrighted material.
 
 ## What this inventory does not claim
 
