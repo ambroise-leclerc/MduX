@@ -39,15 +39,17 @@ regardless of how clean its exception hierarchy is.
 | Host tools (`tools/`) | Exceptions freely — they are never shipped, and their code is not qualified. |
 
 **Why `std::expected` and not exceptions, for the governed zone specifically:** Class C and Vulkan
-SC deployments routinely build with `-fno-exceptions`. `std::expected` requires no runtime support
-that such a build would be missing, and it is available on MSVC 19.33+, GCC 12+, and Clang 16+ —
-all comfortably below this project's enforced floor of MSVC 19.40 / GCC 15 / Clang 20 (ADR-003), so
-adopting it costs nothing in toolchain reach.
+SC deployments routinely build with `-fno-exceptions`. The non-throwing operations on
+`std::expected` do not require exception handling, and it is available on MSVC 19.33+, GCC 12+, and
+Clang 16+ — all comfortably below this project's enforced floor of MSVC 19.40 / GCC 15 / Clang 20
+(ADR-003), so adopting it costs nothing in toolchain reach. Throwing observers such as `.value()`
+remain prohibited in governed code.
 
-**Make it a link error, not a review comment.** Compile `MduXCore` (or, at minimum, any future
+**Make it a build error, not a review comment.** Compile `MduXCore` (or, at minimum, any future
 `src/ml/` target — see issue #18) with `-fno-exceptions -fno-rtti` / `/EHs-c- /GR-` in its own
-object library. A stray `throw` or a caught exception then fails to link rather than merely
-triggering a lint warning that a busy reviewer can miss.
+object library. The governed-zone source lint also rejects `throw`, `try`, and `catch`; on MSVC,
+the exception-disabled diagnostics are promoted to errors. A stray throwing construct therefore
+fails the build rather than merely triggering a warning that a busy reviewer can miss.
 
 **Error types carry evidence.** A governed-zone error is a struct, not a bare enum, whenever the
 failure has diagnostic content worth keeping — e.g. the planned `MlError` (issue #18) records the
@@ -93,8 +95,8 @@ call-site brevity; that is a naming convenience, not a reimplementation.
   any Vulkan SC / Class C deployment claim seriously rather than as aspiration.
 - Structured error types double as incident-evidence records, which is directly useful for the
   fail-closed patterns already planned for `.medui` compilation and ML inference.
-- The `-fno-exceptions` object library turns policy violations into build failures, closing the gap
-  left by `.clang-tidy:9` currently disabling the one check that would otherwise catch this.
+- The exception-disabled object library turns throwing constructs into build failures, closing the
+  gap left by `.clang-tidy:9` currently disabling the one check that would otherwise catch this.
 
 ### Negative
 - Two error-handling idioms coexist in the codebase (adapter exceptions, governed `std::expected`)
@@ -103,13 +105,13 @@ call-site brevity; that is a naming convenience, not a reimplementation.
   happy-path case — an accepted cost given the deployment constraint that motivates this decision.
 
 ### Risks and Mitigations
-- **A future governed-zone PR quietly adds a `throw`.** *Mitigation*: the `-fno-exceptions` object
-  library makes this a link failure, not a style question.
+- **A future governed-zone PR quietly adds a `throw`.** *Mitigation*: the exception-disabled object
+  library makes this a compile failure, not a style question.
 - **`std::expected` gets used inconsistently** (some call sites check it, others `.value()` it and
-  ignore the exception `.value()` throws on empty). *Mitigation*: the re-enabled
-  `bugprone-exception-escape` check plus code review; this is a known gap that static analysis alone
-  does not fully close, and reviewers should treat an unchecked `.value()` in governed code as a
-  policy violation.
+  risk termination when the expected is empty). *Mitigation*: the governed-zone CI lint rejects
+  `.value()`; callers must branch on `has_value()`/`operator bool` and then use non-throwing
+  accessors. The re-enabled `bugprone-exception-escape` check remains defense in depth for other
+  exception paths.
 
 ## References
 - [TrustSC ADR-001 through ADR-003](https://github.com/ambroise-leclerc/TrustSC/tree/main/docs/adr) (the text/font pipeline's fail-closed self-test pattern this policy is modeled on)
