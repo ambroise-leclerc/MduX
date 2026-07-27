@@ -25,42 +25,52 @@ set(_MDUX_FORBIDDEN_TARGET_PATTERNS
     "^glfw3$"
 )
 
-function(mdux_declare_governed TARGET)
-    if(NOT TARGET ${TARGET})
-        message(FATAL_ERROR "mdux_declare_governed: '${TARGET}' is not a target")
+# NOTE: none of the functions below name a parameter `TARGET` - CMake's if()
+# command special-cases the bare word TARGET as the start of its `if(TARGET
+# <name>)` existence-check keyword form, regardless of whether it's meant as a
+# literal or a variable reference. A parameter literally named TARGET makes
+# every unquoted, un-dereferenced use of it silently misparse (confirmed
+# empirically: `if(TARGET IN_LIST visited)` fails with "Unknown arguments
+# specified" because CMake reads it as "does a target named IN_LIST exist").
+# TGT throughout sidesteps the whole class of mistake.
+
+function(mdux_declare_governed TGT)
+    if(NOT TARGET ${TGT})
+        message(FATAL_ERROR "mdux_declare_governed: '${TGT}' is not a target")
     endif()
-    set_property(GLOBAL APPEND PROPERTY MDUX_GOVERNED_TARGETS ${TARGET})
+    set_property(GLOBAL APPEND PROPERTY MDUX_GOVERNED_TARGETS ${TGT})
 endfunction()
 
-# Recursively walks TARGET's link interface looking for a forbidden dependency.
+# Recursively walks TGT's link interface looking for a forbidden dependency.
 # ROOT is the originally-declared-governed target, threaded through for the
-# error message; VISITED guards against revisiting a target in a cyclic or
+# error message; VISITED_VAR names a variable (in the caller's scope) holding
+# the list of targets already visited, guarding against a cyclic or
 # diamond-shaped link graph.
-function(_mdux_check_link_graph TARGET ROOT VISITED_VAR)
+function(_mdux_check_link_graph TGT ROOT VISITED_VAR)
     set(visited "${${VISITED_VAR}}")
-    if(TARGET IN_LIST visited)
+    if("${TGT}" IN_LIST visited)
         return()
     endif()
-    list(APPEND visited "${TARGET}")
+    list(APPEND visited "${TGT}")
     set(${VISITED_VAR} "${visited}" PARENT_SCOPE)
 
     foreach(pattern ${_MDUX_FORBIDDEN_TARGET_PATTERNS})
-        if(TARGET MATCHES "${pattern}")
+        if("${TGT}" MATCHES "${pattern}")
             message(FATAL_ERROR
                 "Trust zone violation (ADR-004): governed target '${ROOT}' "
-                "reaches forbidden dependency '${TARGET}'. Governed targets "
+                "reaches forbidden dependency '${TGT}'. Governed targets "
                 "must not link Vulkan or a windowing library, directly or "
                 "transitively.")
         endif()
     endforeach()
 
-    if(NOT TARGET ${TARGET})
+    if(NOT TARGET ${TGT})
         # A plain library name/path (not a CMake target) - nothing further to walk.
         return()
     endif()
 
     foreach(prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
-        get_target_property(deps ${TARGET} ${prop})
+        get_target_property(deps ${TGT} ${prop})
         if(deps)
             foreach(dep ${deps})
                 # Strip generator-expression wrappers like $<LINK_ONLY:...> down to
@@ -86,9 +96,9 @@ function(mdux_verify_trust_zones)
                          "nothing to check. Did mdux_declare_governed() run?")
         return()
     endif()
-    foreach(target ${governed})
+    foreach(governed_target ${governed})
         set(visited "")
-        _mdux_check_link_graph("${target}" "${target}" visited)
+        _mdux_check_link_graph("${governed_target}" "${governed_target}" visited)
     endforeach()
     list(LENGTH governed count)
     message(STATUS "mdux_verify_trust_zones: ${count} governed target(s) clean of Vulkan/windowing dependencies")
