@@ -79,6 +79,11 @@ include(StaticAnalyzers)
 include(Doxygen)
 include(DependencySummaryTable)
 include(MduXTrustZones)
+include(MduXBuildInfo)
+
+# Artifact provenance for host tools (ADR-007): defines MduX::BuildInfo carrying
+# MDUX_TOOL_VERSION and MDUX_GIT_SHA. Runs before any target is created so bakers can link it.
+mdux_define_build_info()
 
 # Build options
 option(MDUX_BUILD_EXAMPLES "Build MduX examples" ON)
@@ -118,9 +123,11 @@ target_sources(MduXCore
             include/mdux/core/Result.cppm
             include/mdux/evidence/Digest.cppm
             include/mdux/evidence/Json.cppm
+            include/mdux/evidence/Report.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
+        src/evidence/Report.cpp
 )
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
