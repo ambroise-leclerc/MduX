@@ -28,8 +28,7 @@
 
 /// Defines a test case function and registers it at static-init time. `labels...`
 /// is an optional trailing list of string labels (e.g. "evidence", "pixel") that
-/// later tooling can filter on; the registry stores them even though nothing
-/// filters on them yet.
+/// CMake discovery propagates them to the corresponding CTest entry.
 #define TEST_CASE(name, ...)                                                                     \
     static void MDUX_TEST_CONCAT(mduxTestFn_, __LINE__)();                                       \
     namespace {                                                                                  \
@@ -51,6 +50,14 @@
     ::mdux::test::checkImpl(static_cast<bool>(expr), #expr, __FILE__, __LINE__, false, (msg))
 #define REQUIRE_MESSAGE(expr, msg) \
     ::mdux::test::checkImpl(static_cast<bool>(expr), #expr, __FILE__, __LINE__, true, (msg))
+
+/// Creates a named, single-pass scope inside a test case. Unlike Catch2 sections,
+/// SECTION-lite does not rerun the surrounding test for each sibling section.
+#define SECTION(name)                                                                            \
+    for ([[maybe_unused]] bool MDUX_TEST_CONCAT(mduxTestSection_, __LINE__) =                    \
+             ((void)(name), true);                                                               \
+         MDUX_TEST_CONCAT(mduxTestSection_, __LINE__);                                            \
+         MDUX_TEST_CONCAT(mduxTestSection_, __LINE__) = false)
 
 /// Defines main() for a test executable. Call once per executable, after every
 /// TEST_CASE in that translation unit (or in any translation unit linked into it -
