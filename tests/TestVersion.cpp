@@ -4,14 +4,13 @@
 
 import std;
 import mdux;
+import mdux.test;
 
-bool testVersion() {
-    // Test version information
-    bool versionValid =
-        mdux::Version::major == 0 && mdux::Version::minor == 1 && mdux::Version::patch == 0;
+#include "framework/MduXTest.hpp"
 
-    // Test version string
-    bool versionStringValid = mdux::Version::getString() == "0.1.0";
-
-    return versionValid && versionStringValid;
+TEST_CASE("Version Test") {
+    CHECK(mdux::Version::major == 0);
+    CHECK(mdux::Version::minor == 1);
+    CHECK(mdux::Version::patch == 0);
+    CHECK(mdux::Version::getString() == "0.1.0");
 }

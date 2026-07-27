@@ -1,16 +1,22 @@
 # Tests for MduX Medical Device UI Library
+#
+# Built on the in-repo MduXTest framework (tests/framework/MduXTest.cppm +
+# MduXTest.hpp) rather than a third-party framework - a zero-SOUP library
+# should not depend on a framework it would itself need to qualify. See
+# ADR-004/ADR-005 and issue #44 for the rationale.
 
-# Find or fetch a testing framework (placeholder for now)
-# In a real implementation, you might use CPM to fetch Catch2, Google Test, etc.
+include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
 # Basic unit tests
-add_executable(unit_tests 
+add_executable(unit_tests
+    framework/MduXTest.cppm
     TestMain.cpp
     TestVersion.cpp
     TestCompliance.cpp
 )
 
 target_link_libraries(unit_tests PRIVATE MduX::MduX)
+target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Set C++23 standard for tests and enable module imports
 set_target_properties(unit_tests
@@ -31,16 +37,17 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(unit_tests PRIVATE /std:c++latest)
 endif()
 
-# Add tests to CTest
-add_test(NAME MduXUnitTests COMMAND unit_tests)
+mdux_discover_tests(unit_tests)
 
 # Medical device compliance tests
 add_executable(compliance_tests
+    framework/MduXTest.cppm
     ComplianceTestMain.cpp
     TestRegulatoryCompliance.cpp
 )
 
 target_link_libraries(compliance_tests PRIVATE MduX::MduX)
+target_include_directories(compliance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(compliance_tests
     PROPERTIES
@@ -60,14 +67,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(compliance_tests PRIVATE /std:c++latest)
 endif()
 
-add_test(NAME MduXComplianceTests COMMAND compliance_tests)
+mdux_discover_tests(compliance_tests)
 
 # Vulkan SC specific tests
 add_executable(vulkansc_memory_tests
+    framework/MduXTest.cppm
     vulkansc/MemoryPoolManagerTests.cpp
 )
 
 target_link_libraries(vulkansc_memory_tests PRIVATE MduX::MduX)
+target_include_directories(vulkansc_memory_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_memory_tests
     PROPERTIES
@@ -98,14 +107,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(vulkansc_memory_tests PRIVATE -O0)
 endif()
 
-add_test(NAME VulkanSCMemoryPoolTests COMMAND vulkansc_memory_tests)
+mdux_discover_tests(vulkansc_memory_tests)
 
 # Vulkan SC device object tests
 add_executable(vulkansc_object_tests
+    framework/MduXTest.cppm
     vulkansc/DeviceObjectManagerTests.cpp
 )
 
 target_link_libraries(vulkansc_object_tests PRIVATE MduX::MduX)
+target_include_directories(vulkansc_object_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_object_tests
     PROPERTIES
@@ -125,4 +136,4 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(vulkansc_object_tests PRIVATE /std:c++latest)
 endif()
 
-add_test(NAME VulkanSCDeviceObjectTests COMMAND vulkansc_object_tests)
+mdux_discover_tests(vulkansc_object_tests)
