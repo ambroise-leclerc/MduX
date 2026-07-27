@@ -59,7 +59,13 @@ REPRODUCTION_MARKERS = (
 SUPPRESS_MARKER = "mdux-docs-lint:allow-reproduction-marker"
 
 JUSTIFICATION_ID_RE = re.compile(r"^JUS-\d{3,}$")
-REQUIRED_JUSTIFICATION_FIELDS = ("justification_id", "standard", "clause_ref", "rationale")
+REQUIRED_JUSTIFICATION_FIELDS = (
+    "justification_id",
+    "standard",
+    "clause_ref",
+    "rationale",
+    "evidence_refs",
+)
 
 DEFAULT_SCAN_DIRS = ("docs", "software_development_file")
 
@@ -175,8 +181,47 @@ def check_justifications(ctx: LintContext, path: Path, text: str) -> None:
                 f"Use one of: {', '.join(APPROVED_STANDARDS)}",
             )
 
-        for ref in obj.get("evidence_refs", []) or []:
-            if not (ctx.repo_root / ref).exists():
+        clause_ref = obj.get("clause_ref")
+        if isinstance(clause_ref, str):
+            match = CITATION_RE.fullmatch(clause_ref)
+            if match is None or match.group("standard") not in APPROVED_STANDARDS:
+                ctx.report(
+                    path, start_line, "MDX-D016", "error",
+                    f"clause_ref '{clause_ref}' is not a complete approved citation key.",
+                    "Use '<Standard> §<clause> <Short clause title>'.",
+                )
+            elif standard in APPROVED_STANDARDS and match.group("standard") != standard:
+                ctx.report(
+                    path, start_line, "MDX-D017", "error",
+                    f"clause_ref standard '{match.group('standard')}' does not match "
+                    f"the standard field '{standard}'.",
+                )
+
+        evidence_refs = obj.get("evidence_refs")
+        if evidence_refs is not None and (
+            not isinstance(evidence_refs, list)
+            or not evidence_refs
+            or not all(isinstance(ref, str) and ref for ref in evidence_refs)
+        ):
+            ctx.report(
+                path, start_line, "MDX-D018", "error",
+                "evidence_refs must be a non-empty array of repository-relative path strings.",
+            )
+            evidence_refs = []
+
+        for ref in evidence_refs or []:
+            ref_path = Path(ref)
+            candidate = (ctx.repo_root / ref_path).resolve()
+            try:
+                candidate.relative_to(ctx.repo_root.resolve())
+            except ValueError:
+                ctx.report(
+                    path, start_line, "MDX-D019", "error",
+                    f"evidence_refs entry '{ref}' resolves outside the repository.",
+                    "Use a repository-relative path without '..' traversal.",
+                )
+                continue
+            if ref_path.is_absolute() or not candidate.exists():
                 ctx.report(
                     path, start_line, "MDX-D015", "error",
                     f"evidence_refs entry '{ref}' does not exist in the repository.",

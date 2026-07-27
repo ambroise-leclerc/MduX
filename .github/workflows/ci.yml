@@ -362,4 +362,8 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Run mdux-docs-lint
-      run: python3 tools/docs-lint/mdux_docs_lint.py
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: |
+        python3 -m unittest discover -s tools/docs-lint -p "test_*.py"
+        python3 tools/docs-lint/mdux_docs_lint.py
