@@ -11,92 +11,12 @@
 
 import std;
 import mdux.vulkansc.memory;
+import mdux.test;
+
+#include "../framework/MduXTest.hpp"
 
 using namespace std;
 using namespace mdux::vulkansc;
-
-namespace {  // Anonymous namespace to avoid ODR violations
-
-//=============================================================================
-// Test Framework
-//=============================================================================
-
-class TestRunner {
-public:
-    struct TestResult {
-        string testName;
-        bool passed;
-        string errorMessage;
-        chrono::microseconds duration;
-    };
-
-    void runTest(const string& name, function<void()> testFunc) {
-        auto start = chrono::high_resolution_clock::now();
-
-        try {
-            testFunc();
-            auto end = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-
-            results.push_back({
-                .testName = name,
-                .passed = true,
-                .errorMessage = "",
-                .duration = duration
-            });
-
-            cout << "✅ PASS: " << name << " (" << duration.count() << " µs)\n";
-        }
-        catch (const exception& e) {
-            auto end = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-
-            results.push_back({
-                .testName = name,
-                .passed = false,
-                .errorMessage = e.what(),
-                .duration = duration
-            });
-
-            cout << "❌ FAIL: " << name << "\n";
-            cout << "   Error: " << e.what() << "\n";
-        }
-    }
-
-    void printSummary() const {
-        size_t passed = static_cast<size_t>(count_if(results.begin(), results.end(),
-                                                     [](const TestResult& r) { return r.passed; }));
-        size_t failed = results.size() - passed;
-
-        cout << "\n=============================================================================\n";
-        cout << "Test Summary\n";
-        cout << "=============================================================================\n";
-        cout << "Total:  " << results.size() << " tests\n";
-        cout << "Passed: " << passed << " (" << (passed * 100 / results.size()) << "%)\n";
-        cout << "Failed: " << failed << "\n";
-
-        if (failed > 0) {
-            cout << "\nFailed Tests:\n";
-            for (const auto& result : results) {
-                if (!result.passed) {
-                    cout << "  - " << result.testName << ": " << result.errorMessage << "\n";
-                }
-            }
-        }
-
-        cout << "=============================================================================\n";
-    }
-
-    bool allTestsPassed() const {
-        return all_of(results.begin(), results.end(),
-                     [](const TestResult& r) { return r.passed; });
-    }
-
-private:
-    vector<TestResult> results;
-};
-
-}  // anonymous namespace
 
 //=============================================================================
 // Note: Tests use VK_NULL_HANDLE for physical devices to avoid Vulkan API calls
@@ -107,36 +27,27 @@ private:
 // MemoryPoolManager Tests
 //=============================================================================
 
-void testMemoryPoolConfigurationValidity() {
+TEST_CASE("MemoryPoolConfiguration Validity") {
     // Valid configuration
     MemoryPoolConfiguration validConfig;
     validConfig.maxTotalMemory = 128 * 1024 * 1024;  // 128 MB
     validConfig.maxTotalAllocations = 100;
-
-    if (!validConfig.isValid()) {
-        throw runtime_error("Valid configuration reported as invalid");
-    }
+    CHECK(validConfig.isValid());
 
     // Invalid configuration (no memory)
     MemoryPoolConfiguration invalidConfig1;
     invalidConfig1.maxTotalMemory = 0;
     invalidConfig1.maxTotalAllocations = 100;
-
-    if (invalidConfig1.isValid()) {
-        throw runtime_error("Invalid configuration (zero memory) reported as valid");
-    }
+    CHECK(!invalidConfig1.isValid());
 
     // Invalid configuration (no allocations)
     MemoryPoolConfiguration invalidConfig2;
     invalidConfig2.maxTotalMemory = 128 * 1024 * 1024;
     invalidConfig2.maxTotalAllocations = 0;
-
-    if (invalidConfig2.isValid()) {
-        throw runtime_error("Invalid configuration (zero allocations) reported as valid");
-    }
+    CHECK(!invalidConfig2.isValid());
 }
 
-void testMemoryPoolCalculatorBasic() {
+TEST_CASE("MemoryPoolCalculator Basic") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 1;
     profile.maxUIElementsPerScreen = 100;
@@ -148,20 +59,12 @@ void testMemoryPoolCalculatorBasic() {
     // Use VK_NULL_HANDLE to test calculation logic without Vulkan API calls
     auto config = MemoryPoolCalculator::calculate(profile);
 
-    if (!config.isValid()) {
-        throw runtime_error("Calculator produced invalid configuration");
-    }
-
-    if (config.maxTotalMemory == 0) {
-        throw runtime_error("Calculator produced zero total memory");
-    }
-
-    if (config.maxTotalAllocations == 0) {
-        throw runtime_error("Calculator produced zero allocations");
-    }
+    CHECK(config.isValid());
+    CHECK(config.maxTotalMemory != 0);
+    CHECK(config.maxTotalAllocations != 0);
 }
 
-void testMemoryPoolCalculatorWithSafetyMargin() {
+TEST_CASE("MemoryPoolCalculator Safety Margin") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 1;
     profile.maxUIElementsPerScreen = 100;
@@ -170,30 +73,22 @@ void testMemoryPoolCalculatorWithSafetyMargin() {
     auto config = MemoryPoolCalculator::calculate(profile);
 
     // Verify safety margin was applied
-    if (config.safetyMargin != 2.0f) {
-        throw runtime_error("Safety margin not correctly set");
-    }
+    CHECK(config.safetyMargin == 2.0f);
 }
 
-void testMemoryPoolCalculatorGeometryEstimation() {
+TEST_CASE("MemoryPoolCalculator Geometry Estimation") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 2;
     profile.maxUIElementsPerScreen = 100;
 
     VkDeviceSize geometryMemory = MemoryPoolCalculator::estimateGeometryMemory(profile);
 
-    // Should be non-zero
-    if (geometryMemory == 0) {
-        throw runtime_error("Geometry memory estimation returned zero");
-    }
-
+    CHECK(geometryMemory != 0);
     // Rough sanity check (should be at least 1 KB for 200 elements)
-    if (geometryMemory < 1024) {
-        throw runtime_error("Geometry memory estimation too small");
-    }
+    CHECK(geometryMemory >= 1024);
 }
 
-void testMemoryPoolCalculatorTextureEstimation() {
+TEST_CASE("MemoryPoolCalculator Texture Estimation") {
     MedicalApplicationProfile profile;
     profile.maxTextureAtlases = 5;
     profile.maxConcurrentImages = 10;
@@ -201,31 +96,23 @@ void testMemoryPoolCalculatorTextureEstimation() {
 
     VkDeviceSize textureMemory = MemoryPoolCalculator::estimateTextureMemory(profile);
 
-    if (textureMemory == 0) {
-        throw runtime_error("Texture memory estimation returned zero");
-    }
-
+    CHECK(textureMemory != 0);
     // Should be substantial for 2048x2048 images
-    if (textureMemory < 10 * 1024 * 1024) {  // At least 10 MB
-        throw runtime_error("Texture memory estimation too small for resolution");
-    }
+    CHECK(textureMemory >= 10 * 1024 * 1024);  // At least 10 MB
 }
 
-void testMemoryPoolCalculatorSafetyMarginApplication() {
+TEST_CASE("MemoryPoolCalculator Safety Margin Application") {
     MedicalApplicationProfile profile;
     profile.safetyMarginMultiplier = 2.5f;
 
     VkDeviceSize baseSize = 1000;
     VkDeviceSize withMargin = MemoryPoolCalculator::applySafetyMargin(baseSize, profile);
 
-    if (withMargin != 2500) {
-        throw runtime_error(
-            "Safety margin calculation incorrect: expected 2500, got " + to_string(withMargin)
-        );
-    }
+    CHECK_MESSAGE(withMargin == 2500,
+                  "expected 2500, got " + to_string(withMargin));
 }
 
-void testMemoryPoolCalculatorRedundancy() {
+TEST_CASE("MemoryPoolCalculator Redundancy") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 1;
     profile.maxUIElementsPerScreen = 100;
@@ -238,81 +125,56 @@ void testMemoryPoolCalculatorRedundancy() {
     profile.requiresRedundancy = false;
     auto configNoRedundancy = MemoryPoolCalculator::calculate(profile);
 
-    // Redundant config should have approximately 2× memory
-    // (allowing for rounding differences)
+    // Redundant config should have approximately 2x memory (allowing for rounding)
     float ratio = static_cast<float>(config.maxTotalMemory) /
                  static_cast<float>(configNoRedundancy.maxTotalMemory);
 
-    if (ratio < 1.8f || ratio > 2.2f) {
-        throw runtime_error(
-            "Redundancy not correctly applied: ratio = " + to_string(ratio)
-        );
-    }
+    CHECK_MESSAGE(ratio >= 1.8f && ratio <= 2.2f,
+                  "redundancy not correctly applied: ratio = " + to_string(ratio));
 }
 
-void testMedicalApplicationProfileDefaults() {
+TEST_CASE("MedicalApplicationProfile Defaults") {
     MedicalApplicationProfile profile;
 
     // Verify sensible defaults
-    if (profile.maxConcurrentScreens == 0) {
-        throw runtime_error("Default maxConcurrentScreens is zero");
-    }
-
-    if (profile.maxUIElementsPerScreen == 0) {
-        throw runtime_error("Default maxUIElementsPerScreen is zero");
-    }
-
-    if (profile.safetyMarginMultiplier < 1.0f) {
-        throw runtime_error("Default safety margin less than 1.0");
-    }
-
-    if (profile.targetFrameRate == 0) {
-        throw runtime_error("Default target frame rate is zero");
-    }
+    CHECK(profile.maxConcurrentScreens != 0);
+    CHECK(profile.maxUIElementsPerScreen != 0);
+    CHECK(profile.safetyMarginMultiplier >= 1.0f);
+    CHECK(profile.targetFrameRate != 0);
 }
 
-void testMemoryPoolConfigurationSafetyClass() {
+TEST_CASE("MemoryPoolConfiguration Safety Class") {
     MemoryPoolConfiguration config;
     config.maxTotalMemory = 128 * 1024 * 1024;
     config.maxTotalAllocations = 100;
     config.safetyClass = "Class B";
 
-    if (config.safetyClass != "Class B") {
-        throw runtime_error("Safety class not correctly set");
-    }
+    CHECK(config.safetyClass == "Class B");
 
     // Verify can change safety class
     config.safetyClass = "Class C";
-    if (config.safetyClass != "Class C") {
-        throw runtime_error("Safety class cannot be changed");
-    }
+    CHECK(config.safetyClass == "Class C");
 }
 
-void testMemoryPoolArrayInitialization() {
+TEST_CASE("MemoryPoolConfiguration Array Initialization") {
     MemoryPoolConfiguration config;
 
     // All pool sizes should default to zero
     for (size_t i = 0; i < VK_MAX_MEMORY_TYPES; ++i) {
-        if (config.poolSizes[i] != 0) {
-            throw runtime_error("Pool size at index " + to_string(i) + " not zero-initialized");
-        }
-        if (config.maxAllocationsPerType[i] != 0) {
-            throw runtime_error(
-                "Max allocations at index " + to_string(i) + " not zero-initialized"
-            );
-        }
+        CHECK_MESSAGE(config.poolSizes[i] == 0,
+                      "pool size at index " + to_string(i) + " not zero-initialized");
+        CHECK_MESSAGE(config.maxAllocationsPerType[i] == 0,
+                      "max allocations at index " + to_string(i) + " not zero-initialized");
     }
 
     // Can set individual pool sizes
     config.poolSizes[0] = 64 * 1024 * 1024;
     config.maxAllocationsPerType[0] = 50;
 
-    if (config.poolSizes[0] != 64 * 1024 * 1024) {
-        throw runtime_error("Pool size not correctly set");
-    }
+    CHECK(config.poolSizes[0] == 64 * 1024 * 1024);
 }
 
-void testCalculatorLargeApplicationProfile() {
+TEST_CASE("Calculator Large Application Profile") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 10;         // Many screens
     profile.maxUIElementsPerScreen = 500;      // Complex UIs
@@ -325,20 +187,15 @@ void testCalculatorLargeApplicationProfile() {
     auto config = MemoryPoolCalculator::calculate(profile);
 
     // Should produce large memory requirements
-    if (config.maxTotalMemory < 100 * 1024 * 1024) {  // At least 100 MB
-        throw runtime_error(
-            "Large profile produced insufficient memory: " +
-            to_string(config.maxTotalMemory / (1024 * 1024)) + " MB"
-        );
-    }
+    CHECK_MESSAGE(config.maxTotalMemory >= 100 * 1024 * 1024,  // At least 100 MB
+                  "large profile produced insufficient memory: " +
+                      to_string(config.maxTotalMemory / (1024 * 1024)) + " MB");
 
     // Should request substantial allocations
-    if (config.maxTotalAllocations < 50) {
-        throw runtime_error("Large profile produced insufficient allocation count");
-    }
+    CHECK(config.maxTotalAllocations >= 50);
 }
 
-void testCalculatorMinimalApplicationProfile() {
+TEST_CASE("Calculator Minimal Application Profile") {
     MedicalApplicationProfile profile;
     profile.maxConcurrentScreens = 1;
     profile.maxUIElementsPerScreen = 10;
@@ -350,50 +207,9 @@ void testCalculatorMinimalApplicationProfile() {
 
     auto config = MemoryPoolCalculator::calculate(profile);
 
-    if (!config.isValid()) {
-        throw runtime_error("Minimal profile produced invalid configuration");
-    }
-
+    CHECK(config.isValid());
     // Should still produce reasonable requirements
-    if (config.maxTotalMemory == 0) {
-        throw runtime_error("Minimal profile produced zero memory");
-    }
+    CHECK(config.maxTotalMemory != 0);
 }
 
-//=============================================================================
-// Main Test Suite
-//=============================================================================
-
-int main() {
-    cout << "=============================================================================\n";
-    cout << "Vulkan SC Memory Pool Manager Test Suite\n";
-    cout << "IEC 62304 Software Unit Testing\n";
-    cout << "=============================================================================\n\n";
-
-    TestRunner runner;
-
-    // Configuration tests
-    cout << "Running Configuration Tests...\n";
-    runner.runTest("MemoryPoolConfiguration Validity", testMemoryPoolConfigurationValidity);
-    runner.runTest("MemoryPoolConfiguration Safety Class", testMemoryPoolConfigurationSafetyClass);
-    runner.runTest("MemoryPoolConfiguration Array Initialization", testMemoryPoolArrayInitialization);
-    runner.runTest("MedicalApplicationProfile Defaults", testMedicalApplicationProfileDefaults);
-
-    // Calculator basic tests
-    cout << "\nRunning Memory Pool Calculator Tests...\n";
-    runner.runTest("MemoryPoolCalculator Basic", testMemoryPoolCalculatorBasic);
-    runner.runTest("MemoryPoolCalculator Safety Margin", testMemoryPoolCalculatorWithSafetyMargin);
-    runner.runTest("MemoryPoolCalculator Geometry Estimation", testMemoryPoolCalculatorGeometryEstimation);
-    runner.runTest("MemoryPoolCalculator Texture Estimation", testMemoryPoolCalculatorTextureEstimation);
-    runner.runTest("MemoryPoolCalculator Safety Margin Application", testMemoryPoolCalculatorSafetyMarginApplication);
-    runner.runTest("MemoryPoolCalculator Redundancy", testMemoryPoolCalculatorRedundancy);
-
-    // Calculator profile tests
-    cout << "\nRunning Application Profile Tests...\n";
-    runner.runTest("Calculator Large Application Profile", testCalculatorLargeApplicationProfile);
-    runner.runTest("Calculator Minimal Application Profile", testCalculatorMinimalApplicationProfile);
-
-    runner.printSummary();
-
-    return runner.allTestsPassed() ? 0 : 1;
-}
+MDUX_TEST_MAIN("Vulkan SC Memory Pool Manager Test Suite")
