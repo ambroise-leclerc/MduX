@@ -92,6 +92,14 @@ function(mdux_bake_artifact)
             "imported executable; declare it before registering this artifact.")
     endif()
 
+    foreach(component KIND ID)
+        if(NOT ARG_${component} MATCHES "^[a-z0-9][a-z0-9-]*$")
+            message(FATAL_ERROR
+                "mdux_bake_artifact: ${component} must be a lowercase slug containing only "
+                "letters, digits and '-' (got '${ARG_${component}}')")
+        endif()
+    endforeach()
+
     set(label "${ARG_KIND}/${ARG_ID}")
     set(target_name "bake-${ARG_KIND}-${ARG_ID}")
     set(baked_dir "${CMAKE_BINARY_DIR}/mdux_bake/${ARG_KIND}/${ARG_ID}")
@@ -104,12 +112,18 @@ function(mdux_bake_artifact)
 
     # Absolute paths for the outputs, all under the build tree - see the source-tree rule above.
     set(baked_outputs "")
+    set(seen_outputs "")
     foreach(output ${ARG_OUTPUTS})
-        if(IS_ABSOLUTE "${output}")
+        if(IS_ABSOLUTE "${output}" OR output MATCHES "[/\\\\]")
             message(FATAL_ERROR
-                "mdux_bake_artifact: OUTPUTS entries are file names relative to the artifact "
-                "directory, not absolute paths (got '${output}')")
+                "mdux_bake_artifact: OUTPUTS entries must be file names directly within the "
+                "artifact directory (got '${output}')")
         endif()
+        if(output IN_LIST seen_outputs)
+            message(FATAL_ERROR
+                "mdux_bake_artifact: duplicate OUTPUTS entry '${output}'")
+        endif()
+        list(APPEND seen_outputs "${output}")
         list(APPEND baked_outputs "${baked_dir}/${output}")
     endforeach()
 
