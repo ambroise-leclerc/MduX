@@ -14,11 +14,11 @@ governs *how to cite a standard*; for the safety/compliance impact of a code cha
 This convention is adopted as of the MduX ↔ TrustSC parity programme
 (GitHub issues [#7](https://github.com/ambroise-leclerc/MduX/issues/7)–[#9](https://github.com/ambroise-leclerc/MduX/issues/9)).
 **As of this writing, `docs/iec62304/` and `docs/iso13485/` are still on an old flat-numbered
-structure ("sections 1-16") that does not match the standards' real clause numbers, and
-`docs/MduX-IEC-62304-AI-Reference.md` / `docs/MduX-ISO-13485-AI-Reference.md` contain reproduced
-or closely-paraphrased normative text pending removal.** Do not treat the current corpus contents
-as a model to imitate until issue #8 (clause-accurate rewrite) lands — treat this skill's rules as
-binding for *new* material regardless.
+structure ("sections 1-16") that does not match the standards' real clause numbers. The legacy
+AI-reference transcriptions were removed in issue #22, but issue #21's broader, file-by-file corpus
+inventory remains incomplete.** Do not treat the current corpus contents as a model to imitate
+until issue #8 (clause-accurate rewrite) lands — treat this skill's rules as binding for *new*
+material regardless.
 
 ## The rule that matters most
 
@@ -64,7 +64,7 @@ currently-existing repository paths, and the paths below will not exist until th
   "justification_id": "JUS-014",
   "standard": "IEC 62304:2006",
   "clause_ref": "IEC 62304:2006 §5.3.3 Identify segregation necessary for risk control",
-  "rationale": "Governed modules are compiled without Vulkan or platform include directories, making the trust-zone boundary a compile error rather than a review comment.",
+  "rationale": "Governed targets have no declared Vulkan or platform dependencies, and mandatory source checks reject direct inclusion of those headers.",
   "requirement_id": "REQ-ARCH-004",
   "evidence_refs": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-004-trust-zones-in-cpp.md"]
 }
