@@ -41,3 +41,26 @@ inputs/Documentation/Medical\ Device\ Cybersecurity\ for\ Engineers\ and\ Manufa
 *.tmp
 *.temp
 *~
+
+# Vendor-specific AI coding agent instructions (local only).
+# AGENTS.md is the canonical, vendor-neutral instruction source - keep it tracked.
+CLAUDE.md
+.clauderules
+.cursorrules
+.cursor/
+.windsurfrules
+.windsurf/
+.aider.conf.yml
+.aiderrules
+.aider.chat.history.md
+.clinerules
+.clinerules/
+.continuerules
+.continue/
+.codeium/
+.amazonq/
+.junie/
+.roorules
+.roo/
+GEMINI.md
+.github/copilot-instructions.md
