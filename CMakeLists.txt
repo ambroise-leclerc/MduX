@@ -94,13 +94,17 @@ option(MDUX_ENABLE_REGULATORY_DOCS "Generate regulatory compliance documentation
 # existing consumers of MduX::MduX are unaffected and get MduXCore transitively.
 add_library(MduXCore)
 add_library(MduX::Core ALIAS MduXCore)
-mdux_declare_governed(MduXCore)
 set_target_properties(MduXCore PROPERTIES EXPORT_NAME Core)
 
 add_library(MduX)
 add_library(MduX::MduX ALIAS MduX)
 add_library(MduX_options INTERFACE)
 add_library(MduX_warnings INTERFACE)
+
+# Compiler warnings are configuration-only and carry no runtime or adapter
+# dependency, so this interface target is part of the governed graph too.
+mdux_declare_governed(MduXCore)
+mdux_declare_governed(MduX_warnings)
 
 # MduXCore's own module sources. Deliberately does not link MduX_options - that
 # interface target carries Vulkan::Vulkan (see the find_package(Vulkan) block

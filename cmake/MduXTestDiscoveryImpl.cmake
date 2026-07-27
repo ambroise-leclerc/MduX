@@ -2,8 +2,9 @@
 #
 # Run in script mode (-P) by the POST_BUILD command in MduXTestDiscovery.cmake.
 # Executes TEST_EXECUTABLE --list-tests, and writes one add_test() per line to
-# TEST_OUTPUT_FILE. Each registered test invokes the same executable with
-# --run=<name>, so a single build produces one binary and N ctest entries.
+# TEST_OUTPUT_FILE. Each input line is name<TAB>comma-separated-labels. Each
+# registered test invokes the same executable with --run=<name>, so a single
+# build produces one binary and N ctest entries with matching CTest labels.
 
 execute_process(
     COMMAND "${TEST_EXECUTABLE}" --list-tests
@@ -19,7 +20,17 @@ endif()
 string(REPLACE "\n" ";" test_names "${test_names_raw}")
 
 set(content "")
-foreach(name ${test_names})
+foreach(test_record IN LISTS test_names)
+    string(FIND "${test_record}" "\t" label_separator)
+    if(label_separator EQUAL -1)
+        set(name "${test_record}")
+        set(labels "")
+    else()
+        string(SUBSTRING "${test_record}" 0 ${label_separator} name)
+        math(EXPR labels_start "${label_separator} + 1")
+        string(SUBSTRING "${test_record}" ${labels_start} -1 labels)
+    endif()
+
     string(STRIP "${name}" name)
     if(NOT name STREQUAL "")
         # Escape characters CTest test names / CMake strings care about.
@@ -36,6 +47,13 @@ foreach(name ${test_names})
         # against the CTest version(s) actually in use.
         string(APPEND content
             "add_test(\"${TEST_TARGET}::${escaped_name}\" \"${TEST_EXECUTABLE}\" \"--run=${escaped_name}\")\n")
+        if(NOT labels STREQUAL "")
+            string(REPLACE "," ";" labels "${labels}")
+            string(REPLACE "\\" "\\\\" escaped_labels "${labels}")
+            string(REPLACE "\"" "\\\"" escaped_labels "${escaped_labels}")
+            string(APPEND content
+                "set_tests_properties(\"${TEST_TARGET}::${escaped_name}\" PROPERTIES LABELS \"${escaped_labels}\")\n")
+        endif()
     endif()
 endforeach()
 
