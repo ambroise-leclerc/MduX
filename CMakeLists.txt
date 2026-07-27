@@ -78,6 +78,7 @@ include(Sanitizers)
 include(StaticAnalyzers)
 include(Doxygen)
 include(DependencySummaryTable)
+include(MduXTrustZones)
 
 # Build options
 option(MDUX_BUILD_EXAMPLES "Build MduX examples" ON)
@@ -86,10 +87,43 @@ option(MDUX_BUILD_DOCS "Build MduX documentation" OFF)
 option(MDUX_ENABLE_REGULATORY_DOCS "Generate regulatory compliance documentation" ON)
 
 # Target architecture - C++23 modules approach
+#
+# Trust zones (ADR-004): MduXCore is the governed zone - std only, no Vulkan, no
+# windowing - checked mechanically by mdux_verify_trust_zones() at the bottom of
+# this file. MduX is the adapter zone: it PUBLIC-links MduXCore plus Vulkan, so
+# existing consumers of MduX::MduX are unaffected and get MduXCore transitively.
+add_library(MduXCore)
+add_library(MduX::Core ALIAS MduXCore)
+
 add_library(MduX)
 add_library(MduX::MduX ALIAS MduX)
 add_library(MduX_options INTERFACE)
 add_library(MduX_warnings INTERFACE)
+
+# Compiler warnings are configuration-only and carry no runtime or adapter
+# dependency, so this interface target is part of the governed graph too.
+mdux_declare_governed(MduXCore)
+mdux_declare_governed(MduX_warnings)
+
+# MduXCore's own module sources. Deliberately does not link MduX_options - that
+# interface target carries Vulkan::Vulkan (see the find_package(Vulkan) block
+# below), which a governed target must never reach, transitively or otherwise.
+target_sources(MduXCore
+    PUBLIC
+        FILE_SET CXX_MODULES FILES
+            include/mdux/core/Units.cppm
+            include/mdux/core/Result.cppm
+)
+target_compile_features(MduXCore PUBLIC cxx_std_23)
+target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXCore PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXCore PRIVATE /experimental:module /std:c++latest)
+endif()
 
 # C++23 modules configuration
 target_sources(MduX
@@ -212,7 +246,8 @@ if(MSVC)
 endif()
 
 # Target linking
-target_link_libraries(MduX PUBLIC MduX_options MduX_warnings)
+target_link_libraries(MduX PUBLIC MduX::Core MduX_options MduX_warnings)
+target_link_libraries(MduXCore PUBLIC MduX_warnings)
 
 # Subdirectories
 if(MDUX_BUILD_EXAMPLES)
@@ -225,6 +260,11 @@ endif()
 if(MDUX_BUILD_DOCS)
     enable_doxygen($<IF:$<BOOL:${MDUX_ENABLE_REGULATORY_DOCS}>,"awesome-sidebar","awesome">)
 endif()
+
+# Trust zone check (ADR-004) - run last, after every add_subdirectory() above, so
+# the full link graph (including test/example targets that might accidentally
+# link a governed target to something Vulkan-adjacent) is established.
+mdux_verify_trust_zones()
 
 # Installation (temporarily disabled for import std testing)
 # include(GNUInstallDirs)
