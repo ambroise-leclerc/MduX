@@ -54,7 +54,10 @@ other.
 
 ## The `Justification` object
 
-Use this whenever a design decision needs a formal link to a clause, as a fenced `json` block:
+Use this whenever a design decision needs a formal link to a clause, as a fenced `json` block.
+**This is a shape example, not a literal snippet to copy** — `evidence_refs[]` must be real,
+currently-existing repository paths, and the paths below will not exist until the trust-zone work
+(issue #46) lands, so do not paste this verbatim into a real citation yet:
 
 ```json
 {
@@ -63,12 +66,14 @@ Use this whenever a design decision needs a formal link to a clause, as a fenced
   "clause_ref": "IEC 62304:2006 §5.3.3 Identify segregation necessary for risk control",
   "rationale": "Governed modules are compiled without Vulkan or platform include directories, making the trust-zone boundary a compile error rather than a review comment.",
   "requirement_id": "REQ-ARCH-004",
-  "evidence_refs": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-005-trust-zones.md"]
+  "evidence_refs": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-004-trust-zones-in-cpp.md"]
 }
 ```
 
 - `justification_id` (`JUS-NNN`) is unique **across the whole corpus**, not per standard.
-- `evidence_refs[]` must contain real repository paths that exist — `mdux-docs-lint` verifies this.
+- `evidence_refs[]` must contain real repository paths that exist **at the time you write the
+  citation** — check with a plain file listing before citing, don't assume; `mdux-docs-lint` verifies
+  this mechanically once issue #25 lands.
 - Schema: `docs/iec62304/schemas/justification.schema.json` (issue #26).
 
 ## Where to find the clause you need
