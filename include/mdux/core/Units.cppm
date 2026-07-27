@@ -26,7 +26,13 @@ struct Extent2D {
     Px width{};
     Px height{};
 
-    friend constexpr bool operator==(const Extent2D&, const Extent2D&) = default;
+    // A member-defaulted operator==, not a friend-defaulted one: GCC 15/16 hit an
+    // internal compiler error (segfault in module consumption) on a
+    // friend-defaulted comparison operator declared inside a struct exported from
+    // a module - reproduced with all three of Extent2D/Rect/ColorRgba8 before
+    // switching. See issue #48 for the pattern of GCC-modules ICEs this project
+    // has been tracking.
+    constexpr bool operator==(const Extent2D&) const = default;
 };
 
 struct Rect {
@@ -46,7 +52,7 @@ struct Rect {
         return x < other.right() && other.x < right() && y < other.bottom() && other.y < bottom();
     }
 
-    friend constexpr bool operator==(const Rect&, const Rect&) = default;
+    constexpr bool operator==(const Rect&) const = default;
 };
 
 /// Non-premultiplied 8-bit-per-channel RGBA. Deliberately not a Vulkan format enum
@@ -57,7 +63,7 @@ struct ColorRgba8 {
     std::uint8_t b{};
     std::uint8_t a{255};
 
-    friend constexpr bool operator==(const ColorRgba8&, const ColorRgba8&) = default;
+    constexpr bool operator==(const ColorRgba8&) const = default;
 };
 
 /// An index into a build-time-approved locale list (e.g. baked text/font packages'
