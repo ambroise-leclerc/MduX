@@ -80,10 +80,16 @@ include(Doxygen)
 include(DependencySummaryTable)
 include(MduXTrustZones)
 include(MduXBuildInfo)
+include(MduXBake)
 
 # Artifact provenance for host tools (ADR-007): defines MduX::BuildInfo carrying
 # MDUX_TOOL_VERSION and MDUX_GIT_SHA. Runs before any target is created so bakers can link it.
 mdux_define_build_info()
+
+# Bake aggregate targets, declared here rather than next to add_subdirectory(tools) below so
+# this has no dependency on tools/ existing. They exist even with no artifact registered yet, so
+# `--target mdux-bake-all` succeeds trivially rather than failing with "no such target".
+mdux_declare_bake_targets()
 
 # Build options
 option(MDUX_BUILD_EXAMPLES "Build MduX examples" ON)
