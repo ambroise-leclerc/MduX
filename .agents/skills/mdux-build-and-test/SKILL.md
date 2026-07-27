@@ -66,11 +66,13 @@ know will fail or guessing at results.
 
 ## Compiler-specific module limitations
 
-- **GCC 15**: `VulkanSCTriangleExample` is currently skipped entirely on GCC 15 in
-  `examples/CMakeLists.txt` due to a documented internal-compiler-error (segfault in
-  `std::array` under C++23 modules). Do not try to force-enable it as a workaround for a task —
-  treat the skip as the working configuration and report the underlying GCC limitation if it
-  blocks your task.
+- **GCC 15+**: `VulkanSCTriangleExample` is currently skipped entirely on **any GCC version 15.0 or
+  later** in `examples/CMakeLists.txt` (the guard is `CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL
+  15.0`, not a check for exactly GCC 15) due to a documented internal-compiler-error (segfault in
+  `std::array` under C++23 modules). This means GCC 16 and newer are skipped too, not just GCC 15 —
+  do not assume a newer GCC re-enables the target. Do not try to force-enable it as a workaround for
+  a task — treat the skip as the working configuration and report the underlying GCC limitation if
+  it blocks your task.
 - **Clang 20**: the Clang CI job in `.github/workflows/ci.yml` is present but commented out. Clang
   builds are not currently verified by CI even though the version floor is enforced in
   `CMakeLists.txt` — treat any Clang build result as unverified against the project's own CI and

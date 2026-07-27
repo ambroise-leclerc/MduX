@@ -103,17 +103,18 @@ in `include/` or `src/`.
 - `include/mdux/*.cppm`, `include/mdux/vulkansc/*.cppm` — C++23 module interfaces (public API surface).
 - `src/*.cpp`, `src/vulkansc/*.cpp` — module implementations.
 - `tests/` — unit and compliance test executables, driven by `tests/CMakeLists.txt`.
-- `examples/` — example programs and their `CMakeLists.txt`; `examples/*.html` are sample medical
-  UI definitions consumed by the examples.
+- `examples/` — example programs and their `CMakeLists.txt`; `examples/*.html` are inactive/legacy
+  mockups — the built `MedicalUiExample` target (`SimpleMedicalUiExample.cpp`) does not construct
+  `MedicalUiRenderer` and consumes none of them; issue #42 tracks their deletion.
 - `cmake/` — CMake support modules (compiler settings, warnings, sanitizers, Doxygen, Vulkan
   discovery helpers, etc.), included from the root `CMakeLists.txt`.
 - `docs/adr/` — Architecture Decision Records (see § "Verified architecture summary" above for how
   their status matters).
 - `docs/iec62304/`, `docs/iso13485/` — structured regulatory reference documentation with
   AI-automation schemas and code examples.
-- Top-level `MduX_IEC-62304-*.md`, `MduX_ISO-13485-*.md`, `MduX_ISO-14971-*.md`,
-  `MduX-*-AI-Reference.md`, `risk-assessment-templates.md` — regulatory framework reference
-  documents (conceptual; see § 1).
+- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`,
+  `docs/MduX_ISO-14971-Risk-Management-Framework.md`, and the top-level `risk-assessment-templates.md`
+  — regulatory framework reference documents (conceptual; see § 1).
 - `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
   CI.
 - `CMakePresets.json` — currently defines a single Windows-only preset (`ninja-msvc`); there is no
@@ -122,8 +123,15 @@ in `include/` or `src/`.
 
 ## 5. Supported environment and common commands
 
-**Platforms**: Windows 10+ and Linux only (enforced by a fatal CMake check; there is no macOS
-build path in `CMakeLists.txt`).
+**Platforms**: Windows 10+ and Linux only are supported and intended — but this is not, as earlier
+text here claimed, enforced by a fatal CMake check. The guard in `CMakeLists.txt` is
+`if(NOT WIN32 AND NOT UNIX)`, and CMake sets `UNIX` on macOS too, so that check does not actually
+block macOS. In practice macOS is excluded by the compiler-version gate instead: `AppleClang` is not
+one of the recognized `CMAKE_CXX_COMPILER_ID` branches (MSVC/GNU/Clang), so it falls through to a
+non-fatal `message(WARNING ...)` rather than a `FATAL_ERROR` — and even past that warning, C++23
+modules scanning is not functional under AppleClang, so a macOS configure fails later for unrelated
+reasons rather than being rejected up front. Treat "Windows/Linux only" as the intended, tested
+scope, not a mechanically enforced restriction.
 
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
