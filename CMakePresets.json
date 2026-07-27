@@ -26,7 +26,72 @@
                 "strategy": "external"
             },
             "cacheVariables": {
-                "CMAKE_GENERATOR_PLATFORM": "x64"
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "MDUX_BUILD_EXAMPLES": "ON",
+                "MDUX_BUILD_TESTS": "ON",
+                "MDUX_BUILD_DOCS": "OFF"
+            }
+        },
+        {
+            "name": "ninja-msvc-debug",
+            "displayName": "Ninja with MSVC (Debug)",
+            "description": "Debug variant of ninja-msvc",
+            "inherits": "ninja-msvc",
+            "binaryDir": "build-msvc-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ninja-gcc",
+            "displayName": "Ninja with GCC",
+            "description": "Ninja generator with GCC 15+ for C++23 modules and import std support. Mirrors the configure line .github/workflows/ci.yml's linux-build job actually runs.",
+            "generator": "Ninja",
+            "binaryDir": "build-gcc",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++",
+                "MDUX_BUILD_EXAMPLES": "ON",
+                "MDUX_BUILD_TESTS": "ON",
+                "MDUX_BUILD_DOCS": "OFF"
+            }
+        },
+        {
+            "name": "ninja-gcc-debug",
+            "displayName": "Ninja with GCC (Debug)",
+            "description": "Debug variant of ninja-gcc",
+            "inherits": "ninja-gcc",
+            "binaryDir": "build-gcc-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "ninja-clang",
+            "displayName": "Ninja with Clang",
+            "description": "Ninja generator with Clang 20+ for C++23 modules and import std support. Mirrors the currently-disabled clang-build job in .github/workflows/ci.yml (see issue #48 for re-enabling it).",
+            "generator": "Ninja",
+            "binaryDir": "build-clang",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "clang-20",
+                "CMAKE_CXX_COMPILER": "clang++-20",
+                "MDUX_BUILD_EXAMPLES": "ON",
+                "MDUX_BUILD_TESTS": "ON",
+                "MDUX_BUILD_DOCS": "OFF"
             }
         }
     ],
@@ -34,6 +99,49 @@
         {
             "name": "ninja-msvc",
             "configurePreset": "ninja-msvc"
+        },
+        {
+            "name": "ninja-msvc-debug",
+            "configurePreset": "ninja-msvc-debug"
+        },
+        {
+            "name": "ninja-gcc",
+            "configurePreset": "ninja-gcc"
+        },
+        {
+            "name": "ninja-gcc-debug",
+            "configurePreset": "ninja-gcc-debug"
+        },
+        {
+            "name": "ninja-clang",
+            "configurePreset": "ninja-clang"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "ninja-msvc",
+            "configurePreset": "ninja-msvc",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-msvc-debug",
+            "configurePreset": "ninja-msvc-debug",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-gcc",
+            "configurePreset": "ninja-gcc",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-gcc-debug",
+            "configurePreset": "ninja-gcc-debug",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-clang",
+            "configurePreset": "ninja-clang",
+            "output": { "outputOnFailure": true }
         }
     ]
 }
