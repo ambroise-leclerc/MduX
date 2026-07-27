@@ -22,8 +22,8 @@ should be read as an implicit Class B/C claim.
 
 IEC 62304:2006 is written to be read alongside ISO 14971 (risk management) and, for a manufacturer's
 quality system, ISO 13485. MduX's own regulatory corpus mirrors that structure:
-[`docs/iso13485/`](../iso13485/) covers the quality-management side, and `docs/iso14971/`
-(issue #29) will cover risk management directly. IEC 62366-1 (usability engineering) and
+[`docs/iso13485/`](../iso13485/) covers the quality-management side, and
+[`docs/iso14971/`](../iso14971/) covers risk management directly. IEC 62366-1 (usability engineering) and
 IEC 81001-5-1 (health-software security) round out the five standards this project's citation
 convention names — see [`docs/governance/citation-convention.md`](../governance/citation-convention.md)
 for the full closed set of approved identifiers.

@@ -19,7 +19,7 @@ and this corpus says so rather than manufacturing a citation.
 
 ISO 13485:2016 is written to be read alongside ISO 9000 (fundamentals and vocabulary) and, for the
 risk-management activities it requires throughout, ISO 14971. MduX's own regulatory corpus covers
-IEC 62304 ([`../iec62304/`](../iec62304/)) directly; `docs/iso14971/` (issue #29) is where risk
+IEC 62304 ([`../iec62304/`](../iec62304/)) directly; [`../iso14971/`](../iso14971/) is where risk
 management gets the same clause-accurate treatment.
 
 ## §3 Terms and definitions

@@ -14,7 +14,7 @@ requirement's rigor is proportional to what happens if the software fails, not t
 size or complexity. MduX's structural response to this is architectural rather than procedural
 where possible — see [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust-zone split, which
 makes an entire category of failure (a governed module reaching platform/graphics code it should
-never touch) a compile error instead of a review item. `docs/iso14971/` (issue #29)
+never touch) a compile error instead of a review item. [`docs/iso14971/`](../iso14971/)
 is where the risk-management process itself gets a clause-accurate treatment; this file only
 establishes that classification decisions elsewhere in this corpus are risk-driven, not
 size-driven.
