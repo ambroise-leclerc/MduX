@@ -1,7 +1,8 @@
 # MduXTrustZones.cmake
 #
 # Mechanical enforcement of the governed/adapter/tools split from ADR-004: a
-# governed target's link graph must never reach Vulkan or a windowing library.
+# governed target's link graph may reach only other governed targets and must
+# never reach Vulkan or a windowing library.
 # This is deliberately a link-graph check, not just "don't #include vulkan.h" -
 # the point is to catch the dependency arriving transitively through some other
 # target just as reliably as directly.
@@ -69,6 +70,24 @@ function(_mdux_check_link_graph TGT ROOT VISITED_VAR)
         return()
     endif()
 
+    # Resolve aliases before consulting the governed set. Dependencies may use a
+    # namespaced alias while mdux_declare_governed() records its real target.
+    get_target_property(aliased_target ${TGT} ALIASED_TARGET)
+    if(aliased_target)
+        set(canonical_target "${aliased_target}")
+    else()
+        set(canonical_target "${TGT}")
+    endif()
+
+    get_property(governed GLOBAL PROPERTY MDUX_GOVERNED_TARGETS)
+    if(NOT "${canonical_target}" IN_LIST governed)
+        message(FATAL_ERROR
+            "Trust zone violation (ADR-004): governed target '${ROOT}' "
+            "reaches non-governed target '${TGT}'. Declare a genuinely "
+            "std-only target with mdux_declare_governed(), or keep it out "
+            "of the governed link graph.")
+    endif()
+
     foreach(prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
         get_target_property(deps ${TGT} ${prop})
         if(deps)
@@ -79,6 +98,12 @@ function(_mdux_check_link_graph TGT ROOT VISITED_VAR)
                 # (plain names, $<LINK_ONLY:name>, $<BUILD_INTERFACE:name>) are
                 # exactly the forms this project's own CMakeLists.txt files use.
                 string(REGEX REPLACE "^\\$<[A-Z_]+:(.*)>$" "\\1" dep_name "${dep}")
+                if("${dep}" MATCHES "^\\$<" AND dep_name STREQUAL "${dep}")
+                    message(FATAL_ERROR
+                        "Trust zone verification cannot prove generator expression "
+                        "'${dep}' on governed target '${ROOT}' is clean. Use a plain "
+                        "target, $<LINK_ONLY:target>, or $<BUILD_INTERFACE:target>.")
+                endif()
                 if(NOT dep_name STREQUAL "")
                     set(_visited_copy "${${VISITED_VAR}}")
                     _mdux_check_link_graph("${dep_name}" "${ROOT}" _visited_copy)

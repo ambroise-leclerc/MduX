@@ -179,14 +179,26 @@ inline bool allPassed(const std::vector<TestResult>& results) {
 namespace detail {
 
 inline void jsonEscape(std::string& out, std::string_view text) {
+    constexpr char hex[] = "0123456789abcdef";
     for (char c : text) {
         switch (c) {
             case '"': out += "\\\""; break;
             case '\\': out += "\\\\"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
             case '\n': out += "\\n"; break;
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
-            default: out += c;
+            default: {
+                const auto byte = static_cast<unsigned char>(c);
+                if (byte < 0x20) {
+                    out += "\\u00";
+                    out += hex[byte >> 4];
+                    out += hex[byte & 0x0f];
+                } else {
+                    out += c;
+                }
+            }
         }
     }
 }
@@ -283,8 +295,8 @@ inline void printJson(const std::vector<TestResult>& results, std::string_view s
 
 /// Shared entry point for every test executable built on this framework.
 /// Supported arguments:
-///   --list-tests        print one test name per line and exit 0 (used by CMake's
-///                        mdux_discover_tests() to register one ctest per case)
+///   --list-tests        print one test per line as name<TAB>comma-separated-labels
+///                        (used by mdux_discover_tests() to register CTest cases)
 ///   --run=<name>         run only the named case
 ///   --format=json|text   select output format (default: text)
 inline int runMain(int argc, char** argv, std::string_view suiteName) {
@@ -309,7 +321,14 @@ inline int runMain(int argc, char** argv, std::string_view suiteName) {
 
     if (listOnly) {
         for (const TestCase& testCase : cases) {
-            std::cout << testCase.name << '\n';
+            std::cout << testCase.name << '\t';
+            for (std::size_t i = 0; i < testCase.labels.size(); ++i) {
+                if (i != 0) {
+                    std::cout << ',';
+                }
+                std::cout << testCase.labels[i];
+            }
+            std::cout << '\n';
         }
         return 0;
     }
