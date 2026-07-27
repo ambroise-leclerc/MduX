@@ -252,6 +252,20 @@ endif()
 if(MDUX_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+
+    # Proves the install tree actually works end-to-end (issue #47): installs to
+    # a scratch prefix, then configures/builds/runs a tiny external consumer
+    # project against it via find_package(MduX). Old-style positional add_test()
+    # deliberately, not add_test(NAME ... COMMAND ...) - see
+    # cmake/MduXTestDiscoveryImpl.cmake's comment for why the keyword form
+    # mis-parses on this project's CTest version.
+    add_test(InstallTreeConsumer
+        "${CMAKE_COMMAND}"
+        -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
+        -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "GENERATOR=${CMAKE_GENERATOR}"
+        -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"
+    )
 endif()
 if(MDUX_BUILD_DOCS)
     enable_doxygen($<IF:$<BOOL:${MDUX_ENABLE_REGULATORY_DOCS}>,"awesome-sidebar","awesome">)
@@ -262,18 +276,18 @@ endif()
 # link a governed target to something Vulkan-adjacent) is established.
 mdux_verify_trust_zones()
 
-# Installation (temporarily disabled for import std testing)
-# include(GNUInstallDirs)
-# install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.cppm")
-# install(TARGETS MduX MduX_options MduX_warnings EXPORT MduXTargets 
-#         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-#         FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mdux)
-# install(EXPORT MduXTargets FILE MduXTargets.cmake NAMESPACE MduX:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+# Installation
+include(GNUInstallDirs)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.cppm")
+install(TARGETS MduXCore MduX MduX_options MduX_warnings EXPORT MduXTargets
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mdux)
+install(EXPORT MduXTargets FILE MduXTargets.cmake NAMESPACE MduX:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
 
-# include(CMakePackageConfigHelpers)
-# configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MduXConfig.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
-# write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
-# install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+include(CMakePackageConfigHelpers)
+configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MduXConfig.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MduXConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/MduXConfigVersion.cmake" DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MduX)
 
 # Status display
 message(STATUS "")
