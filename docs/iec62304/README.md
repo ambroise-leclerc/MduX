@@ -29,9 +29,9 @@ regulatory document in this repository is tracked as issue #39.
 
 Every clause citation in this directory uses the key format from
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md):
-`IEC 62304:2006 §<clause> <clause title>`. A per-clause index (`AI-Reference.md`) and JSON Schemas
-for the mechanisms cited here are tracked separately as issues #32 and #33 — this directory is the
-prose those will index, not a replacement for it.
+`IEC 62304:2006 §<clause> <clause title>`. [`AI-Reference.md`](AI-Reference.md) is the per-clause
+index, generated from this directory's own headings and `Justification` objects. JSON Schemas for
+the mechanisms cited here are tracked separately as issue #33.
 
 ## Safety classification scope
 
