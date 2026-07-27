@@ -4,8 +4,8 @@
 # so `ctest -R <name>` selects an individual case instead of only the whole
 # executable. Modeled on the same POST_BUILD-discovery pattern Catch2's and
 # GoogleTest's CMake integration modules use: after the test binary links, run it
-# once with --list-tests, and generate an include file of add_test() calls from the
-# names it prints.
+# once with --list-tests, and generate an include file of add_test() calls and
+# CTest label properties from the name/label records it prints.
 #
 # Requires the target to be built on tests/framework/MduXTest.cppm + MduXTest.hpp
 # (MDUX_TEST_MAIN provides the --list-tests / --run=<name> support this depends on).
