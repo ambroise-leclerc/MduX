@@ -57,27 +57,29 @@ existing precedent):
 
 **Mechanically enforced, in order of strength:**
 
-1. **Include-directory absence.** `MduXCore`'s link interface never receives Vulkan's (or GLFW's)
-   include directories, so `#include <vulkan/vulkan.h>` inside a governed `.cppm` is a hard compile
-   error on every platform, with no additional tooling. This is the strongest guarantee available
-   and does not depend on anyone running a linter.
-2. **Configure-time link-graph assertion.** `cmake/MduXTrustZones.cmake` provides
+1. **Dependency and include-interface isolation.** `MduXCore`'s link interface never receives
+   Vulkan's or GLFW's libraries, compile definitions, or include directories. This prevents
+   accidental use of SDK-private headers that are reachable only through those targets. It does
+   **not** make system-installed headers unreachable: a compiler may still find Vulkan, platform,
+   or OS headers in its default search paths.
+2. **A mandatory CI banned-include lint** over governed directories rejects direct inclusion of
+   Vulkan, GLFW, platform, and OS headers. The same lint bans `reinterpret_cast`, `const_cast`,
+   `new `, `malloc`, `<random>`, `std::chrono::*_clock::now`, `std::fma`, `getenv`,
+   `std::filesystem`, and decimal float format specifiers (`%f`, `%g`, `%e`) in evidence-writing
+   code. This check, rather than include-directory isolation alone, enforces the source-level header
+   boundary on machines where those SDKs are installed.
+3. **Configure-time link-graph assertion.** `cmake/MduXTrustZones.cmake` provides
    `mdux_declare_governed(<target>)`, recording the target in a global property, and
    `mdux_verify_trust_zones()`, called once at the end of the top-level `CMakeLists.txt`, which
    transitively walks every governed target's `LINK_LIBRARIES` / `INTERFACE_LINK_LIBRARIES` and
    raises `message(FATAL_ERROR)` on `Vulkan::*`, `glfw`, or any target that is not itself governed.
    This runs on every configure, before anything compiles.
-3. **Per-directory `.clang-tidy`.** `include/mdux/core/.clang-tidy` inherits the root configuration
+4. **Per-directory `.clang-tidy`.** `include/mdux/core/.clang-tidy` inherits the root configuration
    and adds, with `WarningsAsErrors: '*'`: `cppcoreguidelines-pro-type-reinterpret-cast`,
    `-pro-type-const-cast`, `-pro-type-cstyle-cast`, `-pro-bounds-pointer-arithmetic`,
    `-pro-type-union-access`, `-pro-type-vararg`, `-no-malloc`, `-owning-memory`, `-avoid-goto`,
    `cert-dcl58-cpp`, `misc-new-delete-overloads`, `bugprone-unhandled-self-assignment`,
    `modernize-avoid-c-arrays`.
-4. **A CI grep lint** over governed directories banning `reinterpret_cast`, `const_cast`, `new `,
-   `malloc`, `<random>`, `std::chrono::*_clock::now`, `std::fma`, `getenv`, `std::filesystem`, and
-   decimal float format specifiers (`%f`, `%g`, `%e`) in evidence-writing code. Crude, but it is the
-   only thing that catches `<random>` inside a `.cppm` that clang-tidy's still-immature module
-   support may skip.
 5. **Float-determinism flag guards** on modules with determinism requirements (see the ML inference
    ADR, issue #18): `-ffp-contract=off -fno-fast-math` / `/fp:precise /fp:contract`, plus a CMake
    check that `FATAL_ERROR`s if `-ffast-math`, `-Ofast`, or `/fp:fast` reaches any governed target.
@@ -87,7 +89,7 @@ existing precedent):
 - Nothing stops a governed module from writing undefined behavior inside its own translation unit.
   There is no `unsafe` keyword and no borrow checker to forbid.
 - `import std;` gives governed code `std::vector`, threads, and file/network I/O. Only the grep
-  lint (item 4) and code review keep those out of a module that should not need them.
+  lint (item 2) and code review keep those out of a module that should not need them.
 - clang-tidy's analysis of C++23 module interface units is immature as of this writing. Run it in
   the Clang CI leg only (once issue #48 re-enables that leg); treat its results as advisory on
   Windows/MSVC.
@@ -109,8 +111,7 @@ Vulkan; the separation is purely cosmetic and provides none of the mechanical gu
 **Pros:** Avoids adding a second CMake target.
 **Cons:** The Vulkan-dependent code would still physically live in the same target and the same
 translation units as governed code, so the guarantee would depend on the flag always being set
-correctly rather than on the file simply not being reachable. Fragile in exactly the way item 1
-above is designed not to be.
+correctly rather than on separate target usage requirements plus mandatory source checks.
 
 ## Decision (continued): what "governed" will contain
 
@@ -124,8 +125,8 @@ design and are not candidates for `MduXCore`.
 ## Consequences
 
 ### Positive
-- The strongest guarantee (include-directory absence) requires zero ongoing discipline — it is a
-  property of the link graph, not of anyone remembering a rule.
+- Target usage requirements cannot accidentally propagate native SDK dependencies into governed
+  code, while the mandatory banned-include lint closes the system-header search-path gap.
 - Every later epic that introduces baked evidence, `.medui` compilation, or ML inference gets a
   pre-existing home (`MduXCore`) and a pre-existing verification mechanism, rather than having to
   invent zone enforcement piecemeal.
@@ -136,7 +137,7 @@ design and are not candidates for `MduXCore`.
 - Introduces a second library target and a second `.clang-tidy` file to maintain.
 - The link-graph assertion adds a small amount of configure-time CMake logic that must itself be
   kept correct — a bug in `mdux_verify_trust_zones()` could give a false sense of enforcement.
-- clang-tidy's incomplete module support means item 3's enforcement is currently partial and
+- clang-tidy's incomplete module support means item 4's enforcement is currently partial and
   platform-dependent (see "Decision" above).
 
 ### Risks and Mitigations
@@ -153,9 +154,11 @@ design and are not candidates for `MduXCore`.
 Use this wording, and no broader wording, wherever this architecture is described in a compliance
 context:
 
-> Governed modules are compiled without access to platform, graphics, or OS headers, are checked by
-> an enforced static-analysis profile, and are covered by determinism tests. This is **not** a claim
-> that governed modules cannot contain undefined behaviour.
+> Governed targets have no declared platform or graphics dependencies; their sources are checked
+> to reject direct inclusion of platform, graphics, and OS headers, are checked by an enforced
+> static-analysis profile, and are covered by determinism tests. This is **not** a claim that
+> governed modules cannot contain undefined behaviour or that compiler system headers are
+> physically inaccessible.
 
 ## References
 - [TrustSC ADR-005: Pure-Rust project boundary and dependency policy](https://github.com/ambroise-leclerc/TrustSC/blob/main/docs/adr/ADR-005-pure-rust-project-boundary-and-dependency-policy.md)
