@@ -41,7 +41,7 @@ int main() {
 
     // Setup medical UI configuration
     mdux::MedicalUiConfig uiConfig;
-    uiConfig.uiDefinitionPath = "medical_interface.html";  // Would be provided by user
+    // This smoke test does not load an external UI definition.
     uiConfig.compliance = compliance;
     uiConfig.enableHotReload = false;  // Disabled for CI/production
     uiConfig.enableValidation = true;
