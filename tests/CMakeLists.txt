@@ -42,6 +42,7 @@ mdux_discover_tests(core_tests)
 add_executable(evidence_tests
     evidence/EvidenceTestMain.cpp
     evidence/DigestTests.cpp
+    evidence/JsonTests.cpp
 )
 
 target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)

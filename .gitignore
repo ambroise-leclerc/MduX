@@ -80,3 +80,8 @@ CLAUDE.md
 .roo/
 GEMINI.md
 .github/copilot-instructions.md
+
+# Python bytecode from the host-only lint tools (tools/docs-lint, tools/evidence-lint).
+# CI sets PYTHONDONTWRITEBYTECODE=1, but a local run of the self-tests still leaves these behind.
+__pycache__/
+*.pyc
