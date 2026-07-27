@@ -9,12 +9,12 @@ include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
 # Basic unit tests
 add_executable(unit_tests
-    framework/MduXTest.cppm
     TestMain.cpp
     TestVersion.cpp
     TestCompliance.cpp
 )
 
+target_sources(unit_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
 target_link_libraries(unit_tests PRIVATE MduX::MduX)
 target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -41,11 +41,11 @@ mdux_discover_tests(unit_tests)
 
 # Medical device compliance tests
 add_executable(compliance_tests
-    framework/MduXTest.cppm
     ComplianceTestMain.cpp
     TestRegulatoryCompliance.cpp
 )
 
+target_sources(compliance_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
 target_link_libraries(compliance_tests PRIVATE MduX::MduX)
 target_include_directories(compliance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -71,10 +71,10 @@ mdux_discover_tests(compliance_tests)
 
 # Vulkan SC specific tests
 add_executable(vulkansc_memory_tests
-    framework/MduXTest.cppm
     vulkansc/MemoryPoolManagerTests.cpp
 )
 
+target_sources(vulkansc_memory_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
 target_link_libraries(vulkansc_memory_tests PRIVATE MduX::MduX)
 target_include_directories(vulkansc_memory_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -111,10 +111,10 @@ mdux_discover_tests(vulkansc_memory_tests)
 
 # Vulkan SC device object tests
 add_executable(vulkansc_object_tests
-    framework/MduXTest.cppm
     vulkansc/DeviceObjectManagerTests.cpp
 )
 
+target_sources(vulkansc_object_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
 target_link_libraries(vulkansc_object_tests PRIVATE MduX::MduX)
 target_include_directories(vulkansc_object_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
