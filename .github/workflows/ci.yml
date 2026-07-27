@@ -213,9 +213,12 @@ jobs:
 
     - name: Install latest CMake
       run: |
+        # Download to RUNNER_TEMP, not the checkout root - the archive would
+        # otherwise trip "Verify no source-tree writes" below.
         CMAKE_VERSION="4.1.1"
-        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
-        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf "$CMAKE_ARCHIVE" -C /opt/
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
         cmake --version
