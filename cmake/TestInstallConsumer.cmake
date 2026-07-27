@@ -9,9 +9,9 @@
 # disk.
 #
 # Run via: cmake -D BUILD_DIR=... -D CXX_COMPILER=... -D GENERATOR=... -P TestInstallConsumer.cmake
-# (see the add_test(NAME InstallTreeConsumer ...) call in the top-level CMakeLists.txt)
+# (see the InstallTreeConsumer add_test() call in the top-level CMakeLists.txt)
 
-foreach(required_var BUILD_DIR CXX_COMPILER GENERATOR)
+foreach(required_var BUILD_DIR CXX_COMPILER GENERATOR EXPECTED_VERSION)
     if(NOT DEFINED ${required_var})
         message(FATAL_ERROR "TestInstallConsumer.cmake: ${required_var} must be set with -D")
     endif()
@@ -44,7 +44,7 @@ import mdux;\n\
 int main() {\n\
     // A real assertion, not just \"it links\": confirms the installed module\n\
     // is actually usable and its constexpr data survived installation intact.\n\
-    if (mdux::Version::getString() != \"0.1.0\") {\n\
+    if (mdux::Version::getString() != \"${EXPECTED_VERSION}\") {\n\
         return 1;\n\
     }\n\
     if (!mdux::Compliance::isMedicalDeviceCompliant) {\n\
@@ -63,6 +63,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)\n\
 project(MduXInstallConsumer LANGUAGES CXX)\n\
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)\n\
 find_package(MduX REQUIRED)\n\
+if(NOT TARGET MduX::Core)\n\
+    message(FATAL_ERROR \"Installed package does not provide MduX::Core\")\n\
+endif()\n\
 add_executable(consumer main.cpp)\n\
 target_link_libraries(consumer PRIVATE MduX::MduX)\n\
 if(TARGET __CMAKE::CXX23)\n\

@@ -95,6 +95,7 @@ option(MDUX_ENABLE_REGULATORY_DOCS "Generate regulatory compliance documentation
 add_library(MduXCore)
 add_library(MduX::Core ALIAS MduXCore)
 mdux_declare_governed(MduXCore)
+set_target_properties(MduXCore PROPERTIES EXPORT_NAME Core)
 
 add_library(MduX)
 add_library(MduX::MduX ALIAS MduX)
@@ -246,8 +247,9 @@ if(MSVC)
 endif()
 
 # Target linking
-target_link_libraries(MduX PUBLIC MduX::Core MduX_options MduX_warnings)
-target_link_libraries(MduXCore PUBLIC MduX_warnings)
+target_link_libraries(MduX PUBLIC MduX::Core MduX_options)
+target_link_libraries(MduX PRIVATE MduX_warnings)
+target_link_libraries(MduXCore PRIVATE MduX_warnings)
 
 # Subdirectories
 if(MDUX_BUILD_EXAMPLES)
@@ -268,6 +270,7 @@ if(MDUX_BUILD_TESTS)
         -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
         -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
         -D "GENERATOR=${CMAKE_GENERATOR}"
+        -D "EXPECTED_VERSION=${PROJECT_VERSION}"
         -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"
     )
 endif()
