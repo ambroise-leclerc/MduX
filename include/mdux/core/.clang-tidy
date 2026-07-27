@@ -1,0 +1,24 @@
+---
+# Governed-zone profile (ADR-004, ADR-005). Inherits the root .clang-tidy and
+# adds the mechanical checks that substitute, at ~70% fidelity, for what Rust's
+# #![forbid(unsafe_code)] gets for free - see ADR-004's "Consequences" section
+# for the exact, deliberately narrower claim this actually supports.
+InheritParentConfig: true
+
+Checks: >
+  bugprone-exception-escape,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  cppcoreguidelines-pro-type-union-access,
+  cppcoreguidelines-pro-type-vararg,
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-avoid-goto,
+  cert-dcl58-cpp,
+  misc-new-delete-overloads,
+  bugprone-unhandled-self-assignment,
+  modernize-avoid-c-arrays
+
+WarningsAsErrors: '*'
