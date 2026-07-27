@@ -31,6 +31,7 @@ All ADRs in this project must consider:
 | [ADR-004](ADR-004-trust-zones-in-cpp.md) | Trust zones in C++ | Accepted | 2026-07-26 |
 | [ADR-005](ADR-005-error-handling-and-exceptions-policy.md) | Error handling and exceptions policy | Accepted | 2026-07-26 |
 | [ADR-006](ADR-006-no-reproduction-of-normative-standard-text.md) | No reproduction of normative standard text | Accepted | 2026-07-26 |
+| [ADR-007](ADR-007-evidence-pipeline-doctrine.md) | Evidence pipeline doctrine | Accepted | 2026-07-27 |
 
 Note: `ADR-002-implementation-plan.md` shares its number with `ADR-002-testing-framework-selection.md`
 (a pre-existing duplication in this directory) and is not an independently numbered ADR — it is the
