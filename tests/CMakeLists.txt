@@ -36,6 +36,36 @@ endif()
 
 mdux_discover_tests(core_tests)
 
+# Evidence-kernel tests (ADR-007). Links MduX::Core only, for the same reason core_tests does:
+# the evidence modules are governed, so a test that needed MduX::MduX to build them would mean
+# the trust-zone boundary had been crossed somewhere.
+add_executable(evidence_tests
+    evidence/EvidenceTestMain.cpp
+    evidence/DigestTests.cpp
+)
+
+target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(evidence_tests PRIVATE MduX::Core)
+target_include_directories(evidence_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(evidence_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(evidence_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(evidence_tests PRIVATE /experimental:module)
+    target_compile_options(evidence_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(evidence_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp
