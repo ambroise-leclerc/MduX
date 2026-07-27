@@ -26,11 +26,20 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       
-    - name: Setup CMake (latest)
+    # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # to a specific UUID that only matches CMake's `import std` experimental-feature
+    # ABI as of 4.1.1 - CMake changes that UUID as the feature evolves release to
+    # release, so newer CMake versions reject it ("CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # is set to incorrect value") and import std silently stops working, cascading
+    # into hundreds of "could not find module 'std'" errors at compile time. Every
+    # other job in this workflow already pins 4.1.1 for the same reason (grep
+    # CMAKE_VERSION="4.1.1" below) - 'latest' here was the one job that floated,
+    # and it broke as soon as 'latest' moved past 4.1.1.
+    - name: Setup CMake (4.1.1, matching every other job in this workflow)
       uses: jwlawson/actions-setup-cmake@v2
       with:
-        cmake-version: 'latest'
-        
+        cmake-version: '4.1.1'
+
     - name: Setup Vulkan SDK
       uses: humbletim/setup-vulkan-sdk@v1.2.1
       with:
