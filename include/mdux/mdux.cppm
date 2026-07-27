@@ -17,6 +17,15 @@ export module mdux;
 // Import standard library modules (C++23 approach)
 import std;
 
+// Builds Version::getString() from the same MDUX_VERSION_* definitions that back
+// major/minor/patch (see configure_medical_compliance() in cmake/CompilerSettings.cmake),
+// so the string can never drift from those values the way a separately hardcoded
+// literal did.
+#define MDUX_STRINGIFY_DETAIL(x) #x
+#define MDUX_STRINGIFY(x) MDUX_STRINGIFY_DETAIL(x)
+#define MDUX_VERSION_STRING \
+    MDUX_STRINGIFY(MDUX_VERSION_MAJOR) "." MDUX_STRINGIFY(MDUX_VERSION_MINOR) "." MDUX_STRINGIFY(MDUX_VERSION_PATCH)
+
 // Forward declarations for medical UI system
 export namespace mdux {
     /**
@@ -101,7 +110,7 @@ struct Version {
      * @brief Get version string in format "major.minor.patch"
      * @return Version string
      */
-    static constexpr std::string_view getString() noexcept { return "0.1.0"; }
+    static constexpr std::string_view getString() noexcept { return MDUX_VERSION_STRING; }
 };
 
 /**
