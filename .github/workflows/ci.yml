@@ -89,6 +89,14 @@ jobs:
       run: ctest --preset ninja-msvc
       shell: cmd
 
+    # Byte-identity of every baked artifact, on this toolchain (ADR-007). Run as its own step
+    # rather than relying on the full suite above, so a drifted artifact is unmistakable in the
+    # job log instead of one line among hundreds. The corresponding Linux/GCC step is what makes
+    # the claim two-toolchain - see the comment there before removing either.
+    - name: Verify evidence artifacts (MSVC)
+      run: ctest --preset ninja-msvc -L evidence
+      shell: cmd
+
     - name: Verify no source-tree writes
       shell: pwsh
       run: |
@@ -163,6 +171,18 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --preset ninja-gcc
+
+    # The other half of the two-toolchain byte-identity claim (ADR-007, decision 6).
+    #
+    # Running the evidence tests on Windows/MSVC *and* Linux/GCC in the same pull request proves
+    # the bakers produce byte-identical output across two independent toolchains, two standard
+    # libraries and two floating-point code generators. TrustSC's equivalent check runs against a
+    # single rustc; this is strictly stronger, and it is free because both legs already exist.
+    #
+    # Do not "optimise" CI by dropping either leg. Doing so silently discards the guarantee -
+    # every test would still pass, and nothing would be verifying determinism any more.
+    - name: Verify evidence artifacts (GCC 15)
+      run: ctest --preset ninja-gcc -L evidence
 
     - name: Verify no source-tree writes
       run: |
@@ -242,6 +262,12 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
 
+    # A third toolchain for the byte-identity check (ADR-007). GCC 16's code generation differs
+    # from GCC 15's, so this catches a determinism regression that only one version exhibits -
+    # the same reasoning that motivated adding this leg at all (issue #48).
+    - name: Verify evidence artifacts (GCC 16)
+      run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} -L evidence --output-on-failure
+
     - name: Verify no source-tree writes
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -253,6 +279,16 @@ jobs:
         fi
 
   # Clang Build with Vulkan (temporarily disabled - Clang 20 std module support not ready)
+  #
+  # Still disabled: issue #48 added the GCC 16 leg but did not re-enable this one, so the Clang
+  # half of that story remains open. When it is turned back on, add an evidence step matching the
+  # MSVC and GCC legs above:
+  #
+  #     - name: Verify evidence artifacts (Clang)
+  #       run: ctest --preset ninja-clang -L evidence
+  #
+  # Clang's floating-point code generation differs from both MSVC's and GCC's, so a third
+  # independent toolchain strengthens the byte-identity claim in ADR-007 further (decision 6).
   # clang-build:
   #   name: Linux (Clang, Vulkan)
   #   runs-on: ubuntu-latest
@@ -445,3 +481,28 @@ jobs:
       run: |
         python3 -m unittest discover -s tools/docs-lint -p "test_*.py"
         python3 tools/docs-lint/mdux_docs_lint.py
+
+  evidence-lint:
+    name: Evidence Pipeline Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Bans decimal float formatting anywhere in the evidence pipeline (ADR-007). Needs no build,
+    # so it runs as its own fast job rather than inside a toolchain leg.
+    - name: Run mdux-evidence-lint
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: |
+        python3 -m unittest discover -s tools/evidence-lint -p "test_*.py"
+        python3 tools/evidence-lint/mdux_evidence_lint.py
+
+    # There used to be a second step here checking that every committed report.json's
+    # toolGitSha wasn't "unknown". That field no longer exists: BakeReport dropped it entirely
+    # after review found it structurally unsound for a byte-compared, committed artifact - the
+    # SHA of the commit containing report.json can't be known while that file is being written,
+    # so an embedded "current commit" value could never survive being committed and re-baked.
+    # See ADR-007, decision 5, and issue #52. toolVersion is the report's only tooling identity
+    # now, and it needs no CI check beyond validate()'s existing EmptyToolVersion rejection.
