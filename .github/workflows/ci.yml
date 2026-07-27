@@ -149,6 +149,7 @@ jobs:
 
     - name: Verify no source-tree writes
       run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
         status="$(git status --porcelain)"
         if [ -n "$status" ]; then
           echo "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
