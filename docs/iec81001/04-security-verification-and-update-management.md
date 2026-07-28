@@ -7,6 +7,7 @@ Practice categories are named rather than numbered throughout this directory; se
 [`README.md`](README.md) for what this corpus asserts and what it does not.
 
 ## Security verification and validation
+<!-- pointer: MduX verifies two properties this practice cares about - the trust-zone dependency boundary and cross-toolchain byte identity - and fuzzes none of its parsing surfaces, which is a gap rather than a scope exclusion. -->
 
 Testing that a security property actually holds, rather than asserting it was designed in.
 

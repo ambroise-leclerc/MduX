@@ -12,6 +12,7 @@ No MduX-specific mechanism. Competence of the people who develop MduX is not som
 repository can attest to about itself.
 
 ## §6.3 Infrastructure
+<!-- pointer: MduX version-controls and reviews its build infrastructure as source, which is infrastructure control of the build only, not of the facilities and equipment this clause covers. -->
 
 The one narrow, honest analog: this project's build infrastructure (CMake presets, the CI matrix
 across MSVC/GCC/Clang) is itself version-controlled and reviewed the same way source code is,

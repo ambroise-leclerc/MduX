@@ -38,6 +38,7 @@ requires the governed zone to compile with exceptions disabled, so a stray `thro
 safety-relevant code is a build failure rather than a runtime behaviour nobody tested for.
 
 ## §7.3 Verification of risk control measures
+<!-- pointer: mdux_verify_trust_zones() and the exception-disabled governed build are verified by running on every CI leg, so a regression is a build failure rather than a missed review. -->
 
 A risk control measure that is not itself verified is an assertion, not a control. Both examples
 above are verified the same way they are enforced: `mdux_verify_trust_zones()` runs at every

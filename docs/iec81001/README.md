@@ -71,5 +71,7 @@ by anything that reads risk records and cannot escape the review a safety hazard
 `description` and `controlled_by` stay field-aligned with `mdux::governance::Hazard`, checked by
 `tools/docs-lint/check_schema_type_drift.py`.
 
-A per-clause index (`AI-Reference.md`) is tracked separately as issue #32; for this standard it
-should follow the numbering verification above rather than precede it.
+[`AI-Reference.md`](AI-Reference.md) is the per-clause index, generated mechanically from this
+directory's own headings. It makes no claim beyond what is already here: rows for §1–§4 carry
+clause numbers, and every practice row shows `—`, because that is what this corpus asserts. It
+is not waiting on the numbering verification above — it will gain numbers when the modules do.

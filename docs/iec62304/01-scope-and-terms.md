@@ -29,6 +29,7 @@ convention names — see [`docs/governance/citation-convention.md`](../governanc
 for the full closed set of approved identifiers.
 
 ## §3 Terms and definitions
+<!-- pointer: Names the terms that recur across this corpus and points at where MduX gives each a checkable meaning, rather than restating a glossary that is itself normative text. -->
 
 Rather than restate the standard's glossary — which is exactly the kind of clause where a
 "definition" is normative text, easy to reproduce nearly word-for-word without meaning to — this

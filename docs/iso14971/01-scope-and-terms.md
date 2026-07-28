@@ -15,6 +15,7 @@ latter part: where MduX's own architecture removes a category of risk regardless
 device's specific use, and where it does not.
 
 ## §2 Normative references
+<!-- pointer: Read alongside docs/iec62304/ and docs/iso13485/, which cover the two standards this one is written to work with. -->
 
 ISO 14971:2019 is written to work alongside IEC 62304 (software life cycle, for the
 software-specific portions of a device's risk) and ISO 13485 (the quality management system the

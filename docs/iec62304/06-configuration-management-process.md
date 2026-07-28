@@ -39,6 +39,7 @@ artifact's configuration. For source code generally, this repository's branch pr
 configuration can only change through a reviewed, recorded pull request.
 
 ## §8.3 Configuration status accounting
+<!-- pointer: git log and git blame answer this for every tracked file, and the evidence pipeline extends the same answer to baked artifacts; ADR-007 decision 5 explains why no separate status-accounting document exists. -->
 
 Status accounting is being able to answer "what is the current configuration, and how did it get
 here" without reconstructing it from memory. `git log` and `git blame` already answer this for

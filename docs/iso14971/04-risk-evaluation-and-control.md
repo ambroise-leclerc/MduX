@@ -1,6 +1,7 @@
 # ISO 14971:2019 §6–§7 — Risk evaluation and risk control
 
 ## §6 Risk evaluation
+<!-- pointer: Device-level: acceptability criteria belong to the manufacturer's risk management plan, and MduX has no standing to set them. -->
 
 Deciding whether an estimated risk is already acceptable against the manufacturer's own criteria,
 or needs further control. This decision is device-level and depends on the risk-acceptability
@@ -20,6 +21,10 @@ runtime check or a warning label.
 
 ## §7.3 Implementation of risk control measures
 
+Putting a decided control measure into effect, and being able to show that it is in effect rather
+than merely decided. This is the sub-clause where MduX has its clearest instance, because the
+control and the evidence that it runs are the same artifact:
+
 ```json
 {
   "justification_id": "JUS-012",
@@ -31,6 +36,7 @@ runtime check or a warning label.
 ```
 
 ## §7.4 Residual risk evaluation
+<!-- pointer: Because MduX's trust-zone check is a hard build failure rather than a probabilistic mitigation, residual risk for the category it covers is effectively zero - contingent on the check still running in CI. -->
 
 Evaluating the risk remaining after a control measure is applied. Since the trust-zone check is a
 hard build failure rather than a probabilistic mitigation, the residual risk it leaves behind (a
@@ -47,6 +53,7 @@ reduction is not practicable. Device-level; MduX has no benefit analysis of its 
 against, since it is not the device delivering a clinical benefit.
 
 ## §7.6 Risks arising from risk control measures
+<!-- pointer: MduX's trust-zone check fails the build rather than passing silently, so a misconfiguration of the control is visible immediately instead of leaving an undetected gap. -->
 
 A control measure can itself introduce new risk. The trust-zone check's own failure mode is a hard
 build stop, not a silent pass-through — a configuration error in the check would be visible
@@ -54,6 +61,7 @@ immediately (the build breaks) rather than manifesting as an undetected gap, whi
 mode this sub-clause is most concerned with.
 
 ## §7.7 Completeness of risk control
+<!-- pointer: Device-level: completeness is judged across a device's whole hazard list, which MduX cannot see from inside one dependency. -->
 
 Confirming every identified risk has been addressed by a control measure. This corpus's own honesty
 about scope is the relevant discipline here: [`03-risk-analysis.md`](03-risk-analysis.md) names

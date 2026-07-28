@@ -32,8 +32,9 @@ issue #39 for the scope-limits document that will make that explicit project-wid
 
 Every clause citation uses the key format from
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md):
-`ISO 13485:2016 §<clause> <clause title>`. A per-clause index (`AI-Reference.md`) is tracked
-separately as issue #32.
+`ISO 13485:2016 §<clause> <clause title>`. [`AI-Reference.md`](AI-Reference.md) is the per-clause index — one row per clause section, each
+with a one-sentence pointer and a deep link to the heading that covers it. It is generated from
+this directory's own headings and `Justification` objects, and CI fails if it is out of date.
 
 ## Schemas
 

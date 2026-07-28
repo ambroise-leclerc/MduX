@@ -1,6 +1,7 @@
 # ISO 14971:2019 §4 — General requirements for risk management system
 
 ## §4.1 Risk management process
+<!-- pointer: Device-level: MduX runs no risk management process of its own, and has no device whose life cycle one would span. -->
 
 A manufacturer must establish, document, and maintain a risk management process spanning the whole
 device life cycle. This is device-level scope; MduX does not run this process itself. The nearest

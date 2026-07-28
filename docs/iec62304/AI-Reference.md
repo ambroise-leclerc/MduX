@@ -1,38 +1,44 @@
 # IEC 62304:2006 — per-clause index
 
-One row per clause covered in this corpus, generated from the clause headings and
-`Justification` objects actually present under each heading - not hand-transcribed,
-so it cannot drift from the prose it indexes without the source changing too.
+One row per clause section in this corpus: the clause, a one-sentence pointer to what
+MduX does or does not provide for it, and a deep link to the heading that covers it.
+Generated from the headings, `Justification` objects and pointer comments already
+present in the modules — not hand-transcribed, so it cannot drift from the prose it
+indexes without the source changing too.
+
 Regenerate after editing any file in this directory:
 
 ```
 python3 tools/docs-lint/generate_ai_reference.py docs/iec62304
 ```
 
-| Clause | Title | File | Justification(s) |
+A clause shown as `—` is one this corpus deliberately does not number — see
+[`README.md`](README.md). It is not a gap in the index.
+
+| Clause | Covers | Pointer | Justification(s) |
 |---|---|---|---|
-| §1 | Scope | [`01-scope-and-terms.md`](01-scope-and-terms.md) | — |
-| §2 | Normative references | [`01-scope-and-terms.md`](01-scope-and-terms.md) | — |
-| §3 | Terms and definitions | [`01-scope-and-terms.md`](01-scope-and-terms.md) | — |
-| §4.1 | Quality management system context | [`02-general-requirements.md`](02-general-requirements.md) | — |
-| §4.2 | Risk management context | [`02-general-requirements.md`](02-general-requirements.md) | — |
-| §4.3 | Software safety classification | [`02-general-requirements.md`](02-general-requirements.md) | — |
-| §5.1 | Software development planning | [`03-development-process.md`](03-development-process.md) | — |
-| §5.2 | Software requirements analysis | [`03-development-process.md`](03-development-process.md) | — |
-| §5.3 | Software architectural design | [`03-development-process.md`](03-development-process.md) | JUS-003 |
-| §5.4 | Software detailed design | [`03-development-process.md`](03-development-process.md) | — |
-| §5.5 | Software unit implementation and verification | [`03-development-process.md`](03-development-process.md) | JUS-004 |
-| §5.6 | Software integration and integration testing | [`03-development-process.md`](03-development-process.md) | — |
-| §5.7 | Software system testing | [`03-development-process.md`](03-development-process.md) | — |
-| §5.8 | Software release | [`03-development-process.md`](03-development-process.md) | — |
-| §6.1 | Establish software maintenance plan | [`04-maintenance-process.md`](04-maintenance-process.md) | — |
-| §6.2 | Problem and modification analysis | [`04-maintenance-process.md`](04-maintenance-process.md) | — |
-| §6.3 | Modification implementation | [`04-maintenance-process.md`](04-maintenance-process.md) | — |
-| §7.1 | Analysis of software contributing to hazardous situations | [`05-risk-management-process.md`](05-risk-management-process.md) | — |
-| §7.2 | Risk control measures | [`05-risk-management-process.md`](05-risk-management-process.md) | JUS-005 |
-| §7.3 | Verification of risk control measures | [`05-risk-management-process.md`](05-risk-management-process.md) | — |
-| §7.4 | Risk management of software changes | [`05-risk-management-process.md`](05-risk-management-process.md) | — |
-| §8.1 | Configuration identification | [`06-configuration-management-process.md`](06-configuration-management-process.md) | JUS-006 |
-| §8.2 | Change control | [`06-configuration-management-process.md`](06-configuration-management-process.md) | — |
-| §8.3 | Configuration status accounting | [`06-configuration-management-process.md`](06-configuration-management-process.md) | — |
-| — | Problem resolution | [`07-problem-resolution-process.md`](07-problem-resolution-process.md) | — |
+| §1 | [Scope](01-scope-and-terms.md#1-scope) | MduX is a UI SDK that ships inside a device's software; nothing in this repository falls under those exclusions. | — |
+| §2 | [Normative references](01-scope-and-terms.md#2-normative-references) | MduX's own regulatory corpus mirrors that structure: [`docs/iso13485/`](../iso13485/) covers the quality-management side, and [`docs/iso14971/`](../iso14971/) covers risk management directly. | — |
+| §3 | [Terms and definitions](01-scope-and-terms.md#3-terms-and-definitions) | Names the terms that recur across this corpus and points at where MduX gives each a checkable meaning, rather than restating a glossary that is itself normative text. | — |
+| §4.1 | [Quality management system context](02-general-requirements.md#41-quality-management-system-context) | IEC 62304 expects these processes to run inside a manufacturer's QMS; MduX has none, and docs/iso13485/ covers that side rather than this file. | — |
+| §4.2 | [Risk management context](02-general-requirements.md#42-risk-management-context) | MduX's structural response to this is architectural rather than procedural where possible — see [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust-zone split, which makes an entire category of failure (a governed module reaching platform/graphics code it should never touch) a compile error instead of a review item. | — |
+| §4.3 | [Software safety classification](02-general-requirements.md#43-software-safety-classification) | **MduX's own components are declared Class A** — code that renders a UI, bakes an asset, or infers from a classifier is not itself the safety function; a device integrating MduX is responsible for its own classification decision, informed by how it uses these components. | — |
+| §5.1 | [Software development planning](03-development-process.md#51-software-development-planning) | For MduX, the closest equivalent artifacts are its Architecture Decision Records: each ADR states a decision, the alternatives considered, and the consequences accepted, which is a real (if partial) planning record for the areas it covers. | — |
+| §5.2 | [Software requirements analysis](03-development-process.md#52-software-requirements-analysis) | MduX does not yet have a requirements-traceability mechanism — the `mdux.governance` module (issue #34) and its traceability matrix export (issue #35) are where this lands, not before. | — |
+| §5.3 | [Software architectural design](03-development-process.md#53-software-architectural-design) | The governed/adapter/tools split is MduX's architectural decomposition; MduXTrustZones.cmake verifies the resulting link-graph interfaces at every configure rather than only at design-review time. | JUS-003 |
+| §5.4 | [Software detailed design](03-development-process.md#54-software-detailed-design) | MduX has detailed design for the pieces it has actually built — the evidence kernel's canonical-JSON encoding rules in [ADR-007](../adr/ADR-007-evidence-pipeline-doctrine.md) are as close to a detailed design record as this project currently has, since they specify exact byte-level behaviour, not just an interface. | — |
+| §5.5 | [Software unit implementation and verification](03-development-process.md#55-software-unit-implementation-and-verification) | mdux.evidence.digest is verified against externally-known FIPS 180-4 test vectors and NIST-published values, not solely against its own output, which is what distinguishes verification from a self-consistency check. | JUS-004 |
+| §5.6 | [Software integration and integration testing](03-development-process.md#56-software-integration-and-integration-testing) | MduX's `InstallTreeConsumer` test (issue #47) is a real integration test in this sense: it installs the library to a scratch prefix and builds a separate consumer project against it via `find_package(MduX)`, verifying the actual install-tree interface rather than just the in-tree build. | — |
+| §5.7 | [Software system testing](03-development-process.md#57-software-system-testing) | MduX has no software *system* yet in this sense — a system implies an assembled product, and today's repository is foundations and an evidence kernel, not an assembled UI. | — |
+| §5.8 | [Software release](03-development-process.md#58-software-release) | MduX's evidence pipeline ([ADR-007](../adr/ADR-007-evidence-pipeline-doctrine.md)) is the mechanism most directly relevant here: a `report.json` records exactly which recipe, inputs, and resolved options produced a given artifact, and CI re-derives the artifact from those to confirm the record is accurate before anything is considered final. | — |
+| §6.1 | [Establish software maintenance plan](04-maintenance-process.md#61-establish-software-maintenance-plan) | MduX has no released product yet, so it has no maintenance plan yet either — recording that plainly is more useful than a placeholder document with nothing behind it. | — |
+| §6.2 | [Problem and modification analysis](04-maintenance-process.md#62-problem-and-modification-analysis) | No MduX mechanism for field problems, since there is no field yet; the ADRs' Consequences sections are the nearest analog, and they run at design time. | — |
+| §6.3 | [Modification implementation](04-maintenance-process.md#63-modification-implementation) | A maintenance change to MduX runs through the ordinary pull-request process; that route is the mechanism, not a separate one this file would invent. | — |
+| §7.1 | [Analysis of software contributing to hazardous situations](05-risk-management-process.md#71-analysis-of-software-contributing-to-hazardous-situations) | What this corpus can do is describe, honestly, where MduX's own architecture already forecloses a category of failure regardless of the integrating device's risk analysis — see §7.2. | — |
+| §7.2 | [Risk control measures](05-risk-management-process.md#72-risk-control-measures) | mdux_verify_trust_zones() walks a governed target's full transitive link graph and fails the build if it reaches Vulkan or a windowing library, which controls the risk of an unintended dependency reaching safety-relevant code without requiring a reviewer to catch it by inspection. | JUS-005 |
+| §7.3 | [Verification of risk control measures](05-risk-management-process.md#73-verification-of-risk-control-measures) | mdux_verify_trust_zones() and the exception-disabled governed build are verified by running on every CI leg, so a regression is a build failure rather than a missed review. | — |
+| §7.4 | [Risk management of software changes](05-risk-management-process.md#74-risk-management-of-software-changes) | MduX's mechanical controls give this a specific, checkable form: a change that would introduce a new Vulkan dependency into a governed target, or re-enable exceptions in the governed zone, fails CI immediately rather than waiting for a risk-management review to notice it weeks later. | — |
+| §8.1 | [Configuration identification](06-configuration-management-process.md#81-configuration-identification) | BakeReport records the recipe digest, every input digest, the fully resolved options, and every output digest for a baked artifact - a machine-checkable configuration identification record, not a narrative one. | JUS-006 |
+| §8.2 | [Change control](06-configuration-management-process.md#82-change-control) | For MduX's baked artifacts, this is the source-tree rule from ADR-007: a normal build never writes into `generated/`; `cmake --build <dir> --target mdux-bake-update` is the only path that does, and it produces a diff a reviewer reads and a commit records — a build cannot silently redefine an artifact's configuration. | — |
+| §8.3 | [Configuration status accounting](06-configuration-management-process.md#83-configuration-status-accounting) | git log and git blame answer this for every tracked file, and the evidence pipeline extends the same answer to baked artifacts; ADR-007 decision 5 explains why no separate status-accounting document exists. | — |
+| §9 | [Problem resolution](07-problem-resolution-process.md#problem-resolution) | MduX's problem-resolution route today is GitHub Issues and pull requests: an issue records the problem, a linked PR records the analysis and the fix, and the merge commit records when and by whom it was resolved. | — |

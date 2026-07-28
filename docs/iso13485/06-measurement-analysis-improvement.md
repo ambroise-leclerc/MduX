@@ -36,6 +36,7 @@ No dedicated MduX mechanism. CI results are visible per pull request but not yet
 trended over time; that would be a real gap once a released product exists to trend data about.
 
 ## §8.5 Improvement
+<!-- pointer: GitHub issues and pull requests are MduX's CAPA analog, with no effectiveness verification; mdux.governance (issue #34) is where a purpose-built mechanism would land. -->
 
 Corrective and preventive action, in this repository, is the GitHub issue and pull request process
 — an issue records a problem, a PR records the analysis and fix. As noted in
