@@ -70,7 +70,14 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # Clang and one byte on MSVC, and every test asserting on UTF-8 output fails on Windows only.
     # mdux.evidence.json validates its input as UTF-8 and emits UTF-8 unconditionally (ADR-007);
     # a build whose execution charset is anything else contradicts the format the library defines.
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+    #
+    # Set through CMAKE_CXX_FLAGS rather than add_compile_options() on purpose. /utf-8 defines
+    # _UTF8, and MSVC raises C5050 ("possible incompatible environment while importing module
+    # 'std'") when a translation unit's macro environment differs from the one the std module was
+    # built with. add_compile_options() does not reach CMake's internal __cmake_cxx_std_23 target,
+    # so the flag has to be somewhere that target inherits too, or every import std becomes a
+    # warning - and warnings are errors here.
+    string(APPEND CMAKE_CXX_FLAGS " /utf-8")
 endif()
 
 # Module setup
