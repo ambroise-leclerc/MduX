@@ -45,6 +45,7 @@ enum class GovernanceError : std::uint8_t {
     ClauseRefStandardMismatch,    ///< clause_ref names a different standard than `standard`
     EmptyRationale,
     EmptyEvidenceRefs,
+    EmptyEvidenceRef,
     DuplicateEvidenceRef,
     MalformedJustification,       ///< parsed JSON did not have the expected shape
 };
@@ -61,8 +62,8 @@ enum class GovernanceError : std::uint8_t {
  * `standard` (one of `kApprovedStandards`), `clauseRef` (must start with the same standard),
  * `rationale` (original prose - this type cannot check that a string isn't reproduced text; see
  * mdux-docs-lint for the heuristic that runs over the corpus instead), `requirementId` (optional,
- * `REQ-*`), and `evidenceRefs` (non-empty, no path checked to exist - that is a lint-time concern
- * over a real repository checkout, not something this governed-zone type can check by itself).
+ * `REQ-*`), and `evidenceRefs` (non-empty strings with no duplicates; paths are not checked to
+ * exist here because that is a lint-time concern over a real repository checkout).
  */
 struct Justification {
     std::string justificationId;
