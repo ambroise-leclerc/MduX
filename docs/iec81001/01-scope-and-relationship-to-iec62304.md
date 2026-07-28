@@ -1,4 +1,4 @@
-# IEC 81001-5-1:2021 §1–§3 — Scope, normative references, terms and definitions
+# IEC 81001-5-1:2021 §1–§3 — Scope, relationship to IEC 62304, terms and definitions
 
 ## §1 Scope
 
@@ -10,8 +10,26 @@ safety directly, though the two are related: a security failure can become a saf
 
 MduX contributes to a device's security posture without running the standard's process itself — it
 is a dependency a manufacturer's secure development life cycle would need to account for, not the
-life cycle. See the confidence note in [`README.md`](README.md) for why this corpus stops naming
-practice categories rather than citing specific clause numbers below this point.
+life cycle. See [`README.md`](README.md) for what this corpus does and does not cite.
+
+## Relationship to IEC 62304
+
+The two standards describe the same life cycle from two directions, and the practical consequence
+is that a manufacturer runs one process, not two.
+
+| IEC 62304 activity | The security counterpart | Where they meet |
+|---|---|---|
+| §5.1 software development planning | Security planning as part of the same plan | One development plan with security activities in it, not a separate security plan running in parallel |
+| §5.2 software requirements analysis | Security requirements, derived from the security risk assessment | A security requirement is a requirement: same `Requirement` record, same verification obligation ([`../iec62304/02-planning-and-requirements.md`](../iec62304/02-planning-and-requirements.md)) |
+| §5.3 software architectural design | Secure design — attack surface as an architectural property | [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust zones constrain both at once |
+| §7 software risk management | Security risk management | Both feed the device's single ISO 14971 risk management file; see [`02-security-risk-management.md`](02-security-risk-management.md) |
+| §8 software configuration management | SOUP and provenance, the supply-chain half of security | The SOUP register (issue #36) and the evidence pipeline's input digests are the same records read for a different question |
+| §9 software problem resolution | Vulnerability and defect management | One tracker, with security triage layered on ([`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md)) |
+
+The row that matters most for reading this corpus is the risk one. A security failure that can
+lead to harm *is* a safety hazard, and IEC 81001-5-1 does not create a second, parallel risk file
+for it. This corpus therefore points at [`../iso14971/`](../iso14971/) for the risk machinery and
+adds only what is security-specific on top.
 
 ## §2 Normative references
 
