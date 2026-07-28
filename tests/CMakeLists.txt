@@ -36,15 +36,16 @@ endif()
 
 mdux_discover_tests(core_tests)
 
-# Evidence-kernel and governance tests (ADR-007, issue #34). Links MduX::Core only, for the same
-# reason core_tests does: both are governed modules, so a test that needed MduX::MduX to build
-# them would mean the trust-zone boundary had been crossed somewhere.
+# Evidence-kernel and governance tests (ADR-007, issues #34-35). Links MduX::Core only, for the
+# same reason core_tests does: both are governed modules, so a test that needed MduX::MduX to
+# build them would mean the trust-zone boundary had been crossed somewhere.
 add_executable(evidence_tests
     evidence/EvidenceTestMain.cpp
     evidence/DigestTests.cpp
     evidence/JsonTests.cpp
     evidence/ReportTests.cpp
     governance/JustificationTests.cpp
+    governance/ComplianceTests.cpp
 )
 
 target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
