@@ -37,7 +37,7 @@ this project does and does not provide.
 
 **These filled documents describe what exists and what does not, including where that is a gap.**
 As of this PR, no `ComplianceProgram` (issue #35) has actually been populated for MduX itself — the
-`Requirement`/`VerificationCase`/`Hazard`/`ProblemReport` types exist and are unit-tested (30 tests
+`Requirement`/`VerificationCase`/`Hazard`/`ProblemReport` types exist and are unit-tested (31 tests
 in `evidence_tests`), but zero real instances of any of them have been recorded for MduX's own
 release. `regulatory/ISO_14971/Risk_Management_File.md` and `regulatory/IEC_62304/SDD.md` say this
 plainly rather than fabricating a worked example the way a finished device's SDF would contain one.
