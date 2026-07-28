@@ -425,6 +425,31 @@ def render(standard_name: str, directory: Path, rows: list[Row]) -> str:
     return "\n".join(lines)
 
 
+def render_json(standard_name: str, directory: Path, rows: list[Row]) -> str:
+    """The same rows as `render`, for a tool that should not have to parse a markdown table.
+
+    Written from the same pass as the markdown, so the two cannot disagree - the failure mode a
+    separately-maintained export would have. Validated by
+    docs/governance/schemas/clause-index.schema.json.
+    """
+    document = {
+        "standard": standard_name,
+        "corpus": display_path(directory),
+        "rows": [
+            {
+                "clause": row.clause,
+                "title": row.title,
+                "file": row.file_name,
+                "anchor": row.anchor,
+                "pointer": row.pointer,
+                "justifications": list(row.justifications),
+            }
+            for row in rows
+        ],
+    }
+    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+
+
 def process(directory: Path, check_only: bool) -> tuple[bool, list[str]]:
     """Returns (ok, messages)."""
     standard_name = STANDARD_NAMES.get(directory.name, directory.name)
@@ -436,16 +461,27 @@ def process(directory: Path, check_only: bool) -> tuple[bool, list[str]]:
     if problems:
         return False, problems
 
-    output = render(standard_name, directory, rows)
-    target = directory / "AI-Reference.md"
-    if check_only:
-        current = target.read_text(encoding="utf-8") if target.exists() else None
-        if current != output:
-            return False, [f"{target} is out of date; run generate_ai_reference.py to regenerate"]
-        return True, [f"{target} up to date ({len(rows)} rows)"]
+    outputs = {
+        directory / "AI-Reference.md": render(standard_name, directory, rows),
+        directory / "AI-Reference.json": render_json(standard_name, directory, rows),
+    }
 
-    target.write_text(output, encoding="utf-8")
-    return True, [f"wrote {target} ({len(rows)} rows)"]
+    if check_only:
+        stale = [
+            str(target)
+            for target, output in outputs.items()
+            if (target.read_text(encoding="utf-8") if target.exists() else None) != output
+        ]
+        if stale:
+            return False, [
+                f"{target} is out of date; run generate_ai_reference.py to regenerate"
+                for target in stale
+            ]
+        return True, [f"{directory}/AI-Reference.{{md,json}} up to date ({len(rows)} rows)"]
+
+    for target, output in outputs.items():
+        target.write_text(output, encoding="utf-8")
+    return True, [f"wrote {directory}/AI-Reference.{{md,json}} ({len(rows)} rows)"]
 
 
 def main(argv: list[str]) -> int:

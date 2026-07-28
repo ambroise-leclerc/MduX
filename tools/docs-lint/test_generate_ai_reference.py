@@ -404,5 +404,84 @@ class RealCorpusInvariantTests(unittest.TestCase):
                     self.assertNotEqual(pointer, title, "pointer restates its own heading")
 
 
+class ClauseIndexExportTests(unittest.TestCase):
+    """The JSON export must satisfy docs/governance/schemas/clause-index.schema.json.
+
+    Checked against the schema file itself rather than against a copy of its rules, so the two
+    cannot drift. `jsonschema` is not a dependency of this repository - a zero-SOUP project does
+    not add one to validate five generated files - so this walks the subset of Draft 2020-12 the
+    schema actually uses: required, enum, pattern, minItems and additionalProperties.
+    """
+
+    def setUp(self):
+        import json
+
+        self.schema = json.loads(
+            (REPO_ROOT / "docs/governance/schemas/clause-index.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def check(self, value, schema, path="$"):
+        """Returns a list of violation messages. Only the keywords this schema uses."""
+        problems = []
+        if "enum" in schema and value not in schema["enum"]:
+            problems.append(f"{path}: {value!r} is not one of {schema['enum']}")
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            problems.append(f"{path}: {value!r} does not match {schema['pattern']}")
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            problems.append(f"{path}: shorter than minLength")
+        if schema.get("type") == "object":
+            for key in schema.get("required", []):
+                if key not in value:
+                    problems.append(f"{path}: missing required '{key}'")
+            if schema.get("additionalProperties") is False:
+                for key in value:
+                    if key not in schema.get("properties", {}):
+                        problems.append(f"{path}: unexpected property '{key}'")
+            for key, subschema in schema.get("properties", {}).items():
+                if key in value:
+                    problems.extend(self.check(value[key], subschema, f"{path}.{key}"))
+        if schema.get("type") == "array":
+            if len(value) < schema.get("minItems", 0):
+                problems.append(f"{path}: fewer than minItems")
+            if schema.get("uniqueItems") and len(value) != len(set(map(str, value))):
+                problems.append(f"{path}: duplicate items")
+            for i, item in enumerate(value):
+                problems.extend(self.check(item, schema.get("items", {}), f"{path}[{i}]"))
+        return problems
+
+    def test_the_subset_validator_rejects_something(self):
+        # Guards every assertion below: a validator that always returns [] would make them pass.
+        broken = {"standard": "Not A Standard", "corpus": "docs/x", "rows": []}
+        self.assertNotEqual([], self.check(broken, self.schema))
+
+    def test_every_generated_export_validates(self):
+        import json
+
+        for name in gen.DEFAULT_DIRS:
+            path = REPO_ROOT / name / "AI-Reference.json"
+            with self.subTest(export=name):
+                self.assertTrue(path.is_file(), f"{path} was not generated")
+                document = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual([], self.check(document, self.schema))
+
+    def test_the_export_carries_the_same_rows_as_the_markdown(self):
+        import json
+
+        for name in gen.DEFAULT_DIRS:
+            directory = REPO_ROOT / name
+            with self.subTest(corpus=name):
+                rows, _ = gen.build_rows(directory)
+                document = json.loads(
+                    (directory / "AI-Reference.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(len(rows), len(document["rows"]))
+                for row, exported in zip(rows, document["rows"]):
+                    self.assertEqual(row.clause, exported["clause"])
+                    self.assertEqual(row.anchor, exported["anchor"])
+                    self.assertEqual(row.pointer, exported["pointer"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/governance/clause-index.schema.json",
+  "title": "Clause index export",
+  "description": "Validates the `AI-Reference.json` that tools/docs-lint/generate_ai_reference.py writes beside each corpus's `AI-Reference.md` - the same rows, in a form a tool can read without parsing a markdown table. One schema covers all five standards: the row shape does not vary by standard, and five near-identical copies would be five places for a change to be applied four times. Regenerate rather than hand-edit if validation fails; the markdown and the JSON come from one pass over the corpus and cannot disagree.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["standard", "corpus", "rows"],
+  "properties": {
+    "standard": {
+      "type": "string",
+      "description": "The standard this index covers, spelled as in docs/governance/citation-convention.md.",
+      "enum": [
+        "IEC 62304:2006",
+        "ISO 13485:2016",
+        "ISO 14971:2019",
+        "IEC 62366-1:2015",
+        "IEC 81001-5-1:2021"
+      ]
+    },
+    "corpus": {
+      "type": "string",
+      "description": "The directory this index was generated from, repository-relative.",
+      "pattern": "^docs/[a-z0-9]+$"
+    },
+    "rows": {
+      "type": "array",
+      "description": "One entry per clause section, in the order the index presents them.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clause", "title", "file", "anchor", "pointer", "justifications"],
+        "properties": {
+          "clause": {
+            "type": "string",
+            "description": "The clause this row indexes, without the standard prefix: '§5.3', a range '§5.1–§5.3', or '—' for a section this corpus deliberately does not number. '—' is a statement, not a gap: see the corpus README.",
+            "pattern": "^(§[0-9]+(\\.[0-9]+)*(–§[0-9]+(\\.[0-9]+)*)?|—)$"
+          },
+          "title": {
+            "type": "string",
+            "description": "The section heading, with the standard identifier and clause number removed.",
+            "minLength": 1
+          },
+          "file": {
+            "type": "string",
+            "description": "The module file this row was generated from.",
+            "pattern": "^[0-9]{2}-[a-z0-9-]+\\.md$"
+          },
+          "anchor": {
+            "type": "string",
+            "description": "The GitHub heading anchor within that file. Together with `file` this is a deep link to the paragraph, which is the whole point of the index - locating the right file is not enough.",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "pointer": {
+            "type": "string",
+            "description": "One sentence naming what MduX does or does not provide for this clause. Never a restatement of `title`; the generator treats a section that yields no pointer as an error rather than emitting one.",
+            "minLength": 1
+          },
+          "justifications": {
+            "type": "array",
+            "description": "Justification ids (see justification.schema.json) cited under this heading. Empty when the section cites no MduX mechanism, which is a common and honest outcome.",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^JUS-[0-9]{3,}$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62304/hazard.schema.json",
+  "title": "IEC 62304 hazard",
+  "description": "A hazardous situation the software can contribute to, and the requirements that control it. Field-aligned with mdux::governance::Hazard in include/mdux/governance/Governance.cppm, checked by tools/docs-lint/check_schema_type_drift.py. This is the minimal record: it carries the hazard and its controls and nothing else. docs/iso14971/schemas/risk-record.schema.json is the same three members plus the ISO 14971 evaluation - severity, probability, acceptability - and is what a risk management file uses. This one exists because IEC 62304 §4.2 needs the join without needing the evaluation: the clause asks whether a software item's hazards are controlled by requirements, and that question is answerable from these three members alone. The rule worth stating twice: controlled_by must be non-empty. A hazard recorded with no risk control is either an unfinished analysis or an accepted risk nobody wrote down, and both should stop a release. Whether each id resolves to a requirement that exists is a collection-level property; ComplianceProgram::validate() checks it, and no per-record schema can.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "controlled_by"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Aligned with Hazard::id.",
+      "pattern": "^HAZ-[A-Z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Aligned with Hazard::description.",
+      "minLength": 1
+    },
+    "controlled_by": {
+      "type": "array",
+      "description": "Aligned with Hazard::controlledBy. Non-empty, no duplicates, every entry naming a requirement - the machine-checked half of the IEC 62304 §4.2 / ISO 14971 §7 integration point.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9-]+$"
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "HAZ-TRUSTZONE-001",
+      "description": "A governed MduX module acquires a dependency on a driver-provided library, so its behaviour is no longer determined by the audited source alone.",
+      "controlled_by": ["REQ-TRUSTZONE-001"]
+    }
+  ]
+}

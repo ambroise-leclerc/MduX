@@ -75,3 +75,7 @@ by anything that reads risk records and cannot escape the review a safety hazard
 directory's own headings. It makes no claim beyond what is already here: rows for §1–§4 carry
 clause numbers, and every practice row shows `—`, because that is what this corpus asserts. It
 is not waiting on the numbering verification above — it will gain numbers when the modules do.
+
+`AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
+the two cannot disagree, and validated against
+[`../governance/schemas/clause-index.schema.json`](../governance/schemas/clause-index.schema.json).
