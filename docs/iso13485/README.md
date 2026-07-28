@@ -32,5 +32,25 @@ issue #39 for the scope-limits document that will make that explicit project-wid
 
 Every clause citation uses the key format from
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md):
-`ISO 13485:2016 §<clause> <clause title>`. A per-clause index (`AI-Reference.md`) and JSON Schemas
-are tracked separately as issues #32 and #33.
+`ISO 13485:2016 §<clause> <clause title>`. A per-clause index (`AI-Reference.md`) is tracked
+separately as issue #32.
+
+## Schemas
+
+[`schemas/quality-management-system.schema.json`](schemas/quality-management-system.schema.json)
+describes a **QMS interface record**: one thing MduX supplies to an integrating manufacturer's
+quality management system, and what that manufacturer must still do with it.
+
+It is deliberately not a schema for a quality management system. The three
+`ai-automation-schemas/*.json` files this directory used to carry modelled an organisation
+profile, regulatory jurisdictions, and a device portfolio — a manufacturer's QMS, none of which
+this repository holds or could populate. They are retired along with the monolithic framework
+document; see [`../governance/superseded-documents.md`](../governance/superseded-documents.md) for
+the full disposition.
+
+## What this directory replaced
+
+`docs/MduX_ISO-13485-Quality-Management-Framework.md` (1,423 lines) is deleted as of issue #28. It
+described MduX as fulfilling "the role of Medical Device Software Manufacturer" and as implementing
+an ISO 13485 quality management system — a claim a software library cannot support. Git history is
+its archive; the disposition record explains the reasoning.
