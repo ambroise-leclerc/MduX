@@ -36,7 +36,7 @@ cleared medical device.
 
 `mdux.governance` (`Justification`, issue #34) and `mdux.governance.compliance`
 (`Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`/`ComplianceProgram`, issue #35) are
-working, unit-tested types (30 tests in `evidence_tests`) an application composes to record its own
+working, unit-tested types (31 tests in `evidence_tests`) an application composes to record its own
 requirements, hazards, and verifications in a structured, exportable form:
 
 - `ComplianceProgram::validate()` refuses to pass unless every `Requirement` is discharged by at
