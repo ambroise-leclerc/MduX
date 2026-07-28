@@ -26,7 +26,7 @@ When sources disagree, resolve the discrepancy using this precedence order:
 2. Tests (`tests/`).
 3. Current ADRs and contributor documentation (`docs/adr/`, `CONTRIBUTING.md`, `README.md`).
 4. Historical or reference material (regulatory framework documents under `docs/`,
-   `risk-assessment-templates.md`).
+   `software_development_file/templates/`).
 
 **Do not invent an answer to resolve a contradiction.** If sources conflict in a way that affects
 your task, state the contradiction explicitly and ask, or clearly flag the assumption you are
@@ -113,8 +113,11 @@ in `include/` or `src/`.
 - `docs/iec62304/`, `docs/iso13485/` — structured regulatory reference documentation with
   AI-automation schemas and code examples.
 - `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`, and the top-level `risk-assessment-templates.md`
-  — regulatory framework reference documents (conceptual; see § 1).
+  `docs/MduX_ISO-14971-Risk-Management-Framework.md`
+  — regulatory framework reference documents (conceptual; see § 1). The former
+  `risk-assessment-templates.md` was deleted (issue #37): it described a `mdux::risk_assessment`
+  C++ API that was never implemented; `software_development_file/templates/ISO_14971/Risk_Management_File.md`
+  and the real `Hazard`/`Requirement` types (`mdux.governance.compliance`, issue #35) replace it.
 - `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
   CI.
 - `CMakePresets.json` — currently defines a single Windows-only preset (`ninja-msvc`); there is no

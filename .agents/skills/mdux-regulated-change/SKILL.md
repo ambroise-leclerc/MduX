@@ -32,8 +32,9 @@ For potentially- or safety-relevant changes, identify:
 - Affected requirements or design statements (check `docs/adr/` for the relevant ADR, and
   `README.md`'s stated capabilities — remembering that some of README's claims are aspirational,
   not implemented; see § 2 of `AGENTS.md`).
-- Affected hazards/risk controls, if any (`risk-assessment-templates.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`).
+- Affected hazards/risk controls, if any (`software_development_file/templates/ISO_14971/Risk_Management_File.md`,
+  `docs/MduX_ISO-14971-Risk-Management-Framework.md`, and the `Hazard`/`Requirement` records a
+  `mdux.governance.compliance::ComplianceProgram` tracks, issue #35).
 - Affected software items and interfaces (which module(s) from the table in `AGENTS.md` § 3).
 - Verification evidence that will need to change (which tests in `tests/` cover this behavior
   today, and what new/updated test proves the change is correct).
@@ -43,7 +44,7 @@ For potentially- or safety-relevant changes, identify:
 Match the scope of the documentation update to the scope of the code change — don't rewrite whole
 regulatory frameworks for a small fix, and don't skip documentation for a real behavior change.
 Relevant locations, by standard:
-- ISO 14971 (risk management): `risk-assessment-templates.md`,
+- ISO 14971 (risk management): `software_development_file/templates/ISO_14971/Risk_Management_File.md`,
   `docs/MduX_ISO-14971-Risk-Management-Framework.md`.
 - ISO 13485 (quality management): `docs/iso13485/`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`.
 - IEC 62304 (software lifecycle / safety classification): `docs/iec62304/`,
