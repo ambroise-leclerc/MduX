@@ -55,20 +55,17 @@ namespace {
     });
 }
 
-/// Splits `clauseRef` into (standard, remainder) at the first " §", the same shape
-/// docs/governance/citation-convention.md's format uses. Returns nullopt if there is no
-/// recognizable "§" clause marker at all.
+/// Extracts the standard from the exact `<Standard> §` prefix required by the schema.
+/// In particular, this rejects a missing space or multiple spaces before `§`; accepting either
+/// would make the C++ validator looser than the JSON Schema it claims to mirror.
 [[nodiscard]] std::optional<std::string_view> clauseRefStandardPrefix(
     std::string_view clauseRef) noexcept {
     const std::size_t markerPos = clauseRef.find("§");
-    if (markerPos == std::string_view::npos || markerPos == 0) {
+    if (markerPos == std::string_view::npos || markerPos < 2 || clauseRef[markerPos - 1] != ' ' ||
+        clauseRef[markerPos - 2] == ' ') {
         return std::nullopt;
     }
-    std::string_view prefix = clauseRef.substr(0, markerPos);
-    while (!prefix.empty() && prefix.back() == ' ') {
-        prefix.remove_suffix(1);
-    }
-    return prefix;
+    return clauseRef.substr(0, markerPos - 1);
 }
 
 /// A clause number is one or more digits, followed by zero or more (dot, one-or-more-digits)
@@ -126,6 +123,7 @@ std::string_view describe(GovernanceError error) noexcept {
     case GovernanceError::ClauseRefStandardMismatch: return "clauseRef names a different standard than 'standard'";
     case GovernanceError::EmptyRationale:            return "rationale is empty";
     case GovernanceError::EmptyEvidenceRefs:         return "evidenceRefs is empty";
+    case GovernanceError::EmptyEvidenceRef:          return "evidenceRefs contains an empty entry";
     case GovernanceError::DuplicateEvidenceRef:      return "evidenceRefs contains a duplicate entry";
     case GovernanceError::MalformedJustification:    return "Justification JSON has an unexpected shape";
     }
@@ -172,6 +170,9 @@ ResultVoid<GovernanceError> Justification::validate() const noexcept {
         return err(GovernanceError::EmptyEvidenceRefs);
     }
     for (std::size_t i = 0; i < evidenceRefs.size(); ++i) {
+        if (evidenceRefs[i].empty()) {
+            return err(GovernanceError::EmptyEvidenceRef);
+        }
         for (std::size_t k = i + 1; k < evidenceRefs.size(); ++k) {
             if (evidenceRefs[i] == evidenceRefs[k]) {
                 return err(GovernanceError::DuplicateEvidenceRef);
@@ -249,6 +250,12 @@ Result<Justification, GovernanceError> Justification::parse(std::string_view tex
         return err(GovernanceError::MalformedJustification);
     }
     if (document->kind() != json::Value::Kind::Object) {
+        return err(GovernanceError::MalformedJustification);
+    }
+    const std::size_t expectedMembers =
+        document->find("requirement_id") == nullptr ? std::size_t{5} : std::size_t{6};
+    if (document->members().size() != expectedMembers) {
+        // Mirrors additionalProperties: false in justification.schema.json.
         return err(GovernanceError::MalformedJustification);
     }
 

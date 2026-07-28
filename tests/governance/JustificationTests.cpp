@@ -114,6 +114,8 @@ TEST_CASE("validate() requires a complete, well-formed clauseRef", "evidence-uni
         "IEC 60601-1:2005 §5.3 unapproved standard",  // standard not in approved set
         "IEC 62304:2006 § no clause number",           // no digits after §
         "IEC 62304:2006 §5.3",                         // no title after the clause number
+        "IEC 62304:2006§5.3 missing separator",        // no space before §
+        "IEC 62304:2006  §5.3 doubled separator",      // two spaces before §
         "IEC 62304:2006 §.3 leading dot",              // no digit before the first dot
         "IEC 62304:2006 §5. trailing dot",             // dot with no digits following it
         "IEC 62304:2006 §5..3 double dot",             // empty group between two dots
@@ -168,6 +170,10 @@ TEST_CASE("validate() requires evidenceRefs to be non-empty and free of duplicat
     Justification duplicate = validJustification();
     duplicate.evidenceRefs = {"a.md", "b.md", "a.md"};
     expectInvalid(duplicate, GovernanceError::DuplicateEvidenceRef, "duplicate evidenceRefs entry");
+
+    Justification emptyEntry = validJustification();
+    emptyEntry.evidenceRefs = {"a.md", ""};
+    expectInvalid(emptyEntry, GovernanceError::EmptyEvidenceRef, "empty evidenceRefs entry");
 
     // A single entry, or several distinct ones, is fine.
     Justification single = validJustification();
@@ -264,6 +270,13 @@ TEST_CASE("parse() rejects a malformed or incomplete Justification", "evidence-u
     CHECK(!Justification::parse("null").has_value());
     CHECK(!Justification::parse("{}").has_value());
     CHECK(!Justification::parse("not json at all").has_value());
+
+    std::string extraMember = *text;
+    const std::size_t closingBrace = extraMember.rfind('}');
+    REQUIRE(closingBrace != std::string::npos);
+    extraMember.insert(closingBrace, ",\n  \"unexpected\": \"value\"\n");
+    CHECK_MESSAGE(!Justification::parse(extraMember).has_value(),
+                  "additionalProperties: false must reject unknown members");
 }
 
 TEST_CASE("parse() validates what it parsed, not just the JSON shape", "evidence-unit") {
@@ -285,12 +298,13 @@ TEST_CASE("parse() validates what it parsed, not just the JSON shape", "evidence
 }
 
 TEST_CASE("describe() names every governance error", "evidence-unit") {
-    constexpr std::array<GovernanceError, 10> all{
+    constexpr std::array<GovernanceError, 11> all{
         GovernanceError::EmptyJustificationId,      GovernanceError::MalformedJustificationId,
         GovernanceError::UnapprovedStandard,        GovernanceError::EmptyClauseRef,
         GovernanceError::MalformedClauseRef,        GovernanceError::ClauseRefStandardMismatch,
         GovernanceError::EmptyRationale,            GovernanceError::EmptyEvidenceRefs,
-        GovernanceError::DuplicateEvidenceRef,      GovernanceError::MalformedJustification};
+        GovernanceError::EmptyEvidenceRef,           GovernanceError::DuplicateEvidenceRef,
+        GovernanceError::MalformedJustification};
 
     for (const GovernanceError error : all) {
         CHECK(!describe(error).empty());
