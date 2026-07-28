@@ -35,7 +35,7 @@ prose those will index, not a replacement for it.
 
 ## Safety classification scope
 
-MduX's own components are scoped as **Class A** (software that cannot contribute to a hazardous
-situation) throughout this directory. Its sibling project TrustSC models Class B/C. Where a clause's
-requirements scale with safety class, the text says so explicitly rather than assuming one class or
-the other applies.
+This directory keeps **Class A requirements in scope**; it does not classify every use of MduX as
+Class A. The integrating manufacturer must classify each software system against its device risk
+analysis. MduX's sibling project TrustSC models Class B/C. Where a clause's requirements scale with
+safety class, the text says so explicitly rather than assuming one class or the other applies.
