@@ -91,13 +91,11 @@ gets fixed once, centrally, rather than re-verified ad hoc at every citation sit
 
 ## Known gap this document does not yet close
 
-Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) does
-not mean the rest of `docs/iec62304/` and `docs/iso13485/` are already clean. Spot-checking
+Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) did
+not mean the rest of `docs/iec62304/` and `docs/iso13485/` were already clean. Spot-checking
 `docs/iec62304/01-scope-and-classification.md` during that removal found sentences reading as close
-paraphrase of the standard's own §1.1 wording (e.g. *"This document
-specifies life cycle processes for medical device software..."*). **The full clause-accurate
-rewrite of both directories — which is needed regardless, since today's modules use a flat
-"sections 1-16" numbering that doesn't match either standard's real clause structure — is tracked as
-issue #8 and is where this gets fixed properly**, rather than patched piecemeal here. Treat
-`docs/iec62304/` and `docs/iso13485/` as not yet compliant with this convention until issue #8
-lands.
+paraphrase of the standard's own §1.1 wording — one symptom of a corpus that used a flat "sections
+1-16" numbering matching neither standard's real clause structure. Issue #27 has since replaced
+`docs/iec62304/` outright, against the real §1–§9 clause structure. `docs/iso13485/` has not yet
+had the same treatment — issue #28 is where that happens — so **treat `docs/iso13485/` as not yet
+compliant with this convention** until #28 lands. `docs/iec62304/` is compliant as of #27.
