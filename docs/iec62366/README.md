@@ -1,22 +1,29 @@
-# IEC 62366-1:2015 — clause-accurate reference
+# IEC 62366-1:2015 — clause reference, top-level clauses only
 
 New content, following the same convention as [`docs/iso14971/`](../iso14971/):
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md)'s citation-key
 format, original prose only, `Justification` objects where a real MduX mechanism applies.
 
-## Confidence note — read before citing a sub-clause from this directory
+## What this directory cites, and what it does not
 
-This corpus's citations below the top level (`§5.1` through `§5.9`) are written from general
-professional familiarity with IEC 62366-1's usability engineering process, not from the standard
-text itself, which this project does not reproduce or hold a copy of (see
-[ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md)). Confidence in the exact
-sub-clause numbering here is lower than for [`docs/iec62304/`](../iec62304/),
-[`docs/iso13485/`](../iso13485/), and [`docs/iso14971/`](../iso14971/), which this project's authors
-are more confident is accurate at the same depth. **Verify any `§5.x` citation from this directory
-against the actual standard before relying on it** — the named process steps (application
-specification, UI-related hazard identification, UI specification, evaluation planning, design and
-implementation, formative evaluation, summative evaluation) are the part of this corpus with higher
-confidence; their exact numeric position within §5 is the part that most needs checking.
+This corpus cites IEC 62366-1:2015 at the **top level only** — `§1` through `§5`. Those clause
+numbers are asserted; nothing below them is.
+
+An earlier version of [`03-usability-engineering-process.md`](03-usability-engineering-process.md)
+numbered the process steps `§5.1` through `§5.9`. Those numbers came from general professional
+familiarity with the usability engineering process rather than from the standard text, which this
+project does not hold a copy of (see
+[ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md)). The citation convention
+requires a clause number to be confirmed before it is cited, so they have been **removed rather
+than caveated**: a warning label does not stop a number being copied into a design history file,
+and a reader who copies it has cited something nobody checked. The named process steps — application
+specification, UI characteristics related to safety, UI specification, evaluation planning, design
+and implementation, formative evaluation, iteration, summative evaluation — are what this corpus
+asserts, and they are stated as headings rather than citations.
+
+Restoring the sub-clause numbering needs one thing this repository cannot supply: a maintainer with
+access to IEC 62366-1:2015, checking each heading against the standard's §5. That is tracked on
+issue #30.
 
 ## What this is, and is not
 
@@ -37,5 +44,21 @@ have not been built.
 | [`02-general-requirements.md`](02-general-requirements.md) | §4 | General requirements for applying usability engineering |
 | [`03-usability-engineering-process.md`](03-usability-engineering-process.md) | §5 | Application specification through summative evaluation |
 
-A per-clause index (`AI-Reference.md`) and JSON Schemas are tracked separately as issues #32
-and #33.
+A per-clause index (`AI-Reference.md`) is tracked separately as issue #32.
+
+## Schemas
+
+[`schemas/usability-engineering-record.schema.json`](schemas/usability-engineering-record.schema.json)
+is one use-related risk, the UI characteristic it arises from, and the control that addresses it.
+
+Two things about it are deliberate. Its `process_step` is a set of **named** steps rather than
+clause numbers, for the reason above — putting unverified sub-clause numbers into machine-readable
+form would be worse than leaving them out of prose. And `control_status` is required with no
+default: a usability engineering file citing a control that is not implemented is the precise
+failure this standard's evaluation steps exist to catch, so a record cannot be written without
+saying whether its control exists today, and a `planned` one must name the issue that would build
+it.
+
+`requirement_id` and `hazard_id` use the same shapes as `mdux::governance::Requirement::id` and
+`Hazard::id`, so a usability control joins to the risk management file rather than sitting beside
+it — use-related risk is risk.
