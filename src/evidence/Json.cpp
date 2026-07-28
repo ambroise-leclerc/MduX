@@ -541,9 +541,20 @@ private:
                 appendUtf8(out, *decoded);
                 break;
             }
-            default:
-                return err(makeError(ErrorCode::InvalidEscape, position_ - 1,
-                                      "unrecognized escape '\\" + std::string(1, escape) + "'"));
+            default: {
+                // Built with push_back rather than `"..." + std::string(1, escape) + "'"`.
+                // GCC 15.3 (and 15.2) at -O3 inlines that concatenation chain into parseString
+                // and then reports a false -Warray-bounds: "forming offset [32, 39] is out of
+                // the bounds [0, 32]" against the temporary std::string. The message is short
+                // enough that no such write happens; the analysis loses track of the temporary's
+                // capacity across the inlined operator+ calls. Constructing the message in one
+                // object sidesteps it, is not slower, and does not need a warning suppression -
+                // which would have hidden any genuine overflow reported at this line later.
+                std::string detail = "unrecognized escape '\\";
+                detail.push_back(escape);
+                detail.push_back('\'');
+                return err(makeError(ErrorCode::InvalidEscape, position_ - 1, std::move(detail)));
+            }
             }
         }
     }

@@ -64,6 +64,13 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # MSVC-specific modules configuration for C++23 and import std
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/experimental:module>)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/std:c++latest>)
+    # Source and execution character sets are both UTF-8. Without this MSVC reads sources in the
+    # host's ANSI code page and, worse, encodes a universal-character-name like "²" into that
+    # code page rather than into UTF-8 - so `Value::string("mm²")` is two bytes on GCC and
+    # Clang and one byte on MSVC, and every test asserting on UTF-8 output fails on Windows only.
+    # mdux.evidence.json validates its input as UTF-8 and emits UTF-8 unconditionally (ADR-007);
+    # a build whose execution charset is anything else contradicts the format the library defines.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
 
 # Module setup
