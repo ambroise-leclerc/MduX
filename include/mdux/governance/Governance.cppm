@@ -323,8 +323,12 @@ struct ValidationFailure {
     std::string subject;
     std::string detail;  ///< empty unless the failure needs a second name, e.g. a dangling id
 
-    [[nodiscard]] friend bool operator==(const ValidationFailure&,
-                                         const ValidationFailure&) = default;
+    // Deliberately a member rather than a defaulted hidden friend. GCC 16.1 ICEs in
+    // `module_state::mangle` when it has to mangle a defaulted hidden-friend operator== declared
+    // inside an exported struct (segfault at symbol_table::finalize_compilation_unit, reproduced
+    // on the CI GCC 16 leg and nowhere else). The member form generates identical semantics for
+    // every use this type has - comparing two failure lists - and does not take that code path.
+    [[nodiscard]] bool operator==(const ValidationFailure&) const = default;
 };
 
 /**
