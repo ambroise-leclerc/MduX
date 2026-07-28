@@ -239,6 +239,20 @@ TEST_CASE("releaseEvidenceSummary() fails validation on an unverified requiremen
     CHECK(failedSummary->find("validation_passed")->asBool().value() == false);
 }
 
+TEST_CASE("releaseEvidenceSummary() uses all ComplianceProgram release invariants",
+          "evidence-unit") {
+    ComplianceProgram uncontrolledHazard = validProgram();
+    uncontrolledHazard.hazards[0].controlledBy.clear();
+
+    // Requirement coverage and case results still look complete, but an uncontrolled hazard is
+    // a release blocker and must not be hidden behind those narrower counts.
+    const auto summary = releaseEvidenceSummary(uncontrolledHazard);
+    REQUIRE(summary.has_value());
+    CHECK(summary->find("requirements_total")->asUInt().value() == 2);
+    CHECK(summary->find("requirements_verified")->asUInt().value() == 2);
+    CHECK(summary->find("validation_passed")->asBool().value() == false);
+}
+
 TEST_CASE("releaseEvidenceSummary() lists only open problem reports, sorted by id",
           "evidence-unit") {
     ComplianceProgram program = validProgram();

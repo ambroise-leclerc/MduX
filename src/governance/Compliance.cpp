@@ -224,8 +224,13 @@ Result<json::Value, ComplianceError> releaseEvidenceSummary(const ComplianceProg
             ++requirementsVerified;
         }
     }
+    // `validation_passed` is the release gate, not merely a coverage percentage. Reuse the
+    // program's complete invariant check so a dangling reference, uncontrolled hazard, duplicate
+    // ID, or malformed problem-report set cannot be reported as a passing release just because
+    // every Requirement happens to have a VerificationCase.
+    const bool programValid = program.validate().has_value();
     const bool validationPassed =
-        allDischargingCasesPassed && requirementsVerified == requirementsTotal;
+        programValid && allDischargingCasesPassed && requirementsVerified == requirementsTotal;
 
     json::Value summary = json::Value::emptyObject();
     auto setMember = [&summary](std::string key, json::Value value) -> bool {
