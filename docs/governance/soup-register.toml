@@ -41,7 +41,7 @@ runtime_deployment = false
 support_model = "Community-maintained library; no medical-device qualification or vendor support agreement."
 boundary_rationale = "cmake/MduXTrustZones.cmake's banned-dependency list matches ^glfw$ and ^glfw3$ by name against every governed target; GLFW is linked only into the example executables (MedicalUiExample, VulkanSCTriangleExample)."
 risk_controls = [
-    "Trust-zone enforcement: mdux_verify_trust_zones() rejects glfw/glfw3 as a link dependency of MduXCore or MduX.",
+    "Trust-zone enforcement: mdux_verify_trust_zones() rejects glfw/glfw3 as a link dependency of MduXCore. MduX is the adapter target and is not governed by that check; its no-windowing policy is a separately reviewed target-definition constraint, not a property this check proves.",
     "GIT_TAG 3.4 pins an exact tagged release rather than a branch, so the fallback CPM path cannot silently pick up an unreviewed newer version.",
 ]
 known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry."
