@@ -28,5 +28,31 @@ integrates MduX into a device, rather than manufacturing a citation to look comp
 | [`05-overall-residual-risk-and-review.md`](05-overall-residual-risk-and-review.md) | §8–§9 | Evaluation of overall residual risk, risk management review |
 | [`06-production-and-post-production.md`](06-production-and-post-production.md) | §10 | Collecting and acting on production and post-production information |
 
-A per-clause index (`AI-Reference.md`) and JSON Schemas are tracked separately as issues #32
-and #33.
+A per-clause index (`AI-Reference.md`) is tracked separately as issue #32.
+
+## Schemas
+
+[`schemas/risk-record.schema.json`](schemas/risk-record.schema.json) is one hazard, its
+evaluation, and the requirements that control it.
+
+Its first three members — `id`, `description`, `controlled_by` — are the same fields, with the same
+names and the same constraints, as `mdux::governance::Hazard`. That alignment is the deliverable,
+not a convenience: it is what makes a risk record written by hand and a `Hazard` built in C++ the
+same object, and `tools/docs-lint/check_schema_type_drift.py` fails the build if the two stop
+agreeing. `controlled_by` being non-empty is the machine-checked ISO 14971 §7 / IEC 62304 §4.2
+join.
+
+The schema deliberately does not define severity or probability scales. §4.4 makes risk
+acceptability criteria the manufacturer's to set in its risk management plan, so a fixed enum here
+would be this project inventing a criterion it has no standing to set; those members are free
+strings, and `scale_ref` names the document that gives them meaning.
+
+## What this directory replaced
+
+Two documents are deleted as of issue #29: `docs/MduX_ISO-14971-Risk-Management-Framework.md`
+(713 lines) and `risk-assessment-templates.md` (935 lines). The second documented three C++
+namespaces that do not exist in the tree and prescribed severity and probability scales that are
+not this project's to prescribe. See
+[`../governance/superseded-documents.md`](../governance/superseded-documents.md) for the reasoning,
+including why folding the templates into `software_development_file/templates/` — the alternative
+issue #29 offered — would have carried a fictional API forward.
