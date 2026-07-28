@@ -45,6 +45,7 @@ add_executable(evidence_tests
     evidence/JsonTests.cpp
     evidence/ReportTests.cpp
     governance/JustificationTests.cpp
+    governance/ComplianceProgramTests.cpp
 )
 
 target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
