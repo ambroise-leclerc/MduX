@@ -56,8 +56,9 @@ Every risk control measure is required to exist as an actual `Requirement`
 (`include/mdux/governance/Compliance.cppm`), not a free-floating note — `Hazard.controlledBy` is a
 list of requirement IDs. Each such `Requirement` must in turn have at least one `VerificationCase`
 discharging it (`ComplianceProgram::validate()`'s `UnverifiedRequirement` check), so a risk control
-measure cannot be recorded as implemented without also being verified — mechanically checked, not
-only reviewed.
+measure cannot pass structural validation without a defined verification activity. That check does
+not prove the activity passed: `VerificationCase.passed` is evaluated separately by
+`releaseEvidenceSummary()`, and the caller must also supply the actual `evidenceRefs`.
 
 ## 5. Overall residual risk evaluation
 
@@ -93,7 +94,7 @@ MduX itself.
   "justification_id": "JUS-021",
   "standard": "ISO 14971:2019",
   "clause_ref": "ISO 14971:2019 §7.3 Implementation of risk control measures",
-  "rationale": "Hazard.controlledBy requires at least one Requirement that must exist (DanglingHazardControl), and that Requirement in turn requires at least one VerificationCase (ComplianceProgram::validate()'s UnverifiedRequirement check), so a risk control measure cannot be recorded as in place without also being tied to verification evidence - mechanically checked by validate(), not only by review.",
+  "rationale": "Hazard.controlledBy requires at least one Requirement that must exist (DanglingHazardControl), and that Requirement in turn requires at least one VerificationCase (ComplianceProgram::validate()'s UnverifiedRequirement check). This mechanically guarantees a defined verification activity; releaseEvidenceSummary() separately reports whether its passed flag is true.",
   "evidence_refs": [
     "include/mdux/governance/Compliance.cppm",
     "src/governance/Compliance.cpp",
