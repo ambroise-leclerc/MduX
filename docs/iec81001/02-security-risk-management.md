@@ -7,6 +7,7 @@ Practice categories are named rather than numbered throughout this directory; se
 [`README.md`](README.md) for what this corpus asserts and what it does not.
 
 ## One risk file, not two
+<!-- pointer: MduX's security records use the ISO 14971 risk-record shape, so a security hazard cannot escape the review every safety hazard gets. -->
 
 The most important thing to get right about this practice is what it is *not*: it is not a separate
 risk management system running beside ISO 14971's. A security failure that can lead to harm is a
@@ -72,6 +73,7 @@ but it is a real integrity property over the artifacts it covers, and it is the 
 supply-chain rows of a security risk assessment can point at.
 
 ## The gap this corpus does not paper over
+<!-- pointer: None of MduX's three mechanisms was designed against this standard; they are inputs to a manufacturer's assessment, not evidence of a completed one. -->
 
 None of the three mechanisms above was designed against IEC 81001-5-1. They were designed for
 determinism, auditability and dependency discipline, and they happen to answer questions this

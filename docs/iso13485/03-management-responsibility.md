@@ -13,6 +13,7 @@ No MduX-specific mechanism. A device manufacturer's own management commitment, c
 quality policy govern their integration of MduX; nothing in this repository substitutes for them.
 
 ## §5.4 Planning
+<!-- pointer: No MduX mechanism: the GitHub epic and issue structure is project planning, not the quality-objective planning this clause asks a certified organization for. -->
 
 The nearest honest analog is this project's own roadmap structure — epics and their child issues on
 GitHub, each with a stated blocking order (this epic, #8, is blocked by #7 and blocks nothing until

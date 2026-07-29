@@ -16,6 +16,7 @@ information from being silently truncated or occluded) and states plainly where 
 standard describes remains entirely the integrating device's responsibility.
 
 ## §2 Normative references
+<!-- pointer: Read alongside docs/iso14971/, which covers the risk-management framework this standard's use-related risk analysis sits inside. -->
 
 IEC 62366-1 is written to be read alongside ISO 14971, for the risk-management framework its
 use-related risk analysis sits inside. See [`../iso14971/`](../iso14971/) for this project's

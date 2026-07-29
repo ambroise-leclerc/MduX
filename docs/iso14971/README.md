@@ -28,7 +28,9 @@ integrates MduX into a device, rather than manufacturing a citation to look comp
 | [`05-overall-residual-risk-and-review.md`](05-overall-residual-risk-and-review.md) | §8–§9 | Evaluation of overall residual risk, risk management review |
 | [`06-production-and-post-production.md`](06-production-and-post-production.md) | §10 | Collecting and acting on production and post-production information |
 
-A per-clause index (`AI-Reference.md`) is tracked separately as issue #32.
+[`AI-Reference.md`](AI-Reference.md) is the per-clause index — one row per clause section, each
+with a one-sentence pointer and a deep link to the heading that covers it. It is generated from
+this directory's own headings and `Justification` objects, and CI fails if it is out of date.
 
 ## Schemas
 

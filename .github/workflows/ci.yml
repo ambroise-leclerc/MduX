@@ -482,6 +482,14 @@ jobs:
         python3 -m unittest discover -s tools/docs-lint -p "test_*.py"
         python3 tools/docs-lint/mdux_docs_lint.py
 
+    # Every AI-Reference.md is generated, so an edited module with a stale index is a defect the
+    # build should catch rather than a reader. --check writes nothing; it fails when regenerating
+    # would change a byte, and when a clause is cited in prose that no index row covers.
+    - name: Check AI-Reference indexes are current
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: python3 tools/docs-lint/generate_ai_reference.py --check
+
   evidence-lint:
     name: Evidence Pipeline Lint
     runs-on: ubuntu-latest

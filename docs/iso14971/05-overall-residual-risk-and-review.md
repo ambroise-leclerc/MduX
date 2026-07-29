@@ -10,6 +10,7 @@ hazard categories represent the totality of risk a device integrating MduX carri
 two categories MduX's own architecture happens to address, not an exhaustive analysis.
 
 ## §9 Risk management review
+<!-- pointer: Device-level: a review before release is a management activity MduX has no release and no management to run. -->
 
 Before release, a manufacturer reviews whether the risk management plan was carried out, overall
 residual risk is acceptable, and appropriate methods are in place to gather production information

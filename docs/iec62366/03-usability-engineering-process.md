@@ -3,8 +3,7 @@
 §5 is the standard's process clause: the sequence of activities by which a manufacturer specifies,
 designs, evaluates and finally confirms a user interface against use-related risk.
 
-**This file asserts no sub-clause numbers.** An earlier version headed each step below `§5.1`
-through `§5.9`. Those numbers were written from professional familiarity with the process rather
+**This file asserts no sub-clause numbers.** An earlier version numbered each step below, from 5.1 to 5.9. Those numbers were written from professional familiarity with the process rather
 than from the standard, which this project does not hold a copy of (see
 [ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md)), and the citation
 convention requires a clause number to be confirmed before it is cited. They are therefore removed
@@ -27,6 +26,7 @@ Entirely device-level information MduX has no visibility into. A UI library is i
 device; it does not know the patient population it will be read by.
 
 ## Establish user interface characteristics related to safety
+<!-- pointer: The step MduX's planned mechanisms attach to - @safety_critical annotations, requirement binding, locale text budgets (issue #15) and rendered-truth verification (issue #16) - none of which exists yet. -->
 
 Identifying which UI characteristics could contribute to a use error with safety consequences —
 frequently-used functions, and functions whose incorrect use could cause harm.
@@ -48,6 +48,7 @@ citing a control that is not implemented is exactly the failure mode this standa
 steps exist to catch.
 
 ## Establish the user interface specification
+<!-- pointer: A .medui source file (issue #15) is what a device's UI specification would be authored against, but the specification itself stays the manufacturer's. -->
 
 Specifying the UI's design inputs: layout, information to be conveyed, and interaction requirements
 that follow from the application specification and the identified hazards.

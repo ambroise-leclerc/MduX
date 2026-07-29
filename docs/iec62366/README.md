@@ -10,7 +10,7 @@ This corpus cites IEC 62366-1:2015 at the **top level only** — `§1` through `
 numbers are asserted; nothing below them is.
 
 An earlier version of [`03-usability-engineering-process.md`](03-usability-engineering-process.md)
-numbered the process steps `§5.1` through `§5.9`. Those numbers came from general professional
+numbered the process steps from 5.1 to 5.9. Those numbers came from general professional
 familiarity with the usability engineering process rather than from the standard text, which this
 project does not hold a copy of (see
 [ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md)). The citation convention
@@ -44,7 +44,10 @@ have not been built.
 | [`02-general-requirements.md`](02-general-requirements.md) | §4 | General requirements for applying usability engineering |
 | [`03-usability-engineering-process.md`](03-usability-engineering-process.md) | §5 | Application specification through summative evaluation |
 
-A per-clause index (`AI-Reference.md`) is tracked separately as issue #32.
+[`AI-Reference.md`](AI-Reference.md) is the per-clause index, generated mechanically from this
+directory's own headings. It makes no claim beyond what is already here, so it carries the same
+citation limits stated above rather than new ones — its named process steps are indexed without
+clause numbers, exactly as the modules state them.
 
 ## Schemas
 

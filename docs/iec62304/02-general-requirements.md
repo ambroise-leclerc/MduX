@@ -1,6 +1,7 @@
 # IEC 62304:2006 §4 — General requirements
 
 ## §4.1 Quality management system context
+<!-- pointer: IEC 62304 expects these processes to run inside a manufacturer's QMS; MduX has none, and docs/iso13485/ covers that side rather than this file. -->
 
 IEC 62304 does not stand alone: it expects the software life cycle processes it describes to run
 inside a manufacturer's broader quality management system, typically one built to ISO 13485. This
