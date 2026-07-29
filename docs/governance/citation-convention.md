@@ -10,9 +10,8 @@ Landed in two parts. The first (issue #22) shipped alongside the reproduced-text
 tree was never in a state where the material was gone and nothing described what replaces it. This
 version (issue #8, S1) adds the formal `Justification` schema and worked examples, completing it.
 
-`docs/iec62304/` and `docs/iso13485/` do not follow this convention yet — see "Known gap" below.
-Issues #27/#28 are the clause-accurate rewrite that fixes this; this document defines the target
-shape those rewrites write against.
+`docs/iec62304/` and `docs/iso13485/` now both follow this convention, rewritten clause-accurately
+by issues #27 and #28 respectively — see "Known gap" below for the history.
 
 ## The rule
 
@@ -89,13 +88,13 @@ requirement falls under) should be checked against the actual standard by whoeve
 Justification. The clause-accurate corpus landing with issues #27-#31 is the place that numbering
 gets fixed once, centrally, rather than re-verified ad hoc at every citation site.
 
-## Known gap this document does not yet close
+## History — the gap this document once left open
 
 Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) did
 not mean the rest of `docs/iec62304/` and `docs/iso13485/` were already clean. Spot-checking
 `docs/iec62304/01-scope-and-classification.md` during that removal found sentences reading as close
-paraphrase of the standard's own §1.1 wording — one symptom of a corpus that used a flat "sections
-1-16" numbering matching neither standard's real clause structure. Issue #27 has since replaced
-`docs/iec62304/` outright, against the real §1–§9 clause structure. `docs/iso13485/` has not yet
-had the same treatment — issue #28 is where that happens — so **treat `docs/iso13485/` as not yet
-compliant with this convention** until #28 lands. `docs/iec62304/` is compliant as of #27.
+paraphrase of the standard's own §1.1 wording — one symptom of both directories using invented flat
+numbering that matched neither standard's real clause structure. Issue #27 replaced
+`docs/iec62304/` outright, against the real §1–§9 clause structure; issue #28 did the same for
+`docs/iso13485/`, against its real §1–§8 structure. Both directories are compliant with this
+convention as of #28.

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iso13485/quality-management-system.schema.json",
+  "title": "ISO 13485 QMS interface record",
+  "description": "One thing MduX supplies to an integrating manufacturer's quality management system, and what that manufacturer must still do with it. This is deliberately not a schema for a quality management system: MduX is a software library and operates no QMS - no management review, no CAPA, no supplier qualification, no customers of its own. Modelling one here would be the same overclaim that retired docs/MduX_ISO-13485-Quality-Management-Framework.md (see docs/governance/superseded-documents.md). What a library does have is an interface: a small number of clauses where it produces something a manufacturer's QMS can consume as an input. Each record below is one such handover, and the manufacturer_obligation field is the part that keeps the record honest - every supplied artifact leaves work undone on the other side of the boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_id", "clause_ref", "contribution_kind", "supplied", "manufacturer_obligation"],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "description": "Unique within docs/iso13485/.",
+      "pattern": "^QMS-[0-9]{3,}$"
+    },
+    "clause_ref": {
+      "type": "string",
+      "description": "The ISO 13485:2016 clause this record is about, in the citation-key format from docs/governance/citation-convention.md.",
+      "pattern": "^ISO 13485:2016 §[0-9]+(\\.[0-9]+)* .+"
+    },
+    "contribution_kind": {
+      "type": "string",
+      "description": "What kind of QMS input this is. The closed set is short on purpose: these are the only three categories a library can genuinely produce. A clause needing anything else is a clause MduX does not contribute to, and the corpus says so in prose rather than inventing a record here.",
+      "enum": ["design_output", "design_record", "configuration_item"]
+    },
+    "supplied": {
+      "type": "array",
+      "description": "Repository-relative paths to what MduX actually provides. Non-empty: a record with nothing behind it is a claim, not a contribution.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "manufacturer_obligation": {
+      "type": "string",
+      "description": "What the integrating manufacturer must still do for this clause to be satisfied for its device. Required, and required to be substantive: no MduX artifact discharges an ISO 13485 obligation on a manufacturer's behalf, so a record that left this blank would misrepresent the handover.",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free text - a caveat, or a pointer to the module section that explains the mechanism.",
+      "minLength": 1
+    }
+  },
+  "examples": [
+    {
+      "record_id": "QMS-001",
+      "clause_ref": "ISO 13485:2016 §7.3 Design and development",
+      "contribution_kind": "design_output",
+      "supplied": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-004-trust-zones-in-cpp.md"],
+      "manufacturer_obligation": "Decide whether the trust-zone boundary MduX enforces is the right boundary for this device, and record that decision in the device's own design history file. MduX verifies that governed code cannot reach Vulkan; it cannot know whether that is the separation this device's risk analysis requires.",
+      "notes": "See docs/iso13485/05-product-realization.md#73-design-and-development."
+    },
+    {
+      "record_id": "QMS-002",
+      "clause_ref": "ISO 13485:2016 §4.2 Documentation requirements",
+      "contribution_kind": "configuration_item",
+      "supplied": ["docs/adr/ADR-007-evidence-pipeline-doctrine.md"],
+      "manufacturer_obligation": "Fold the baked artifacts and their reports into the device's own configuration record. ADR-007 fixes how an MduX artifact is derived and byte-verified; it says nothing about which artifacts this device ships or how long their records must be retained, both of which are device-level decisions."
+    }
+  ]
+}
