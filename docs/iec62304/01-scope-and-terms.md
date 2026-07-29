@@ -13,10 +13,11 @@ The standard's own scope excludes software used only to *manufacture* a medical 
 test rig, say) and software tools that never ship as part of the finished device. MduX is a UI SDK
 that ships inside a device's software; nothing in this repository falls under those exclusions.
 
-**MduX's own components are Class A** throughout this documentation set — software that cannot
-contribute to a hazardous situation. Its sibling project TrustSC targets Class B/C. Where a
-requirement's rigor scales with safety class, later clause files say so explicitly; nothing here
-should be read as an implicit Class B/C claim.
+This documentation set keeps the **Class A requirements in scope**; its sibling project TrustSC
+targets Class B/C. That is a documentation baseline, not a classification of MduX in every device:
+the integrating manufacturer must classify each software system against the device's risk analysis.
+Where a requirement's rigor scales with safety class, later clause files say so explicitly; nothing
+here should be read as an implicit Class B/C claim.
 
 ## §2 Normative references
 
@@ -38,7 +39,7 @@ each one a concrete, checkable meaning instead of a prose definition:
 
 | Term | Where MduX makes it concrete |
 |---|---|
-| Software safety classification | Declared per-component in this documentation set (see [`02-general-requirements.md`](02-general-requirements.md)), not computed — IEC 62304 treats classification as a judgment call the manufacturer records, not an algorithm. |
+| Software safety classification | Class A requirements remain in scope in this documentation set (see [`02-general-requirements.md`](02-general-requirements.md)), but an integrating manufacturer still records the actual classification against its device risk analysis — IEC 62304 treats classification as a judgment call, not an algorithm. |
 | Software item / software unit | The governed/adapter/tools split in [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md) is MduX's structural answer to "what counts as one unit for verification purposes": a governed target's link graph, mechanically checked by `cmake/MduXTrustZones.cmake`. |
 | Verification | Where this corpus says a clause is "verified," it means a specific, named, re-runnable check — a `ctest` case, a `mdux-docs-lint` rule, a `git filter-repo` byte-comparison — not a review that happened once and left no artifact. |
 | Risk control measure | Concrete link to ISO 14971's vocabulary lands with issue #29; until then, this corpus describes a mechanism's *effect* (e.g. "cannot compile if X") rather than asserting it satisfies a specific risk-control category from that standard. |

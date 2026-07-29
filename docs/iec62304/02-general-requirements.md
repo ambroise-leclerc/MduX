@@ -29,13 +29,14 @@ serious injury. The standard does not provide a formula for assigning a class; i
 judgment call made against the device's risk analysis, and higher classes carry more extensive
 development and verification requirements at every later clause in this corpus.
 
-**MduX's own components are declared Class A** — code that renders a UI, bakes an asset, or infers
-from a classifier is not itself the safety function; a device integrating MduX is responsible for
-its own classification decision, informed by how it uses these components. Where a later clause
-describes a requirement that scales with class (test coverage in §5.5–§5.7, for instance), this
-corpus states the Class A baseline and does not extrapolate a Class B/C claim MduX has not earned.
-TrustSC, MduX's sibling project, targets Class B/C directly and its documentation should be
-consulted for that scope rather than assuming parity here.
+This corpus keeps the **Class A requirements in scope**. It does not declare that every use of MduX
+is Class A: UI rendering, asset baking, or classifier output can contribute to harm depending on
+the device and intended use. The integrating manufacturer is responsible for the classification
+decision, informed by its device risk analysis. Where a later clause describes a requirement that
+scales with class (test coverage in §5.5–§5.7, for instance), this corpus states the Class A
+baseline and does not extrapolate a Class B/C claim MduX has not earned. TrustSC, MduX's sibling
+project, targets Class B/C directly and its documentation should be consulted for that scope rather
+than assuming parity here.
 
 A classification decision, once made, is itself something a Justification object
 (see [`docs/governance/citation-convention.md`](../governance/citation-convention.md)) can record:
