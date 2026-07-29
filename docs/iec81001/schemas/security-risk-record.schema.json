@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec81001/security-risk-record.schema.json",
+  "title": "IEC 81001-5-1 security risk record",
+  "description": "One security risk: the threat, the asset and weakness it acts on, and the requirements that control it. This schema is an extension of docs/iso14971/schemas/risk-record.schema.json rather than a replacement for it, and that is the substantive design decision. A security failure that can lead to harm is a hazard; IEC 81001-5-1 adds the analysis that finds it - threat modelling, attack surface, supply-chain exposure - not a second risk file to record it in. Every member the risk record defines keeps its name and meaning here, so a security record can be read by anything that reads risk records, and a security hazard cannot escape the review every safety hazard gets. id, description and controlled_by are therefore still field-aligned with mdux::governance::Hazard, and tools/docs-lint/check_schema_type_drift.py checks that alignment here as well.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "controlled_by", "hazardous_situation", "harm", "owner", "threat", "asset"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Field-aligned with mdux::governance::Hazard::id. A security record uses the same id space as a safety record on purpose - one risk management file.",
+      "pattern": "^HAZ-[A-Z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Field-aligned with mdux::governance::Hazard::description.",
+      "minLength": 1
+    },
+    "controlled_by": {
+      "type": "array",
+      "description": "Field-aligned with mdux::governance::Hazard::controlledBy. Non-empty, every entry naming a requirement - the same machine-checked join as a safety hazard. A security requirement is a requirement: same record, same verification obligation.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9-]+$"
+      }
+    },
+    "hazardous_situation": {
+      "type": "string",
+      "description": "The circumstance in which the threat reaches the asset.",
+      "minLength": 1
+    },
+    "harm": {
+      "type": "string",
+      "description": "The injury or damage that follows. Required, and required to be about harm rather than about the compromise: a security record whose consequence stops at 'data disclosed' has not yet been connected to the risk file this record belongs in.",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "description": "Who this record belongs to. 'device_manufacturer' is the normal case: threat modelling needs an intended use, a deployment environment, a network position and an adversary, none of which a library has. 'mdux' is for the few controls this library enforces regardless of the integrating device.",
+      "enum": ["device_manufacturer", "mdux"]
+    },
+    "threat": {
+      "type": "string",
+      "description": "Who or what acts, and how. The security-specific half of the analysis - the part IEC 81001-5-1 adds to ISO 14971 rather than the part it shares.",
+      "minLength": 1
+    },
+    "asset": {
+      "type": "string",
+      "description": "What is being protected - the data, function or property whose compromise leads to the harm above.",
+      "minLength": 1
+    },
+    "weakness": {
+      "type": "string",
+      "description": "The property that makes the threat viable. Free text, but a CWE identifier or similar is preferable where one applies.",
+      "minLength": 1
+    },
+    "attack_surface": {
+      "type": "string",
+      "description": "Where the threat acts from. The closed set names the four surfaces this project can reason about; anything else is device-specific and belongs in the manufacturer's own model.",
+      "enum": ["build_supply_chain", "parsed_input", "linked_dependency", "shipped_artifact"]
+    },
+    "control_option": {
+      "type": "string",
+      "description": "Which ISO 14971 §7.1 risk control option this record's controls use. Shared with the risk record, and for the same reason: the standard fixes these three and their priority order.",
+      "enum": ["inherently_safe_design", "protective_measures", "information_for_safety"]
+    },
+    "severity": {
+      "type": "string",
+      "description": "A level from the manufacturer's own severity scale. Free text, not an enum - the same reasoning as the risk record: §4.4 of ISO 14971 makes acceptability criteria the manufacturer's to define, and a security record is evaluated against the same criteria.",
+      "minLength": 1
+    },
+    "probability": {
+      "type": "string",
+      "description": "A level from the manufacturer's own scale. For a security risk this is normally an exploitability judgement rather than a failure rate; the scale still belongs to the manufacturer.",
+      "minLength": 1
+    },
+    "acceptability": {
+      "type": "string",
+      "description": "The manufacturer's judgement against its own criteria, after the controls in controlled_by are applied.",
+      "minLength": 1
+    },
+    "scale_ref": {
+      "type": "string",
+      "description": "Where the scales used by this record are defined. Required whenever severity, probability or acceptability is present.",
+      "minLength": 1
+    },
+    "residual_risk_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Repository-relative paths supporting this record.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "dependentRequired": {
+    "severity": ["scale_ref"],
+    "probability": ["scale_ref"],
+    "acceptability": ["scale_ref"]
+  },
+  "examples": [
+    {
+      "id": "HAZ-SUPPLY-001",
+      "description": "A generated artifact shipped with MduX does not correspond to the source and recipe it is recorded as deriving from.",
+      "controlled_by": ["REQ-EVIDENCE-BYTE-IDENTITY-001"],
+      "hazardous_situation": "A device ships a baked artifact that was edited by hand or produced by an unrecorded toolchain, and behaves differently from the reviewed source.",
+      "harm": "A clinical display renders from an artifact nobody reviewed, and a user acts on what it shows.",
+      "owner": "mdux",
+      "threat": "An attacker, or an unwitting maintainer, modifies a committed generated artifact without changing its recipe.",
+      "asset": "The correspondence between reviewed source and shipped artifact.",
+      "attack_surface": "build_supply_chain",
+      "control_option": "inherently_safe_design",
+      "evidence_refs": ["docs/adr/ADR-007-evidence-pipeline-doctrine.md"],
+      "residual_risk_note": "Covers the build, not a deployed system: an artifact altered after release is outside what this control can see."
+    }
+  ]
+}
