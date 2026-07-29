@@ -1,0 +1,218 @@
+{
+  "standard": "ISO 14971:2019",
+  "corpus": "docs/iso14971",
+  "rows": [
+    {
+      "clause": "§1",
+      "title": "Scope",
+      "file": "01-scope-and-terms.md",
+      "anchor": "1-scope",
+      "pointer": "MduX is not a medical device and performs no risk management process of its own against a device's intended use — it has none to evaluate against.",
+      "justifications": []
+    },
+    {
+      "clause": "§2",
+      "title": "Normative references",
+      "file": "01-scope-and-terms.md",
+      "anchor": "2-normative-references",
+      "pointer": "Read alongside docs/iec62304/ and docs/iso13485/, which cover the two standards this one is written to work with.",
+      "justifications": []
+    },
+    {
+      "clause": "§3",
+      "title": "Terms and definitions",
+      "file": "01-scope-and-terms.md",
+      "anchor": "3-terms-and-definitions",
+      "pointer": "[ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust-zone architecture and [ADR-005](../adr/ADR-005-error-handling-and-exceptions-policy.md)'s exception-disabled governed zone are MduX's two concrete instances.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1",
+      "title": "Risk management process",
+      "file": "02-risk-management-system.md",
+      "anchor": "41-risk-management-process",
+      "pointer": "Device-level: MduX runs no risk management process of its own, and has no device whose life cycle one would span.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.2",
+      "title": "Management responsibilities",
+      "file": "02-risk-management-system.md",
+      "anchor": "42-management-responsibilities",
+      "pointer": "Device-level responsibility (providing resources, defining a risk acceptability policy, reviewing the process's suitability) belongs to a manufacturer's management, not to MduX.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.3",
+      "title": "Competence of personnel",
+      "file": "02-risk-management-system.md",
+      "anchor": "43-competence-of-personnel",
+      "pointer": "MduX cannot attest to the competence of the people who developed it in the sense this clause asks a manufacturer to establish for its own risk management personnel.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.4",
+      "title": "Risk management plan",
+      "file": "02-risk-management-system.md",
+      "anchor": "44-risk-management-plan",
+      "pointer": "MduX has no device to plan risk management for.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.5",
+      "title": "Risk management file",
+      "file": "02-risk-management-system.md",
+      "anchor": "45-risk-management-file",
+      "pointer": "MduX does not maintain one, because it is not the device.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.1",
+      "title": "Risk analysis process",
+      "file": "03-risk-analysis.md",
+      "anchor": "51-risk-analysis-process",
+      "pointer": "Device-level; no MduX mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.2",
+      "title": "Intended use and reasonably foreseeable misuse",
+      "file": "03-risk-analysis.md",
+      "anchor": "52-intended-use-and-reasonably-foreseeable-misuse",
+      "pointer": "MduX has no device-level intended use to state — a manufacturer's intended use for their device is what this sub-clause asks about, and MduX's role within that use is theirs to characterize, not this library's.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.3",
+      "title": "Identification of characteristics related to safety",
+      "file": "03-risk-analysis.md",
+      "anchor": "53-identification-of-characteristics-related-to-safety",
+      "pointer": "The one MduX-level analog worth naming: which components of a *build* could affect safety if misconfigured — for instance, whether governed code can reach Vulkan or a windowing library.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.4",
+      "title": "Identification of hazards and hazardous situations",
+      "file": "03-risk-analysis.md",
+      "anchor": "54-identification-of-hazards-and-hazardous-situations",
+      "pointer": "ADR-004 identifies a specific hazardous-situation category - a governed, safety-relevant module reaching Vulkan or a windowing library it should never touch - as one MduX's own architecture can foreclose regardless of the integrating device's specific use, rather than leaving every device manufacturer to rediscover it independently.",
+      "justifications": [
+        "JUS-011"
+      ]
+    },
+    {
+      "clause": "§5.5",
+      "title": "Estimation of the risk(s) for each hazardous situation",
+      "file": "03-risk-analysis.md",
+      "anchor": "55-estimation-of-the-risks-for-each-hazardous-situation",
+      "pointer": "Estimating probability and severity requires a device-level context (who is exposed, what happens if the hazard occurs in *this* device) that MduX does not have.",
+      "justifications": []
+    },
+    {
+      "clause": "§6",
+      "title": "Risk evaluation",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "6-risk-evaluation",
+      "pointer": "Device-level: acceptability criteria belong to the manufacturer's risk management plan, and MduX has no standing to set them.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.1–§7.2",
+      "title": "Risk reduction, risk control option analysis",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "7172-risk-reduction-risk-control-option-analysis",
+      "pointer": "MduX's own practice already follows that preference structurally, even though the analysis behind it happened at the architecture level rather than against a named device risk: [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust zones and [ADR-005](../adr/ADR-005-error-handling-and-exceptions-policy.md)'s exception policy are both inherent-safety-by-design measures — a `FATAL_ERROR` at configure time or a compile failure, not a runtime check or a warning label.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.3",
+      "title": "Implementation of risk control measures",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "73-implementation-of-risk-control-measures",
+      "pointer": "mdux_verify_trust_zones() is a risk control measure implemented as a mechanical build-time check rather than a documented procedure: it walks a governed target's transitive link graph and fails the configure step if it reaches Vulkan or a windowing library, which is the hazardous-situation category identified in docs/iso14971/03-risk-analysis.md.",
+      "justifications": [
+        "JUS-012"
+      ]
+    },
+    {
+      "clause": "§7.4",
+      "title": "Residual risk evaluation",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "74-residual-risk-evaluation",
+      "pointer": "Because MduX's trust-zone check is a hard build failure rather than a probabilistic mitigation, residual risk for the category it covers is effectively zero - contingent on the check still running in CI.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.5",
+      "title": "Risk/benefit analysis",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "75-riskbenefit-analysis",
+      "pointer": "Device-level; MduX has no benefit analysis of its own to weigh against, since it is not the device delivering a clinical benefit.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.6",
+      "title": "Risks arising from risk control measures",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "76-risks-arising-from-risk-control-measures",
+      "pointer": "MduX's trust-zone check fails the build rather than passing silently, so a misconfiguration of the control is visible immediately instead of leaving an undetected gap.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.7",
+      "title": "Completeness of risk control",
+      "file": "04-risk-evaluation-and-control.md",
+      "anchor": "77-completeness-of-risk-control",
+      "pointer": "Device-level: completeness is judged across a device's whole hazard list, which MduX cannot see from inside one dependency.",
+      "justifications": []
+    },
+    {
+      "clause": "§8",
+      "title": "Evaluation of overall residual risk",
+      "file": "05-overall-residual-risk-and-review.md",
+      "anchor": "8-evaluation-of-overall-residual-risk",
+      "pointer": "Nothing in this corpus should be read as a claim that MduX's two identified hazard categories represent the totality of risk a device integrating MduX carries — they are the two categories MduX's own architecture happens to address, not an exhaustive analysis.",
+      "justifications": []
+    },
+    {
+      "clause": "§9",
+      "title": "Risk management review",
+      "file": "05-overall-residual-risk-and-review.md",
+      "anchor": "9-risk-management-review",
+      "pointer": "Device-level: a review before release is a management activity MduX has no release and no management to run.",
+      "justifications": []
+    },
+    {
+      "clause": "§10.1",
+      "title": "General",
+      "file": "06-production-and-post-production.md",
+      "anchor": "101-general",
+      "pointer": "Device-level, and dependent on there being a released device generating field information — MduX has neither yet.",
+      "justifications": []
+    },
+    {
+      "clause": "§10.2",
+      "title": "Collection of information",
+      "file": "06-production-and-post-production.md",
+      "anchor": "102-collection-of-information",
+      "pointer": "MduX's nearest analog is far narrower: its own CI results and issue tracker are production information about *this repository*, not about a released device.",
+      "justifications": []
+    },
+    {
+      "clause": "§10.3",
+      "title": "Review of information",
+      "file": "06-production-and-post-production.md",
+      "anchor": "103-review-of-information",
+      "pointer": "Device-level; no MduX mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§10.4",
+      "title": "Actions",
+      "file": "06-production-and-post-production.md",
+      "anchor": "104-actions",
+      "pointer": "Device-level; no MduX mechanism, and no field to act on.",
+      "justifications": []
+    }
+  ]
+}

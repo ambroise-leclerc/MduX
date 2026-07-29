@@ -49,6 +49,10 @@ directory's own headings. It makes no claim beyond what is already here, so it c
 citation limits stated above rather than new ones — its named process steps are indexed without
 clause numbers, exactly as the modules state them.
 
+`AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
+the two cannot disagree, and validated against
+[`../governance/schemas/clause-index.schema.json`](../governance/schemas/clause-index.schema.json).
+
 ## Schemas
 
 [`schemas/usability-engineering-record.schema.json`](schemas/usability-engineering-record.schema.json)

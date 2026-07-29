@@ -30,12 +30,47 @@ regulatory document in this repository is tracked as issue #39.
 Every clause citation in this directory uses the key format from
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md):
 `IEC 62304:2006 §<clause> <clause title>`. [`AI-Reference.md`](AI-Reference.md) is the per-clause
-index, generated from this directory's own headings and `Justification` objects. JSON Schemas for
-the mechanisms cited here are tracked separately as issue #33.
+index, generated from this directory's own headings and `Justification` objects.
+`AI-Reference.json` is the same rows in machine-readable form, written by the same pass so the two
+cannot disagree, and validated against
+[`../governance/schemas/clause-index.schema.json`](../governance/schemas/clause-index.schema.json).
+
+## Schemas
+
+[`schemas/`](schemas/) holds the four IEC 62304 record types, each field-aligned with the
+corresponding type in `include/mdux/governance/Governance.cppm`:
+
+| Schema | Type it mirrors |
+|---|---|
+| [`requirement.schema.json`](schemas/requirement.schema.json) | `mdux::governance::Requirement` |
+| [`hazard.schema.json`](schemas/hazard.schema.json) | `Hazard` — `controlled_by` non-empty, the §4.2 join |
+| [`verification-case.schema.json`](schemas/verification-case.schema.json) | `VerificationCase` and the `VerificationMethod` vocabulary |
+| [`safety-classification.schema.json`](schemas/safety-classification.schema.json) | the `SafetyClass` vocabulary |
+
+The alignment is the deliverable, not the files. `tools/docs-lint/check_schema_type_drift.py` fails
+the build when a schema and the type it documents stop agreeing — a schema that silently diverges
+from its type is worse than no schema, because it still looks authoritative.
+
+The shared `Justification` schema lives at
+[`../governance/schemas/justification.schema.json`](../governance/schemas/justification.schema.json),
+since all five corpora use it.
 
 ## Safety classification scope
 
-This directory keeps **Class A requirements in scope**; it does not classify every use of MduX as
-Class A. The integrating manufacturer must classify each software system against its device risk
-analysis. MduX's sibling project TrustSC models Class B/C. Where a clause's requirements scale with
-safety class, the text says so explicitly rather than assuming one class or the other applies.
+**MduX does not classify itself, and no document in this directory should be read as doing so.**
+IEC 62304 §4.3 makes safety classification a decision taken from a device-level risk analysis:
+what harm the software can contribute to, in *this* device, for *this* intended use. The same
+rendering code is Class A in one product and Class C in another, and a library has neither a device
+nor an intended use to reason from.
+
+What this directory does instead is cover the clause set as it applies at each class, and say
+explicitly where a requirement scales with classification. Where the corpus discusses Class A
+obligations at length, that reflects the classification a manufacturer is most likely to assign to
+a component like an evidence digest — not a conclusion this project has reached on a manufacturer's
+behalf.
+
+[`schemas/safety-classification.schema.json`](schemas/safety-classification.schema.json) enforces
+the same discipline in machine-readable form: a classification record cannot be written without an
+`assigned_by` naming who decided. A previous version of this corpus declared all MduX components
+Class A while simultaneously stating that no device-level risk analysis existed; that contradiction
+is what the required field exists to prevent recurring.

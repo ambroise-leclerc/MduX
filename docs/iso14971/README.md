@@ -32,6 +32,10 @@ integrates MduX into a device, rather than manufacturing a citation to look comp
 with a one-sentence pointer and a deep link to the heading that covers it. It is generated from
 this directory's own headings and `Justification` objects, and CI fails if it is out of date.
 
+`AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
+the two cannot disagree, and validated against
+[`../governance/schemas/clause-index.schema.json`](../governance/schemas/clause-index.schema.json).
+
 ## Schemas
 
 [`schemas/risk-record.schema.json`](schemas/risk-record.schema.json) is one hazard, its

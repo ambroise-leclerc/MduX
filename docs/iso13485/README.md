@@ -36,6 +36,10 @@ Every clause citation uses the key format from
 with a one-sentence pointer and a deep link to the heading that covers it. It is generated from
 this directory's own headings and `Justification` objects, and CI fails if it is out of date.
 
+`AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
+the two cannot disagree, and validated against
+[`../governance/schemas/clause-index.schema.json`](../governance/schemas/clause-index.schema.json).
+
 ## Schemas
 
 [`schemas/quality-management-system.schema.json`](schemas/quality-management-system.schema.json)
