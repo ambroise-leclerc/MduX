@@ -6,10 +6,12 @@ why. This is the replacement: how to cite a standard's clause without reproducin
 
 ## Status
 
-This is a minimal first version, landed alongside the removal it explains (issue #22) so the tree
-is never in a state where the reproduced material is gone and nothing describes what replaces it.
-The full convention — including the `Justification` object's JSON Schema and worked examples — is
-tracked as issue #8, S1, and will extend this document rather than replace it.
+Landed in two parts. The first (issue #22) shipped alongside the reproduced-text removal so the
+tree was never in a state where the material was gone and nothing described what replaces it. This
+version (issue #8, S1) adds the formal `Justification` schema and worked examples, completing it.
+
+`docs/iec62304/` and `docs/iso13485/` now both follow this convention, rewritten clause-accurately
+by issues #27 and #28 respectively — see "Known gap" below for the history.
 
 ## The rule
 
@@ -41,36 +43,58 @@ a `clause_ref` field — so it can eventually be checked mechanically (issue #7,
 MduX keeps IEC 62304 Class A in scope (its sibling project TrustSC models Class B/C only) — state
 this explicitly wherever safety classification is discussed, rather than assuming one or the other.
 
-## The `Justification` object (preview)
+## The `Justification` object
 
-Use this shape whenever a design decision needs a formal link to a clause. This is an illustrative
-example with placeholder values, not a binding Justification — fenced as `jsonc` rather than `json`
-so `mdux-docs-lint` doesn't validate it as one:
+Use this shape whenever a design decision needs a formal link to a clause. The schema is
+[`docs/governance/schemas/justification.schema.json`](schemas/justification.schema.json) —
+Draft 2020-12, `additionalProperties: false`, and it cross-checks that `clause_ref` actually starts
+with the same standard named in `standard` (a plain regex can't do that alone; the schema uses a
+per-standard `if`/`then` pair for it).
 
-```jsonc
+`justification_id` (`JUS-NNN`) must be unique across the whole corpus, not per standard.
+`evidence_refs[]` must be non-empty and contain real repository paths — the schema rejects an empty
+array, because a Justification with no evidence is exactly the decorative citation this convention
+exists to prevent.
+
+Two worked examples, both validated against the schema and pointing at mechanisms that exist in
+this repository today:
+
+```json
 {
   "justification_id": "JUS-001",
   "standard": "IEC 62304:2006",
-  "clause_ref": "IEC 62304:2006 §5.3.3 Identify segregation necessary for risk control",
-  "rationale": "One sentence explaining why the cited mechanism satisfies the clause's intent.",
-  "requirement_id": "REQ-EXAMPLE-001",
-  "evidence_refs": ["path/to/real/file.cppm"]
+  "clause_ref": "IEC 62304:2006 §5.3 Software architectural design",
+  "rationale": "MduXTrustZones.cmake mechanically walks a governed target's link graph and fails the configure step if it reaches Vulkan or a windowing library, which is how the trust-zone architecture (ADR-004) keeps risk-relevant segregation a build-time guarantee rather than a code-review convention.",
+  "evidence_refs": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-004-trust-zones-in-cpp.md"]
 }
 ```
 
-`justification_id` (`JUS-NNN`) must be unique across the whole corpus, not per standard.
-`evidence_refs[]` must contain real repository paths. The formal JSON Schema for this object lands
-with issue #8, S1 — this preview exists so early citations already use the right shape.
+```json
+{
+  "justification_id": "JUS-002",
+  "standard": "IEC 62304:2006",
+  "clause_ref": "IEC 62304:2006 §8 Software configuration management process",
+  "rationale": "Every baked artifact is identified by a report naming its recipe digest, input digests and resolved options, and CI re-derives the artifact from those inputs and asserts byte-identity - so an artifact's configuration is verified by re-derivation, not by inspecting a binary diff.",
+  "evidence_refs": [
+    "docs/adr/ADR-007-evidence-pipeline-doctrine.md",
+    "include/mdux/evidence/Report.cppm",
+    "cmake/MduXBake.cmake"
+  ]
+}
+```
 
-## Known gap this document does not yet close
+Precise sub-clause numbering (the digits after the first dot, e.g. exactly which `§5.x` a
+requirement falls under) should be checked against the actual standard by whoever writes a new
+Justification. The clause-accurate corpus landing with issues #27-#31 is the place that numbering
+gets fixed once, centrally, rather than re-verified ad hoc at every citation site.
 
-Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) does
-not mean the rest of `docs/iec62304/` and `docs/iso13485/` are already clean. Spot-checking
+## History — the gap this document once left open
+
+Removing the two files that self-described in the phrasing ADR-006 quotes in full (issue #22) did
+not mean the rest of `docs/iec62304/` and `docs/iso13485/` were already clean. Spot-checking
 `docs/iec62304/01-scope-and-classification.md` during that removal found sentences reading as close
-paraphrase of the standard's own §1.1 wording (e.g. *"This document
-specifies life cycle processes for medical device software..."*). **The full clause-accurate
-rewrite of both directories — which is needed regardless, since today's modules use a flat
-"sections 1-16" numbering that doesn't match either standard's real clause structure — is tracked as
-issue #8 and is where this gets fixed properly**, rather than patched piecemeal here. Treat
-`docs/iec62304/` and `docs/iso13485/` as not yet compliant with this convention until issue #8
-lands.
+paraphrase of the standard's own §1.1 wording — one symptom of both directories using invented flat
+numbering that matched neither standard's real clause structure. Issue #27 replaced
+`docs/iec62304/` outright, against the real §1–§9 clause structure; issue #28 did the same for
+`docs/iso13485/`, against its real §1–§8 structure. Both directories are compliant with this
+convention as of #28.
