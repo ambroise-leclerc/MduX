@@ -34,7 +34,7 @@ mechanism, not the application specification itself — the application defines 
 > `IEC 62366-1:2015 §5.3 Establish user interface characteristics related to safety, hazards and hazardous situations`
 
 **No mechanism exists in MduX today linking a UI element to a hazard or a
-`Requirement`/`Hazard` record** (`mdux.governance.compliance`, issue #35) the way, for example,
+`Requirement`/`Hazard` record** (`mdux.governance`, issue #34) the way, for example,
 TrustSC's `@safety_critical` MedUI annotation does. `MedicalUiContent.validationErrors` and
 `RenderStatistics.validationErrors` exist, but check structural completeness — does the file exist,
 does it contain HTML/CSS content, is `ComplianceMetadata` non-empty (`src/mdux.cpp` lines around

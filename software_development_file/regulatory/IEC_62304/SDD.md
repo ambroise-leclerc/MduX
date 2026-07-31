@@ -34,11 +34,13 @@ architectural interfaces described in `SAD.md`.
   field-for-field: `validate()`/`toJson()`/`write()`/`parse()`).
 
 ### Unit: `mdux.governance.compliance`
-- **Responsibility:** `Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`, aggregated into a
-  `ComplianceProgram`, plus `traceabilityMatrix()` and `releaseEvidenceSummary()` — pure functions
-  over that data; no I/O in the module itself. **State the gap plainly:** no `ComplianceProgram`
+- **Responsibility:** `traceabilityMatrix()` and `releaseEvidenceSummary()` — pure functions over
+  the `ComplianceProgram` that `mdux.governance` defines; no I/O in the module itself, and no
+  types of its own. It declared its own `Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`
+  until those collided with `mdux.governance`'s; see that module's header for why the duplicates
+  were removed rather than kept alongside. **State the gap plainly:** no `ComplianceProgram`
   has actually been populated for MduX's own release as of this document — only the types and
-  their unit tests (31 tests in `evidence_tests`, synthetic fixture IDs like `REQ-001`/`HAZ-001`,
+  their unit tests (in `evidence_tests`, synthetic fixture IDs like `REQ-001`/`HAZ-001`,
   not real MduX requirements) exist. A real, populated program for MduX itself is future work, not
   something this document should imply already exists.
 

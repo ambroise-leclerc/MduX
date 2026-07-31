@@ -63,7 +63,7 @@ rather than assume is covered.
 
 > IEC 81001-5-1:2021, vulnerability and defect management practice category.
 
-`ProblemReport` (`mdux.governance.compliance`, issue #35) is where a discovered vulnerability would
+`ProblemReport` (`mdux.governance`, issue #34) is where a discovered vulnerability would
 be recorded once triaged — as with the ISO 14971 risk file, this project provides the record type,
 not a populated instance for MduX itself, and not the intake process.
 

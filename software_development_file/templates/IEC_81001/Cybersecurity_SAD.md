@@ -55,7 +55,7 @@ and the zero-SOUP scoping decisions recorded in
 > IEC 81001-5-1:2021, vulnerability and defect management practice category.
 
 [ How a discovered vulnerability is triaged, tracked, and closed. If built on MduX, reference how
-a `ProblemReport` (`mdux.governance.compliance`, issue #35) records it. ]
+a `ProblemReport` (`mdux.governance`, issue #34) records it. ]
 
 ## 6. Security update management
 

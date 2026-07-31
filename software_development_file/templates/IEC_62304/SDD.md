@@ -43,7 +43,7 @@ itself — cite it directly rather than re-transcribing its signatures here. ]
 
 [ How was this detailed design verified — reviews, unit test coverage, static analysis? Reference
 the `Requirement`/`VerificationCase` records a
-`mdux.governance.compliance::ComplianceProgram` (issue #35) tracks, rather than restating coverage
+`mdux::governance::ComplianceProgram` (issue #34) tracks, rather than restating coverage
 numbers that live there. ]
 
 ## Justification records

@@ -48,7 +48,7 @@ actually exists, verified in the tree as of this PR, is listed below.
 - Customer-related processes and regulatory-submission-facing product realization steps (§7.2, most
   of §7.5-§7.6) beyond the design-and-development traceability noted above.
 - Complaint handling, adverse-event/vigilance reporting, and CAPA (§8.2, §8.5) — `ProblemReport`
-  (`mdux.governance.compliance`) can record that a problem exists and whether it's closed, but
+  (`mdux.governance`) can record that a problem exists and whether it's closed, but
   implements none of the regulatory reporting obligations §8.2.3 describes, and no instance of it
   has been populated for MduX itself.
 - Everything about the manufacturer's own device beyond what's built with MduX's rendering/
