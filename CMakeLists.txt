@@ -144,13 +144,15 @@ target_sources(MduXCore
             include/mdux/evidence/Digest.cppm
             include/mdux/evidence/Json.cppm
             include/mdux/evidence/Report.cppm
-            include/mdux/governance/Justification.cppm
+            include/mdux/governance/Governance.cppm
             include/mdux/governance/Compliance.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
         src/evidence/Report.cpp
+        src/governance/Governance.cpp
         src/governance/Justification.cpp
+        src/governance/Program.cpp
         src/governance/Compliance.cpp
 )
 target_compile_features(MduXCore PUBLIC cxx_std_23)
