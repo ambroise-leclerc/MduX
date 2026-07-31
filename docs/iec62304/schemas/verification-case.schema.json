@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62304/verification-case.schema.json",
+  "title": "IEC 62304 verification case",
+  "description": "Evidence that one requirement is met, by one method, backed by named artifacts. Field-aligned with mdux::governance::VerificationCase in include/mdux/governance/Governance.cppm, checked by tools/docs-lint/check_schema_type_drift.py. The `method` enum is the same closed set as VerificationMethod, in the same order, and is exact-match on the wire: an unrecognized spelling is an error rather than a silently-defaulted value, because a verification record that quietly downgrades an unknown method to 'test' is worse than one that fails to load. Two things this record cannot establish, by construction. It cannot establish that requirement_id resolves - that needs the collection, and ComplianceProgram::validate() does it. And it cannot establish that the verification was any good: a case exists or it does not, and whether it was adequate is a review judgement no schema makes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "requirement_id", "method", "evidence_refs"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Aligned with VerificationCase::id.",
+      "pattern": "^VER-[A-Z0-9-]+$"
+    },
+    "requirement_id": {
+      "type": "string",
+      "description": "Aligned with VerificationCase::requirementId. Must resolve to a requirement in the same program - checked by ComplianceProgram::validate(), not here.",
+      "pattern": "^REQ-[A-Z0-9-]+$"
+    },
+    "method": {
+      "type": "string",
+      "description": "Aligned with VerificationCase::method and the VerificationMethod enum.",
+      "enum": ["test", "analysis", "inspection", "review"]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Aligned with VerificationCase::evidenceRefs. Repository-relative paths - a test source, a report, a review record. Non-empty, no empty entries, no duplicates. Paths are not checked to exist here; that is a lint-time concern over a real checkout, not a property of the record.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "VER-001",
+      "requirement_id": "REQ-TRUSTZONE-001",
+      "method": "test",
+      "evidence_refs": ["cmake/MduXTrustZones.cmake", "tests/compliance/TestRegulatoryCompliance.cpp"]
+    }
+  ]
+}

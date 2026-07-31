@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62304/requirement.schema.json",
+  "title": "IEC 62304 software requirement",
+  "description": "One thing the software must do, traceable to the clause that asks for it. Field-aligned with mdux::governance::Requirement in include/mdux/governance/Governance.cppm: the member names, the id pattern and the required set are the same on both sides, and tools/docs-lint/check_schema_type_drift.py fails the build if they stop being. The alignment is the deliverable, not a convenience - it is what lets a requirement written in a markdown fence and one built in C++ be the same object. Note what is deliberately absent: there is no field saying whether this requirement is verified. Coverage is a property of the surrounding collection, not of one record, so ComplianceProgram::validate() enforces IEC 62304 §5.2.4's 'every requirement needs at least one verification case' and no per-record schema could.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "source_clause", "verification_intent"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Aligned with Requirement::id. Uppercase, digits and hyphens after the prefix - lowercase is rejected so two spellings of one id cannot both exist.",
+      "pattern": "^REQ-[A-Z0-9-]+$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Aligned with Requirement::title. What the requirement asks for, in one line.",
+      "minLength": 1
+    },
+    "source_clause": {
+      "type": "string",
+      "description": "Aligned with Requirement::sourceClause. The same citation-key shape as a Justification's clause_ref, so a requirement and the justification for how it is met sort together and join on the clause. Any of the five approved standards, not only IEC 62304 - a requirement can exist because ISO 14971 asks for it.",
+      "pattern": "^(IEC 62304:2006|ISO 13485:2016|ISO 14971:2019|IEC 62366-1:2015|IEC 81001-5-1:2021) §[0-9]+(\\.[0-9]+)* .+"
+    },
+    "verification_intent": {
+      "type": "string",
+      "description": "Aligned with Requirement::verificationIntent. How this requirement is meant to be shown met - written before the verification case exists, so that the case can be checked against an intent rather than the intent inferred from whatever case was written.",
+      "minLength": 1
+    }
+  },
+  "examples": [
+    {
+      "id": "REQ-TRUSTZONE-001",
+      "title": "Governed modules must not reach Vulkan or a windowing library",
+      "source_clause": "IEC 62304:2006 §5.3 Software architectural design",
+      "verification_intent": "mdux_verify_trust_zones() fails the configure step on any governed target whose transitive link closure contains Vulkan::Vulkan or a windowing library."
+    }
+  ]
+}
