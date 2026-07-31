@@ -64,6 +64,20 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # MSVC-specific modules configuration for C++23 and import std
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/experimental:module>)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/std:c++latest>)
+    # Source and execution character sets are both UTF-8. Without this MSVC reads sources in the
+    # host's ANSI code page and, worse, encodes a universal-character-name like "²" into that
+    # code page rather than into UTF-8 - so `Value::string("mm²")` is two bytes on GCC and
+    # Clang and one byte on MSVC, and every test asserting on UTF-8 output fails on Windows only.
+    # mdux.evidence.json validates its input as UTF-8 and emits UTF-8 unconditionally (ADR-007);
+    # a build whose execution charset is anything else contradicts the format the library defines.
+    #
+    # Set through CMAKE_CXX_FLAGS rather than add_compile_options() on purpose. /utf-8 defines
+    # _UTF8, and MSVC raises C5050 ("possible incompatible environment while importing module
+    # 'std'") when a translation unit's macro environment differs from the one the std module was
+    # built with. add_compile_options() does not reach CMake's internal __cmake_cxx_std_23 target,
+    # so the flag has to be somewhere that target inherits too, or every import std becomes a
+    # warning - and warnings are errors here.
+    string(APPEND CMAKE_CXX_FLAGS " /utf-8")
 endif()
 
 # Module setup
