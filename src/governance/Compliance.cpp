@@ -1,13 +1,19 @@
 /**
  * @file Compliance.cpp
- * @brief Requirement/verification/hazard graph validation and the two release-evidence exports.
+ * @brief The two release-evidence exports, over the governance model in Governance.cppm.
  *
  * @compliance ADR-004 Trust zones in C++
  * @compliance ADR-005 Error handling and exceptions policy
  * @compliance ADR-007 Evidence pipeline doctrine
  *
- * validate() and the two export functions deliberately read the same data and disagree about
- * what to do with a gap - see the module comment in Compliance.cppm before changing either.
+ * These functions and `ComplianceProgram::validate()` deliberately read the same data and
+ * disagree about what to do with a gap - see the module comment in Compliance.cppm before
+ * changing either.
+ *
+ * Every member name emitted here matches the field it comes from in the schemas under
+ * `docs/iec62304/schemas/`, so a row of the matrix and the record it was built from can be read
+ * side by side. `tools/docs-lint/check_schema_type_drift.py` keeps those schemas and the C++
+ * types aligned; this file is what makes the export agree with both.
  */
 module;
 
@@ -18,202 +24,119 @@ import mdux.core.result;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
+import mdux.governance;
 
 namespace mdux::governance {
 
 using mdux::core::err;
 using mdux::core::Result;
-using mdux::core::ResultVoid;
 namespace json = evidence::json;
-
-std::string_view describe(ComplianceError error) noexcept {
-    switch (error) {
-    case ComplianceError::EmptyRequirementId:
-        return "requirementId is empty";
-    case ComplianceError::DuplicateRequirementId:
-        return "requirements contains a duplicate requirementId";
-    case ComplianceError::EmptyVerificationCaseId:
-        return "caseId is empty";
-    case ComplianceError::DuplicateVerificationCaseId:
-        return "verificationCases contains a duplicate caseId";
-    case ComplianceError::DanglingVerificationCaseRequirement:
-        return "a VerificationCase names a requirementId that does not exist";
-    case ComplianceError::EmptyHazardId:
-        return "hazardId is empty";
-    case ComplianceError::DuplicateHazardId:
-        return "hazards contains a duplicate hazardId";
-    case ComplianceError::HazardMissingControl:
-        return "a Hazard has an empty controlledBy list";
-    case ComplianceError::DanglingHazardControl:
-        return "a Hazard's controlledBy names a requirementId that does not exist";
-    case ComplianceError::EmptyProblemReportId:
-        return "reportId is empty";
-    case ComplianceError::DuplicateProblemReportId:
-        return "problemReports contains a duplicate reportId";
-    case ComplianceError::UnverifiedRequirement:
-        return "a Requirement has no discharging VerificationCase";
-    case ComplianceError::MalformedCompliance:
-        return "internal JSON assembly had an unexpected shape";
-    }
-    return "unrecognized compliance error";
-}
 
 namespace {
 
-[[nodiscard]] bool requirementExists(const ComplianceProgram& program, std::string_view id) noexcept {
-    return std::ranges::any_of(
-        program.requirements, [&](const Requirement& r) { return r.requirementId == id; });
+constexpr GovernanceError kMalformed = GovernanceError::MalformedComplianceProgram;
+
+/// Sets a member, reporting the allocation-shaped failure `set()` can return. Every caller
+/// collapses that to `MalformedComplianceProgram`: an export that cannot assemble its own object
+/// has no partial result worth returning.
+[[nodiscard]] bool setMember(json::Value& object, std::string key, json::Value value) noexcept {
+    return object.set(std::move(key), std::move(value)).has_value();
+}
+
+[[nodiscard]] Result<json::Value, GovernanceError> stringArray(
+    std::span<const std::string> values) noexcept {
+    json::Value array = json::Value::array({});
+    for (const std::string& value : values) {
+        if (auto pushed = array.push(json::Value::string(value)); !pushed.has_value()) {
+            return err(kMalformed);
+        }
+    }
+    return array;
+}
+
+/// Pointers into `values`, ordered by `key`. Sorting pointers rather than copies keeps the export
+/// byte-stable regardless of the order the caller assembled the program in, without duplicating
+/// the records to do it.
+template <typename Record, typename KeyFn>
+[[nodiscard]] std::vector<const Record*> sortedBy(std::span<const Record> values, KeyFn key) {
+    std::vector<const Record*> pointers;
+    pointers.reserve(values.size());
+    for (const Record& value : values) {
+        pointers.push_back(&value);
+    }
+    std::ranges::sort(pointers, {}, [&key](const Record* record) { return key(*record); });
+    return pointers;
 }
 
 }  // namespace
 
-ResultVoid<ComplianceError> ComplianceProgram::validate() const noexcept {
-    for (std::size_t i = 0; i < requirements.size(); ++i) {
-        if (requirements[i].requirementId.empty()) {
-            return err(ComplianceError::EmptyRequirementId);
-        }
-        for (std::size_t k = i + 1; k < requirements.size(); ++k) {
-            if (requirements[i].requirementId == requirements[k].requirementId) {
-                return err(ComplianceError::DuplicateRequirementId);
-            }
-        }
-    }
-
-    for (std::size_t i = 0; i < verificationCases.size(); ++i) {
-        const VerificationCase& current = verificationCases[i];
-        if (current.caseId.empty()) {
-            return err(ComplianceError::EmptyVerificationCaseId);
-        }
-        for (std::size_t k = i + 1; k < verificationCases.size(); ++k) {
-            if (current.caseId == verificationCases[k].caseId) {
-                return err(ComplianceError::DuplicateVerificationCaseId);
-            }
-        }
-        if (!requirementExists(*this, current.requirementId)) {
-            return err(ComplianceError::DanglingVerificationCaseRequirement);
-        }
-    }
-
-    for (std::size_t i = 0; i < hazards.size(); ++i) {
-        const Hazard& hazard = hazards[i];
-        if (hazard.hazardId.empty()) {
-            return err(ComplianceError::EmptyHazardId);
-        }
-        for (std::size_t k = i + 1; k < hazards.size(); ++k) {
-            if (hazard.hazardId == hazards[k].hazardId) {
-                return err(ComplianceError::DuplicateHazardId);
-            }
-        }
-        // Checked before dangling references: an empty list has nothing to dangle, and the two
-        // failure modes should never be conflated into one message.
-        if (hazard.controlledBy.empty()) {
-            return err(ComplianceError::HazardMissingControl);
-        }
-        for (const std::string& requirementId : hazard.controlledBy) {
-            if (!requirementExists(*this, requirementId)) {
-                return err(ComplianceError::DanglingHazardControl);
-            }
-        }
-    }
-
-    for (std::size_t i = 0; i < problemReports.size(); ++i) {
-        if (problemReports[i].reportId.empty()) {
-            return err(ComplianceError::EmptyProblemReportId);
-        }
-        for (std::size_t k = i + 1; k < problemReports.size(); ++k) {
-            if (problemReports[i].reportId == problemReports[k].reportId) {
-                return err(ComplianceError::DuplicateProblemReportId);
-            }
-        }
-    }
-
-    for (const Requirement& requirement : requirements) {
-        const bool discharged = std::ranges::any_of(verificationCases, [&](const VerificationCase& vc) {
-            return vc.requirementId == requirement.requirementId;
-        });
-        if (!discharged) {
-            return err(ComplianceError::UnverifiedRequirement);
-        }
-    }
-
-    return {};
-}
-
-Result<json::Value, ComplianceError> traceabilityMatrix(const ComplianceProgram& program) noexcept {
-    std::vector<const Requirement*> sortedRequirements;
-    sortedRequirements.reserve(program.requirements.size());
-    for (const Requirement& requirement : program.requirements) {
-        sortedRequirements.push_back(&requirement);
-    }
-    std::ranges::sort(sortedRequirements, {}, [](const Requirement* requirement) {
-        return std::string_view{requirement->requirementId};
-    });
+Result<json::Value, GovernanceError> traceabilityMatrix(const ComplianceProgram& program) noexcept {
+    const auto requirements = sortedBy<Requirement>(
+        program.requirements, [](const Requirement& r) { return std::string_view{r.id}; });
 
     json::Value rows = json::Value::array({});
-    for (const Requirement* requirement : sortedRequirements) {
-        std::vector<const VerificationCase*> cases;
-        for (const VerificationCase& verificationCase : program.verificationCases) {
-            if (verificationCase.requirementId == requirement->requirementId) {
-                cases.push_back(&verificationCase);
-            }
-        }
-        std::ranges::sort(cases, {}, [](const VerificationCase* verificationCase) {
-            return std::string_view{verificationCase->caseId};
+    for (const Requirement* requirement : requirements) {
+        auto cases = sortedBy<VerificationCase>(
+            program.verificationCases,
+            [](const VerificationCase& c) { return std::string_view{c.id}; });
+        std::erase_if(cases, [requirement](const VerificationCase* c) {
+            return c->requirementId != requirement->id;
         });
 
         json::Value row = json::Value::emptyObject();
-        auto setRowMember = [&row](std::string key, json::Value value) -> bool {
-            return row.set(std::move(key), std::move(value)).has_value();
-        };
-        if (!setRowMember("requirement_id", json::Value::string(requirement->requirementId)) ||
-            !setRowMember("description", json::Value::string(requirement->description))) {
-            return err(ComplianceError::MalformedCompliance);
+        // source_clause is the member that makes this a regulatory traceability matrix rather
+        // than a coverage report: it answers "which clause is this requirement here for" without
+        // a second lookup.
+        if (!setMember(row, "requirement_id", json::Value::string(requirement->id)) ||
+            !setMember(row, "title", json::Value::string(requirement->title)) ||
+            !setMember(row, "source_clause", json::Value::string(requirement->sourceClause)) ||
+            !setMember(row, "verification_intent",
+                       json::Value::string(requirement->verificationIntent))) {
+            return err(kMalformed);
         }
 
-        // A Requirement with no cases here still gets its row pushed below, with this array
-        // empty - see the "gaps are rows, not omissions" module comment.
+        // A Requirement with no cases still gets its row pushed below, with this array empty -
+        // see the "gaps are rows, not omissions" module comment.
         json::Value caseArray = json::Value::array({});
         for (const VerificationCase* verificationCase : cases) {
+            auto refs = stringArray(verificationCase->evidenceRefs);
+            if (!refs.has_value()) {
+                return err(refs.error());
+            }
             json::Value caseObject = json::Value::emptyObject();
-            auto setCaseMember = [&caseObject](std::string key, json::Value value) -> bool {
-                return caseObject.set(std::move(key), std::move(value)).has_value();
-            };
-            if (!setCaseMember("case_id", json::Value::string(verificationCase->caseId)) ||
-                !setCaseMember("passed", json::Value::boolean(verificationCase->passed))) {
-                return err(ComplianceError::MalformedCompliance);
-            }
-            json::Value refs = json::Value::array({});
-            for (const std::string& ref : verificationCase->evidenceRefs) {
-                if (auto pushed = refs.push(json::Value::string(ref)); !pushed.has_value()) {
-                    return err(ComplianceError::MalformedCompliance);
-                }
-            }
-            if (!setCaseMember("evidence_refs", std::move(refs))) {
-                return err(ComplianceError::MalformedCompliance);
+            // No requirement_id here: it is the row's key, and repeating it inside every nested
+            // case would let the two disagree.
+            if (!setMember(caseObject, "id", json::Value::string(verificationCase->id)) ||
+                !setMember(
+                    caseObject, "method",
+                    json::Value::string(std::string{toWireString(verificationCase->method)})) ||
+                !setMember(caseObject, "evidence_refs", std::move(*refs)) ||
+                !setMember(caseObject, "passed", json::Value::boolean(verificationCase->passed))) {
+                return err(kMalformed);
             }
             if (auto pushed = caseArray.push(std::move(caseObject)); !pushed.has_value()) {
-                return err(ComplianceError::MalformedCompliance);
+                return err(kMalformed);
             }
         }
-        if (!setRowMember("verification_cases", std::move(caseArray))) {
-            return err(ComplianceError::MalformedCompliance);
+        if (!setMember(row, "verification_cases", std::move(caseArray))) {
+            return err(kMalformed);
         }
-
         if (auto pushed = rows.push(std::move(row)); !pushed.has_value()) {
-            return err(ComplianceError::MalformedCompliance);
+            return err(kMalformed);
         }
     }
     return rows;
 }
 
-Result<json::Value, ComplianceError> releaseEvidenceSummary(const ComplianceProgram& program) noexcept {
+Result<json::Value, GovernanceError> releaseEvidenceSummary(
+    const ComplianceProgram& program, std::span<const evidence::FileRecord> artifacts) noexcept {
     const std::size_t requirementsTotal = program.requirements.size();
     std::size_t requirementsVerified = 0;
     bool allDischargingCasesPassed = true;
     for (const Requirement& requirement : program.requirements) {
         bool discharged = false;
         for (const VerificationCase& verificationCase : program.verificationCases) {
-            if (verificationCase.requirementId == requirement.requirementId) {
+            if (verificationCase.requirementId == requirement.id) {
                 discharged = true;
                 if (!verificationCase.passed) {
                     allDischargingCasesPassed = false;
@@ -224,71 +147,88 @@ Result<json::Value, ComplianceError> releaseEvidenceSummary(const ComplianceProg
             ++requirementsVerified;
         }
     }
+
     // `validation_passed` is the release gate, not merely a coverage percentage. Reuse the
-    // program's complete invariant check so a dangling reference, uncontrolled hazard, duplicate
-    // ID, or malformed problem-report set cannot be reported as a passing release just because
+    // program's complete invariant check so a dangling reference, an uncontrolled hazard, a
+    // duplicate id or a malformed record cannot be reported as a passing release just because
     // every Requirement happens to have a VerificationCase.
-    const bool programValid = program.validate().has_value();
+    const auto validation = program.validate();
     const bool validationPassed =
-        programValid && allDischargingCasesPassed && requirementsVerified == requirementsTotal;
+        validation.has_value() && allDischargingCasesPassed &&
+        requirementsVerified == requirementsTotal;
 
     json::Value summary = json::Value::emptyObject();
-    auto setMember = [&summary](std::string key, json::Value value) -> bool {
-        return summary.set(std::move(key), std::move(value)).has_value();
-    };
-    if (!setMember("validation_passed", json::Value::boolean(validationPassed)) ||
-        !setMember("requirements_total", json::Value::unsignedInteger(requirementsTotal)) ||
-        !setMember("requirements_verified", json::Value::unsignedInteger(requirementsVerified))) {
-        return err(ComplianceError::MalformedCompliance);
+    if (!setMember(summary, "validation_passed", json::Value::boolean(validationPassed)) ||
+        !setMember(summary, "safety_class",
+                   json::Value::string(std::string{toWireString(program.safetyClass)})) ||
+        !setMember(summary, "requirements_total",
+                   json::Value::unsignedInteger(requirementsTotal)) ||
+        !setMember(summary, "requirements_verified",
+                   json::Value::unsignedInteger(requirementsVerified))) {
+        return err(kMalformed);
     }
 
-    std::vector<const ProblemReport*> openReports;
-    for (const ProblemReport& report : program.problemReports) {
-        if (report.open) {
-            openReports.push_back(&report);
+    // Every reason the gate failed, not merely the fact that it did. A release review told only
+    // "validation_passed: false" has to re-run validate() to learn anything; carrying the failure
+    // list is what makes this summary usable on its own.
+    json::Value failures = json::Value::array({});
+    if (!validation.has_value()) {
+        for (const ValidationFailure& failure : validation.error()) {
+            json::Value object = json::Value::emptyObject();
+            if (!setMember(object, "code",
+                           json::Value::string(std::string{describe(failure.code)})) ||
+                !setMember(object, "subject", json::Value::string(failure.subject)) ||
+                !setMember(object, "detail", json::Value::string(failure.detail))) {
+                return err(kMalformed);
+            }
+            if (auto pushed = failures.push(std::move(object)); !pushed.has_value()) {
+                return err(kMalformed);
+            }
         }
     }
-    std::ranges::sort(openReports, {}, [](const ProblemReport* report) {
-        return std::string_view{report->reportId};
-    });
+    if (!setMember(summary, "validation_failures", std::move(failures))) {
+        return err(kMalformed);
+    }
+
+    auto openReports = sortedBy<ProblemReport>(
+        program.problemReports, [](const ProblemReport& r) { return std::string_view{r.id}; });
+    std::erase_if(openReports, [](const ProblemReport* report) { return report->closed; });
+
     json::Value openArray = json::Value::array({});
     for (const ProblemReport* report : openReports) {
         json::Value object = json::Value::emptyObject();
-        if (!object.set("report_id", json::Value::string(report->reportId)).has_value() ||
-            !object.set("description", json::Value::string(report->description)).has_value()) {
-            return err(ComplianceError::MalformedCompliance);
+        // affects_risk is carried because IEC 62304 §9.4 makes an open problem that could affect
+        // safety a different kind of release blocker from one that could not.
+        if (!setMember(object, "id", json::Value::string(report->id)) ||
+            !setMember(object, "description", json::Value::string(report->description)) ||
+            !setMember(object, "affects_risk", json::Value::boolean(report->affectsRisk))) {
+            return err(kMalformed);
         }
         if (auto pushed = openArray.push(std::move(object)); !pushed.has_value()) {
-            return err(ComplianceError::MalformedCompliance);
+            return err(kMalformed);
         }
     }
-    if (!setMember("open_problem_reports", std::move(openArray))) {
-        return err(ComplianceError::MalformedCompliance);
+    if (!setMember(summary, "open_problem_reports", std::move(openArray))) {
+        return err(kMalformed);
     }
 
-    std::vector<const evidence::FileRecord*> artifacts;
-    artifacts.reserve(program.generatedArtifacts.size());
-    for (const evidence::FileRecord& record : program.generatedArtifacts) {
-        artifacts.push_back(&record);
-    }
-    std::ranges::sort(artifacts, {}, [](const evidence::FileRecord* record) {
-        return std::string_view{record->path};
-    });
+    const auto sortedArtifacts = sortedBy<evidence::FileRecord>(
+        artifacts, [](const evidence::FileRecord& record) { return std::string_view{record.path}; });
     json::Value artifactArray = json::Value::array({});
-    for (const evidence::FileRecord* record : artifacts) {
-        json::Value object = json::Value::emptyObject();
+    for (const evidence::FileRecord* record : sortedArtifacts) {
         const std::array<char, 64> hex = evidence::toHex(record->sha256);
-        if (!object.set("path", json::Value::string(record->path)).has_value() ||
-            !object.set("sha256", json::Value::string(std::string{hex.data(), hex.size()}))
-                 .has_value()) {
-            return err(ComplianceError::MalformedCompliance);
+        json::Value object = json::Value::emptyObject();
+        if (!setMember(object, "path", json::Value::string(record->path)) ||
+            !setMember(object, "sha256",
+                       json::Value::string(std::string{hex.data(), hex.size()}))) {
+            return err(kMalformed);
         }
         if (auto pushed = artifactArray.push(std::move(object)); !pushed.has_value()) {
-            return err(ComplianceError::MalformedCompliance);
+            return err(kMalformed);
         }
     }
-    if (!setMember("generated_artifacts", std::move(artifactArray))) {
-        return err(ComplianceError::MalformedCompliance);
+    if (!setMember(summary, "generated_artifacts", std::move(artifactArray))) {
+        return err(kMalformed);
     }
 
     return summary;
