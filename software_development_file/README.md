@@ -9,8 +9,7 @@ software_development_file/
 └── regulatory/   # the same tree, filled in for MduX itself (issue #38, a later PR in this stack)
 ```
 
-Only `templates/` exists as of this PR — `regulatory/` is added in the PR immediately after it
-(issue #38).
+Both subtrees now exist: `templates/` (issue #37) and `regulatory/` (issue #38, this PR).
 
 | Standard | Documents |
 |---|---|
@@ -29,14 +28,31 @@ in — they contain no MduX-specific content.
 
 ## `regulatory/`
 
-*(Added in the PR immediately after this one, issue #38 — not present yet as of this PR.)*
-
 The same documents, filled in for MduX itself: real architecture description, real SOUP entries
 (derived from `docs/governance/soup-register.toml`), real
 citations into `docs/<standard>/` and the ADR trail. These describe MduX as a software development
 kit — they are not, and do not claim to be, a finished medical device's regulatory file. See
 `docs/regulatory-compliance.md` (issue #39, not yet written) for the scope disclaimer covering what
 this project does and does not provide.
+
+**These filled documents describe what exists and what does not, including where that is a gap.**
+As of this PR, no `ComplianceProgram` (issue #35) has actually been populated for MduX itself — the
+`Requirement`/`VerificationCase`/`Hazard`/`ProblemReport` types exist and are unit-tested (31 tests
+in `evidence_tests`), but zero real instances of any of them have been recorded for MduX's own
+release. `regulatory/ISO_14971/Risk_Management_File.md` and `regulatory/IEC_62304/SDD.md` say this
+plainly rather than fabricating a worked example the way a finished device's SDF would contain one.
+Root `README.md`'s "Implementation Status" table separately claims several of these items
+"Completed" and references a `mdux::MedicalDeviceContext` / `mdux/compliance/MedicalDevice.cppm` API
+that does not exist anywhere in this repository (`AGENTS.md` § 2 already flags README's claims as
+partly aspirational) — `regulatory/ISO_13485/README.md` names this discrepancy directly rather than
+repeating it.
+
+Some cross-references to `include/mdux/governance/Compliance.cppm` and
+`docs/governance/soup-register.toml` in `regulatory/`'s `Justification` blocks are fenced as
+`jsonc` rather than `json`, even though they are real, not illustrative — those files exist on the
+still-open `governance/traceability-matrix` (#96) and `governance/soup-register` (#97) branches,
+not yet on `develop`, so `mdux-docs-lint`'s `evidence_refs` existence check would fail here until
+those branches merge. Re-fence them as `json` once they do.
 
 ## The rule that keeps these documents honest
 
