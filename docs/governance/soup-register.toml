@@ -1,0 +1,88 @@
+schema_version = 1
+register_kind = "mdux-soup-register"
+scope = "runtime-adapter-zone-and-build-tooling"
+owner = "MduX governance maintainers"
+scoping_policy = "The trust-zone split (ADR-004) confines every entry below to the adapter, examples, or build zone: MduXCore, the governed zone every governed module (mdux.core.*, mdux.evidence.*, mdux.governance.*) lives in, reaches none of them, and mdux_verify_trust_zones() (cmake/MduXTrustZones.cmake) checks that mechanically at every configure rather than relying on convention alone. The zero-SOUP scoping decisions already recorded elsewhere - a hand-written SHA-256 rather than a hashing library (mdux.evidence.digest, issue #12), a hand-written canonical JSON reader/writer rather than a JSON library (mdux.evidence.json, issue #12), and the planned hand-parsed TrueType glyph outlines (issue #14), hand-parsed safetensors headers (issue #18), hand-walked SPIR-V (issue #13), and QOI-instead-of-PNG image decoding (issue #17) - exist precisely to keep this file from growing as each baker lands in E6-E12."
+
+[[entries]]
+component_id = "vulkan-sdk"
+name = "Vulkan SDK / loader"
+version = "1.3 (see README.md Prerequisites for the pinned installation instructions; no upper bound)"
+classification = "SOUP"
+supplier = "Khronos Group / platform vendor"
+repository = "https://github.com/KhronosGroup/Vulkan-Loader"
+license = "Apache-2.0"
+usage = "Instance/device/swapchain setup, pipeline creation, and frame submission for the MduX adapter library. Also provides glslangValidator, used by examples/CMakeLists.txt to compile example shaders to SPIR-V at build time - a build-time use of the same SDK, not a second dependency."
+trust_zone = "adapter"
+integration_path = "CMakeLists.txt (find_package(Vulkan REQUIRED)); linked only into the MduX adapter target, never MduXCore"
+pinned_by = ["CMakeLists.txt"]
+runtime_deployment = true
+support_model = "Khronos-ratified standard with conformant vendor implementations; no medical-device-specific qualification or vendor support agreement held by this project."
+boundary_rationale = "mdux_verify_trust_zones() (cmake/MduXTrustZones.cmake) mechanically fails the configure step if a governed target ever gains a Vulkan link dependency; only the MduX (adapter) target links Vulkan::Vulkan, and MduXCore does not."
+risk_controls = [
+    "Trust-zone enforcement: mdux_verify_trust_zones() rejects any Vulkan-named link dependency on a governed target at configure time, not at review time.",
+    "find_package(Vulkan REQUIRED) fails the build outright if the SDK is absent, rather than silently degrading or falling back to a stub.",
+]
+known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry."
+
+[[entries]]
+component_id = "glfw-3.4"
+name = "GLFW"
+version = "3.4"
+classification = "SOUP"
+supplier = "glfw.org / GLFW contributors"
+repository = "https://github.com/glfw/glfw"
+license = "Zlib"
+usage = "Cross-platform window creation and input handling for the example applications only. Never linked into the MduX library itself - windowing is the consuming application's own choice, not MduX's."
+trust_zone = "examples"
+integration_path = "examples/CMakeLists.txt (find_package(glfw3 QUIET), falling back to CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4 ...) when no system package is found)"
+pinned_by = ["examples/CMakeLists.txt"]
+runtime_deployment = false
+support_model = "Community-maintained library; no medical-device qualification or vendor support agreement."
+boundary_rationale = "cmake/MduXTrustZones.cmake's banned-dependency list matches ^glfw$ and ^glfw3$ by name against every governed target; GLFW is linked only into the example executables (MedicalUiExample, VulkanSCTriangleExample)."
+risk_controls = [
+    "Trust-zone enforcement: mdux_verify_trust_zones() rejects glfw/glfw3 as a link dependency of MduXCore. MduX is the adapter target and is not governed by that check; its no-windowing policy is a separately reviewed target-definition constraint, not a property this check proves.",
+    "GIT_TAG 3.4 pins an exact tagged release rather than a branch, so the fallback CPM path cannot silently pick up an unreviewed newer version.",
+]
+known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry."
+
+[[entries]]
+component_id = "cmake-4.0"
+name = "CMake"
+version = "4.0+"
+classification = "build-tool"
+supplier = "Kitware"
+repository = "https://github.com/Kitware/CMake"
+license = "BSD-3-Clause"
+usage = "Build system generator: configures, builds, and (via CTest/mdux_discover_tests) runs the test suite. A build-time tool only - no CMake artifact reaches a built binary."
+trust_zone = "build"
+integration_path = "CMakeLists.txt (cmake_minimum_required(VERSION 4.0.0)), required for FILE_SET CXX_MODULES support"
+pinned_by = ["CMakeLists.txt"]
+runtime_deployment = false
+support_model = "Kitware-maintained open-source project; qualifying a specific tool version for a regulatory submission is the manufacturer's responsibility (IEC 62304 §8.1.2), not something this register substitutes for."
+boundary_rationale = "A development-host tool with no artifact of its own reaching a built binary; the 4.0 floor is C++23 module (FILE_SET CXX_MODULES) support, recorded at the cmake_minimum_required() call site itself."
+risk_controls = [
+    "Version floor enforced by cmake_minimum_required(); an older CMake fails the configure step outright rather than silently misbuilding modules.",
+]
+known_anomaly_tracking = "Tool qualification, and any anomaly found in it, is the manufacturer's responsibility per IEC 62304 §8.1.2; this register records only that the version floor is mechanically enforced."
+
+[[entries]]
+component_id = "cxx23-toolchain"
+name = "MSVC / GCC / Clang (C++23 modules)"
+version = "MSVC 19.40+, GCC 15+, Clang 20+"
+classification = "build-tool"
+supplier = "Microsoft / Free Software Foundation / LLVM Foundation"
+repository = "n/a - three independently developed toolchains"
+license = "n/a - three independently licensed toolchains"
+usage = "Compiles MduX and its tests. A build-time tool only - no compiler artifact other than the object code it produces reaches a built binary, and that object code is exactly what the rest of this project's evidence pipeline (ADR-007) verifies."
+trust_zone = "build"
+integration_path = "CMakeLists.txt version-floor checks (e.g. the explicit GCC 15 FATAL_ERROR guard); docs/adr/ADR-003-compiler-modernization.md records the rationale for each floor"
+pinned_by = ["CMakeLists.txt", "docs/adr/ADR-003-compiler-modernization.md"]
+runtime_deployment = false
+support_model = "Vendor-maintained toolchains; qualifying a specific compiler version for a regulatory submission is the manufacturer's responsibility (IEC 62304 §8.1.2), not something this register substitutes for."
+boundary_rationale = "A development-host tool with no artifact of its own, other than the compiled object code, reaching a built binary."
+risk_controls = [
+    "Version floors enforced by explicit CMake checks rather than left to whatever toolchain happens to be on a developer's PATH.",
+    "ADR-003 records why each floor was chosen (the C++23 modules feature set each version added), so a future floor change is a reviewable decision, not a silent drift.",
+]
+known_anomaly_tracking = "Tool qualification, and any anomaly found in a specific compiler version, is the manufacturer's responsibility per IEC 62304 §8.1.2; this register records only that the version floors are mechanically enforced."
