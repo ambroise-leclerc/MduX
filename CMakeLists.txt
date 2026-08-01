@@ -144,8 +144,7 @@ target_sources(MduXCore
             include/mdux/evidence/Digest.cppm
             include/mdux/evidence/Json.cppm
             include/mdux/evidence/Report.cppm
-            include/mdux/governance/Justification.cppm
-            include/mdux/governance/Compliance.cppm
+            include/mdux/governance/Governance.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
