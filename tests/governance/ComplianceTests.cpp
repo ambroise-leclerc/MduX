@@ -250,6 +250,7 @@ TEST_CASE("releaseEvidenceSummary() reports a clean program as passing", "eviden
     CHECK(member(*summary, "requirements_verified")->asUInt().value_or(0) == 2);
     CHECK(stringAt(*summary, "safety_class") == "B");
     CHECK(member(*summary, "validation_failures")->elements().empty());
+    CHECK(member(*summary, "failed_verification_cases")->elements().empty());
     CHECK(member(*summary, "open_problem_reports")->elements().empty());
     CHECK(member(*summary, "generated_artifacts")->elements().empty());
 }
@@ -271,6 +272,10 @@ TEST_CASE("releaseEvidenceSummary() fails on an unverified requirement or a fail
     CHECK(!member(*failedSummary, "validation_passed")->asBool().value_or(true));
     CHECK_MESSAGE(member(*failedSummary, "requirements_verified")->asUInt().value_or(0) == 2,
                   "coverage is still complete - it is the outcome that failed");
+    const json::Value* failedCases = member(*failedSummary, "failed_verification_cases");
+    REQUIRE(failedCases != nullptr);
+    REQUIRE(failedCases->elements().size() == 1);
+    CHECK(failedCases->elements()[0].asString().value_or("") == "VER-001");
 }
 
 TEST_CASE("The summary carries every reason the gate failed, not just that it did",

@@ -190,6 +190,29 @@ Result<json::Value, GovernanceError> releaseEvidenceSummary(
         return err(kMalformed);
     }
 
+    // A failed case is intentionally not a ComplianceProgram structural-validation failure, but
+    // it still makes validation_passed false. Name those cases explicitly so the summary carries
+    // every reason its own release gate failed.
+    auto failedCases = sortedBy<VerificationCase>(
+        program.verificationCases,
+        [](const VerificationCase& verificationCase) {
+            return std::string_view{verificationCase.id};
+        });
+    std::erase_if(failedCases,
+                  [](const VerificationCase* verificationCase) {
+                      return verificationCase->passed;
+                  });
+    json::Value failedCaseIds = json::Value::array({});
+    for (const VerificationCase* verificationCase : failedCases) {
+        if (auto pushed = failedCaseIds.push(json::Value::string(verificationCase->id));
+            !pushed.has_value()) {
+            return err(kMalformed);
+        }
+    }
+    if (!setMember(summary, "failed_verification_cases", std::move(failedCaseIds))) {
+        return err(kMalformed);
+    }
+
     auto openReports = sortedBy<ProblemReport>(
         program.problemReports, [](const ProblemReport& r) { return std::string_view{r.id}; });
     std::erase_if(openReports, [](const ProblemReport* report) { return report->closed; });

@@ -65,8 +65,9 @@ export namespace mdux::governance {
 
 /**
  * @brief The IEC 62304 §5.8 release view: whether the program validates and every discharging
- *        VerificationCase passed, the still-open ProblemReports, and the digest of every
- *        committed `generated/` artifact the caller supplied.
+ *        VerificationCase passed, the validation failures and failed case ids, the still-open
+ *        ProblemReports, and the digest of every committed `generated/` artifact the caller
+ *        supplied.
  *
  * `artifacts` is a parameter rather than a field on `ComplianceProgram` on purpose. A digest of a
  * built file is evidence *about a build*, not a governance record: it is not authored, not
