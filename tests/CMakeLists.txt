@@ -45,6 +45,7 @@ add_executable(evidence_tests
     evidence/JsonTests.cpp
     evidence/ReportTests.cpp
     governance/JustificationTests.cpp
+    governance/ComplianceProgramTests.cpp
     governance/ComplianceTests.cpp
 )
 

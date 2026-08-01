@@ -47,7 +47,7 @@
       "title": "Software safety classification",
       "file": "02-general-requirements.md",
       "anchor": "43-software-safety-classification",
-      "pointer": "**MduX's own components are declared Class A** — code that renders a UI, bakes an asset, or infers from a classifier is not itself the safety function; a device integrating MduX is responsible for its own classification decision, informed by how it uses these components.",
+      "pointer": "Where a later clause describes a requirement that scales with class (test coverage in §5.5–§5.7, for instance), this corpus states the Class A baseline and does not extrapolate a Class B/C claim MduX has not earned.",
       "justifications": []
     },
     {
