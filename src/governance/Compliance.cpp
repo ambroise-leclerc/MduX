@@ -11,7 +11,7 @@
  */
 module;
 
-module mdux.governance.compliance;
+module mdux.governance:compliance;
 
 import std;
 import mdux.core.result;
