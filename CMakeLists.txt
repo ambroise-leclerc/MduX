@@ -145,12 +145,12 @@ target_sources(MduXCore
             include/mdux/evidence/Json.cppm
             include/mdux/evidence/Report.cppm
             include/mdux/governance/Governance.cppm
+            src/governance/Compliance.cpp
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
         src/evidence/Report.cpp
         src/governance/Justification.cpp
-        src/governance/Compliance.cpp
 )
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
