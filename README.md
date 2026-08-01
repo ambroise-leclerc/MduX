@@ -322,10 +322,14 @@ vulkaninfo --summary
    git clone https://github.com/your-org/MduX.git
    cd MduX
    
-   # Review regulatory documentation
-   cat docs/MduX_ISO-14971-Risk-Management-Framework.md
-   cat docs/MduX_ISO-13485-Quality-Management-Framework.md  
-   cat docs/MduX_IEC-62304-Software-Lifecycle-Framework.md
+   # Review the regulatory corpus - one directory per standard, clause by clause
+   ls docs/iec62304/ docs/iso13485/ docs/iso14971/ docs/iec62366/ docs/iec81001/
+
+   # Each has a per-clause index that points at the module covering it
+   cat docs/iec62304/AI-Reference.md
+
+   # ...and the scope limits this project does and does not claim
+   cat docs/regulatory-compliance.md
    ```
 
 2. **Development Environment Setup**

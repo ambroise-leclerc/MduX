@@ -110,18 +110,23 @@ in `include/` or `src/`.
   discovery helpers, etc.), included from the root `CMakeLists.txt`.
 - `docs/adr/` — Architecture Decision Records (see § "Verified architecture summary" above for how
   their status matters).
-- `docs/iec62304/`, `docs/iso13485/` — structured regulatory reference documentation with
-  AI-automation schemas and code examples.
-- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`
-  — regulatory framework reference documents (conceptual; see § 1). The former
-  `risk-assessment-templates.md` was deleted (issue #37): it described a `mdux::risk_assessment`
-  C++ API that was never implemented; `software_development_file/templates/ISO_14971/Risk_Management_File.md`
-  and the real `Hazard`/`Requirement` types (`mdux.governance.compliance`, issue #35) replace it.
+- `docs/iec62304/`, `docs/iso13485/`, `docs/iso14971/`, `docs/iec62366/`, `docs/iec81001/` — the
+  regulatory corpus, one directory per standard: clause-range modules, a generated per-clause
+  `AI-Reference.md`/`.json` index, and `schemas/*.json` field-aligned with the governance types.
+  `tools/docs-lint/` checks all of it in CI.
+- `docs/regulatory-compliance.md` — the scope limits this project claims, and the ones it does not.
+- `docs/governance/` — the citation convention, the shared `Justification` schema, the SOUP
+  register, and `superseded-documents.md`, which records every point-in-time document that was
+  retired and why. Three were: the ISO 13485 and ISO 14971 framework monoliths and
+  `risk-assessment-templates.md`, all superseded by the corpus above. Read that file before
+  concluding content was lost.
+- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md` — the last remaining framework monolith,
+  superseded by `docs/iec62304/` but not yet retired; epic #10's "archive the point-in-time docs"
+  covers its disposition.
 - `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
   CI.
-- `CMakePresets.json` — currently defines a single Windows-only preset (`ninja-msvc`); there is no
-  Linux preset.
+- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
+  `ninja-clang` (issue #45).
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
 
 ## 5. Supported environment and common commands
