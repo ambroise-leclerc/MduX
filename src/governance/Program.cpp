@@ -228,7 +228,8 @@ Result<json::Value, GovernanceError> VerificationCase::toJson() const noexcept {
         object.set("id", json::Value::string(id)).has_value() &&
         object.set("requirement_id", json::Value::string(requirementId)).has_value() &&
         object.set("method", json::Value::string(std::string{toWireString(method)})).has_value() &&
-        object.set("evidence_refs", std::move(*refs)).has_value();
+        object.set("evidence_refs", std::move(*refs)).has_value() &&
+        object.set("passed", json::Value::boolean(passed)).has_value();
     if (!ok) {
         return err(GovernanceError::MalformedComplianceProgram);
     }
@@ -238,7 +239,7 @@ Result<json::Value, GovernanceError> VerificationCase::toJson() const noexcept {
 Result<VerificationCase, GovernanceError> VerificationCase::fromJson(
     const json::Value& object) noexcept {
     constexpr GovernanceError malformed = GovernanceError::MalformedComplianceProgram;
-    if (!detail::hasExactly(object, 4)) {
+    if (!detail::hasExactly(object, 5)) {
         return err(malformed);
     }
     VerificationCase result;
@@ -269,6 +270,12 @@ Result<VerificationCase, GovernanceError> VerificationCase::fromJson(
         return err(refs.error());
     }
     result.evidenceRefs = std::move(*refs);
+
+    auto passed = detail::requireBool(object, "passed", malformed);
+    if (!passed.has_value()) {
+        return err(passed.error());
+    }
+    result.passed = *passed;
 
     if (auto valid = result.validate(); !valid.has_value()) {
         return err(valid.error());

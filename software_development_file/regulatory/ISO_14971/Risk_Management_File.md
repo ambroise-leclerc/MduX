@@ -8,7 +8,7 @@
 ## Document control
 
 - **Product / software item:** MduX
-- **Scope note:** this file documents how MduX's `mdux.governance.compliance` types and design
+- **Scope note:** this file documents how MduX's `mdux.governance` types and design
   mechanisms are *intended* to support a manufacturer's own ISO 14971 risk management file for a
   device built on MduX — it is not a risk management file for a specific finished device, since
   MduX has no clinical intended use of its own, **and, as stated throughout, no actual risk data has
@@ -30,11 +30,13 @@ manufacturer should not assume setting `deviceClass` triggers any classification
 
 > `ISO 14971:2019 §5.4 Identification of hazards and hazardous situations`
 
-`mdux::governance::Hazard { hazardId, description, controlledBy }` (`mdux.governance.compliance`,
-issue #35) is the type meant to record the outcome of a manufacturer's hazard analysis —
+`mdux::governance::Hazard { id, description, controlledBy }` (`mdux.governance`, issue #34) is the
+type meant to record the outcome of a manufacturer's hazard analysis —
 `ComplianceProgram::validate()` rejects a `Hazard` with an empty `controlledBy` list, so a hazard
 cannot be recorded without at least one `Requirement` addressing it, and rejects a `controlledBy`
-entry naming a `Requirement` that doesn't exist (`DanglingHazardControl`). **No worked example
+entry naming a `Requirement` that doesn't exist (`UnresolvedHazardControl`). Its fields are
+field-aligned with [`docs/iso14971/schemas/risk-record.schema.json`](../../../docs/iso14971/schemas/risk-record.schema.json),
+checked by `tools/docs-lint/check_schema_type_drift.py`. **No worked example
 exists.** Unlike TrustSC's `examples/class_c_monitor`, MduX has no example application demonstrating
 a real hazard, a real requirement, or a real verification case — `tests/governance/ComplianceTests.cpp`'s
 fixtures (`HAZ-001`, `REQ-001`/`REQ-002`) are synthetic test data, not a real risk analysis for this
@@ -44,7 +46,7 @@ project.
 
 > `ISO 14971:2019 §6 Risk evaluation`
 
-Not automated by `mdux.governance.compliance` — deciding whether an estimated risk is acceptable
+Not automated by `mdux.governance` — deciding whether an estimated risk is acceptable
 as-is is the manufacturer's clinical/regulatory judgment. The types record the *outcome* of that
 judgment (which hazards have controls) but do not perform the evaluation itself.
 
@@ -72,20 +74,27 @@ itself — whether overall residual risk is acceptable — remains the manufactu
 
 > `ISO 14971:2019 §9 Risk management review`
 
-No audit-trail/event-sequencing type exists in `mdux.governance.compliance` today (unlike, for
-example, TrustSC's `AuditEvent` trail) — this is a real gap relative to what a full risk management
-review would want, not an oversight in this document. A manufacturer relying on a chronological
-record of when each hazard, requirement, and verification was added must build that themselves,
-e.g. from git history of the file(s) that construct their `ComplianceProgram`.
+`mdux::governance::AuditEvent { category, timestamp, subject }` (issue #34) is the chronological
+record this clause wants: `category` is one of Lifecycle, Verification or Change, and `timestamp`
+is an ISO 8601 UTC instant in one spelling only, so two entries order by string comparison and the
+trail cannot be silently reordered by changing timezone notation.
+
+What it does not do is populate itself. Nothing in this repository appends to an `AuditEvent` trail
+automatically, so a manufacturer that wants one either writes the entries as part of its own
+process or reconstructs them from git history of the files that build its `ComplianceProgram`.
+`ComplianceProgram::validate()` checks each event's shape; it cannot check that the trail is
+complete, which is a process obligation rather than a data one.
 
 ## 7. Production and post-production activities
 
 > `ISO 14971:2019 §10.2 Collection of information`
 
-`ProblemReport { reportId, description, open }` (`mdux.governance.compliance`) is where field
+`ProblemReport { id, description, closed, affectsRisk }` (`mdux.governance`) is where field
 information (via a manufacturer's own complaint/incident intake) would be recorded once triaged —
 this project provides the record type, not the intake process, and not a populated instance for
-MduX itself.
+MduX itself. `affectsRisk` is the field that matters here: §9.4 of IEC 62304 requires a problem
+that could affect safety to be fed back into risk management, and `releaseEvidenceSummary()`
+carries the flag on every still-open report so a release review can see which ones those are.
 
 ## Justification records
 

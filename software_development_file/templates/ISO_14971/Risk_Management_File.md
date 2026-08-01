@@ -28,7 +28,7 @@
 
 **Point at your hazard records; do not restate them here.** [ Intended use/misuse, identified
 hazards and hazardous situations, estimated risk per hazard — reference the `Hazard` records a
-`mdux.governance.compliance::ComplianceProgram` (issue #35) tracks, rather than copying them into
+`mdux::governance::ComplianceProgram` (issue #34) tracks, rather than copying them into
 prose that can drift out of sync. ]
 
 ## 3. Risk evaluation
@@ -58,7 +58,7 @@ them — `ComplianceProgram::validate()` (issue #35) rejects a `Hazard` with no 
 
 [ Confirms the plan was executed, residual risks are acceptable, and monitoring for production/
 post-production information is in place. Reference `releaseEvidenceSummary()`
-(`mdux.governance.compliance`, issue #35) as the mechanical check that every `Requirement` is
+(`mdux.governance`, issue #34) as the mechanical check that every `Requirement` is
 verified and no `VerificationCase` failed, rather than re-deriving that conclusion by hand. ]
 
 ## 7. Production and post-production activities
@@ -66,7 +66,7 @@ verified and no `VerificationCase` failed, rather than re-deriving that conclusi
 > `ISO 14971:2019 §10.2 Collection of information`
 
 [ How field information (complaints, incidents, near-misses) feeds back into this file — e.g. as
-new `ProblemReport` entries (`mdux.governance.compliance`, issue #35). ]
+new `ProblemReport` entries (`mdux.governance`, issue #34). ]
 
 ## Justification records
 
@@ -76,7 +76,7 @@ new `ProblemReport` entries (`mdux.governance.compliance`, issue #35). ]
   "standard": "ISO 14971:2019",
   "clause_ref": "ISO 14971:2019 §7.3 Implementation of risk control measures",
   "rationale": "[ ... ]",
-  "requirement_id": "[ optional mdux.governance.compliance Requirement id, e.g. REQ-EXAMPLE-001 ]",
+  "requirement_id": "[ optional mdux.governance Requirement id, e.g. REQ-EXAMPLE-001 ]",
   "evidence_refs": ["[ ... ]"]
 }
 ```

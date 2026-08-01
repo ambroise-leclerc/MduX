@@ -32,7 +32,7 @@ environment, operating principle. ]
 > `IEC 62366-1:2015 §5.3 Establish user interface characteristics related to safety, hazards and hazardous situations`
 
 [ List of use scenarios, marking which are hazard-related. Cross-reference the `Hazard` records a
-`mdux.governance.compliance::ComplianceProgram` (issue #35) tracks where a use scenario maps onto
+`mdux::governance::ComplianceProgram` (issue #34) tracks where a use scenario maps onto
 one. ]
 
 ## 4. User interface specification

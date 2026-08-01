@@ -5,7 +5,13 @@
   "description": "Evidence that one requirement is met, by one method, backed by named artifacts. Field-aligned with mdux::governance::VerificationCase in include/mdux/governance/Governance.cppm, checked by tools/docs-lint/check_schema_type_drift.py. The `method` enum is the same closed set as VerificationMethod, in the same order, and is exact-match on the wire: an unrecognized spelling is an error rather than a silently-defaulted value, because a verification record that quietly downgrades an unknown method to 'test' is worse than one that fails to load. Two things this record cannot establish, by construction. It cannot establish that requirement_id resolves - that needs the collection, and ComplianceProgram::validate() does it. And it cannot establish that the verification was any good: a case exists or it does not, and whether it was adequate is a review judgement no schema makes.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "requirement_id", "method", "evidence_refs"],
+  "required": [
+    "id",
+    "requirement_id",
+    "method",
+    "evidence_refs",
+    "passed"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -20,7 +26,12 @@
     "method": {
       "type": "string",
       "description": "Aligned with VerificationCase::method and the VerificationMethod enum.",
-      "enum": ["test", "analysis", "inspection", "review"]
+      "enum": [
+        "test",
+        "analysis",
+        "inspection",
+        "review"
+      ]
     },
     "evidence_refs": {
       "type": "array",
@@ -31,6 +42,10 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "passed": {
+      "type": "boolean",
+      "description": "Aligned with VerificationCase::passed. Whether the verification was carried out and its result was a pass. Required, with no default on either side: a case that has not stated an outcome has not passed, and a release view that assumed otherwise would report an unrun verification as evidence. This records an outcome, not a judgement about whether the verification was adequate."
     }
   },
   "examples": [
@@ -38,7 +53,11 @@
       "id": "VER-001",
       "requirement_id": "REQ-TRUSTZONE-001",
       "method": "test",
-      "evidence_refs": ["cmake/MduXTrustZones.cmake", "tests/compliance/TestRegulatoryCompliance.cpp"]
+      "evidence_refs": [
+        "cmake/MduXTrustZones.cmake",
+        "tests/compliance/TestRegulatoryCompliance.cpp"
+      ],
+      "passed": true
     }
   ]
 }

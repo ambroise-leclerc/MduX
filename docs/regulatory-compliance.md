@@ -34,10 +34,12 @@ cleared medical device.
 
 ### Governance types: real, tested, not yet populated for MduX itself
 
-`mdux.governance` (`Justification`, issue #34) and `mdux.governance.compliance`
-(`Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`/`ComplianceProgram`, issue #35) are
-working, unit-tested types (31 tests in `evidence_tests`) an application composes to record its own
-requirements, hazards, and verifications in a structured, exportable form:
+`mdux.governance` (issue #34) holds the types — `Justification`, `Requirement`,
+`VerificationCase`, `Hazard`, `ProblemReport`, `AuditEvent`, and the `ComplianceProgram` that
+aggregates them. `mdux.governance.compliance` (issue #35) holds two pure exports over that
+program, `traceabilityMatrix()` and `releaseEvidenceSummary()`. Together they are working,
+unit-tested code an application composes to record its own requirements, hazards, and
+verifications in a structured, exportable form:
 
 - `ComplianceProgram::validate()` refuses to pass unless every `Requirement` is discharged by at
   least one `VerificationCase`, and every `Hazard` names at least one controlling `Requirement` that
@@ -91,7 +93,7 @@ scoping intent already recorded in the SOUP register's header.
 
 [`software_development_file/`](../software_development_file/README.md) has a `templates/` tree
 (issue #37) any manufacturer fills in, and a `regulatory/` tree (issue #38) with the same documents
-filled in for MduX itself, citing real ADRs, real `mdux.governance.compliance` types, and — where
+filled in for MduX itself, citing real ADRs, real `mdux.governance` types, and — where
 MduX genuinely has no populated example — saying so rather than inventing one:
 
 ```text
@@ -135,7 +137,7 @@ are handled through the SOUP register and (once bakers exist) generated, byte-ve
 
 ## Governance types are scaffolding, not an operating QMS
 
-`mdux.governance.compliance`'s types give an application a place to *record* requirements, hazards,
+`mdux.governance`'s types give an application a place to *record* requirements, hazards,
 verifications, and problem reports in a structured, exportable form. They do not, by themselves,
 constitute an operating quality system: nothing in this repository performs management review,
 CAPA, supplier qualification, post-market surveillance, or any of the other ISO 13485 processes a

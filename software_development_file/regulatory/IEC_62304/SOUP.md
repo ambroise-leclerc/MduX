@@ -43,7 +43,7 @@ meant to keep it that way as each baker lands.
 
 Not yet tracked as a distinct list separate from each entry's `risk_controls` field. Each entry
 does carry a `known_anomaly_tracking` field pointing at how a defect would be recorded (a
-`ProblemReport`, `mdux.governance.compliance`, issue #35) — but as of this document, zero
+`ProblemReport`, `mdux.governance`, issue #34) — but as of this document, zero
 `ProblemReport`s have actually been recorded against any SOUP entry; this is a statement of the
 mechanism, not evidence that it has been exercised.
 

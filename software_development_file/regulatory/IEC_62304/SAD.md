@@ -34,8 +34,9 @@ Three trust zones, formalized by [ADR-004](../../../docs/adr/ADR-004-trust-zones
   `mdux.core.result` (the `Result<T, E>` alias over `std::expected` every governed API returns),
   `mdux.core.units`, `mdux.evidence.digest`/`mdux.evidence.json`/`mdux.evidence.report` (the
   byte-verified evidence pipeline, [ADR-007](../../../docs/adr/ADR-007-evidence-pipeline-doctrine.md)),
-  and `mdux.governance`/`mdux.governance.compliance` (the `Justification` and
-  `Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`/`ComplianceProgram` types, issues #34-35).
+  `mdux.governance` (the `Justification`, `Requirement`, `VerificationCase`, `Hazard`,
+  `ProblemReport`, `AuditEvent` and `ComplianceProgram` types, issue #34) and
+  `mdux.governance.compliance` (the two release-evidence exports over them, issue #35).
 - **`MduX` — adapter.** Publicly links `MduXCore` plus `Vulkan::Vulkan`: the facade module
   (`include/mdux/mdux.cppm`, `MedicalUiRenderer`/`MedicalUiConfig`/`VulkanContext`) and the Vulkan SC
   modules `mdux.vulkansc.memory` (`MemoryPoolManager`, static pool allocation without runtime

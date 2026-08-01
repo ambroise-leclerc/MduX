@@ -1,12 +1,17 @@
 /**
  * @file ComplianceTests.cpp
- * @brief Tests for the governed-zone mdux.governance.compliance module.
+ * @brief Tests for the two release-evidence exports in mdux.governance.compliance.
  *
  * @compliance ADR-007 (indirectly, via mdux.evidence.json)
  *
- * The central property under test is issue #35's own acceptance criterion: a program built with
- * a deliberate gap (an unverified Requirement, a Hazard with an empty controlledBy) must fail
- * validate() *and* traceabilityMatrix() must still name the specific gap rather than omit it.
+ * The central property under test is issue #35's own acceptance criterion: a program built with a
+ * deliberate gap - an unverified Requirement, a Hazard with an empty controlledBy - must fail
+ * `validate()` *and* `traceabilityMatrix()` must still name the specific gap rather than omit it.
+ *
+ * The invariants of `ComplianceProgram::validate()` itself are covered in
+ * ComplianceProgramTests.cpp, which owns the model; this file tests only the exports over it.
+ * That split is deliberate: when these two files each had their own `ComplianceProgram`, the two
+ * definitions drifted apart in exactly the way one shared model prevents.
  */
 
 import std;
@@ -14,6 +19,7 @@ import mdux.core.result;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
+import mdux.governance;
 import mdux.governance.compliance;
 import mdux.test;
 
@@ -21,134 +27,74 @@ import mdux.test;
 
 using namespace mdux::governance;
 namespace json = mdux::evidence::json;
+namespace evidence = mdux::evidence;
 
 namespace {
 
-/// A program that passes validate(), so each test can invalidate exactly one thing.
-[[nodiscard]] ComplianceProgram validProgram() {
-    return ComplianceProgram{
-        .requirements =
-            {
-                Requirement{.requirementId = "REQ-001", .description = "The device shall do X."},
-                Requirement{.requirementId = "REQ-002", .description = "The device shall do Y."},
-            },
-        .verificationCases =
-            {
-                VerificationCase{.caseId = "VER-001",
-                                  .requirementId = "REQ-001",
-                                  .evidenceRefs = {"tests/x_test.cpp"},
-                                  .passed = true},
-                VerificationCase{.caseId = "VER-002",
-                                  .requirementId = "REQ-002",
-                                  .evidenceRefs = {"tests/y_test.cpp"},
-                                  .passed = true},
-            },
-        .hazards =
-            {
-                Hazard{.hazardId = "HAZ-001",
-                       .description = "Z could happen.",
-                       .controlledBy = {"REQ-001"}},
-            },
-        .problemReports =
-            {
-                ProblemReport{
-                    .reportId = "PR-001", .description = "Minor cosmetic issue.", .open = false},
-            },
-        .generatedArtifacts = {},
+[[nodiscard]] Requirement requirement(std::string id, std::string title) {
+    return Requirement{
+        .id = std::move(id),
+        .title = std::move(title),
+        .sourceClause = "IEC 62304:2006 §5.2 Software requirements analysis",
+        .verificationIntent = "Covered by a unit test asserting the documented behaviour.",
     };
 }
 
-void expectInvalid(const ComplianceProgram& program, ComplianceError expected,
-                   std::string_view what) {
-    const auto result = program.validate();
-    if (result.has_value()) {
-        CHECK_MESSAGE(false, std::string{what} + ": expected validate() to reject it");
-        return;
+[[nodiscard]] VerificationCase verificationCase(std::string id, std::string requirementId,
+                                                std::vector<std::string> refs, bool passed) {
+    return VerificationCase{
+        .id = std::move(id),
+        .requirementId = std::move(requirementId),
+        .method = VerificationMethod::Test,
+        .evidenceRefs = std::move(refs),
+        .passed = passed,
+    };
+}
+
+/// A program that passes validate(), so each test can break exactly one thing.
+[[nodiscard]] ComplianceProgram validProgram() {
+    return ComplianceProgram{
+        .safetyClass = SafetyClass::B,
+        .requirements =
+            {
+                requirement("REQ-001", "The device shall do X."),
+                requirement("REQ-002", "The device shall do Y."),
+            },
+        .hazards =
+            {
+                Hazard{.id = "HAZ-001",
+                       .description = "Z could happen.",
+                       .controlledBy = {"REQ-001"}},
+            },
+        .verificationCases =
+            {
+                verificationCase("VER-001", "REQ-001", {"tests/x_test.cpp"}, true),
+                verificationCase("VER-002", "REQ-002", {"tests/y_test.cpp"}, true),
+            },
+        .problemReports =
+            {
+                ProblemReport{.id = "PRB-001",
+                              .description = "Minor cosmetic issue.",
+                              .closed = true,
+                              .affectsRisk = false},
+            },
+    };
+}
+
+[[nodiscard]] const json::Value* member(const json::Value& object, std::string_view key) {
+    return object.find(key);
+}
+
+[[nodiscard]] std::string stringAt(const json::Value& object, std::string_view key) {
+    const json::Value* found = object.find(key);
+    if (found == nullptr) {
+        return {};
     }
-    CHECK_MESSAGE(result.error() == expected,
-                  std::string{what} + ": expected '" + std::string{describe(expected)} +
-                      "' but got '" + std::string{describe(result.error())} + "'");
+    const auto text = found->asString();
+    return text.has_value() ? std::string{*text} : std::string{};
 }
 
 }  // namespace
-
-// ---------------------------------------------------------------------------
-// validate()
-// ---------------------------------------------------------------------------
-
-TEST_CASE("A well-formed ComplianceProgram validates", "evidence-unit") {
-    CHECK(validProgram().validate().has_value());
-}
-
-TEST_CASE("validate() requires non-empty, unique requirementIds", "evidence-unit") {
-    ComplianceProgram empty = validProgram();
-    empty.requirements[0].requirementId.clear();
-    expectInvalid(empty, ComplianceError::EmptyRequirementId, "empty requirementId");
-
-    ComplianceProgram duplicate = validProgram();
-    duplicate.requirements[1].requirementId = "REQ-001";
-    // REQ-002's VerificationCase now points at a requirementId that still exists (REQ-001
-    // appears twice), so this program is caught by the duplicate check, not a dangling one.
-    expectInvalid(duplicate, ComplianceError::DuplicateRequirementId, "duplicate requirementId");
-}
-
-TEST_CASE("validate() requires non-empty, unique caseIds that reference a real requirement",
-          "evidence-unit") {
-    ComplianceProgram emptyId = validProgram();
-    emptyId.verificationCases[0].caseId.clear();
-    expectInvalid(emptyId, ComplianceError::EmptyVerificationCaseId, "empty caseId");
-
-    ComplianceProgram duplicateId = validProgram();
-    duplicateId.verificationCases[1].caseId = "VER-001";
-    expectInvalid(duplicateId, ComplianceError::DuplicateVerificationCaseId, "duplicate caseId");
-
-    ComplianceProgram dangling = validProgram();
-    dangling.verificationCases[0].requirementId = "REQ-999";
-    expectInvalid(dangling, ComplianceError::DanglingVerificationCaseRequirement,
-                  "VerificationCase referencing a nonexistent requirement");
-}
-
-TEST_CASE("validate() requires every Hazard to name at least one real controlling requirement",
-          "evidence-unit") {
-    // This is issue #35's own example of a deliberate gap: a Hazard with an empty controlledBy.
-    ComplianceProgram missingControl = validProgram();
-    missingControl.hazards[0].controlledBy.clear();
-    expectInvalid(missingControl, ComplianceError::HazardMissingControl,
-                  "Hazard with empty controlledBy");
-
-    ComplianceProgram dangling = validProgram();
-    dangling.hazards[0].controlledBy = {"REQ-999"};
-    expectInvalid(dangling, ComplianceError::DanglingHazardControl,
-                  "Hazard controlledBy referencing a nonexistent requirement");
-
-    ComplianceProgram emptyId = validProgram();
-    emptyId.hazards[0].hazardId.clear();
-    expectInvalid(emptyId, ComplianceError::EmptyHazardId, "empty hazardId");
-
-    ComplianceProgram duplicateId = validProgram();
-    duplicateId.hazards.push_back(duplicateId.hazards[0]);
-    expectInvalid(duplicateId, ComplianceError::DuplicateHazardId, "duplicate hazardId");
-}
-
-TEST_CASE("validate() requires non-empty, unique problem report ids", "evidence-unit") {
-    ComplianceProgram emptyId = validProgram();
-    emptyId.problemReports[0].reportId.clear();
-    expectInvalid(emptyId, ComplianceError::EmptyProblemReportId, "empty reportId");
-
-    ComplianceProgram duplicateId = validProgram();
-    duplicateId.problemReports.push_back(duplicateId.problemReports[0]);
-    expectInvalid(duplicateId, ComplianceError::DuplicateProblemReportId, "duplicate reportId");
-}
-
-TEST_CASE("validate() requires every Requirement to be discharged by a VerificationCase",
-          "evidence-unit") {
-    // Issue #35's other example of a deliberate gap: a requirement with no verification case.
-    ComplianceProgram unverified = validProgram();
-    unverified.requirements.push_back(
-        Requirement{.requirementId = "REQ-003", .description = "Nothing verifies this."});
-    expectInvalid(unverified, ComplianceError::UnverifiedRequirement,
-                  "Requirement with no discharging VerificationCase");
-}
 
 // ---------------------------------------------------------------------------
 // traceabilityMatrix()
@@ -159,162 +105,245 @@ TEST_CASE("traceabilityMatrix() lists every requirement with its cases and evide
     const auto matrix = traceabilityMatrix(validProgram());
     REQUIRE(matrix.has_value());
     REQUIRE(matrix->kind() == json::Value::Kind::Array);
-    REQUIRE(matrix->elements().size() == 2);
 
-    const json::Value& first = matrix->elements()[0];
-    CHECK(first.find("requirement_id")->asString().value() == "REQ-001");
-    const json::Value* cases = first.find("verification_cases");
+    const auto rows = matrix->elements();
+    REQUIRE(rows.size() == 2);
+    CHECK(stringAt(rows[0], "requirement_id") == "REQ-001");
+    CHECK(stringAt(rows[0], "title") == "The device shall do X.");
+
+    const json::Value* cases = member(rows[0], "verification_cases");
     REQUIRE(cases != nullptr);
-    REQUIRE(cases->kind() == json::Value::Kind::Array);
     REQUIRE(cases->elements().size() == 1);
-    CHECK(cases->elements()[0].find("case_id")->asString().value() == "VER-001");
-    CHECK(cases->elements()[0].find("passed")->asBool().value() == true);
-    const json::Value* refs = cases->elements()[0].find("evidence_refs");
+    CHECK(stringAt(cases->elements()[0], "id") == "VER-001");
+    CHECK(stringAt(cases->elements()[0], "method") == "test");
+
+    const json::Value* refs = member(cases->elements()[0], "evidence_refs");
     REQUIRE(refs != nullptr);
     REQUIRE(refs->elements().size() == 1);
-    CHECK(refs->elements()[0].asString().value() == "tests/x_test.cpp");
+    CHECK(refs->elements()[0].asString().value_or("") == "tests/x_test.cpp");
+}
+
+TEST_CASE("Every matrix row names the clause its requirement came from", "evidence-unit") {
+    // The property that makes this a regulatory traceability matrix rather than a coverage
+    // report, and the one the pre-reconciliation export could not provide at all: its local
+    // Requirement type had no clause field.
+    const auto matrix = traceabilityMatrix(validProgram());
+    REQUIRE(matrix.has_value());
+    for (const json::Value& row : matrix->elements()) {
+        CHECK(stringAt(row, "source_clause") ==
+              "IEC 62304:2006 §5.2 Software requirements analysis");
+        CHECK(!stringAt(row, "verification_intent").empty());
+    }
 }
 
 TEST_CASE("traceabilityMatrix() names a coverage gap as an empty row, not an omission",
           "evidence-unit") {
-    ComplianceProgram gapped = validProgram();
-    gapped.requirements.push_back(
-        Requirement{.requirementId = "REQ-003", .description = "Nothing verifies this."});
+    // Issue #35's acceptance criterion, first half.
+    ComplianceProgram program = validProgram();
+    program.verificationCases.erase(program.verificationCases.begin() + 1);  // REQ-002 uncovered
 
-    // The program itself is invalid...
-    CHECK(!gapped.validate().has_value());
-
-    // ...but the matrix still names the gap rather than gating on validate() or dropping the row.
-    const auto matrix = traceabilityMatrix(gapped);
+    const auto matrix = traceabilityMatrix(program);
     REQUIRE(matrix.has_value());
-    REQUIRE(matrix->elements().size() == 3);
+    const auto rows = matrix->elements();
+    REQUIRE_MESSAGE(rows.size() == 2, "the uncovered requirement must still have a row");
 
-    const json::Value& gapRow = matrix->elements()[2];
-    CHECK(gapRow.find("requirement_id")->asString().value() == "REQ-003");
-    const json::Value* cases = gapRow.find("verification_cases");
+    const json::Value* cases = member(rows[1], "verification_cases");
     REQUIRE(cases != nullptr);
-    CHECK(cases->elements().empty());
+    CHECK(stringAt(rows[1], "requirement_id") == "REQ-002");
+    CHECK_MESSAGE(cases->elements().empty(),
+                  "an uncovered requirement's case list must be present and empty");
+}
+
+TEST_CASE("A gap fails validate() while the matrix still reports it", "evidence-unit") {
+    // Issue #35's acceptance criterion in full: the gate and the export read the same data and
+    // deliberately disagree about what to do with a gap.
+    ComplianceProgram program = validProgram();
+    program.verificationCases.clear();        // both requirements uncovered
+    program.hazards[0].controlledBy.clear();  // and an uncontrolled hazard
+
+    const auto validation = program.validate();
+    REQUIRE_MESSAGE(!validation.has_value(), "the gate must fail");
+    bool sawUnverified = false;
+    bool sawUncontrolled = false;
+    for (const ValidationFailure& failure : validation.error()) {
+        sawUnverified = sawUnverified || failure.code == GovernanceError::UnverifiedRequirement;
+        sawUncontrolled = sawUncontrolled || failure.code == GovernanceError::EmptyControls;
+    }
+    CHECK(sawUnverified);
+    CHECK(sawUncontrolled);
+
+    const auto matrix = traceabilityMatrix(program);
+    REQUIRE_MESSAGE(matrix.has_value(), "the export must not gate on validate()");
+    const auto rows = matrix->elements();
+    REQUIRE(rows.size() == 2);
+    for (const json::Value& row : rows) {
+        const json::Value* cases = member(row, "verification_cases");
+        REQUIRE(cases != nullptr);
+        CHECK(cases->elements().empty());
+    }
 }
 
 TEST_CASE("traceabilityMatrix() sorts rows and cases for a byte-stable export", "evidence-unit") {
-    ComplianceProgram reordered = validProgram();
-    std::ranges::reverse(reordered.requirements);
-    std::ranges::reverse(reordered.verificationCases);
+    ComplianceProgram program = validProgram();
+    std::ranges::reverse(program.requirements);
+    program.verificationCases.push_back(
+        verificationCase("VER-000", "REQ-001", {"tests/earlier_test.cpp"}, true));
+    std::ranges::reverse(program.verificationCases);
 
-    const auto matrix = traceabilityMatrix(reordered);
+    const auto matrix = traceabilityMatrix(program);
     REQUIRE(matrix.has_value());
-    CHECK(matrix->elements()[0].find("requirement_id")->asString().value() == "REQ-001");
-    CHECK(matrix->elements()[1].find("requirement_id")->asString().value() == "REQ-002");
+    const auto rows = matrix->elements();
+    REQUIRE(rows.size() == 2);
+    CHECK(stringAt(rows[0], "requirement_id") == "REQ-001");
+    CHECK(stringAt(rows[1], "requirement_id") == "REQ-002");
+
+    const json::Value* cases = member(rows[0], "verification_cases");
+    REQUIRE(cases != nullptr);
+    REQUIRE(cases->elements().size() == 2);
+    CHECK(stringAt(cases->elements()[0], "id") == "VER-000");
+    CHECK(stringAt(cases->elements()[1], "id") == "VER-001");
+}
+
+TEST_CASE("Assembly order cannot change the exported bytes", "evidence-unit") {
+    // The property CI would depend on if this export were committed as evidence.
+    ComplianceProgram shuffled = validProgram();
+    std::ranges::reverse(shuffled.requirements);
+    std::ranges::reverse(shuffled.verificationCases);
+
+    const auto a = traceabilityMatrix(validProgram());
+    const auto b = traceabilityMatrix(shuffled);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const auto textA = json::write(*a);
+    const auto textB = json::write(*b);
+    REQUIRE(textA.has_value());
+    REQUIRE(textB.has_value());
+    CHECK(*textA == *textB);
+}
+
+TEST_CASE("Matrix member names match the schemas the records are validated against",
+          "evidence-unit") {
+    // docs/iec62304/schemas/verification-case.schema.json declares `id`, not `case_id`. The
+    // pre-reconciliation export emitted the latter, so a row and the record it came from could
+    // not be read side by side.
+    const auto matrix = traceabilityMatrix(validProgram());
+    REQUIRE(matrix.has_value());
+    const json::Value* cases = member(matrix->elements()[0], "verification_cases");
+    REQUIRE(cases != nullptr);
+    const json::Value& firstCase = cases->elements()[0];
+    CHECK(member(firstCase, "id") != nullptr);
+    CHECK(member(firstCase, "case_id") == nullptr);
+    CHECK(member(firstCase, "passed") != nullptr);
+    // requirement_id is the row's key; repeating it inside each case would let the two disagree.
+    CHECK(member(firstCase, "requirement_id") == nullptr);
 }
 
 // ---------------------------------------------------------------------------
 // releaseEvidenceSummary()
 // ---------------------------------------------------------------------------
 
-TEST_CASE("releaseEvidenceSummary() reports full coverage and no open problem reports as passing",
-          "evidence-unit") {
-    const auto summary = releaseEvidenceSummary(validProgram());
+TEST_CASE("releaseEvidenceSummary() reports a clean program as passing", "evidence-unit") {
+    const auto summary = releaseEvidenceSummary(validProgram(), {});
     REQUIRE(summary.has_value());
-    CHECK(summary->find("validation_passed")->asBool().value() == true);
-    CHECK(summary->find("requirements_total")->asUInt().value() == 2);
-    CHECK(summary->find("requirements_verified")->asUInt().value() == 2);
-    CHECK(summary->find("open_problem_reports")->elements().empty());
+    CHECK(member(*summary, "validation_passed")->asBool().value_or(false));
+    CHECK(member(*summary, "requirements_total")->asUInt().value_or(0) == 2);
+    CHECK(member(*summary, "requirements_verified")->asUInt().value_or(0) == 2);
+    CHECK(stringAt(*summary, "safety_class") == "B");
+    CHECK(member(*summary, "validation_failures")->elements().empty());
+    CHECK(member(*summary, "failed_verification_cases")->elements().empty());
+    CHECK(member(*summary, "open_problem_reports")->elements().empty());
+    CHECK(member(*summary, "generated_artifacts")->elements().empty());
 }
 
-TEST_CASE("releaseEvidenceSummary() fails validation on an unverified requirement or a failed case",
+TEST_CASE("releaseEvidenceSummary() fails on an unverified requirement or a failed case",
           "evidence-unit") {
-    ComplianceProgram gapped = validProgram();
-    gapped.requirements.push_back(
-        Requirement{.requirementId = "REQ-003", .description = "Nothing verifies this."});
-    const auto gappedSummary = releaseEvidenceSummary(gapped);
-    REQUIRE(gappedSummary.has_value());
-    CHECK(gappedSummary->find("validation_passed")->asBool().value() == false);
-    CHECK(gappedSummary->find("requirements_total")->asUInt().value() == 3);
-    CHECK(gappedSummary->find("requirements_verified")->asUInt().value() == 2);
+    ComplianceProgram uncovered = validProgram();
+    uncovered.verificationCases.pop_back();
+    const auto uncoveredSummary = releaseEvidenceSummary(uncovered, {});
+    REQUIRE(uncoveredSummary.has_value());
+    CHECK(!member(*uncoveredSummary, "validation_passed")->asBool().value_or(true));
+    CHECK(member(*uncoveredSummary, "requirements_verified")->asUInt().value_or(0) == 1);
 
-    ComplianceProgram failedCase = validProgram();
-    failedCase.verificationCases[0].passed = false;
-    const auto failedSummary = releaseEvidenceSummary(failedCase);
+    // A case that exists but did not pass is a different failure, and must not read as coverage.
+    ComplianceProgram failed = validProgram();
+    failed.verificationCases[0].passed = false;
+    const auto failedSummary = releaseEvidenceSummary(failed, {});
     REQUIRE(failedSummary.has_value());
-    CHECK(failedSummary->find("validation_passed")->asBool().value() == false);
+    CHECK(!member(*failedSummary, "validation_passed")->asBool().value_or(true));
+    CHECK_MESSAGE(member(*failedSummary, "requirements_verified")->asUInt().value_or(0) == 2,
+                  "coverage is still complete - it is the outcome that failed");
+    const json::Value* failedCases = member(*failedSummary, "failed_verification_cases");
+    REQUIRE(failedCases != nullptr);
+    REQUIRE(failedCases->elements().size() == 1);
+    CHECK(failedCases->elements()[0].asString().value_or("") == "VER-001");
 }
 
-TEST_CASE("releaseEvidenceSummary() uses all ComplianceProgram release invariants",
+TEST_CASE("The summary carries every reason the gate failed, not just that it did",
           "evidence-unit") {
-    ComplianceProgram uncontrolledHazard = validProgram();
-    uncontrolledHazard.hazards[0].controlledBy.clear();
+    ComplianceProgram program = validProgram();
+    program.hazards[0].controlledBy = {"REQ-DOES-NOT-EXIST"};
 
-    // Requirement coverage and case results still look complete, but an uncontrolled hazard is
-    // a release blocker and must not be hidden behind those narrower counts.
-    const auto summary = releaseEvidenceSummary(uncontrolledHazard);
+    const auto summary = releaseEvidenceSummary(program, {});
     REQUIRE(summary.has_value());
-    CHECK(summary->find("requirements_total")->asUInt().value() == 2);
-    CHECK(summary->find("requirements_verified")->asUInt().value() == 2);
-    CHECK(summary->find("validation_passed")->asBool().value() == false);
+    CHECK(!member(*summary, "validation_passed")->asBool().value_or(true));
+
+    const json::Value* failures = member(*summary, "validation_failures");
+    REQUIRE(failures != nullptr);
+    REQUIRE(failures->elements().size() == 1);
+    CHECK(stringAt(failures->elements()[0], "subject") == "HAZ-001");
+    CHECK(stringAt(failures->elements()[0], "detail") == "REQ-DOES-NOT-EXIST");
+    CHECK(!stringAt(failures->elements()[0], "code").empty());
 }
 
 TEST_CASE("releaseEvidenceSummary() lists only open problem reports, sorted by id",
           "evidence-unit") {
     ComplianceProgram program = validProgram();
-    program.problemReports = {
-        ProblemReport{.reportId = "PR-002", .description = "Still open, filed second.", .open = true},
-        ProblemReport{.reportId = "PR-001", .description = "Closed already.", .open = false},
-        ProblemReport{.reportId = "PR-003", .description = "Still open, filed third.", .open = true},
-    };
+    program.problemReports.push_back(ProblemReport{
+        .id = "PRB-003", .description = "Still open.", .closed = false, .affectsRisk = true});
+    program.problemReports.push_back(ProblemReport{
+        .id = "PRB-002", .description = "Also open.", .closed = false, .affectsRisk = false});
 
-    const auto summary = releaseEvidenceSummary(program);
+    const auto summary = releaseEvidenceSummary(program, {});
     REQUIRE(summary.has_value());
-    const json::Value* open = summary->find("open_problem_reports");
+    const json::Value* open = member(*summary, "open_problem_reports");
     REQUIRE(open != nullptr);
     REQUIRE(open->elements().size() == 2);
-    CHECK(open->elements()[0].find("report_id")->asString().value() == "PR-002");
-    CHECK(open->elements()[1].find("report_id")->asString().value() == "PR-003");
+    CHECK(stringAt(open->elements()[0], "id") == "PRB-002");
+    CHECK(stringAt(open->elements()[1], "id") == "PRB-003");
+    // §9.4: an open problem that could affect safety is a different release blocker from one
+    // that could not, so the flag travels with the record.
+    CHECK(!open->elements()[0].find("affects_risk")->asBool().value_or(true));
+    CHECK(open->elements()[1].find("affects_risk")->asBool().value_or(false));
 }
 
-TEST_CASE("releaseEvidenceSummary() lists generated artifact digests, sorted by path",
+TEST_CASE("releaseEvidenceSummary() lists supplied artifact digests, sorted by path",
           "evidence-unit") {
-    ComplianceProgram program = validProgram();
-    program.generatedArtifacts = {
-        mdux::evidence::FileRecord{
-            .path = "generated/font/roboto-ui/package.json",
-            .sha256 = mdux::evidence::sha256(
-                std::as_bytes(std::span{std::string_view{"package bytes"}}))},
-        mdux::evidence::FileRecord{
-            .path = "generated/font/roboto-ui/atlas.bin",
-            .sha256 = mdux::evidence::sha256(
-                std::as_bytes(std::span{std::string_view{"atlas bytes"}}))},
+    const std::array<char, 1> a{'a'};
+    const std::array<char, 1> b{'b'};
+    const std::array<evidence::FileRecord, 2> artifacts{
+        evidence::FileRecord{.path = "generated/shader/ui.spv",
+                             .sha256 = evidence::sha256(std::as_bytes(std::span{b}))},
+        evidence::FileRecord{.path = "generated/font/roboto/atlas.bin",
+                             .sha256 = evidence::sha256(std::as_bytes(std::span{a}))},
     };
 
-    const auto summary = releaseEvidenceSummary(program);
+    const auto summary = releaseEvidenceSummary(validProgram(), artifacts);
     REQUIRE(summary.has_value());
-    const json::Value* artifacts = summary->find("generated_artifacts");
-    REQUIRE(artifacts != nullptr);
-    REQUIRE(artifacts->elements().size() == 2);
-    CHECK(artifacts->elements()[0].find("path")->asString().value() ==
-          "generated/font/roboto-ui/atlas.bin");
-    CHECK(artifacts->elements()[1].find("path")->asString().value() ==
-          "generated/font/roboto-ui/package.json");
-    CHECK(artifacts->elements()[0].find("sha256")->asString().value().size() == 64);
+    const json::Value* listed = member(*summary, "generated_artifacts");
+    REQUIRE(listed != nullptr);
+    REQUIRE(listed->elements().size() == 2);
+    CHECK(stringAt(listed->elements()[0], "path") == "generated/font/roboto/atlas.bin");
+    CHECK(stringAt(listed->elements()[1], "path") == "generated/shader/ui.spv");
+    CHECK(stringAt(listed->elements()[0], "sha256").size() == 64);
 }
 
-TEST_CASE("describe() names every compliance error", "evidence-unit") {
-    constexpr std::array<ComplianceError, 13> all{
-        ComplianceError::EmptyRequirementId,
-        ComplianceError::DuplicateRequirementId,
-        ComplianceError::EmptyVerificationCaseId,
-        ComplianceError::DuplicateVerificationCaseId,
-        ComplianceError::DanglingVerificationCaseRequirement,
-        ComplianceError::EmptyHazardId,
-        ComplianceError::DuplicateHazardId,
-        ComplianceError::HazardMissingControl,
-        ComplianceError::DanglingHazardControl,
-        ComplianceError::EmptyProblemReportId,
-        ComplianceError::DuplicateProblemReportId,
-        ComplianceError::UnverifiedRequirement,
-        ComplianceError::MalformedCompliance};
-
-    for (const ComplianceError error : all) {
-        CHECK(!describe(error).empty());
-        CHECK(describe(error) != "unrecognized compliance error");
-    }
+TEST_CASE("Artifacts are a parameter, so they never enter the program's round-trip",
+          "evidence-unit") {
+    // A digest of a built file is evidence about a build, not an authored governance record.
+    // Keeping it out of ComplianceProgram preserves parse()'s strict member set.
+    const ComplianceProgram program = validProgram();
+    const auto text = program.write();
+    REQUIRE(text.has_value());
+    CHECK(text->find("generated_artifacts") == std::string::npos);
+    CHECK(ComplianceProgram::parse(*text).has_value());
 }

@@ -261,6 +261,12 @@ struct VerificationCase {
     VerificationMethod method{VerificationMethod::Test};
     std::vector<std::string> evidenceRefs;  ///< non-empty, no empty entries, no duplicates
 
+    /// Whether the verification was carried out and its result was a pass. Defaults to false: a
+    /// case that has not stated an outcome has not passed, and a release view that assumed
+    /// otherwise would report an unrun verification as evidence. Note this records an *outcome*,
+    /// not a judgement about adequacy - see the module comment on what this module does not check.
+    bool passed{false};
+
     [[nodiscard]] mdux::core::ResultVoid<GovernanceError> validate() const noexcept;
     [[nodiscard]] mdux::core::Result<evidence::json::Value, GovernanceError> toJson() const noexcept;
     [[nodiscard]] static mdux::core::Result<VerificationCase, GovernanceError> fromJson(

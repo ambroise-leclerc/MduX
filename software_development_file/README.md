@@ -59,7 +59,7 @@ those branches merge. Re-fence them as `json` once they do.
 **A filled document summarizes, and never duplicates, a machine register.** A SOUP document points
 at `docs/governance/soup-register.toml`; it does not
 restate its rows. A risk file points at the `Requirement`/`VerificationCase`/`Hazard`/`ProblemReport`
-records a `mdux.governance.compliance::ComplianceProgram` (issue #35) assembles; it does not copy
+records a `mdux::governance::ComplianceProgram` (issue #34) assembles; it does not copy
 them. The moment a number in one of these documents can drift out of sync with the register it
 describes, the document is already wrong — pointing at the register instead of copying from it is
 what keeps that from happening silently.
