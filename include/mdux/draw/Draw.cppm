@@ -29,7 +29,7 @@
  * source is not something this module can read - so the assertions and the paired comments are
  * the mechanism, and changing one without the other should be uncomfortable.
  *
- * `DrawMode`'s values are likewise the shader's `kModeSolid` / `kModeCoverageR8` constants.
+ * `DrawMode`'s values are likewise the shader's `modeSolid` / `modeCoverageR8` constants.
  */
 module;
 
