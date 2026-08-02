@@ -25,16 +25,24 @@ namespace {
 namespace cli = mdux::tools::cli;
 namespace emit = mdux::tools::shaderemit;
 
+/// Built with std::format rather than by concatenating std::strings.
+///
+/// Not a style preference: GCC 15.3 at -O3 raises a false -Warray-bounds on the `std::string{…} +
+/// …` chain this used to be, claiming a memcpy past the 32-byte short-string buffer that the
+/// reallocation makes impossible. Warnings are errors here, so the build failed on the GCC 15 leg
+/// alone while GCC 16 and MSVC were green. std::format sidesteps it and reads better anyway.
 [[nodiscard]] std::string usage() {
-    return std::string{"usage:\n  "} + std::string{emit::kToolName} +
-           " <package.json> <output-dir> [--format=json|text]\n"
-           "\n"
-           "Renders a committed shader package as a C++ module interface and a header, both\n"
-           "written into <output-dir>. The sidecar is read from beside <package.json>, under the\n"
-           "name the package records.\n"
-           "\n"
-           "Generated code belongs in the build tree and is never committed; see\n"
-           "tools/shader/Emit.cppm.\n";
+    return std::format(
+        "usage:\n"
+        "  {} <package.json> <output-dir> [--format=json|text]\n"
+        "\n"
+        "Renders a committed shader package as a C++ module interface and a header, both\n"
+        "written into <output-dir>. The sidecar is read from beside <package.json>, under the\n"
+        "name the package records.\n"
+        "\n"
+        "Generated code belongs in the build tree and is never committed; see\n"
+        "tools/shader/Emit.cppm.\n",
+        emit::kToolName);
 }
 
 }  // namespace
