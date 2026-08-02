@@ -59,9 +59,12 @@ private:
                                             .apiVersion = VK_API_VERSION_1_3};
 
         // MoltenVK is a portability driver and is invisible without this flag and extension, so a
-        // developer on macOS would otherwise see "no device" on a machine that has one. Harmless
-        // where portability is not present: the extension is only requested, and instance
-        // creation is retried without it if that fails.
+        // developer on macOS would otherwise see "no device" on a machine that has one.
+        //
+        // Guarded because the macro is not in every Vulkan SDK: the Windows CI leg's headers
+        // predate it, and an unguarded reference does not compile there. Where it is absent the
+        // platform has no portability driver either, so nothing is lost.
+#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
         const std::array<const char*, 1> portability{
             VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME};
         VkInstanceCreateInfo instanceInfo{
@@ -73,6 +76,16 @@ private:
             .ppEnabledLayerNames = nullptr,
             .enabledExtensionCount = static_cast<std::uint32_t>(portability.size()),
             .ppEnabledExtensionNames = portability.data()};
+#else
+        VkInstanceCreateInfo instanceInfo{.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                                          .pNext = nullptr,
+                                          .flags = 0,
+                                          .pApplicationInfo = &application,
+                                          .enabledLayerCount = 0,
+                                          .ppEnabledLayerNames = nullptr,
+                                          .enabledExtensionCount = 0,
+                                          .ppEnabledExtensionNames = nullptr};
+#endif
 
         if (vkCreateInstance(&instanceInfo, nullptr, &instance_) != VK_SUCCESS) {
             instanceInfo.flags = 0;
