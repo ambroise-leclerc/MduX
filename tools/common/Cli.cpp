@@ -171,6 +171,7 @@ std::string render(std::span<const Diagnostic> diagnostics, Format format,
             out += "    {\n";
             out += "      \"file\": \"" + escape(diagnostic.file) + "\",\n";
             out += "      \"line\": " + std::to_string(diagnostic.line) + ",\n";
+            out += "      \"column\": " + std::to_string(diagnostic.column) + ",\n";
             out += "      \"code\": \"" + escape(diagnostic.code) + "\",\n";
             out += "      \"severity\": \"" + std::string{describe(diagnostic.severity)} + "\",\n";
             out += "      \"message\": \"" + escape(diagnostic.message) + "\",\n";
@@ -181,13 +182,18 @@ std::string render(std::span<const Diagnostic> diagnostics, Format format,
         return out;
     }
 
-    // Text form follows the file:line: severity: [code] message convention the existing lints
-    // use, which is also what an editor's error parser expects.
+    // Text form follows the file:line:column: severity: [code] message convention the existing
+    // lints use, which is also what an editor's error parser expects. A zero on either axis is
+    // omitted rather than printed, so a tool that knows no position still reads as "file: error:"
+    // and one that knows only the line does not gain a misleading ":0".
     std::string out;
     for (const Diagnostic& diagnostic : diagnostics) {
         out += diagnostic.file;
         if (diagnostic.line != 0) {
             out += ":" + std::to_string(diagnostic.line);
+            if (diagnostic.column != 0) {
+                out += ":" + std::to_string(diagnostic.column);
+            }
         }
         out += ": ";
         out += describe(diagnostic.severity);

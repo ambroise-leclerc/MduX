@@ -52,6 +52,59 @@ HAZARD_SCHEMA = {
     },
 }
 
+# The diagnostic envelope (issue #118), in miniature: a camelCase record nested under an array,
+# rather than snake_case at the document root like every governance schema.
+CLI_MODULE = """
+export namespace mdux::tools::cli {
+
+struct Diagnostic {
+    std::string file;
+    std::size_t line{0};
+    std::size_t column{0};
+    std::string code;
+    Severity severity{Severity::Error};
+    std::string message;
+    std::string fixHint;
+};
+
+}  // namespace mdux::tools::cli
+"""
+
+CLI_IMPL = """
+std::string_view describe(Severity severity) noexcept {
+    switch (severity) {
+    case Severity::Error:   return "error";
+    case Severity::Warning: return "warning";
+    case Severity::Note:    return "note";
+    }
+    return "error";
+}
+"""
+
+DIAGNOSTIC_SCHEMA = {
+    "type": "object",
+    "required": ["tool", "findings"],
+    "properties": {
+        "tool": {"type": "string"},
+        "filesChecked": {"type": "integer"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "line": {"type": "integer"},
+                    "column": {"type": "integer"},
+                    "code": {"type": "string"},
+                    "severity": {"enum": ["error", "warning", "note"]},
+                    "message": {"type": "string"},
+                    "fixHint": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
 
 class ParsingTests(unittest.TestCase):
     def test_struct_fields_are_snake_cased_in_declaration_order(self):
@@ -77,6 +130,78 @@ class ParsingTests(unittest.TestCase):
             ["test", "analysis", "inspection", "review"],
             drift.wire_values(MODULE, "kVerificationMethodWireValues"),
         )
+
+    def test_camel_naming_leaves_wire_names_as_declared(self):
+        # The diagnostic envelope spells fixHint as fixHint, not fix_hint.
+        self.assertEqual(
+            ["file", "line", "column", "code", "severity", "message", "fixHint"],
+            drift.struct_fields(CLI_MODULE, "Diagnostic", drift.CAMEL),
+        )
+
+    def test_severity_values_are_read_from_the_switch_without_the_fallback_repeat(self):
+        # describe() ends with a defensive `return "error";` after the switch. Counting it would
+        # report a phantom fourth value and make every comparison fail.
+        self.assertEqual(["error", "warning", "note"], drift.severity_wire_values(CLI_IMPL))
+
+
+class DescendTests(unittest.TestCase):
+    def test_an_empty_path_returns_the_document(self):
+        self.assertEqual(HAZARD_SCHEMA, drift.descend(HAZARD_SCHEMA, ()))
+
+    def test_a_path_reaches_a_nested_record(self):
+        bound = drift.descend(DIAGNOSTIC_SCHEMA, ("properties", "findings", "items"))
+        self.assertIn("fixHint", bound["properties"])
+
+    def test_a_path_that_does_not_resolve_is_an_error(self):
+        with self.assertRaises(LookupError):
+            drift.descend(DIAGNOSTIC_SCHEMA, ("properties", "diagnostics", "items"))
+
+
+class NestedStructDriftTests(unittest.TestCase):
+    """Drift in a nested record must be caught exactly as drift in a root-level one is."""
+
+    def check(self, schema):
+        return drift.check_struct(
+            drift.descend(schema, ("properties", "findings", "items")),
+            CLI_MODULE,
+            "Diagnostic",
+            (),
+            drift.CAMEL,
+            drift.CLI_MODULE_PATH,
+        )
+
+    def test_the_current_pair_is_clean(self):
+        self.assertEqual([], self.check(DIAGNOSTIC_SCHEMA))
+
+    def test_a_field_the_schema_does_not_declare_is_reported(self):
+        # The exact drift this binding exists to catch: a baker author adds a field to Diagnostic
+        # and does not touch the schema, so records written against the schema cannot carry it.
+        schema = json.loads(json.dumps(DIAGNOSTIC_SCHEMA))
+        del schema["properties"]["findings"]["items"]["properties"]["column"]
+        problems = self.check(schema)
+        self.assertEqual(1, len(problems))
+        self.assertIn("column", problems[0])
+
+    def test_a_schema_property_with_no_field_is_reported(self):
+        schema = json.loads(json.dumps(DIAGNOSTIC_SCHEMA))
+        schema["properties"]["findings"]["items"]["properties"]["endLine"] = {"type": "integer"}
+        problems = self.check(schema)
+        self.assertEqual(1, len(problems))
+        self.assertIn("endLine", problems[0])
+
+    def test_snake_casing_a_camel_binding_reports_every_multiword_field(self):
+        # Guards the naming axis itself: reading the envelope with the governance convention
+        # would silently rename fixHint to fix_hint and drift on both sides.
+        problems = drift.check_struct(
+            drift.descend(DIAGNOSTIC_SCHEMA, ("properties", "findings", "items")),
+            CLI_MODULE,
+            "Diagnostic",
+            (),
+            drift.SNAKE,
+            drift.CLI_MODULE_PATH,
+        )
+        self.assertTrue(any("fixHint" in p for p in problems))
+        self.assertTrue(any("fix_hint" in p for p in problems))
 
     def test_a_missing_struct_is_an_error_not_an_empty_result(self):
         with self.assertRaises(LookupError):
@@ -175,11 +300,28 @@ class RealRepositoryTests(unittest.TestCase):
         self.root = Path(__file__).resolve().parents[2]
 
     def test_every_bound_schema_exists_and_parses(self):
-        for relative, _, _ in drift.STRUCT_BINDINGS:
-            with self.subTest(schema=relative):
-                path = self.root / relative
-                self.assertTrue(path.is_file(), f"{relative} is bound but missing")
+        for binding in drift.STRUCT_BINDINGS:
+            with self.subTest(schema=binding.schema):
+                path = self.root / binding.schema
+                self.assertTrue(path.is_file(), f"{binding.schema} is bound but missing")
                 json.loads(path.read_text(encoding="utf-8"))
+
+    def test_every_bound_module_exists(self):
+        for binding in drift.STRUCT_BINDINGS:
+            with self.subTest(module=str(binding.module)):
+                self.assertTrue(
+                    (self.root / binding.module).is_file(),
+                    f"{binding.module} is bound but missing",
+                )
+
+    def test_every_binding_resolves_to_an_object_with_properties(self):
+        # A schema_at that stops descending one level short would make check_struct compare an
+        # empty property set against the struct and report nothing - the vacuous pass this guards.
+        for binding in drift.STRUCT_BINDINGS:
+            with self.subTest(schema=binding.schema):
+                schema = json.loads((self.root / binding.schema).read_text(encoding="utf-8"))
+                bound = drift.descend(schema, binding.schema_at)
+                self.assertTrue(bound.get("properties"), f"{binding.schema}: no properties bound")
 
     def test_every_enum_binding_names_a_declared_property(self):
         for relative, prop, _ in drift.ENUM_BINDINGS:
@@ -190,6 +332,21 @@ class RealRepositoryTests(unittest.TestCase):
     def test_the_repository_is_free_of_drift(self):
         # Passes vacuously on a branch without the governance module, which main() reports.
         self.assertEqual(0, drift.main(["--repo-root", str(self.root)]))
+
+    def test_the_diagnostic_envelope_is_bound_to_the_cli_type(self):
+        # The binding that keeps one envelope one envelope as the bakers multiply (issue #118).
+        binding = next(b for b in drift.STRUCT_BINDINGS if b.struct == "Diagnostic")
+        source = (self.root / binding.module).read_text(encoding="utf-8")
+        fields = drift.struct_fields(source, "Diagnostic", binding.naming, binding.module)
+        self.assertEqual(
+            ["file", "line", "column", "code", "severity", "message", "fixHint"], fields
+        )
+
+    def test_the_severity_vocabulary_matches_describe(self):
+        produced = drift.severity_wire_values(
+            (self.root / drift.CLI_IMPL_PATH).read_text(encoding="utf-8")
+        )
+        self.assertEqual(["error", "warning", "note"], produced)
 
 
 if __name__ == "__main__":

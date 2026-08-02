@@ -72,17 +72,27 @@ DEFAULT_SCAN_DIRS = ("docs", "software_development_file")
 
 @dataclass
 class Finding:
+    """One finding in the shared envelope - docs/governance/schemas/diagnostic.schema.json.
+
+    Deliberately the same field names and severity vocabulary as `mdux::tools::cli::Diagnostic`
+    (tools/common/Cli.cppm) and mdux-evidence-lint, so an agent parses one schema for the whole
+    repository. `line` and `column` are both 1-based, with 0 meaning "no precise position on this
+    axis": a finding about a whole block sets the line and leaves the column 0.
+    """
+
     path: str
     line: int
     code: str
     severity: str
     message: str
     fix_hint: str = ""
+    column: int = 0
 
     def to_json(self) -> dict:
         return {
             "file": self.path,
             "line": self.line,
+            "column": self.column,
             "code": self.code,
             "severity": self.severity,
             "message": self.message,
@@ -102,8 +112,22 @@ class LintContext:
         except ValueError:
             return str(path)
 
-    def report(self, path: Path, line: int, code: str, severity: str, message: str, fix_hint: str = "") -> None:
-        self.findings.append(Finding(self.relativize(path), line, code, severity, message, fix_hint))
+    def report(
+        self,
+        path: Path,
+        line: int,
+        code: str,
+        severity: str,
+        message: str,
+        fix_hint: str = "",
+        *,
+        column: int = 0,
+    ) -> None:
+        # `column` is keyword-only so the existing positional call sites, which have no column to
+        # report, keep working unchanged rather than every one of them growing a `0`.
+        self.findings.append(
+            Finding(self.relativize(path), line, code, severity, message, fix_hint, column)
+        )
 
 
 def check_citation_keys(ctx: LintContext, path: Path, text: str) -> None:
@@ -117,6 +141,9 @@ def check_citation_keys(ctx: LintContext, path: Path, text: str) -> None:
                     path, lineno, "MDX-D001", "error",
                     f"Unknown or malformed standard identifier '{standard}' in citation key.",
                     f"Use one of: {', '.join(APPROVED_STANDARDS)}",
+                    # A line may carry several citations; the column is what distinguishes which
+                    # one is wrong, and it is known exactly here.
+                    column=match.start() + 1,
                 )
 
 
@@ -304,13 +331,25 @@ def main(argv: list[str]) -> int:
         lint_file(ctx, path)
 
     if args.format == "json":
-        print(json.dumps({"findings": [f.to_json() for f in ctx.findings]}, indent=2))
+        # The shared envelope: docs/governance/schemas/diagnostic.schema.json. `tool` is what
+        # keeps findings attributable once several tools' output is aggregated.
+        print(
+            json.dumps(
+                {
+                    "tool": "mdux-docs-lint",
+                    "filesChecked": len(files),
+                    "findings": [f.to_json() for f in ctx.findings],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     else:
         if not ctx.findings:
             print(f"mdux-docs-lint: OK ({len(files)} files checked, 0 findings)")
         else:
             for f in ctx.findings:
-                loc = f"{f.path}:{f.line}"
+                loc = f"{f.path}:{f.line}" + (f":{f.column}" if f.column else "")
                 print(f"{loc}: {f.severity}: [{f.code}] {f.message}")
                 if f.fix_hint:
                     print(f"  hint: {f.fix_hint}")

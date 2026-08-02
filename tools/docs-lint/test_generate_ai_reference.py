@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 import generate_ai_reference as gen
+import schema_subset
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -408,9 +409,8 @@ class ClauseIndexExportTests(unittest.TestCase):
     """The JSON export must satisfy docs/governance/schemas/clause-index.schema.json.
 
     Checked against the schema file itself rather than against a copy of its rules, so the two
-    cannot drift. `jsonschema` is not a dependency of this repository - a zero-SOUP project does
-    not add one to validate five generated files - so this walks the subset of Draft 2020-12 the
-    schema actually uses: required, enum, pattern, minItems and additionalProperties.
+    cannot drift. Validation uses schema_subset, shared with the diagnostic-envelope tests - a
+    second copy of the walker would be a second place to fix a bug in it.
     """
 
     def setUp(self):
@@ -423,33 +423,7 @@ class ClauseIndexExportTests(unittest.TestCase):
         )
 
     def check(self, value, schema, path="$"):
-        """Returns a list of violation messages. Only the keywords this schema uses."""
-        problems = []
-        if "enum" in schema and value not in schema["enum"]:
-            problems.append(f"{path}: {value!r} is not one of {schema['enum']}")
-        if "pattern" in schema and not re.search(schema["pattern"], value):
-            problems.append(f"{path}: {value!r} does not match {schema['pattern']}")
-        if "minLength" in schema and len(value) < schema["minLength"]:
-            problems.append(f"{path}: shorter than minLength")
-        if schema.get("type") == "object":
-            for key in schema.get("required", []):
-                if key not in value:
-                    problems.append(f"{path}: missing required '{key}'")
-            if schema.get("additionalProperties") is False:
-                for key in value:
-                    if key not in schema.get("properties", {}):
-                        problems.append(f"{path}: unexpected property '{key}'")
-            for key, subschema in schema.get("properties", {}).items():
-                if key in value:
-                    problems.extend(self.check(value[key], subschema, f"{path}.{key}"))
-        if schema.get("type") == "array":
-            if len(value) < schema.get("minItems", 0):
-                problems.append(f"{path}: fewer than minItems")
-            if schema.get("uniqueItems") and len(value) != len(set(map(str, value))):
-                problems.append(f"{path}: duplicate items")
-            for i, item in enumerate(value):
-                problems.extend(self.check(item, schema.get("items", {}), f"{path}[{i}]"))
-        return problems
+        return schema_subset.violations(value, schema, path)
 
     def test_the_subset_validator_rejects_something(self):
         # Guards every assertion below: a validator that always returns [] would make them pass.

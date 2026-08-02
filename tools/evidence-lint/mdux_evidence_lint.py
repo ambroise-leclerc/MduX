@@ -78,17 +78,29 @@ SUPPRESS_MARKER = "mdux-evidence-lint:allow"
 
 @dataclass
 class Finding:
+    """One finding in the shared envelope - docs/governance/schemas/diagnostic.schema.json.
+
+    Deliberately the same field names and severity vocabulary as `mdux::tools::cli::Diagnostic`
+    (tools/common/Cli.cppm) and mdux-docs-lint, so an agent parses one schema for the whole
+    repository. `line` and `column` are both 1-based, with 0 meaning "no precise position on this
+    axis". This lint reports lines only: a banned construct is located by
+    `extract_string_literals`, which yields the literal's start line without its start column, so
+    reporting a column here would mean inventing one.
+    """
+
     path: str
     line: int
     code: str
     severity: str
     message: str
     fix_hint: str = ""
+    column: int = 0
 
     def to_json(self) -> dict:
         return {
             "file": self.path,
             "line": self.line,
+            "column": self.column,
             "code": self.code,
             "severity": self.severity,
             "message": self.message,
@@ -267,6 +279,7 @@ def main(argv: list[str]) -> int:
         check_file(source, root, findings)
 
     if args.format == "json":
+        # The shared envelope: docs/governance/schemas/diagnostic.schema.json.
         print(
             json.dumps(
                 {
@@ -280,10 +293,10 @@ def main(argv: list[str]) -> int:
         )
     else:
         for finding in findings:
-            print(
-                f"{finding.path}:{finding.line}: {finding.severity}: "
-                f"[{finding.code}] {finding.message}"
+            location = f"{finding.path}:{finding.line}" + (
+                f":{finding.column}" if finding.column else ""
             )
+            print(f"{location}: {finding.severity}: [{finding.code}] {finding.message}")
             if finding.fix_hint:
                 print(f"    fix: {finding.fix_hint}")
         if findings:
