@@ -1,1 +1,13 @@
 * linguist-language=cpp
+
+# Evidence pipeline: bytes that are hashed must not be transformed by git (ADR-007).
+#
+# Every recipe, every source asset a recipe names, and every artifact baked from them has its
+# SHA-256 recorded and byte-compared across MSVC, GCC and Clang. GitHub's Windows runners default
+# to core.autocrlf=true, so without these rules a `.toml` recipe would be checked out with CRLF on
+# Windows and LF everywhere else - a different digest, and an `evidence.*` test that fails on the
+# MSVC leg alone while every other leg stays green.
+#
+# `-text` means "store and check out verbatim": no end-of-line conversion in either direction.
+recipes/** -text
+generated/** -text

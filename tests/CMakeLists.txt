@@ -111,11 +111,17 @@ add_executable(shader_tests
     shader/SchemaTests.cpp
     shader/SpirvTests.cpp
     shader/ShaderBakeTests.cpp
+    shader/UiPackageTests.cpp
 )
 
 target_sources(shader_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
 target_link_libraries(shader_tests PRIVATE MduX::ShaderBakeLib)
 target_include_directories(shader_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# UiPackageTests reads the committed artifact under generated/, which is a fixed location in the
+# source tree rather than anything the build produces. It reads only; the source-tree-cleanliness
+# gate in CI stays satisfied.
+target_compile_definitions(shader_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 set_target_properties(shader_tests
     PROPERTIES
