@@ -1,26 +1,28 @@
 # Examples for MduX Medical Device UI Library
 
-# Simple Medical UI integration example using committed module interface
-add_executable(MedicalUiExample 
+# Building a frame with no device and no window (issue #127).
+#
+# Deliberately does not link GLFW. It used to, back when it constructed a MedicalUiConfig and a
+# UiFileWatcher without ever opening a window; now that it demonstrates mdux.draw, the absence of
+# a windowing dependency is part of what it demonstrates.
+add_executable(MedicalUiExample
     SimpleMedicalUiExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
 
-# Find GLFW for the example (user's windowing solution)
+# GLFW is the triangle demo's, and only the triangle demo's - the examples-only windowing
+# boundary. MduX itself never links it, which mdux_verify_trust_zones() enforces from the other
+# side for the governed target.
 find_package(glfw3 QUIET)
-if(glfw3_FOUND)
-    target_link_libraries(MedicalUiExample PRIVATE glfw)
-    message(STATUS "Using system GLFW for MedicalUiExample")
-else()
-    # Fallback to CPM for examples only
-    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4 
+if(NOT glfw3_FOUND)
+    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4
                   OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF")
-    target_link_libraries(MedicalUiExample PRIVATE glfw)
-    message(STATUS "Using CPM GLFW for MedicalUiExample")
+    message(STATUS "Using CPM GLFW for VulkanSCTriangleExample")
+else()
+    message(STATUS "Using system GLFW for VulkanSCTriangleExample")
 endif()
 
-# Compile shaders for triangle demo
 # No shader compilation here any more. SPIR-V is committed under recipes/shader/triangle/ and
 # baked into generated/shader/triangle/ (issue #122), which removes both the build-time dependency
 # on glslangValidator and the runtime dependency on the working directory.
@@ -57,12 +59,9 @@ if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
 
     target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
 
-    # GLFW for windowing
-    if(glfw3_FOUND)
-        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
-    else()
-        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
-    endif()
+    # GLFW for windowing. The conditional this replaces linked `glfw` in both branches, so it
+    # never chose anything - which is why the target name is resolved above instead.
+    target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
 
     # Set C++23 standard
     set_target_properties(VulkanSCTriangleExample PROPERTIES

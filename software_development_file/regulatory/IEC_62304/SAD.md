@@ -38,11 +38,13 @@ Three trust zones, formalized by [ADR-004](../../../docs/adr/ADR-004-trust-zones
   `ProblemReport`, `AuditEvent` and `ComplianceProgram` types, issue #34) and
   `mdux.governance.compliance` (the two release-evidence exports over them, issue #35).
 - **`MduX` — adapter.** Publicly links `MduXCore` plus `Vulkan::Vulkan`: the facade module
-  (`include/mdux/mdux.cppm`, `MedicalUiRenderer`/`MedicalUiConfig`/`VulkanContext`) and the Vulkan SC
-  modules `mdux.vulkansc.memory` (`MemoryPoolManager`, static pool allocation without runtime
+  (`include/mdux/mdux.cppm` - version, compliance metadata and Vulkan capability reporting), the
+  renderer `mdux.render.vulkan` (`UiRenderer`, `VulkanRenderContext`) and its headless target
+  `mdux.render.offscreen`, and the Vulkan SC modules `mdux.vulkansc.memory` (`MemoryPoolManager`, static pool allocation without runtime
   `vkAllocateMemory` calls per frame) and `mdux.vulkansc.objects` (`DeviceObjectManager`).
-- **`examples/` and `tools/` — never shipped.** `examples/` (`SimpleMedicalUiExample.cpp`,
-  `VulkanSCTriangleExample.cpp`) links GLFW for windowing, never linked into `MduX` itself.
+- **`examples/` and `tools/` — never shipped.** `examples/VulkanSCTriangleExample.cpp` links GLFW
+  for windowing, never linked into `MduX` itself; `SimpleMedicalUiExample.cpp` links neither GLFW
+  nor a device, since building a frame requires neither.
   `tools/common` (`MduX::ToolsCommon`, host-only CLI/TOML helpers) and the Python scripts under
   `tools/docs-lint`/`tools/evidence-lint` never compile into a device artifact.
 

@@ -12,11 +12,15 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 
 ## Status: planned, not yet implemented
 
-**There is no `.medui` parser, compiler, or runtime in MduX today.** The current UI story is
-`UiFileWatcher::loadContent()` in `include/mdux/mdux.cppm` / `src/mdux.cpp`, which sniffs a file
-extension and stores the file as a string — no parsing, no layout, no rendering. That path is
-being retired, not extended (tracked in
-[issue #13](https://github.com/ambroise-leclerc/MduX/issues/13), S9). `.medui` itself is
+**There is no `.medui` parser, compiler, or runtime in MduX today.** The HTML/CSS path that used
+to stand in for one - `UiFileWatcher::loadContent()`, which sniffed a file extension and stored
+the file as a string, with no parsing, layout or rendering behind it - was deleted by
+[issue #127](https://github.com/ambroise-leclerc/MduX/issues/127).
+
+What exists now is the layer a `.medui` compiler will target: `mdux.draw` describes a frame as
+bounded vertex, index and command buffers with a compiler-computed budget, and
+`mdux.render.vulkan` renders one. So the compiler's job is to emit a `DrawList` and a
+`DrawBudget`, not to invent a rendering path. `.medui` itself is
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). This skill describes the *target*
 grammar, adapted from the sibling Rust project TrustSC, so authoring work can start the moment the
 compiler exists — do not write a `.medui` file expecting it to build anything yet.

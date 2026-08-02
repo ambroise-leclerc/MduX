@@ -48,10 +48,10 @@ ground truth for current conventions, not this document.
 
 ## Vulkan / Vulkan SC resource-ownership model
 
-- `VulkanContext` (`include/mdux/mdux.cppm`) is populated by the **caller**: `VkDevice`,
+- `mdux::render::VulkanRenderContext` (`include/mdux/render/VulkanRenderer.cppm`) is populated by the **caller**: `VkDevice`,
   `VkPhysicalDevice`, `VkCommandBuffer`, and a compatible `VkRenderPass` all come from the host
   application. MduX code must never assume it can create these — only consume them.
-- `MedicalUiRenderer` owns resources it creates itself from that caller-supplied context
+- `mdux::render::UiRenderer` owns resources it creates itself from that caller-supplied context
   (descriptor set layout, descriptor pool, pipeline layout, pipeline) and is responsible for their
   cleanup — follow this same caller-owned-input / library-owned-output split for any new
   Vulkan-integrating type.

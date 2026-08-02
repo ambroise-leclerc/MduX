@@ -6,11 +6,15 @@
 
 ## Document control
 
-- **Product / software item:** MduX's UI layer (`MedicalUiRenderer`, `MedicalUiConfig`,
-  `MedicalUiContent`, `UiFileWatcher` — `include/mdux/mdux.cppm`, `src/mdux.cpp`)
-- **Scope note:** MduX provides UI *building blocks* — an HTML/CSS-defined interface rendered
-  through Vulkan, with basic structural validation — not a finished device's usability engineering
-  file. A manufacturer's actual use specification, evaluation results, and summative testing are
+- **Product / software item:** MduX's UI layer — `mdux.draw` (`include/mdux/draw/Draw.cppm`, the
+  governed description of a frame) and `mdux.render.vulkan` (`include/mdux/render/`, the adapter
+  that renders one)
+- **Revision note:** this file previously described an HTML/CSS path — `MedicalUiRenderer`,
+  `MedicalUiConfig`, `MedicalUiContent`, `UiFileWatcher`. Issue #127 deleted it. That path never
+  rendered anything: `MedicalUiRenderer::render()` recorded no Vulkan commands and nothing parsed
+  the HTML, so the mechanisms this file used to cite were not mechanisms.
+- **Scope note:** MduX provides UI *building blocks* — bounded, budgeted geometry rendered through
+  Vulkan — not a finished device's usability engineering file. A manufacturer's actual use specification, evaluation results, and summative testing are
   theirs to conduct and document. This file states plainly what MduX's mechanisms can and cannot
   feed into that process.
 
@@ -25,9 +29,11 @@ application-specific and belong to the manufacturer's own use specification.
 
 > `IEC 62366-1:2015 §5.2 Establish application specification`
 
-MduX renders an application-supplied `MedicalUiContent` (HTML + CSS strings, loaded from a file via
-`UiFileWatcher::loadContent()`) through a Vulkan pipeline (`MedicalUiRenderer`). This is the
-mechanism, not the application specification itself — the application defines what its UI does.
+MduX renders an application-supplied `mdux::draw::DrawList` — rectangles in pixel coordinates,
+each carrying a colour and a mode — through a fixed-budget Vulkan pipeline
+(`mdux::render::UiRenderer`). This is the mechanism, not the application specification itself: the
+application defines what its UI does, and for now defines it by calling `addSolidRect` directly.
+Issue #15's `.medui` compiler is what will let a screen be *declared* rather than assembled.
 
 ## 3. Hazard-related use characteristics
 
@@ -35,10 +41,12 @@ mechanism, not the application specification itself — the application defines 
 
 **No mechanism exists in MduX today linking a UI element to a hazard or a
 `Requirement`/`Hazard` record** (`mdux.governance`, issue #34) the way, for example,
-TrustSC's `@safety_critical` MedUI annotation does. `MedicalUiContent.validationErrors` and
-`RenderStatistics.validationErrors` exist, but check structural completeness — does the file exist,
-does it contain HTML/CSS content, is `ComplianceMetadata` non-empty (`src/mdux.cpp` lines around
-120-155, 380-395) — not hazard-related use-scenario coverage. A manufacturer identifying
+TrustSC's `@safety_critical` MedUI annotation does.
+
+This gap did not narrow when the renderer became real. What `mdux.draw` validates is budget and
+geometry — that a frame fits the storage it was given, that a rectangle has positive extent — and
+what `evidence.shader.*` validates is that committed shader bytes are the reviewed ones. Both are
+worth having and neither is a statement about use scenarios or hazards. A manufacturer identifying
 hazard-related use scenarios for their own device does so entirely outside anything MduX currently
 provides.
 
@@ -46,25 +54,34 @@ provides.
 
 > `IEC 62366-1:2015 §5.4 Establish user interface specification`
 
-Authored as plain HTML + CSS strings (`MedicalUiConfig.uiDefinitionPath`), loaded and validated for
-structural completeness by `UiFileWatcher::loadContent()`. `examples/SimpleMedicalUiExample.cpp` is
-a minimal worked example.
+Expressed in code: an application builds a `DrawList` over storage it owns, within a
+`DrawBudget` fixed before the frame starts. `examples/SimpleMedicalUiExample.cpp` is a minimal
+worked example, and needs neither a device nor a window to run.
+
+There is no declarative UI specification format yet — issue #15. Until then a manufacturer's user
+interface specification is a document about their own code, not something MduX can generate from
+an artifact it holds.
 
 ## 5. User interface evaluation plan
 
 > `IEC 62366-1:2015 §5.5 Establish user interface evaluation plan`
 
-Not conducted by MduX itself. `MedicalUiConfig.enableValidation` gates a structural
-completeness check, not a usability evaluation — do not read "validation" in MduX's own source
-comments as a synonym for this clause's "evaluation" activity; they are different things that
-happen to share an English word.
+Not conducted by MduX itself. What MduX can now do that it could not before is show that a given
+frame renders to the pixels it was asked for: `tests/render/PixelTests.cpp` renders offscreen and
+compares every pixel against an expectation (issues #125, #126).
+
+That is rendering correctness, not a usability evaluation. It answers "did the rectangle land
+where the code said" and says nothing about whether a user can operate the resulting interface
+safely — do not read "verification" of the former as evidence for the latter.
 
 ## 6. User interface design and implementation
 
 > `IEC 62366-1:2015 §5.6 Perform user interface design and implementation`
 
-Implemented in `MedicalUiRenderer` (Vulkan pipeline: descriptor sets, pipeline layout, the render
-path itself) and the Vulkan SC adapter modules `mdux.vulkansc.memory`/`mdux.vulkansc.objects`.
+Implemented in `mdux.draw` (governed: vertices, indices, draw commands, budget enforcement),
+`mdux.render.vulkan` (adapter: shader modules, descriptor set layout, pipeline layout, pipeline,
+the frame buffers and the record path) and the Vulkan SC adapter modules
+`mdux.vulkansc.memory`/`mdux.vulkansc.objects`.
 
 ## 7. Formative evaluation
 
@@ -90,7 +107,7 @@ possible further design iteration rather than a separately numbered activity.
   "justification_id": "JUS-018",
   "standard": "IEC 62366-1:2015",
   "clause_ref": "IEC 62366-1:2015 §5.3 Establish user interface characteristics related to safety, hazards and hazardous situations",
-  "rationale": "MduX has no mechanism today linking a rendered UI element to a Hazard or Requirement record; MedicalUiContent.validationErrors and RenderStatistics.validationErrors check structural completeness (file exists, has HTML/CSS content, compliance metadata is non-empty), not hazard-related use-scenario coverage - stated here so this gap is not silently assumed closed by the presence of a field with a similar name.",
+  "rationale": "MduX has no mechanism today linking a rendered UI element to a Hazard or Requirement record. What mdux.draw validates is budget and geometry, and what the evidence pipeline validates is that committed shader bytes are the reviewed ones; neither is a statement about use scenarios or hazards - stated here so the gap is not silently assumed closed by the presence of verification machinery aimed at something else.",
   "evidence_refs": [
     "include/mdux/mdux.cppm",
     "src/mdux.cpp"

@@ -7,7 +7,9 @@ Accepted (2026-07-26)
 MduX has no stated error-handling policy, and current code is inconsistent with the direction the
 MduX ↔ TrustSC parity programme requires:
 
-- `src/mdux.cpp:221` throws `std::runtime_error` from `MedicalUiRenderer`'s constructor.
+- `src/mdux.cpp:221` threw `std::runtime_error` from `MedicalUiRenderer`'s constructor. That type
+  was deleted with the HTML/CSS path (issue #127), which resolved this instance by removal rather
+  than by rewrite - as this ADR anticipated below.
 - `include/mdux/vulkansc/MemoryPoolManager.cppm:100` documents throwing behavior.
 - `.clang-tidy:9` **disables** `bugprone-exception-escape` — the check that would otherwise flag an
   exception escaping a `noexcept` boundary.
@@ -61,9 +63,11 @@ would discard exactly the information an incident report needs.
 `MduXCore` exists, so a `noexcept` violation is caught by static analysis rather than only at
 runtime or at link time.
 
-**`MedicalUiRenderer`'s existing throwing constructor is grandfathered**, not retrofitted — it lives
-in the adapter zone today and is scheduled for deletion (issue #13, S9) when the HTML/CSS UI path
-is retired, not for a `std::expected` rewrite in place.
+**`MedicalUiRenderer`'s throwing constructor was grandfathered**, not retrofitted — it lived in the
+adapter zone and was scheduled for deletion with the HTML/CSS UI path rather than for a
+`std::expected` rewrite in place. Issue #127 deleted it, so the grandfathering has expired with
+nothing left under it. Its replacement, `mdux::render::UiRenderer`, is `Result`-returning and
+`noexcept` throughout, as this policy requires of new adapter code.
 
 ## Alternatives Considered
 
@@ -99,8 +103,10 @@ call-site brevity; that is a naming convenience, not a reimplementation.
   gap left by `.clang-tidy:9` currently disabling the one check that would otherwise catch this.
 
 ### Negative
-- Two error-handling idioms coexist in the codebase (adapter exceptions, governed `std::expected`)
-  during the transition, which is a real source of confusion until `MedicalUiRenderer` is deleted.
+- Two error-handling idioms coexist in the codebase: the host-tools zone throws (the TOML parser
+  and the CLI, where an exception cannot reach a device) while the governed and adapter zones
+  return `std::expected`. The transitional third case - a throwing constructor in the adapter zone
+  - ended with `MedicalUiRenderer`'s deletion in issue #127.
 - `std::expected`-based APIs are more verbose at call sites than exceptions for the common
   happy-path case — an accepted cost given the deployment constraint that motivates this decision.
 

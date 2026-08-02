@@ -43,14 +43,16 @@ MduX has a Rust sibling, [TrustSC](https://github.com/ambroise-leclerc/TrustSC),
 problem (a medical-device UI SDK with IEC 62304 Class B/C compliance modelling built in) with a more
 coherent architecture. MduX is being deliberately steered toward structural parity with it. The full
 roadmap is tracked as GitHub epics `#7`-`#19` on `ambroise-leclerc/MduX`, each with child issues.
-Three decisions from that programme apply repository-wide and are **not** yet reflected in the code:
+Three decisions from that programme apply repository-wide:
 
-1. **`.medui` will replace the HTML/CSS UI story entirely.** `UiFileWatcher`, `MedicalUiContent`,
-   and `MedicalUiRenderer` in `include/mdux/mdux.cppm` / `src/mdux.cpp` are slated for deletion, not
-   extension (issue `#13`). Do not add HTML/CSS parsing capability to that path.
-2. **A trust-zone split is coming**: a new governed `MduXCore` target that never receives Vulkan's
-   include directories, so `#include <vulkan/vulkan.h>` in governed code becomes a compile error
-   (issue `#11`). Until that lands, the single `MduX` target described in § 3 below remains accurate.
+1. **The HTML/CSS UI story is gone.** `UiFileWatcher`, `MedicalUiContent`, `MedicalUiConfig`,
+   `MedicalUiRenderer`, `RenderStatistics` and `VulkanContext` were deleted by issue `#127`. What
+   replaces them is `mdux.draw` (a governed description of a frame) plus `mdux.render.vulkan` (the
+   adapter that renders it); `.medui` (issue `#15`) will generate the former. Do not reintroduce
+   HTML/CSS parsing.
+2. **The trust-zone split has landed**: `MduXCore` is a governed target that never receives
+   Vulkan's include directories, so `#include <vulkan/vulkan.h>` in governed code is a link-graph
+   error `mdux_verify_trust_zones()` reports at configure time (issue `#11`).
 3. **Reproduced normative standard text is being purged** from `docs/` and from git history
    (issue `#7`) — see `regulatory-citations` in § 7. Do not add new material that reproduces or
    closely paraphrases a standard's wording, even though older files in the tree still do.
@@ -64,36 +66,47 @@ code*; treat this subsection as the direction that code is moving in.
 
 | Module | Interface | Implementation |
 |---|---|---|
-| `mdux` | `include/mdux/mdux.cppm` | `src/mdux.cpp` |
+| `mdux` (facade: version, compliance, Vulkan capability) | `include/mdux/mdux.cppm` | `src/mdux.cpp` |
+| `mdux.core.result`, `mdux.core.units` | `include/mdux/core/` | header-only |
+| `mdux.evidence.digest`, `.json`, `.report` | `include/mdux/evidence/` | `src/evidence/` |
+| `mdux.governance`, `mdux.governance.compliance` | `include/mdux/governance/` | `src/governance/` |
+| `mdux.shader.schema` (governed) | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |
 | `mdux.vulkansc.objects` (imports `mdux.vulkansc.memory`) | `include/mdux/vulkansc/DeviceObjectManager.cppm` | `src/vulkansc/DeviceObjectManager.cpp` |
 
-Every `.cppm` interface has a matching `.cpp` implementation file, and both are declared in the
-`MduX` target in `CMakeLists.txt` (interfaces under `FILE_SET CXX_MODULES`, implementations as
-plain `PRIVATE` sources).
+Interfaces are declared under `FILE_SET CXX_MODULES` and implementations as plain `PRIVATE`
+sources. Note the split: the governed modules belong to `MduXCore` and the adapter ones to `MduX`.
+Not every interface has an implementation file - `mdux.core.result` and `mdux.core.units` are
+header-only - and `src/governance/Justification.cpp` and `Program.cpp` implement parts of
+`mdux.governance` without interfaces of their own.
 
-**Vulkan boundary / caller-owned resources**: the `mdux` module's `VulkanContext` struct
-(`include/mdux/mdux.cppm`) is populated by the caller — `VkDevice`, `VkPhysicalDevice`,
-`VkCommandBuffer`, and a compatible `VkRenderPass` are all supplied by the host application.
-`MedicalUiRenderer` creates and owns its *own* Vulkan resources (descriptor set layout/pool,
-pipeline layout, pipeline) from that caller-supplied context; it does not create a device,
-instance, or swapchain.
+**Vulkan boundary / caller-owned resources**: `mdux::render::VulkanRenderContext`
+(`include/mdux/render/VulkanRenderer.cppm`) is populated by the caller — `VkDevice`,
+`VkPhysicalDevice`, `VkRenderPass` and a `VkQueue` are all supplied by the host application, and
+every member is initialised so a partially-filled context fails validation rather than faulting.
+`mdux::render::UiRenderer` creates and owns its *own* Vulkan resources (shader modules, descriptor
+set layout and pool, pipeline layout, pipeline, the two frame buffers and a default atlas) from
+that context; it does not create a device, instance, or swapchain.
 
 **Vulkan SC module**: `mdux.vulkansc.memory` and `mdux.vulkansc.objects` implement static
 memory-pool and device-lifetime-object management patterns required by Vulkan SC (memory/objects
 that cannot be freed until device destruction). These are independent of the `mdux` UI module and
 carry their own `@compliance` Doxygen annotations referencing IEC 62304 Class C / ISO 14971.
 
-**Windowing-dependency policy**: the `MduX` library target itself has no windowing dependency —
-`include/mdux/mdux.cppm` includes only `<vulkan/vulkan.h>` and `<stdint.h>` in its global module
-fragment. GLFW is used only by example programs (`examples/CMakeLists.txt` links GLFW into the
-`MedicalUiExample` and `VulkanSCTriangleExample` targets) as *one* way a host application can
-create a window and Vulkan surface — it is not a library requirement. `examples/BasicExample.cpp`
+**Windowing-dependency policy**: the `MduX` library target itself has no windowing dependency.
+GLFW is linked only into `VulkanSCTriangleExample`, as *one* way a host application can create a
+window and Vulkan surface — it is not a library requirement. `MedicalUiExample` deliberately does
+not link it: building a frame needs neither a window nor a device, and that is part of what the
+example demonstrates. `examples/BasicExample.cpp`
 exists in the tree but is not currently registered as a build target in
 `examples/CMakeLists.txt`; treat it as inactive/legacy unless you verify otherwise.
 
-**Current implementation vs. planned/conceptual**: the `MedicalUiRenderer`, `UiFileWatcher`,
-compliance-metadata types, and the two Vulkan SC managers are implemented and built today. The
+**Current implementation vs. planned/conceptual**: the shader pipeline (`mdux.shader.schema`,
+`mdux-shaderbake`, `mdux-shaderemit`), the governed draw types (`mdux.draw`), the Vulkan renderer
+and offscreen target (`mdux.render.*`), the compliance-metadata types and the two Vulkan SC
+managers are implemented and built today. The
 ISO 14971/ISO 13485 risk-management and quality-management framework described in `README.md`
 (risk analysis engine, CAPA system, design-control stages) is conceptual/planned and not present
 in `include/` or `src/`.
@@ -103,9 +116,10 @@ in `include/` or `src/`.
 - `include/mdux/*.cppm`, `include/mdux/vulkansc/*.cppm` — C++23 module interfaces (public API surface).
 - `src/*.cpp`, `src/vulkansc/*.cpp` — module implementations.
 - `tests/` — unit and compliance test executables, driven by `tests/CMakeLists.txt`.
-- `examples/` — example programs and their `CMakeLists.txt`; `examples/*.html` are inactive/legacy
-  mockups — the built `MedicalUiExample` target (`SimpleMedicalUiExample.cpp`) does not construct
-  `MedicalUiRenderer` and consumes none of them; issue #42 tracks their deletion.
+- `examples/` — example programs and their `CMakeLists.txt`. `MedicalUiExample`
+  (`SimpleMedicalUiExample.cpp`) builds a frame with no device and no window;
+  `VulkanSCTriangleExample` owns a device and a window and renders from the baked shader package.
+  `examples/*.html` are inactive/legacy mockups nothing consumes; issue #42 tracks their deletion.
 - `cmake/` — CMake support modules (compiler settings, warnings, sanitizers, Doxygen, Vulkan
   discovery helpers, etc.), included from the root `CMakeLists.txt`.
 - `docs/adr/` — Architecture Decision Records (see § "Verified architecture summary" above for how

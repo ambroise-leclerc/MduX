@@ -146,13 +146,15 @@ context.metadata.deviceId = "YOUR_DEVICE_ID";
 // Initialize compliance systems
 mdux::initialize(context);
 
-// Create UI with compliance integration
-mdux::VulkanContext vulkanContext{device, physicalDevice, commandBuffer, renderPass};
-mdux::MedicalUiConfig uiConfig{uiPath, context.metadata};
-mdux::MedicalUiRenderer renderer(vulkanContext, uiConfig);
+// Build a frame. Governed: no Vulkan types, no allocation, storage supplied by the caller.
+static std::array<mdux::draw::UiVertex, 64> vertices;
+static std::array<mdux::draw::Index, 96> indices;
+static std::array<mdux::draw::DrawCommand, 8> commands;
+auto list = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+list->addSolidRect({.x = 16, .y = 64, .width = 120, .height = 24}, statusColor);
 
-// Render with automatic compliance logging
-renderer.render(vulkanContext);
+// Record it. Adapter zone: the caller owns the device, render pass and command buffer.
+renderer.record(commandBuffer, *list);
 ```
 
 ### Risk Management Integration (ISO 14971)
