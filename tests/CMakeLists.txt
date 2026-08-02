@@ -251,6 +251,57 @@ endif()
 
 mdux_discover_tests(render_tests)
 
+# Headless offscreen rendering and readback (issue #125)
+#
+# Separate from render_tests because this suite needs a real Vulkan device where that one
+# deliberately needs none. It consumes the generated shader module, so it depends on the emitter
+# the same way shader_tests does.
+#
+# SKIP_RETURN_CODE 77 is the point: with no loader, no ICD or no device the binary exits 77 and
+# CTest reports Skipped, which is a distinct outcome from passing. A contributor without Vulkan
+# sees neither a red test they cannot act on nor a green one that ran nothing.
+add_executable(offscreen_tests
+    render/OffscreenTestMain.cpp
+    render/OffscreenTests.cpp
+)
+
+target_sources(offscreen_tests
+    PRIVATE
+        FILE_SET CXX_MODULES FILES framework/MduXTest.cppm
+        FILE_SET generated_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+            FILES ${MDUX_UI_SHADER_MODULE}
+)
+add_dependencies(offscreen_tests emit-shader-mdux-ui)
+target_link_libraries(offscreen_tests PRIVATE MduX::MduX)
+target_include_directories(offscreen_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MDUX_GENERATED_SHADER_DIR}
+)
+
+set_target_properties(offscreen_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(offscreen_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(offscreen_tests PRIVATE /experimental:module)
+    target_compile_options(offscreen_tests PRIVATE /std:c++latest)
+endif()
+
+# Registered as one test rather than through mdux_discover_tests: discovery runs the binary with
+# --list-tests at build time, which on a machine with no device would list nothing and silently
+# register no tests at all. One entry that can report Skipped is honest where zero entries is not.
+add_test(NAME offscreen_tests COMMAND offscreen_tests)
+set_tests_properties(offscreen_tests PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp

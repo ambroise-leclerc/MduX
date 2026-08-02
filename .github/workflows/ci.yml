@@ -132,6 +132,8 @@ jobs:
           vulkan-tools \
           vulkan-utility-libraries-dev \
           spirv-tools \
+          mesa-vulkan-drivers \
+          vulkan-validationlayers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
@@ -188,6 +190,43 @@ jobs:
     - name: Verify evidence artifacts (GCC 15)
       run: ctest --preset ninja-gcc -L evidence
 
+    # Rendered-truth verification (issue #125). Until mesa-vulkan-drivers was installed above,
+    # this leg had no Vulkan ICD at all and vkCreateInstance found zero physical devices.
+    #
+    # The loader is left to choose its own driver rather than being pinned with VK_DRIVER_FILES.
+    # Pinning was tried first and was worse: the hardcoded ICD path does not exist on this image,
+    # so the pin turned a working device into no device at all. On a runner with no GPU, radv and
+    # anv report no devices and the loader falls through to lavapipe by itself.
+    #
+    # That is safe for a test asserting pixel values because the assertions are driver-independent
+    # by construction - solid axis-aligned rectangles sampled in their interior and well outside,
+    # never at an edge where conformant drivers may legitimately differ.
+    #
+    # The grep is the point of the step. offscreen_tests exits 77 when no device is present and
+    # CTest reports Skipped, which does not fail a run - so without this check a broken ICD would
+    # turn the only test that renders anything into a silent no-op while the job stayed green.
+    # It has already earned its place: it is what caught the bad pin.
+    - name: Verify rendered output
+      run: |
+        echo "Available Vulkan ICDs:"
+        ls -1 /usr/share/vulkan/icd.d/ || true
+        # -V rather than --output-on-failure: a passing run must still print, because two of the
+        # things this step verifies are only visible in the output of tests that succeeded.
+        ctest --preset ninja-gcc -L pixel -V --no-tests=error 2>&1 | tee pixel.log
+        if grep -q "Skipped" pixel.log; then
+          echo "::error::Pixel tests were skipped - no Vulkan device. They must run on this leg."
+          exit 1
+        fi
+        # The validation layers decide whether this suite's layout and synchronisation assertions
+        # check anything. Installing the package does not prove the layer loads, so the run says
+        # which it was and this fails if it was not loaded - otherwise those assertions could go
+        # quietly vacuous and the log would look identical.
+        if ! grep -q "validation layers enabled" pixel.log; then
+          echo "::error::Validation layers did not load on this leg - the layout and sync assertions are vacuous."
+          grep -i "validation layers" pixel.log || true
+          exit 1
+        fi
+
     - name: Verify no source-tree writes
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -222,6 +261,8 @@ jobs:
           vulkan-tools \
           vulkan-utility-libraries-dev \
           spirv-tools \
+          mesa-vulkan-drivers \
+          vulkan-validationlayers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
