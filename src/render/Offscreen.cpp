@@ -59,6 +59,7 @@ std::string_view describe(OffscreenError error) noexcept {
     case OffscreenError::CommandPoolCreationFailed: return "vkCreateCommandPool failed";
     case OffscreenError::CommandBufferAllocationFailed:
         return "vkAllocateCommandBuffers failed";
+    case OffscreenError::ResetCommandBufferFailed: return "vkResetCommandBuffer failed";
     case OffscreenError::BeginCommandBufferFailed: return "vkBeginCommandBuffer failed";
     case OffscreenError::EndCommandBufferFailed:   return "vkEndCommandBuffer failed";
     case OffscreenError::SubmitFailed:             return "vkQueueSubmit failed";
@@ -357,7 +358,12 @@ Result<std::span<const mdux::core::ColorRgba8>, OffscreenError> OffscreenTarget:
         return err(OffscreenError::NullQueue);
     }
 
-    vkResetCommandBuffer(commandBuffer_, 0);
+    // Checked, not discarded. A failed reset (VK_ERROR_OUT_OF_DEVICE_MEMORY is the realistic one)
+    // leaves the buffer in an invalid state, and recording into it afterwards is undefined - so
+    // the failure has to stop here rather than become a confusing error at submit time.
+    if (vkResetCommandBuffer(commandBuffer_, 0) != VK_SUCCESS) {
+        return err(OffscreenError::ResetCommandBufferFailed);
+    }
     const VkCommandBufferBeginInfo begin{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = nullptr,

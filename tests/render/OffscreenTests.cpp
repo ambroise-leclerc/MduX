@@ -382,13 +382,34 @@ TEST_CASE("Rendering the same frame twice produces identical pixels", "pixel") {
     REQUIRE(second.has_value());
 
     CHECK(std::ranges::equal(captured, *second));
+
+    // The render pass declares initialLayout = VK_IMAGE_LAYOUT_UNDEFINED and
+    // finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, so after the first pass the image is
+    // left in a layout that is not the one the second pass names as its initial layout.
+    //
+    // That is legal, and this assertion is where the claim is checked rather than argued.
+    // VUID-VkRenderPassBeginInfo-initialLayout-00897 requires a match only when initialLayout is
+    // *not* UNDEFINED; UNDEFINED means "the previous contents may be discarded", which is exactly
+    // right here because loadOp is CLEAR and the pass overwrites every pixel anyway.
+    //
+    // Without the layers loaded this would be a vacuous check, so it says so instead of passing.
+    if (gpu.validationEnabled()) {
+        CHECK_MESSAGE(mdux::test::HeadlessDevice::validationMessages().empty(),
+                      "validation layers objected to rendering twice into one target: " +
+                          (mdux::test::HeadlessDevice::validationMessages().empty()
+                               ? std::string{}
+                               : mdux::test::HeadlessDevice::validationMessages().front()));
+    } else {
+        std::println("  (validation layers unavailable: layout legality not machine-checked)");
+    }
 }
 
 TEST_CASE("Every OffscreenError has its own description", "pixel") {
-    constexpr std::array<OffscreenError, 19> all{
+    constexpr std::array<OffscreenError, 20> all{
         OffscreenError::NullDevice,
         OffscreenError::NullPhysicalDevice,
         OffscreenError::NullQueue,
+        OffscreenError::ResetCommandBufferFailed,
         OffscreenError::EmptyExtent,
         OffscreenError::ExtentTooLarge,
         OffscreenError::ImageCreationFailed,

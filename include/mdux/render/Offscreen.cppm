@@ -58,6 +58,7 @@ enum class OffscreenError : std::uint8_t {
     MemoryMapFailed,
     CommandPoolCreationFailed,
     CommandBufferAllocationFailed,
+    ResetCommandBufferFailed,  ///< the buffer is left invalid; recording on would be UB
     BeginCommandBufferFailed,
     EndCommandBufferFailed,
     SubmitFailed,
@@ -119,6 +120,14 @@ public:
     /// Bounds-checked and returning an optional rather than indexing: an out-of-range read in a
     /// pixel test is a mistake in the expectation, and it should say so rather than compare
     /// whatever was next in memory.
+    ///
+    /// `std::optional` is safe here despite ColorRgba8 being imported from `mdux.core.units`. The
+    /// GCC 15 defect recorded in tools/shader/ShaderBake.cppm needs a type that is *not* trivially
+    /// destructible - it is the implicit destructor's exception specification that is computed
+    /// inconsistently across the module boundary. ColorRgba8 is an aggregate of four
+    /// `std::uint8_t`, so `std::optional` gives it a trivial destructor and there is nothing to
+    /// disagree about. Both GCC legs compile this today; a value type with a `std::string` in it
+    /// would need `mdux::core::Result` instead.
     [[nodiscard]] std::optional<mdux::core::ColorRgba8> pixelAt(mdux::core::Px x,
                                                                 mdux::core::Px y) const noexcept;
 

@@ -85,15 +85,24 @@ struct Recipe {
  *
  * There is a second, duller reason, and it is worth stating precisely because #121 and #124 will
  * meet it too. **GCC 15 cannot instantiate `std::optional<T>` when `T` is, or contains, a class
- * imported from another named module**: the implicit destructor's exception specification is
- * computed inconsistently across the module boundary, and `std::optional`'s destructor is where
- * that surfaces, as "use of deleted function ~ShaderPackage()".
+ * imported from another named module *and* that class is not trivially destructible**: the
+ * implicit destructor's exception specification is computed inconsistently across the module
+ * boundary, and `std::optional`'s destructor is where that surfaces, as "use of deleted function
+ * ~ShaderPackage()".
+ *
+ * The trivially-destructible qualifier is load-bearing and was missing from an earlier wording of
+ * this note. `std::optional` selects a trivial destructor for such a type, so there is no implicit
+ * destructor whose exception specification could disagree - which is why
+ * `std::optional<mdux::core::ColorRgba8>` in `mdux.render.offscreen` compiles on GCC 15 and 16
+ * even though ColorRgba8 is imported from `mdux.core.units`. `ShaderPackage` holds `std::string`
+ * and is therefore in scope; an aggregate of four `std::uint8_t` is not.
  *
  * `std::expected<T, E>` is *not* affected - `ShaderPackage::parse()` returns one and is used from
  * plain translation units without trouble - and neither is holding such a value directly. So the
- * rule is narrow: prefer `mdux::core::Result` over `std::optional` for a type that crosses a
- * module boundary. Here it means `run()` returning `std::optional<BakeOutputs>` would not compile
- * had `BakeOutputs` kept its `ShaderPackage`, which is what first exposed this.
+ * rule is narrow: prefer `mdux::core::Result` over `std::optional` for a *non-trivially-
+ * destructible* type that crosses a module boundary. Here it means `run()` returning
+ * `std::optional<BakeOutputs>` would not compile had `BakeOutputs` kept its `ShaderPackage`, which
+ * is what first exposed this.
  */
 struct BakeOutputs {
     std::string packageJson;         ///< canonical `package.json` text

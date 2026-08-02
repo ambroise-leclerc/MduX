@@ -133,6 +133,7 @@ jobs:
           vulkan-utility-libraries-dev \
           spirv-tools \
           mesa-vulkan-drivers \
+          vulkan-validationlayers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
@@ -250,6 +251,7 @@ jobs:
           vulkan-utility-libraries-dev \
           spirv-tools \
           mesa-vulkan-drivers \
+          vulkan-validationlayers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
