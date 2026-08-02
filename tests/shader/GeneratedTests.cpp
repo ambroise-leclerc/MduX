@@ -134,12 +134,35 @@ TEST_CASE("moduleSpirv() refuses a range that escapes the payload", "evidence-un
 }
 
 TEST_CASE("The generated identifier matches what the build predicts", "evidence-unit") {
-    // cmake/MduXShaderEmit.cmake derives the generated filenames with a regex that must agree
-    // with identifierFor(). A mismatch would surface as a missing file with no explanation, so
-    // it is asserted rather than trusted.
-    CHECK(mdux::tools::shaderemit::identifierFor("mdux-ui") == "mdux_ui");
-    CHECK(mdux::tools::shaderemit::identifierFor("a.b-c") == "a_b_c");
-    CHECK(mdux::tools::shaderemit::identifierFor("plain") == "plain");
-    // A package id may begin with a digit; a C++ identifier may not.
-    CHECK(mdux::tools::shaderemit::identifierFor("2d") == "_2d");
+    // cmake/MduXShaderEmit.cmake derives the generated filenames from the package id and must
+    // agree with identifierFor() exactly; a mismatch surfaces as a build failure on a file nobody
+    // wrote, with nothing pointing at the cause.
+    //
+    // The comparison is against what CMake *actually computed*, written to a file at configure
+    // time by mdux_shader_identifier(). Asserting identifierFor()'s return values here - which is
+    // what this test used to do - pins one side of a two-side agreement and cannot observe the
+    // other drifting. It did drift: the CMake half never applied the leading-underscore rule.
+    std::ifstream parity{MDUX_IDENTIFIER_PARITY_FILE};
+    REQUIRE(parity.is_open());
+
+    std::size_t compared = 0;
+    std::string line;
+    while (std::getline(parity, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        const std::size_t tab = line.find('\t');
+        REQUIRE(tab != std::string::npos);
+        const std::string id = line.substr(0, tab);
+        const std::string fromCMake = line.substr(tab + 1);
+
+        const std::string fromCpp = mdux::tools::shaderemit::identifierFor(id);
+        CHECK_MESSAGE(fromCpp == fromCMake, "package id '" + id + "': the build derives '" +
+                                                fromCMake + "' but identifierFor() answers '" +
+                                                fromCpp + "'");
+        ++compared;
+    }
+
+    // A file that went empty would otherwise pass this test silently.
+    CHECK(compared >= 8);
 }

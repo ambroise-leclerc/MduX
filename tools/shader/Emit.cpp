@@ -38,8 +38,16 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     if (!file) {
         return std::nullopt;
     }
-    const auto size = static_cast<std::streamsize>(file.tellg());
-    file.seekg(0);
+    // tellg() answers -1 on a stream error rather than throwing, and the `size > 0` guard below
+    // does not help: the vector is sized before it, so a negative size becomes a request for
+    // 2^64-1 bytes and the process dies without naming the file it was reading.
+    const std::streamoff size = file.tellg();
+    if (size < 0) {
+        return std::nullopt;
+    }
+    if (!file.seekg(0)) {
+        return std::nullopt;
+    }
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     if (size > 0) {
         file.read(reinterpret_cast<char*>(bytes.data()), size);

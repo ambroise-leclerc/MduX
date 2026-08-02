@@ -19,6 +19,24 @@
 
 include_guard(GLOBAL)
 
+# mdux_shader_identifier(<out_var> <package_id>)
+#
+# The C++ identifier mdux-shaderemit derives from a package id, and therefore the stem of the
+# files it writes. This must agree with identifierFor() in tools/shader/Emit.cpp exactly; a
+# disagreement surfaces as a build failure on a file nobody wrote, with nothing pointing at the
+# cause. It is a named function rather than two inline lines so that a test can call it - see
+# `shader-identifier-parity` in tests/CMakeLists.txt, which runs this and the C++ side over the
+# same ids and compares. Asserting only the C++ half, as this file previously claimed to do,
+# cannot catch a CMake-side divergence.
+function(mdux_shader_identifier out_var package_id)
+    string(REGEX REPLACE "[^A-Za-z0-9]" "_" identifier "${package_id}")
+    # A C++ identifier may not start with a digit; a package id may.
+    if(identifier MATCHES "^[0-9]")
+        set(identifier "_${identifier}")
+    endif()
+    set(${out_var} "${identifier}" PARENT_SCOPE)
+endfunction()
+
 # mdux_emit_shader_package(ID <id> [OUT_MODULE <var>] [OUT_HEADER <var>] [OUT_DIR <var>])
 #
 # Adds a custom command generating the sources, and a target `emit-shader-<id>` that produces them.
@@ -46,11 +64,7 @@ function(mdux_emit_shader_package)
             "`cmake --build <dir> --target mdux-bake-update`.")
     endif()
 
-    # The identifier mdux-shaderemit derives from the id: every character that is not
-    # alphanumeric becomes an underscore. Kept in step with identifierFor() in Emit.cpp, and
-    # asserted by a test rather than trusted, because a mismatch here would surface as a missing
-    # file with no explanation.
-    string(REGEX REPLACE "[^A-Za-z0-9]" "_" identifier "${ARG_ID}")
+    mdux_shader_identifier(identifier "${ARG_ID}")
 
     set(output_dir "${CMAKE_BINARY_DIR}/mdux_generated/shader")
     set(module_file "${output_dir}/${identifier}.cppm")

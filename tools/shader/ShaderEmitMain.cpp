@@ -61,6 +61,10 @@ int main(int argc, char** argv) {
             continue;
         }
         if (argument == "--format=text") {
+            // Assigned rather than skipped: last flag wins, so a wrapper that appends
+            // `--format=text` to a command line which already carried `--format=json` gets text.
+            // Falling through here silently kept the earlier json and ignored the later request.
+            format = cli::Format::Text;
             continue;
         }
         if (argument.starts_with("-")) {

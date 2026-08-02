@@ -148,6 +148,26 @@ target_include_directories(shader_tests PRIVATE
 # gate in CI stays satisfied.
 target_compile_definitions(shader_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
+# The build's own answers for mdux_shader_identifier(), written where GeneratedTests can read them
+# and compare against identifierFor() in the C++ emitter.
+#
+# Both halves have to be *executed* for this to mean anything. GeneratedTests previously asserted
+# identifierFor()'s behaviour and called that "kept in step with cmake/MduXShaderEmit.cmake" - but
+# a C++ assertion cannot observe the CMake regex, so the two drifted: the CMake side never applied
+# the leading-underscore rule for ids beginning with a digit, and would have looked for `2d.cppm`
+# while the emitter wrote `_2d.cppm`.
+set(mdux_identifier_parity_ids "mdux-ui" "a.b-c" "plain" "2d" "3d" "already_fine" "a b" "ui.v2")
+set(mdux_identifier_parity_lines "")
+foreach(mdux_identifier_parity_id IN LISTS mdux_identifier_parity_ids)
+    mdux_shader_identifier(mdux_identifier_parity_value "${mdux_identifier_parity_id}")
+    string(APPEND mdux_identifier_parity_lines
+           "${mdux_identifier_parity_id}\t${mdux_identifier_parity_value}\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/shader_identifier_parity.tsv"
+     "${mdux_identifier_parity_lines}")
+target_compile_definitions(shader_tests PRIVATE
+    MDUX_IDENTIFIER_PARITY_FILE="${CMAKE_CURRENT_BINARY_DIR}/shader_identifier_parity.tsv")
+
 set_target_properties(shader_tests
     PROPERTIES
         CXX_STANDARD 23
