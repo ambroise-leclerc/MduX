@@ -18,7 +18,7 @@ Before making the change, classify it as one of:
   that don't touch rendering correctness, compliance metadata, or resource lifetime.
 - **Potentially safety-relevant** — touches code adjacent to safety behavior but the change itself
   doesn't alter behavior (e.g. adding a test, adding logging that doesn't change control flow).
-- **Safety-relevant** — changes behavior in `MedicalUiRenderer` rendering/validation paths, the
+- **Safety-relevant** — changes behavior in `mdux.draw` / `mdux.render.vulkan` rendering paths, the
   Vulkan SC device-lifetime object/memory managers (`mdux.vulkansc.*`), compliance-metadata
   handling (`ComplianceMetadata`, `Compliance`, validation logic), or anything that changes what
   the software does at runtime in a way a user or reviewer would need to know about.

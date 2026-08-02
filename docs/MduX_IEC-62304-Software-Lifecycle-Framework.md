@@ -6,6 +6,14 @@ version: 0.1
 standard: IEC 62304
 ---
 
+> **Superseded.** This document describes APIs that do not exist and overstates what the
+> repository implements. Its replacement is `docs/iec62304/` plus the records under
+> `software_development_file/`. Issue #112 deletes it; issue #127 has already deleted the
+> `MedicalUiRenderer` / `MedicalUiConfig` / `VulkanContext` types its code samples use, so those
+> samples no longer compile against anything.
+>
+> Do not cite this file. It is left in place only until #112 records its disposition.
+
 ## Version History
 
 | Version | Date | Modification | Author |

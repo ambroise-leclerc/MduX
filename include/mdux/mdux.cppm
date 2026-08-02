@@ -1,9 +1,18 @@
 /**
- * @brief MduX C++23 Module Interface - Medical Device User eXperience Library
- * 
- * Pure Vulkan complement library for medical device user interfaces.
- * Integrates with existing Vulkan applications to provide compliant UI rendering
- * for Class B and Class C medical devices.
+ * @brief MduX facade: version, compliance metadata and Vulkan capability reporting.
+ *
+ * What is left here after issue #127 retired the HTML/CSS runtime path. `MedicalUiRenderer`,
+ * `MedicalUiConfig`, `MedicalUiContent`, `UiFileWatcher`, `UiReloadEvent` and `RenderStatistics`
+ * are gone: the renderer recorded no Vulkan commands and never created a pipeline, and the
+ * "UI definition" was an HTML string nothing parsed. Deleting them is the point of #13 rather
+ * than a side effect of it - there is now a renderer that actually draws.
+ *
+ * Rendering lives in `mdux.draw` (governed, no Vulkan) and `mdux.render.vulkan` (adapter).
+ * `VulkanContext` went with them, superseded by `mdux::render::VulkanRenderContext`, which
+ * initialises its members - the old one did not, so an uninitialised instance read as a plausible
+ * device and passed validation right up until the first real call faulted.
+ *
+ * This module keeps only what an application asks MduX *about* rather than asks it *to do*.
  */
 
 module;
@@ -25,72 +34,6 @@ import std;
 #define MDUX_STRINGIFY(x) MDUX_STRINGIFY_DETAIL(x)
 #define MDUX_VERSION_STRING \
     MDUX_STRINGIFY(MDUX_VERSION_MAJOR) "." MDUX_STRINGIFY(MDUX_VERSION_MINOR) "." MDUX_STRINGIFY(MDUX_VERSION_PATCH)
-
-// Forward declarations for medical UI system
-export namespace mdux {
-    /**
-     * @brief Medical UI content structure for HTML/CSS-based interfaces
-     */
-    struct MedicalUiContent {
-        std::string identifier;        ///< Unique identifier for traceability
-        std::string htmlContent;      ///< HTML interface definition
-        std::string cssContent;       ///< CSS styling information
-        std::vector<std::string> validationErrors; ///< Compliance validation errors
-        std::string version;          ///< Content version for medical traceability
-        
-        bool isValid() const noexcept { return validationErrors.empty(); }
-        bool hasContent() const noexcept { return !htmlContent.empty(); }
-    };
-    
-    /**
-     * @brief Hot-reload event for development workflows
-     */
-    struct UiReloadEvent {
-        std::filesystem::path filePath;
-        MedicalUiContent uiContent;
-        bool contentChanged = false;
-        std::string errorMessage;
-        std::chrono::system_clock::time_point timestamp;
-        
-        bool isSuccess() const noexcept { return errorMessage.empty(); }
-    };
-    
-    /**
-     * @brief File change callback for hot-reload functionality
-     */
-    using UiChangeCallback = std::function<void(const UiReloadEvent&)>;
-    
-    /**
-     * @brief Hot-reload file watcher for development
-     */
-    class UiFileWatcher {
-    public:
-        UiFileWatcher() = default;
-        ~UiFileWatcher();
-        
-        // Non-copyable but movable
-        UiFileWatcher(const UiFileWatcher&) = delete;
-        UiFileWatcher& operator=(const UiFileWatcher&) = delete;
-        UiFileWatcher(UiFileWatcher&&) noexcept;
-        UiFileWatcher& operator=(UiFileWatcher&&) noexcept;
-        
-        bool startWatching(const std::filesystem::path& filePath, UiChangeCallback callback);
-        void stopWatching();
-        bool isWatching() const noexcept { return watching; }
-        MedicalUiContent loadContent(const std::filesystem::path& filePath);
-        
-    private:
-        std::filesystem::path watchedFile;
-        UiChangeCallback changeCallback;
-        std::atomic<bool> watching{false};
-        std::atomic<bool> shouldStop{false};
-        std::thread watchThread;
-        std::filesystem::file_time_type lastWriteTime;
-        
-        void watchLoop();
-        std::filesystem::file_time_type getFileTime(const std::filesystem::path& path);
-    };
-}
 
 export namespace mdux {
 
@@ -162,27 +105,6 @@ struct VulkanSupport {
 /**
  * @brief Vulkan rendering context provided by the user application
  */
-struct VulkanContext {
-    VkDevice device;                   ///< Vulkan logical device
-    VkPhysicalDevice physicalDevice;   ///< Vulkan physical device  
-    VkCommandBuffer commandBuffer;     ///< Active command buffer for recording
-    VkRenderPass renderPass;          ///< Compatible render pass
-    VkExtent2D renderExtent;          ///< Render area dimensions
-    uint32_t currentFrame;            ///< Current frame index
-    float deltaTime;                  ///< Time since last frame (seconds)
-    
-    /**
-     * @brief Validate that context has all required handles
-     * @return true if context is valid for MduX rendering
-     */
-    bool isValid() const noexcept {
-        return device != VK_NULL_HANDLE && 
-               physicalDevice != VK_NULL_HANDLE &&
-               commandBuffer != VK_NULL_HANDLE && 
-               renderPass != VK_NULL_HANDLE;
-    }
-};
-
 /**
  * @brief Medical device compliance metadata
  */
@@ -203,191 +125,6 @@ struct ComplianceMetadata {
 
 //=============================================================================
 // Medical UI Rendering System
-//=============================================================================
-
-/**
- * @brief Medical UI rendering configuration
- */
-struct MedicalUiConfig {
-    std::filesystem::path uiDefinitionPath;   ///< Path to HTML/CSS UI definition
-    ComplianceMetadata compliance;            ///< Medical device compliance metadata
-    bool enableHotReload = false;             ///< Enable hot-reload for development
-    bool enableValidation = true;             ///< Enable medical compliance validation
-    std::string rendererId;                   ///< Unique renderer identifier for traceability
-    
-    /**
-     * @brief Check if configuration is valid
-     */
-    bool isValid() const noexcept {
-        return !uiDefinitionPath.empty() && 
-               compliance.isComplete() && 
-               !rendererId.empty();
-    }
-};
-
-/**
- * @brief Medical UI render statistics for compliance monitoring
- */
-struct RenderStatistics {
-    uint64_t frameCount = 0;              ///< Total frames rendered
-    float averageFrameTime = 0.0f;       ///< Average frame time in milliseconds
-    uint64_t validationErrors = 0;       ///< Count of validation errors
-    std::chrono::system_clock::time_point lastRender; ///< Timestamp of last render
-    
-    /**
-     * @brief Update statistics with new frame timing
-     */
-    void updateFrame(float frameTime) noexcept {
-        frameCount++;
-        averageFrameTime = (averageFrameTime * static_cast<float>(frameCount - 1) + frameTime) / static_cast<float>(frameCount);
-        lastRender = std::chrono::system_clock::now();
-    }
-};
-
-//=============================================================================
-// Medical UI Renderer Core
-//=============================================================================
-
-class MedicalUiRenderer {
-private:
-    // Core Vulkan resources (provided by user)
-    VkDevice device = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    
-    // MduX-managed resources
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline uiPipeline = VK_NULL_HANDLE;
-    
-    // UI content and configuration
-    MedicalUiConfig config;
-    MedicalUiContent currentContent;
-    std::unique_ptr<UiFileWatcher> fileWatcher;
-    RenderStatistics statistics;
-    
-    // Compliance and validation
-    std::vector<std::string> validationErrors;
-    bool complianceValidated = false;
-    
-public:
-    /**
-     * @brief Create medical UI renderer for existing Vulkan application
-     * @param vulkanContext User's Vulkan context
-     * @param config Medical UI configuration
-     */
-    explicit MedicalUiRenderer(const VulkanContext& vulkanContext, const MedicalUiConfig& config);
-    
-    /**
-     * @brief Destructor - cleanup MduX resources
-     */
-    ~MedicalUiRenderer();
-    
-    // Non-copyable but movable
-    MedicalUiRenderer(const MedicalUiRenderer&) = delete;
-    MedicalUiRenderer& operator=(const MedicalUiRenderer&) = delete;
-    MedicalUiRenderer(MedicalUiRenderer&& other) noexcept;
-    MedicalUiRenderer& operator=(MedicalUiRenderer&& other) noexcept;
-    
-    /**
-     * @brief Load UI definition from file
-     * @param filePath Path to HTML/CSS UI definition
-     * @return true if loaded successfully
-     */
-    bool loadUiDefinition(const std::filesystem::path& filePath);
-    
-    /**
-     * @brief Render medical UI into user's command buffer
-     * @param context Current Vulkan rendering context
-     * @return true if rendered successfully
-     */
-    bool render(const VulkanContext& context);
-    
-    /**
-     * @brief Update UI content programmatically
-     * @param content New UI content
-     * @return true if updated successfully
-     */
-    bool updateContent(const MedicalUiContent& content);
-    
-    /**
-     * @brief Enable/disable hot-reload for development
-     * @param enable Enable hot-reload functionality
-     * @return true if hot-reload state changed successfully
-     */
-    bool setHotReloadEnabled(bool enable);
-    
-    /**
-     * @brief Get current UI content
-     * @return Current medical UI content
-     */
-    const MedicalUiContent& getCurrentContent() const noexcept { return currentContent; }
-    
-    /**
-     * @brief Get render statistics for compliance monitoring
-     * @return Current render statistics
-     */
-    const RenderStatistics& getStatistics() const noexcept { return statistics; }
-    
-    /**
-     * @brief Get compliance metadata
-     * @return Medical device compliance metadata
-     */
-    const ComplianceMetadata& getCompliance() const noexcept { return config.compliance; }
-    
-    /**
-     * @brief Validate medical compliance
-     * @return true if all compliance requirements are met
-     */
-    bool validateCompliance();
-    
-    /**
-     * @brief Get validation errors
-     * @return List of current validation errors
-     */
-    const std::vector<std::string>& getValidationErrors() const noexcept { return validationErrors; }
-    
-private:
-    /**
-     * @brief Initialize Vulkan resources for UI rendering
-     * @param renderPass Compatible render pass from user
-     * @return true if initialization successful
-     */
-    bool initializeVulkanResources(VkRenderPass renderPass);
-    
-    /**
-     * @brief Cleanup MduX Vulkan resources
-     */
-    void cleanupVulkanResources();
-    
-    /**
-     * @brief Create descriptor set layout for UI rendering
-     * @return true if successful
-     */
-    bool createDescriptorSetLayout();
-    
-    /**
-     * @brief Create graphics pipeline for UI rendering
-     * @param renderPass Compatible render pass
-     * @return true if successful
-     */
-    bool createGraphicsPipeline(VkRenderPass renderPass);
-    
-    /**
-     * @brief Handle hot-reload events
-     * @param event UI reload event
-     */
-    void onHotReload(const UiReloadEvent& event);
-    
-    /**
-     * @brief Validate medical device compliance requirements
-     * @return true if compliant
-     */
-    bool performComplianceValidation();
-};
-
-//=============================================================================
-// Library Management Functions
 //=============================================================================
 
 /**
