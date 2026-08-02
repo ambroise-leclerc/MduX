@@ -29,6 +29,12 @@ Makefile
 # which may include *.spv, *.cmake, or other otherwise-ignored extensions).
 !generated/**
 
+# ...and so are the source assets a recipe names. A shader recipe points at SPIR-V compiled once
+# by hand and checked in, rather than compiled during the build: glslangValidator's output varies
+# between its own versions, so building it would make every committed package depend on whichever
+# shader compiler the CI image shipped. The *.spv rule above would otherwise swallow them.
+!recipes/**
+
 # CI-downloaded SDKs that land inside the checkout instead of a temp dir.
 # humbletim/setup-vulkan-sdk extracts to $GITHUB_WORKSPACE/VULKAN_SDK on Windows
 # (confirmed from a real CI run: VULKAN_SDK=D:/a/MduX/MduX/VULKAN_SDK, i.e. the

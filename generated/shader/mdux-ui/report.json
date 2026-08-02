@@ -1,0 +1,41 @@
+{
+  "inputs": [
+    {
+      "path": "recipes/shader/mdux-ui/ui.vert.spv",
+      "sha256": "deb1c7ba3b0204512bbc0dc5c09e9e5bb2d1e076331a873a9b5083350182c401"
+    },
+    {
+      "path": "recipes/shader/mdux-ui/ui.frag.spv",
+      "sha256": "dcd682aa2a1a76684d461e8b99fd3408f790f1aed133601490515c5024c3f4ee"
+    }
+  ],
+  "options": {
+    "id": "mdux-ui",
+    "moduleIds": [
+      "ui.vert",
+      "ui.frag"
+    ],
+    "moduleSources": [
+      "recipes/shader/mdux-ui/ui.vert.spv",
+      "recipes/shader/mdux-ui/ui.frag.spv"
+    ],
+    "sidecar": "shaders.spv"
+  },
+  "outputs": [
+    {
+      "path": "package.json",
+      "sha256": "0b8743c277666ec2203e85aac99607d0552f8337e5dc03c6f4514d0a97edea4b"
+    },
+    {
+      "path": "shaders.spv",
+      "sha256": "c52b199c2442f863230eead956987d518e19b7458b56ca76d3b68743b645be81"
+    }
+  ],
+  "recipe": {
+    "path": "recipes/shader/mdux-ui.toml",
+    "sha256": "45160f29ea6f456aae843386c09ca39fee601694c718e52038308cfbdb091123"
+  },
+  "schemaVersion": 1,
+  "tool": "mdux-shaderbake",
+  "toolVersion": "0.3.0"
+}

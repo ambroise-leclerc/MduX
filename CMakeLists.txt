@@ -302,6 +302,28 @@ target_link_libraries(MduXCore PRIVATE MduX_warnings)
 # skipped them could not run `ctest -L evidence` at all (ADR-007).
 add_subdirectory(tools)
 
+# Baked artifacts (ADR-007). Declared here rather than in tools/ because a bake is a property of
+# the repository, not of the tool that happens to produce it - and because mdux_bake_artifact()
+# requires its TOOL target to exist already.
+#
+# Each call registers three things: a build-time bake into the build tree, a `-update` target that
+# stages the result into generated/ (the only path in the build permitted to write into the source
+# tree), and an `evidence.<kind>.<id>` test that byte-compares the two. A normal build never
+# writes into generated/; CI's "Verify no source-tree writes" step depends on that.
+mdux_bake_artifact(
+    KIND shader
+    ID mdux-ui
+    TOOL mdux-shaderbake
+    RECIPE recipes/shader/mdux-ui.toml
+    SOURCES
+        recipes/shader/mdux-ui/ui.vert.spv
+        recipes/shader/mdux-ui/ui.frag.spv
+    OUTPUTS
+        package.json
+        report.json
+        shaders.spv
+)
+
 if(MDUX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
