@@ -1,5 +1,4 @@
 /**
- * @file UiPackageTests.cpp
  * @brief The committed MduX UI shader package must keep the contract the renderer depends on.
  *
  * `evidence.shader.mdux-ui` already proves the committed artifact is what the baker produces from
@@ -24,7 +23,7 @@ namespace {
 namespace shader = mdux::shader;
 namespace evidence = mdux::evidence;
 
-const std::filesystem::path kPackageDir =
+const std::filesystem::path packageDir =
     std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "shader" / "mdux-ui";
 
 [[nodiscard]] std::optional<std::vector<std::byte>> readFile(const std::filesystem::path& path) {
@@ -46,7 +45,7 @@ const std::filesystem::path kPackageDir =
 /// not compile on GCC 15 - see the note in tools/shader/ShaderBake.cppm - while the `std::expected`
 /// that `parse()` already returns is unaffected, so this is the shape to use.
 [[nodiscard]] mdux::core::Result<shader::ShaderPackage, shader::SchemaError> committedPackage() {
-    auto bytes = readFile(kPackageDir / "package.json");
+    auto bytes = readFile(packageDir / "package.json");
     if (!bytes.has_value()) {
         return mdux::core::err(shader::SchemaError::MalformedPackage);
     }
@@ -99,7 +98,7 @@ TEST_CASE("The UI pipeline binds one combined image sampler at set 0 binding 0",
     // The fragment stage alone samples it. A vertex bit here would mean the pipeline layout
     // requested access no shader uses, which the validation layers report as a warning and which
     // costs a descriptor slot on a device that has few.
-    CHECK(atlas.stages == shader::kFragmentBit);
+    CHECK(atlas.stages == shader::fragmentBit);
 }
 
 TEST_CASE("The UI pipeline takes an 8-byte vertex-only push constant", "evidence-unit") {
@@ -112,7 +111,7 @@ TEST_CASE("The UI pipeline takes an 8-byte vertex-only push constant", "evidence
     const shader::PushConstantRange& range = package->pushConstants.front();
     CHECK(range.offset == 0);
     CHECK(range.size == 8);
-    CHECK(range.stages == shader::kVertexBit);
+    CHECK(range.stages == shader::vertexBit);
 }
 
 TEST_CASE("The sidecar matches the digests the package records", "evidence-unit") {
@@ -121,7 +120,7 @@ TEST_CASE("The sidecar matches the digests the package records", "evidence-unit"
     // is what a consumer that only has the committed directory can rely on.
     auto package = committedPackage();
     REQUIRE(package.has_value());
-    auto sidecar = readFile(kPackageDir / package->sidecarPath);
+    auto sidecar = readFile(packageDir / package->sidecarPath);
     REQUIRE(sidecar.has_value());
 
     CHECK(sidecar->size() == package->sidecarByteLength);
@@ -141,7 +140,7 @@ TEST_CASE("Every module in the sidecar is well-formed SPIR-V for its declared st
     // here rather than at vkCreateShaderModule.
     auto package = committedPackage();
     REQUIRE(package.has_value());
-    auto sidecar = readFile(kPackageDir / package->sidecarPath);
+    auto sidecar = readFile(packageDir / package->sidecarPath);
     REQUIRE(sidecar.has_value());
 
     for (const shader::ShaderModule& module : package->modules) {

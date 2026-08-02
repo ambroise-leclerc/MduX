@@ -23,13 +23,13 @@ layout(location = 2) flat in uint fragMode;
 
 layout(location = 0) out vec4 outColor;
 
-const uint kModeSolid = 0u;
-const uint kModeCoverageR8 = 1u;
+const uint modeSolid = 0u;
+const uint modeCoverageR8 = 1u;
 
 void main() {
-    if (fragMode == kModeSolid) {
+    if (fragMode == modeSolid) {
         outColor = fragColor;
-    } else if (fragMode == kModeCoverageR8) {
+    } else if (fragMode == modeCoverageR8) {
         // Coverage modulates alpha only, so a glyph takes its colour from the vertex and its
         // shape from the atlas. Storing coverage in R8 rather than RGBA8 is a four-fold saving
         // on the atlas, which on a device is the difference that matters.
