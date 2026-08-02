@@ -78,14 +78,12 @@ void DrawList::reset() noexcept {
     indexCount_ = 0;
     commandCount_ = 0;
     clip_ = {};
-    clipSet_ = false;
 }
 
 void DrawList::setClip(const mdux::core::Rect& clip) noexcept {
     // Recorded rather than applied: the next primitive notices the change and starts a command.
     // Doing it here would emit an empty command for a clip nothing was drawn under.
     clip_ = clip;
-    clipSet_ = true;
 }
 
 ResultVoid<DrawError> DrawList::addSolidRect(const mdux::core::Rect& rect,

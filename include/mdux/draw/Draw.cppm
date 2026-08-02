@@ -130,8 +130,13 @@ enum class DrawError : std::uint8_t {
 /// different bytes on a big-endian host, and the whole point of a governed type is that it means
 /// the same thing everywhere.
 [[nodiscard]] constexpr std::uint32_t packColor(mdux::core::ColorRgba8 color) noexcept {
-    return static_cast<std::uint32_t>(color.r) | (static_cast<std::uint32_t>(color.g) << 8) |
-           (static_cast<std::uint32_t>(color.b) << 16) | (static_cast<std::uint32_t>(color.a) << 24);
+    // `std::bit_cast` from a four-byte array is what makes the paragraph above true. The obvious
+    // `r | g << 8 | b << 16 | a << 24` produces the intended bytes only on a little-endian host;
+    // on a big-endian one it reverses them, and the shader would read alpha where it expects red.
+    // Constructing the array and reinterpreting it states the memory order directly, and is
+    // constexpr, so the packing is fixed at compile time exactly as the shift form was.
+    const std::array<std::uint8_t, 4> bytes{color.r, color.g, color.b, color.a};
+    return std::bit_cast<std::uint32_t>(bytes);
 }
 
 /**
@@ -193,8 +198,10 @@ private:
     std::uint32_t vertexCount_{0};
     std::uint32_t indexCount_{0};
     std::uint32_t commandCount_{0};
+    /// The clip every subsequent primitive is recorded under. A default-constructed Rect means
+    /// "no clip", which is also what `reset()` restores - so no separate "is one set?" flag is
+    /// needed, and one did exist here without ever being read.
     mdux::core::Rect clip_{};
-    bool clipSet_{false};
 };
 
 }  // namespace mdux::draw
