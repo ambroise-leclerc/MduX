@@ -263,6 +263,7 @@ mdux_discover_tests(render_tests)
 add_executable(offscreen_tests
     render/OffscreenTestMain.cpp
     render/OffscreenTests.cpp
+    render/PixelTests.cpp
 )
 
 target_sources(offscreen_tests
