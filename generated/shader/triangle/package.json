@@ -1,0 +1,30 @@
+{
+  "descriptors": [],
+  "id": "triangle",
+  "kind": "shader",
+  "modules": [
+    {
+      "byteLength": 1440,
+      "byteOffset": 0,
+      "entryPoint": "main",
+      "id": "triangle.vert",
+      "sha256": "300c39c3e011b48608edf2f2a98d3f32061f341e0a447de2b071de9fc1927537",
+      "stage": "vertex"
+    },
+    {
+      "byteLength": 500,
+      "byteOffset": 1440,
+      "entryPoint": "main",
+      "id": "triangle.frag",
+      "sha256": "d19262c97d479f7dd8a30ed99a9e79195b9fb31146c8a6f059473bba804d4e46",
+      "stage": "fragment"
+    }
+  ],
+  "pushConstants": [],
+  "schemaVersion": 1,
+  "sidecar": {
+    "byteLength": 1940,
+    "path": "shaders.spv",
+    "sha256": "5e4f62d873c70fdb39b956aa989e201eb22e103bcc75a70982f5cf04931a017f"
+  }
+}

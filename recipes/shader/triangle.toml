@@ -1,0 +1,28 @@
+# The triangle example's shader package.
+#
+# Exists so examples/VulkanSCTriangleExample.cpp can stop loading SPIR-V from the working
+# directory at runtime (issue #122). It also does something useful for the pipeline itself: this
+# package declares no descriptors and no push constants, so baking it exercises the empty-contract
+# path that mdux-ui, with its atlas and its viewport push constant, never reaches.
+#
+# The .spv files here are committed source assets compiled once by hand, for the same reason
+# recipes/shader/mdux-ui.toml gives - glslangValidator's output varies between its own versions,
+# so compiling during the build would make the committed package depend on whichever shader
+# compiler the CI image shipped.
+#
+#   glslangValidator -V --target-env vulkan1.3 recipes/shader/triangle/triangle.vert \
+#                       -o recipes/shader/triangle/triangle.vert.spv
+#   glslangValidator -V --target-env vulkan1.3 recipes/shader/triangle/triangle.frag \
+#                       -o recipes/shader/triangle/triangle.frag.spv
+#   cmake --build <build-dir> --target mdux-bake-update
+
+[package]
+id = "triangle"
+sidecar = "shaders.spv"
+
+[modules]
+ids = ["triangle.vert", "triangle.frag"]
+sources = [
+    "recipes/shader/triangle/triangle.vert.spv",
+    "recipes/shader/triangle/triangle.frag.spv",
+]
