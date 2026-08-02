@@ -1,5 +1,4 @@
 /**
- * @file GeneratedTests.cpp
  * @brief The generated module and header must describe identical bytes and an identical contract,
  *        and both must agree with the committed artifact they were rendered from.
  *
@@ -29,11 +28,11 @@ namespace evidence = mdux::evidence;
 using mdux::test::generated::fromHeader;
 using mdux::test::generated::fromModule;
 
-const std::filesystem::path kPackageDir =
+const std::filesystem::path packageDir =
     std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "shader" / "mdux-ui";
 
 [[nodiscard]] mdux::core::Result<shader::ShaderPackage, shader::SchemaError> committedPackage() {
-    std::ifstream file{kPackageDir / "package.json", std::ios::binary | std::ios::ate};
+    std::ifstream file{packageDir / "package.json", std::ios::binary | std::ios::ate};
     if (!file) {
         return mdux::core::err(shader::SchemaError::MalformedPackage);
     }

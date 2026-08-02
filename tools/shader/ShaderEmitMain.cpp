@@ -1,5 +1,4 @@
 /**
- * @file emit_main.cpp
  * @brief `mdux-shaderemit` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)
@@ -42,7 +41,7 @@ namespace emit = mdux::tools::shaderemit;
         "\n"
         "Generated code belongs in the build tree and is never committed; see\n"
         "tools/shader/Emit.cppm.\n",
-        emit::kToolName);
+        emit::toolName);
 }
 
 }  // namespace
@@ -82,12 +81,12 @@ int main(int argc, char** argv) {
     if (auto outputs = emit::render(std::filesystem::path{positional[0]}, diagnostics);
         outputs.has_value()) {
         if (emit::write(*outputs, std::filesystem::path{positional[1]}, diagnostics)) {
-            summary = std::format("{}: OK (emitted {} and {}.hpp)", emit::kToolName,
+            summary = std::format("{}: OK (emitted {} and {}.hpp)", emit::toolName,
                                   outputs->moduleName, outputs->stem);
         }
     }
 
-    const std::string rendered = cli::render(diagnostics, format, emit::kToolName);
+    const std::string rendered = cli::render(diagnostics, format, emit::toolName);
     if (!rendered.empty()) {
         std::print(std::cout, "{}", rendered);
     }

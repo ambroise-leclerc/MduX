@@ -1,5 +1,4 @@
 /**
- * @file EmitTests.cpp
  * @brief Tests for the shader package C++ emitter.
  *
  * GeneratedTests covers what the emitter produces for the real package, by compiling it. This
@@ -127,8 +126,8 @@ TEST_CASE("A well-formed package renders both outputs", "evidence-unit") {
     CHECK(outputs->headerSource.find("#pragma once") != std::string::npos);
     // Both must carry the same payload and the same contract, which is what GeneratedTests
     // asserts by compiling them. Here it is enough that the rendered body is literally shared.
-    CHECK(outputs->moduleSource.find("kSpirvBytes[] = {") != std::string::npos);
-    CHECK(outputs->headerSource.find("kSpirvBytes[] = {") != std::string::npos);
+    CHECK(outputs->moduleSource.find("spirvBytes[] = {") != std::string::npos);
+    CHECK(outputs->headerSource.find("spirvBytes[] = {") != std::string::npos);
 }
 
 TEST_CASE("A package with no descriptors renders an empty span, not an empty array",
@@ -143,12 +142,12 @@ TEST_CASE("A package with no descriptors renders an empty span, not an empty arr
     std::vector<cli::Diagnostic> diagnostics;
     auto outputs = render(packagePath, diagnostics);
     REQUIRE(outputs.has_value());
-    CHECK(outputs->moduleSource.find("kDescriptors[] = {") == std::string::npos);
+    CHECK(outputs->moduleSource.find("descriptors[] = {") == std::string::npos);
     CHECK(outputs->moduleSource.find(
-              "std::span<const mdux::shader::DescriptorBinding> kDescriptors{}") !=
+              "std::span<const mdux::shader::DescriptorBinding> descriptors{}") !=
           std::string::npos);
     CHECK(outputs->moduleSource.find(
-              "std::span<const mdux::shader::PushConstantRange> kPushConstants{}") !=
+              "std::span<const mdux::shader::PushConstantRange> pushConstants{}") !=
           std::string::npos);
 }
 

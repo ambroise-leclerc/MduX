@@ -1,5 +1,4 @@
 /**
- * @file Emit.cpp
  * @brief Implementation of the shader package C++ emitter.
  *
  * @compliance ADR-004 Trust zones in C++
@@ -19,11 +18,11 @@ namespace mdux::tools::shaderemit {
 namespace {
 
 // Stable diagnostic codes; see docs/governance/schemas/diagnostic.schema.json.
-constexpr std::string_view kPackageUnreadable = "SHE001";
-constexpr std::string_view kPackageUnparsed = "SHE002";
-constexpr std::string_view kSidecarUnreadable = "SHE003";
-constexpr std::string_view kSidecarMismatch = "SHE004";
-constexpr std::string_view kOutputUnwritable = "SHE005";
+constexpr std::string_view packageUnreadable = "SHE001";
+constexpr std::string_view packageUnparsed = "SHE002";
+constexpr std::string_view sidecarUnreadable = "SHE003";
+constexpr std::string_view sidecarMismatch = "SHE004";
+constexpr std::string_view outputUnwritable = "SHE005";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::string_view code,
             std::string message, std::string fixHint = {}) {
@@ -96,7 +95,7 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
 
 [[nodiscard]] std::string renderStageMask(shader::StageMask mask) {
     std::string out;
-    for (std::size_t i = 0; i < shader::kStageWireValues.size(); ++i) {
+    for (std::size_t i = 0; i < shader::stageWireValues.size(); ++i) {
         const auto stage = static_cast<shader::Stage>(i);
         if ((mask & shader::stageBit(stage)) == 0) {
             continue;
@@ -127,21 +126,21 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     out += "namespace mdux::shader::generated::" + std::string{identifier} + " {\n\n";
 
     out += "/// The package id this data was generated from.\n";
-    out += "inline constexpr std::string_view kId = \"" + escape(package.header.id) + "\";\n\n";
+    out += "inline constexpr std::string_view id = \"" + escape(package.header.id) + "\";\n\n";
 
     out += "/// SHA-256 of the sidecar, as recorded in the committed package.json. Present so a\n";
     out += "/// consumer can assert the bytes it linked are the bytes that were reviewed.\n";
-    out += "inline constexpr std::string_view kSpirvSha256 = \"";
+    out += "inline constexpr std::string_view spirvSha256 = \"";
     const std::array<char, 64> hex = evidence::toHex(package.sidecarSha256);
     out += std::string{hex.data(), hex.size()};
     out += "\";\n\n";
 
     out += "/// The whole sidecar. A C array rather than std::array on purpose - see Emit.cppm.\n";
-    out += "inline constexpr unsigned char kSpirvBytes[] = {";
+    out += "inline constexpr unsigned char spirvBytes[] = {";
     out += renderPayload(sidecar);
     out += "};\n\n";
 
-    out += "inline constexpr mdux::shader::ModuleView kModules[] = {\n";
+    out += "inline constexpr mdux::shader::ModuleView modules[] = {\n";
     for (const shader::ShaderModule& module : package.modules) {
         out += "    {.id = \"" + escape(module.id) + "\",\n";
         out += "     .stage = " + renderStage(module.stage) + ",\n";
@@ -155,9 +154,9 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     // than an array of zero elements. Both branches produce the same accessor signature.
     if (package.descriptors.empty()) {
         out += "/// This package declares no descriptors.\n";
-        out += "inline constexpr std::span<const mdux::shader::DescriptorBinding> kDescriptors{};\n\n";
+        out += "inline constexpr std::span<const mdux::shader::DescriptorBinding> descriptors{};\n\n";
     } else {
-        out += "inline constexpr mdux::shader::DescriptorBinding kDescriptors[] = {\n";
+        out += "inline constexpr mdux::shader::DescriptorBinding descriptors[] = {\n";
         for (const shader::DescriptorBinding& binding : package.descriptors) {
             out += "    {.set = " + std::to_string(binding.set) + ",\n";
             out += "     .binding = " + std::to_string(binding.binding) + ",\n";
@@ -172,9 +171,9 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     if (package.pushConstants.empty()) {
         out += "/// This package declares no push constants.\n";
         out += "inline constexpr std::span<const mdux::shader::PushConstantRange> "
-               "kPushConstants{};\n\n";
+               "pushConstants{};\n\n";
     } else {
-        out += "inline constexpr mdux::shader::PushConstantRange kPushConstants[] = {\n";
+        out += "inline constexpr mdux::shader::PushConstantRange pushConstants[] = {\n";
         for (const shader::PushConstantRange& range : package.pushConstants) {
             out += "    {.offset = " + std::to_string(range.offset) + ",\n";
             out += "     .size = " + std::to_string(range.size) + ",\n";
@@ -187,11 +186,11 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     out += "/// The whole package, as one value a renderer can take by copy.\n";
     out += "[[nodiscard]] inline mdux::shader::PackageView package() noexcept {\n";
     out += "    return mdux::shader::PackageView{\n";
-    out += "        .id = kId,\n";
-    out += "        .spirv = std::as_bytes(std::span{kSpirvBytes}),\n";
-    out += "        .modules = std::span{kModules},\n";
-    out += "        .descriptors = kDescriptors,\n";
-    out += "        .pushConstants = kPushConstants,\n";
+    out += "        .id = id,\n";
+    out += "        .spirv = std::as_bytes(std::span{spirvBytes}),\n";
+    out += "        .modules = std::span{modules},\n";
+    out += "        .descriptors = descriptors,\n";
+    out += "        .pushConstants = pushConstants,\n";
     out += "    };\n";
     out += "}\n\n";
 
@@ -235,7 +234,7 @@ std::optional<EmitOutputs> render(const std::filesystem::path& packagePath,
 
     auto packageBytes = readFile(packagePath);
     if (!packageBytes.has_value()) {
-        report(diagnostics, packageDisplay, kPackageUnreadable, "cannot read package.json",
+        report(diagnostics, packageDisplay, packageUnreadable, "cannot read package.json",
                "Run `cmake --build <dir> --target mdux-bake-update` to produce it.");
         return std::nullopt;
     }
@@ -244,7 +243,7 @@ std::optional<EmitOutputs> render(const std::filesystem::path& packagePath,
                                        packageBytes->size()};
     auto package = shader::ShaderPackage::parse(packageText);
     if (!package.has_value()) {
-        report(diagnostics, packageDisplay, kPackageUnparsed,
+        report(diagnostics, packageDisplay, packageUnparsed,
                std::string{"package.json is not a valid shader package: "} +
                    std::string{shader::describe(package.error())});
         return std::nullopt;
@@ -253,7 +252,7 @@ std::optional<EmitOutputs> render(const std::filesystem::path& packagePath,
     const std::filesystem::path sidecarPath = packagePath.parent_path() / package->sidecarPath;
     auto sidecar = readFile(sidecarPath);
     if (!sidecar.has_value()) {
-        report(diagnostics, sidecarPath.generic_string(), kSidecarUnreadable,
+        report(diagnostics, sidecarPath.generic_string(), sidecarUnreadable,
                "cannot read the sidecar the package names");
         return std::nullopt;
     }
@@ -263,7 +262,7 @@ std::optional<EmitOutputs> render(const std::filesystem::path& packagePath,
     // binary while every artifact check stayed green.
     if (sidecar->size() != package->sidecarByteLength ||
         evidence::sha256(*sidecar) != package->sidecarSha256) {
-        report(diagnostics, sidecarPath.generic_string(), kSidecarMismatch,
+        report(diagnostics, sidecarPath.generic_string(), sidecarMismatch,
                "the sidecar does not match the digest recorded in package.json",
                "Re-bake with `cmake --build <dir> --target mdux-bake-update`; do not hand-edit "
                "anything under generated/.");
@@ -297,7 +296,7 @@ bool write(const EmitOutputs& outputs, const std::filesystem::path& outputDir,
     std::error_code code;
     std::filesystem::create_directories(outputDir, code);
     if (code) {
-        report(diagnostics, outputDir.generic_string(), kOutputUnwritable,
+        report(diagnostics, outputDir.generic_string(), outputUnwritable,
                "cannot create output directory: " + code.message());
         return false;
     }
@@ -315,13 +314,13 @@ bool write(const EmitOutputs& outputs, const std::filesystem::path& outputDir,
         }
         std::ofstream file{path, std::ios::binary | std::ios::trunc};
         if (!file) {
-            report(diagnostics, path.generic_string(), kOutputUnwritable,
+            report(diagnostics, path.generic_string(), outputUnwritable,
                    "cannot open for writing");
             return false;
         }
         file.write(content.data(), static_cast<std::streamsize>(content.size()));
         if (!file) {
-            report(diagnostics, path.generic_string(), kOutputUnwritable, "write failed");
+            report(diagnostics, path.generic_string(), outputUnwritable, "write failed");
             return false;
         }
         return true;

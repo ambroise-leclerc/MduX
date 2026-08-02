@@ -1,5 +1,4 @@
 /**
- * @file Emit.cppm
  * @brief Turns a committed shader package into C++ the renderer can hold as `constexpr` data.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)
@@ -45,7 +44,7 @@ import mdux.tools.cli;
 
 export namespace mdux::tools::shaderemit {
 
-inline constexpr std::string_view kToolName = "mdux-shaderemit";
+inline constexpr std::string_view toolName = "mdux-shaderemit";
 
 /// What to generate, resolved from the command line.
 struct EmitRequest {

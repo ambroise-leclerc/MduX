@@ -75,9 +75,11 @@ target_sources(MduXShaderBakeLib
         FILES
             shader/Spirv.cppm
             shader/ShaderBake.cppm
+            shader/Emit.cppm
     PRIVATE
         shader/Spirv.cpp
         shader/ShaderBake.cpp
+        shader/Emit.cpp
 )
 
 target_compile_features(MduXShaderBakeLib PUBLIC cxx_std_23)
@@ -99,16 +101,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXShaderBakeLib PRIVATE /experimental:module /std:c++latest)
 endif()
 
-target_sources(MduXShaderBakeLib
-    PUBLIC
-        FILE_SET CXX_MODULES
-        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
-        FILES
-            shader/Emit.cppm
-    PRIVATE
-        shader/Emit.cpp
-)
-
 add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
 target_link_libraries(mdux-shaderbake PRIVATE MduX::ShaderBakeLib MduX_warnings)
 
@@ -127,7 +119,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-shaderbake PRIVATE /experimental:module /std:c++latest)
 endif()
 
-add_executable(mdux-shaderemit shader/emit_main.cpp)
+add_executable(mdux-shaderemit shader/ShaderEmitMain.cpp)
 target_link_libraries(mdux-shaderemit PRIVATE MduX::ShaderBakeLib MduX_warnings)
 
 set_target_properties(mdux-shaderemit
