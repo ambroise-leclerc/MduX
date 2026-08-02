@@ -21,49 +21,34 @@ else()
 endif()
 
 # Compile shaders for triangle demo
-find_program(GLSL_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/Bin)
+# No shader compilation here any more. SPIR-V is committed under recipes/shader/triangle/ and
+# baked into generated/shader/triangle/ (issue #122), which removes both the build-time dependency
+# on glslangValidator and the runtime dependency on the working directory.
 
-set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
-set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
-
-file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
-
-set(VERT_SHADER ${SHADER_DIR}/triangle.vert)
-set(FRAG_SHADER ${SHADER_DIR}/triangle.frag)
-set(VERT_SPV ${SHADER_BINARY_DIR}/triangle.vert.spv)
-set(FRAG_SPV ${SHADER_BINARY_DIR}/triangle.frag.spv)
-
-if(GLSL_VALIDATOR)
-    add_custom_command(
-        OUTPUT ${VERT_SPV}
-        COMMAND ${GLSL_VALIDATOR} -V ${VERT_SHADER} -o ${VERT_SPV}
-        DEPENDS ${VERT_SHADER}
-        COMMENT "Compiling vertex shader"
-    )
-
-    add_custom_command(
-        OUTPUT ${FRAG_SPV}
-        COMMAND ${GLSL_VALIDATOR} -V ${FRAG_SHADER} -o ${FRAG_SPV}
-        DEPENDS ${FRAG_SHADER}
-        COMMENT "Compiling fragment shader"
-    )
-
-    add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV})
-else()
-    message(WARNING "glslangValidator not found. Shaders will not be compiled.")
-endif()
-
-# Vulkan SC Triangle Demo - Visual rendering with static memory
-# Temporarily disabled on GCC 15 due to compiler ICE bugs with C++23 modules
-# (Segmentation fault in std::array with modules, fixed in future GCC versions)
-if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
+# Vulkan SC Triangle Demo - visual rendering with static memory.
+#
+# The exclusion below is issue #48 item 2. It used to read VERSION_GREATER_EQUAL 15.0 while its
+# message named only GCC 15, so it silently disabled the example on GCC 16 as well - meaning the
+# example was built on MSVC alone and neither Linux leg compiled it at all.
+#
+# Now scoped to the version range where the ICE is actually reproduced. Confirmed still present
+# on GCC 15.2.0 while writing this: "internal compiler error: Segmentation fault" inside
+# <array>:102 compiling this translation unit. GCC 16 is presumed fixed and is now enabled - if
+# that is wrong, the GCC 16 leg says so rather than the example being quietly absent everywhere.
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0))
     add_executable(VulkanSCTriangleExample
         VulkanSCTriangleExample.cpp
     )
 
-    if(GLSL_VALIDATOR)
-        add_dependencies(VulkanSCTriangleExample CompileShaders)
-    endif()
+    # The generated module lives in the build tree, so it needs a file set naming that directory.
+    target_sources(VulkanSCTriangleExample
+        PRIVATE
+            FILE_SET generated_modules
+                TYPE CXX_MODULES
+                BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+                FILES ${MDUX_TRIANGLE_SHADER_MODULE}
+    )
+    add_dependencies(VulkanSCTriangleExample emit-shader-triangle)
 
     target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
 

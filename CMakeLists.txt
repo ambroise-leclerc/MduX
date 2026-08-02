@@ -330,6 +330,23 @@ mdux_bake_artifact(
         shaders.spv
 )
 
+# The triangle example's shaders (issue #122), so the example stops loading SPIR-V from the
+# working directory at runtime. Also the first package with an empty contract - no descriptors,
+# no push constants - which mdux-ui never exercises.
+mdux_bake_artifact(
+    KIND shader
+    ID triangle
+    TOOL mdux-shaderbake
+    RECIPE recipes/shader/triangle.toml
+    SOURCES
+        recipes/shader/triangle/triangle.vert.spv
+        recipes/shader/triangle/triangle.frag.spv
+    OUTPUTS
+        package.json
+        report.json
+        shaders.spv
+)
+
 # Generated C++ for that package (issue #121). Build-tree only, never committed - see
 # cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
 # module form; the header form exists for a translation unit that cannot import a named module.
@@ -338,6 +355,11 @@ mdux_emit_shader_package(
     ID mdux-ui
     OUT_MODULE MDUX_UI_SHADER_MODULE
     OUT_HEADER MDUX_UI_SHADER_HEADER
+    OUT_DIR MDUX_GENERATED_SHADER_DIR
+)
+mdux_emit_shader_package(
+    ID triangle
+    OUT_MODULE MDUX_TRIANGLE_SHADER_MODULE
     OUT_DIR MDUX_GENERATED_SHADER_DIR
 )
 
