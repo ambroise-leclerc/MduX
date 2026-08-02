@@ -99,6 +99,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXShaderBakeLib PRIVATE /experimental:module /std:c++latest)
 endif()
 
+target_sources(MduXShaderBakeLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            shader/Emit.cppm
+    PRIVATE
+        shader/Emit.cpp
+)
+
 add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
 target_link_libraries(mdux-shaderbake PRIVATE MduX::ShaderBakeLib MduX_warnings)
 
@@ -115,4 +125,22 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-shaderbake PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-shaderemit shader/emit_main.cpp)
+target_link_libraries(mdux-shaderemit PRIVATE MduX::ShaderBakeLib MduX_warnings)
+
+set_target_properties(mdux-shaderemit
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-shaderemit PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-shaderemit PRIVATE /experimental:module /std:c++latest)
 endif()

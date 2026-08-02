@@ -633,4 +633,32 @@ const ShaderModule* ShaderPackage::find(std::string_view id) const noexcept {
     return nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// PackageView
+// ---------------------------------------------------------------------------
+
+const ModuleView* PackageView::find(std::string_view moduleId) const noexcept {
+    for (const ModuleView& module : modules) {
+        if (module.id == moduleId) {
+            return &module;
+        }
+    }
+    return nullptr;
+}
+
+std::span<const std::byte> PackageView::moduleSpirv(std::string_view moduleId) const noexcept {
+    const ModuleView* module = find(moduleId);
+    if (module == nullptr) {
+        return {};
+    }
+    // Bounds-checked even though the generated data is machine-written: a view can also be
+    // assembled by hand in a test, and a span past the end of the sidecar is the one mistake
+    // here that would not fail visibly.
+    if (module->byteOffset > spirv.size() ||
+        module->byteLength > spirv.size() - module->byteOffset) {
+        return {};
+    }
+    return spirv.subspan(module->byteOffset, module->byteLength);
+}
+
 }  // namespace mdux::shader

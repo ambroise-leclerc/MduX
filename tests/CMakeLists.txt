@@ -112,11 +112,36 @@ add_executable(shader_tests
     shader/SpirvTests.cpp
     shader/ShaderBakeTests.cpp
     shader/UiPackageTests.cpp
+    shader/EmitTests.cpp
+    shader/GeneratedTests.cpp
+    shader/GeneratedModuleConsumer.cpp
+    shader/GeneratedHeaderConsumer.cpp
 )
 
-target_sources(shader_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+# The generated module joins a file set; the generated header is reached through the include
+# directory. Both are build-tree paths (issue #121) - nothing generated is committed.
+#
+# Compiling both forms in one binary is #121's acceptance criterion, not incidental. It works
+# because the module form is attached to a named module and the header form is not, so they are
+# distinct entities that can coexist; GeneratedTests then asserts they describe the same bytes and
+# the same contract.
+#
+# The generated module needs its own named file set: the default CXX_MODULES set's base directory
+# is this source directory, and a generated module lives in the build tree.
+target_sources(shader_tests
+    PRIVATE
+        FILE_SET CXX_MODULES FILES framework/MduXTest.cppm
+        FILE_SET generated_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+            FILES ${MDUX_UI_SHADER_MODULE}
+)
+add_dependencies(shader_tests emit-shader-mdux-ui)
 target_link_libraries(shader_tests PRIVATE MduX::ShaderBakeLib)
-target_include_directories(shader_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(shader_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MDUX_GENERATED_SHADER_DIR}
+)
 
 # UiPackageTests reads the committed artifact under generated/, which is a fixed location in the
 # source tree rather than anything the build produces. It reads only; the source-tree-cleanliness

@@ -199,6 +199,55 @@ struct ShaderPackage {
     [[nodiscard]] const ShaderModule* find(std::string_view id) const noexcept;
 };
 
+// ---------------------------------------------------------------------------
+// The view layer: what generated code exposes and the renderer consumes
+// ---------------------------------------------------------------------------
+//
+// `ShaderPackage` above owns its strings and vectors, which is right for a baker assembling an
+// artifact and for a reader validating one. It is wrong for the device side: the renderer wants a
+// contract it can hold as `constexpr` data with no allocation and no parsing, addressed straight
+// into a byte array the linker placed.
+//
+// So there are two representations of one format, and they live in the same module deliberately.
+// A view type declared next to the owning type it mirrors is one edit away from staying in step;
+// a view type declared in the emitter would be a second definition of the format, which is the
+// arrangement epic #13 calls out as the Wave 2 lesson.
+
+/// One module as generated code exposes it: non-owning, `constexpr`-constructible.
+struct ModuleView {
+    std::string_view id;
+    Stage stage{Stage::Vertex};
+    std::string_view entryPoint;
+    std::size_t byteOffset{0};
+    std::size_t byteLength{0};
+
+    [[nodiscard]] bool operator==(const ModuleView&) const noexcept = default;
+};
+
+/**
+ * @brief A whole package as generated code exposes it.
+ *
+ * Everything here is a span or a `string_view` over storage the generated translation unit owns,
+ * so a `PackageView` costs nothing to copy and needs no lifetime management beyond that of the
+ * generated code itself - which is static.
+ */
+struct PackageView {
+    std::string_view id;
+    std::span<const std::byte> spirv;  ///< the whole sidecar; modules address into it
+    std::span<const ModuleView> modules;
+    std::span<const DescriptorBinding> descriptors;
+    std::span<const PushConstantRange> pushConstants;
+
+    [[nodiscard]] const ModuleView* find(std::string_view moduleId) const noexcept;
+
+    /// The SPIR-V of one module, or an empty span when `moduleId` is not in this package.
+    ///
+    /// Empty rather than a `Result`: the caller is generated-code-adjacent and knows the ids at
+    /// compile time, so a miss is a programming error rather than a runtime condition - and
+    /// `vkCreateShaderModule` rejects an empty span in a way no caller can mistake for success.
+    [[nodiscard]] std::span<const std::byte> moduleSpirv(std::string_view moduleId) const noexcept;
+};
+
 /// Wire encoding helpers, exported because the emitter (#121) and the tests need the same
 /// spellings the writer uses, and a second copy of them is a second thing to get wrong.
 [[nodiscard]] std::string_view toWire(Stage stage) noexcept;

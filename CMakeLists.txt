@@ -324,6 +324,17 @@ mdux_bake_artifact(
         shaders.spv
 )
 
+# Generated C++ for that package (issue #121). Build-tree only, never committed - see
+# cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
+# module form; the header form exists for a translation unit that cannot import a named module.
+include(cmake/MduXShaderEmit.cmake)
+mdux_emit_shader_package(
+    ID mdux-ui
+    OUT_MODULE MDUX_UI_SHADER_MODULE
+    OUT_HEADER MDUX_UI_SHADER_HEADER
+    OUT_DIR MDUX_GENERATED_SHADER_DIR
+)
+
 if(MDUX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
