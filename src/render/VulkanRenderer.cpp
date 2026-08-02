@@ -441,6 +441,14 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     indexBytes_ = std::exchange(other.indexBytes_, 0);
     budget_ = std::exchange(other.budget_, draw::DrawBudget{});
     viewport_ = std::exchange(other.viewport_, mdux::core::Extent2D{});
+    // The validated package contract. Not handles, but just as load-bearing: record() pushes
+    // constants using pushSize_, so a member left behind here means a moved-from renderer pushes
+    // nothing and every vertex reads a zero viewport. create() returns by value, so *every*
+    // renderer is a moved one - this list is not an edge case.
+    atlasBinding_ = std::exchange(other.atlasBinding_, 0);
+    pushStages_ = std::exchange(other.pushStages_, 0);
+    pushOffset_ = std::exchange(other.pushOffset_, 0);
+    pushSize_ = std::exchange(other.pushSize_, 0);
     return *this;
 }
 
