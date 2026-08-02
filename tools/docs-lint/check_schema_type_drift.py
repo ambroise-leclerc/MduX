@@ -297,8 +297,10 @@ def main(argv: list[str]) -> int:
 
     findings: list[str] = []
     checked = 0
-    # A binding may name a module other than the governance one; read each at most once.
-    module_texts: dict[Path, str] = {MODULE_PATH: module_text}
+    # A binding may name a module other than the governance one; read each at most once. `None` is
+    # a cached negative - a module the binding names that is not on disk - so that a missing file
+    # is stat'd once rather than once per binding that points at it.
+    module_texts: dict[Path, str | None] = {MODULE_PATH: module_text}
 
     def module_source(relative_module: Path) -> str | None:
         if relative_module not in module_texts:

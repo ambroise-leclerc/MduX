@@ -165,6 +165,33 @@ class ToolOutputTests(unittest.TestCase):
         # beginning of the line.
         self.assertGreater(envelope["findings"][0]["column"], 1)
 
+    def test_evidence_lint_findings_also_validate(self):
+        # mdux-evidence-lint needs its own planted failure for the same reason: over a clean
+        # repository it reports nothing, so its per-finding shape - including whether it emits
+        # the `column` key this PR adds - would never be exercised by the empty case above.
+        import tempfile
+
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as tmp:
+            offending = Path(tmp) / "Offender.cpp"
+            offending.write_text(
+                '// A decimal float conversion in an evidence-pipeline source.\n'
+                'void report(double value) { std::printf("%f\\n", value); }\n',
+                encoding="utf-8",
+            )
+            relative = offending.relative_to(REPO_ROOT)
+            envelope = self.run_tool(
+                ["tools/evidence-lint/mdux_evidence_lint.py", "--format", "json", str(relative)]
+            )
+
+        self.assertEqual("mdux-evidence-lint", envelope["tool"])
+        self.assertTrue(envelope["findings"], "the planted file produced no finding")
+        self.assertEqual([], schema_subset.violations(envelope, self.schema))
+        finding = envelope["findings"][0]
+        self.assertEqual("EVL001", finding["code"])
+        # The envelope requires `column` from every tool, not only the ones that compute a
+        # precise one; evidence-lint reports whole lines, so 0 is its honest answer.
+        self.assertIn("column", finding)
+
 
 if __name__ == "__main__":
     unittest.main()
