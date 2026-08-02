@@ -50,3 +50,69 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXToolsCommon PRIVATE /experimental:module /std:c++latest)
 endif()
+
+# ---------------------------------------------------------------------------
+# mdux-shaderbake (issue #119) - the first baker
+# ---------------------------------------------------------------------------
+#
+# Split into a library and a two-page executable on purpose. mdux_bake_artifact() needs an
+# executable target to invoke, while the tests need to drive run()/write()/verify() directly -
+# spawning a process per case would make a failing assertion tell you only that an exit status was
+# wrong. The executable is the boundary where a command line becomes a call; everything worth
+# testing is in the library.
+#
+# MduXShaderBakeLib links MduX::ToolsCommon (and through it MduX::Core), so the baker builds its
+# artifact through the same governed evidence modules the runtime reads it with. It is deliberately
+# not declared governed: it parses untrusted input and may throw.
+
+add_library(MduXShaderBakeLib)
+add_library(MduX::ShaderBakeLib ALIAS MduXShaderBakeLib)
+
+target_sources(MduXShaderBakeLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            shader/Spirv.cppm
+            shader/ShaderBake.cppm
+    PRIVATE
+        shader/Spirv.cpp
+        shader/ShaderBake.cpp
+)
+
+target_compile_features(MduXShaderBakeLib PUBLIC cxx_std_23)
+target_link_libraries(MduXShaderBakeLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXShaderBakeLib PRIVATE MduX_warnings)
+
+set_target_properties(MduXShaderBakeLib
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXShaderBakeLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXShaderBakeLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
+target_link_libraries(mdux-shaderbake PRIVATE MduX::ShaderBakeLib MduX_warnings)
+
+set_target_properties(mdux-shaderbake
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-shaderbake PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-shaderbake PRIVATE /experimental:module /std:c++latest)
+endif()
