@@ -1,5 +1,4 @@
 /**
- * @file SchemaTests.cpp
  * @brief Tests for mdux.shader.schema.
  *
  * The rejections are the point. A schema whose validate() only ever succeeds is a comment claiming
@@ -70,13 +69,13 @@ TEST_CASE("Stage and DescriptorKind wire spellings are stable", "evidence-unit")
 }
 
 TEST_CASE("Every wire spelling round-trips through its enum", "evidence-unit") {
-    for (std::size_t i = 0; i < kStageWireValues.size(); ++i) {
-        auto stage = stageFromWire(kStageWireValues[i]);
+    for (std::size_t i = 0; i < stageWireValues.size(); ++i) {
+        auto stage = stageFromWire(stageWireValues[i]);
         REQUIRE(stage.has_value());
         CHECK(static_cast<std::size_t>(*stage) == i);
     }
-    for (std::size_t i = 0; i < kDescriptorKindWireValues.size(); ++i) {
-        auto kind = descriptorKindFromWire(kDescriptorKindWireValues[i]);
+    for (std::size_t i = 0; i < descriptorKindWireValues.size(); ++i) {
+        auto kind = descriptorKindFromWire(descriptorKindWireValues[i]);
         REQUIRE(kind.has_value());
         CHECK(static_cast<std::size_t>(*kind) == i);
     }
@@ -95,8 +94,8 @@ TEST_CASE("An unknown wire value is rejected rather than defaulted", "evidence-u
 TEST_CASE("A stage mask is written in enumerator order, not assembly order", "evidence-unit") {
     // Two packages with the same stage set must produce identical bytes however the mask was
     // built, so the array order cannot depend on which bit was set first.
-    const mdux::evidence::json::Value fromVertexFirst = stagesToJson(kVertexBit | kFragmentBit);
-    const mdux::evidence::json::Value fromFragmentFirst = stagesToJson(kFragmentBit | kVertexBit);
+    const mdux::evidence::json::Value fromVertexFirst = stagesToJson(vertexBit | fragmentBit);
+    const mdux::evidence::json::Value fromFragmentFirst = stagesToJson(fragmentBit | vertexBit);
     auto a = mdux::evidence::json::write(fromVertexFirst);
     auto b = mdux::evidence::json::write(fromFragmentFirst);
     REQUIRE(a.has_value());
@@ -105,7 +104,7 @@ TEST_CASE("A stage mask is written in enumerator order, not assembly order", "ev
 
     auto mask = stagesFromJson(fromVertexFirst);
     REQUIRE(mask.has_value());
-    CHECK(*mask == (kVertexBit | kFragmentBit));
+    CHECK(*mask == (vertexBit | fragmentBit));
 }
 
 TEST_CASE("An empty stage list decodes to an empty mask", "evidence-unit") {
@@ -237,7 +236,7 @@ TEST_CASE("A descriptor needs a non-zero count and a unique binding", "evidence-
                                                     .binding = 0,
                                                     .kind = DescriptorKind::Sampler,
                                                     .count = 0,
-                                                    .stages = kFragmentBit});
+                                                    .stages = fragmentBit});
     CHECK(errorOf(package) == SchemaError::ZeroDescriptorCount);
 
     package = validPackage();
@@ -245,7 +244,7 @@ TEST_CASE("A descriptor needs a non-zero count and a unique binding", "evidence-
                                     .binding = 1,
                                     .kind = DescriptorKind::Sampler,
                                     .count = 1,
-                                    .stages = kFragmentBit};
+                                    .stages = fragmentBit};
     package.descriptors.push_back(binding);
     package.descriptors.push_back(binding);
     CHECK(errorOf(package) == SchemaError::DuplicateDescriptorBinding);
@@ -255,29 +254,29 @@ TEST_CASE("The same binding number in a different set is not a duplicate", "evid
     ShaderPackage package = validPackage();
     package.descriptors.push_back(DescriptorBinding{
         .set = 0, .binding = 1, .kind = DescriptorKind::Sampler, .count = 1,
-        .stages = kFragmentBit});
+        .stages = fragmentBit});
     package.descriptors.push_back(DescriptorBinding{
         .set = 1, .binding = 1, .kind = DescriptorKind::Sampler, .count = 1,
-        .stages = kFragmentBit});
+        .stages = fragmentBit});
     CHECK(!errorOf(package).has_value());
 }
 
 TEST_CASE("Push constant ranges are checked for size, alignment and overlap", "evidence-unit") {
     ShaderPackage package = validPackage();
     package.pushConstants.push_back(
-        PushConstantRange{.offset = 0, .size = 0, .stages = kVertexBit});
+        PushConstantRange{.offset = 0, .size = 0, .stages = vertexBit});
     CHECK(errorOf(package) == SchemaError::EmptyPushConstantRange);
 
     package = validPackage();
     package.pushConstants.push_back(
-        PushConstantRange{.offset = 2, .size = 16, .stages = kVertexBit});
+        PushConstantRange{.offset = 2, .size = 16, .stages = vertexBit});
     CHECK(errorOf(package) == SchemaError::UnalignedPushConstantRange);
 
     package = validPackage();
     package.pushConstants.push_back(
-        PushConstantRange{.offset = 0, .size = 16, .stages = kVertexBit});
+        PushConstantRange{.offset = 0, .size = 16, .stages = vertexBit});
     package.pushConstants.push_back(
-        PushConstantRange{.offset = 8, .size = 16, .stages = kFragmentBit});
+        PushConstantRange{.offset = 8, .size = 16, .stages = fragmentBit});
     CHECK(errorOf(package) == SchemaError::OverlappingPushConstants);
 }
 
@@ -298,9 +297,9 @@ TEST_CASE("A package survives write() and parse() unchanged", "evidence-unit") {
                                                     .binding = 0,
                                                     .kind = DescriptorKind::CombinedImageSampler,
                                                     .count = 1,
-                                                    .stages = kFragmentBit});
+                                                    .stages = fragmentBit});
     package.pushConstants.push_back(
-        PushConstantRange{.offset = 0, .size = 16, .stages = kVertexBit | kFragmentBit});
+        PushConstantRange{.offset = 0, .size = 16, .stages = vertexBit | fragmentBit});
 
     auto text = package.write();
     REQUIRE(text.has_value());

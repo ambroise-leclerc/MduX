@@ -1,5 +1,4 @@
 /**
- * @file SpirvFixtures.hpp
  * @brief A SPIR-V assembler for tests, shared by the reflector and baker suites.
  *
  * Modules are built word by word rather than loaded from committed `.spv` files. That costs this
@@ -16,31 +15,31 @@
 namespace mdux::test::spirv {
 
 // Opcodes and enumerants used by the fixtures, from the SPIR-V specification.
-inline constexpr std::uint16_t kOpEntryPoint = 15;
-inline constexpr std::uint16_t kOpTypeFloat = 22;
-inline constexpr std::uint16_t kOpTypeVector = 23;
-inline constexpr std::uint16_t kOpTypeImage = 25;
-inline constexpr std::uint16_t kOpTypeSampledImage = 27;
-inline constexpr std::uint16_t kOpTypeArray = 28;
-inline constexpr std::uint16_t kOpTypeStruct = 30;
-inline constexpr std::uint16_t kOpTypePointer = 32;
-inline constexpr std::uint16_t kOpConstant = 43;
-inline constexpr std::uint16_t kOpVariable = 59;
-inline constexpr std::uint16_t kOpDecorate = 71;
-inline constexpr std::uint16_t kOpMemberDecorate = 72;
+inline constexpr std::uint16_t opEntryPoint = 15;
+inline constexpr std::uint16_t opTypeFloat = 22;
+inline constexpr std::uint16_t opTypeVector = 23;
+inline constexpr std::uint16_t opTypeImage = 25;
+inline constexpr std::uint16_t opTypeSampledImage = 27;
+inline constexpr std::uint16_t opTypeArray = 28;
+inline constexpr std::uint16_t opTypeStruct = 30;
+inline constexpr std::uint16_t opTypePointer = 32;
+inline constexpr std::uint16_t opConstant = 43;
+inline constexpr std::uint16_t opVariable = 59;
+inline constexpr std::uint16_t opDecorate = 71;
+inline constexpr std::uint16_t opMemberDecorate = 72;
 
-inline constexpr std::uint32_t kExecutionModelVertex = 0;
-inline constexpr std::uint32_t kExecutionModelFragment = 4;
-inline constexpr std::uint32_t kExecutionModelGLCompute = 5;
+inline constexpr std::uint32_t executionModelVertex = 0;
+inline constexpr std::uint32_t executionModelFragment = 4;
+inline constexpr std::uint32_t executionModelGLCompute = 5;
 
-inline constexpr std::uint32_t kStorageClassUniformConstant = 0;
-inline constexpr std::uint32_t kStorageClassUniform = 2;
-inline constexpr std::uint32_t kStorageClassPushConstant = 9;
+inline constexpr std::uint32_t storageClassUniformConstant = 0;
+inline constexpr std::uint32_t storageClassUniform = 2;
+inline constexpr std::uint32_t storageClassPushConstant = 9;
 
-inline constexpr std::uint32_t kDecorationBlock = 2;
-inline constexpr std::uint32_t kDecorationBinding = 33;
-inline constexpr std::uint32_t kDecorationDescriptorSet = 34;
-inline constexpr std::uint32_t kDecorationOffset = 35;
+inline constexpr std::uint32_t decorationBlock = 2;
+inline constexpr std::uint32_t decorationBinding = 33;
+inline constexpr std::uint32_t decorationDescriptorSet = 34;
+inline constexpr std::uint32_t decorationOffset = 35;
 
 /// Assembles a SPIR-V module word by word.
 class Builder {
@@ -102,56 +101,56 @@ private:
 };
 
 /// A module declaring only its entry point - the smallest thing that reflects.
-[[nodiscard]] inline Builder minimal(std::uint32_t executionModel = kExecutionModelVertex,
+[[nodiscard]] inline Builder minimal(std::uint32_t executionModel = executionModelVertex,
                                      std::string_view entryPoint = "main") {
     Builder builder;
-    builder.opWithName(kOpEntryPoint, {executionModel, 1u}, entryPoint);
+    builder.opWithName(opEntryPoint, {executionModel, 1u}, entryPoint);
     return builder;
 }
 
 /// Declares a combined image sampler at (set, binding), optionally as an array of `count`.
 inline void addCombinedImageSampler(Builder& builder, std::uint32_t set, std::uint32_t binding,
                                     std::uint32_t count = 1) {
-    constexpr std::uint32_t kImage = 10;
-    constexpr std::uint32_t kSampled = 11;
-    constexpr std::uint32_t kArray = 12;
-    constexpr std::uint32_t kPointer = 13;
-    constexpr std::uint32_t kVariable = 14;
-    constexpr std::uint32_t kLengthType = 15;
-    constexpr std::uint32_t kLength = 16;
+    constexpr std::uint32_t imageTypeId = 10;
+    constexpr std::uint32_t sampledTypeId = 11;
+    constexpr std::uint32_t arrayTypeId = 12;
+    constexpr std::uint32_t pointerTypeId = 13;
+    constexpr std::uint32_t variableId = 14;
+    constexpr std::uint32_t lengthTypeId = 15;
+    constexpr std::uint32_t lengthId = 16;
 
     // OpTypeImage: [resultId][sampledType][dim][depth][arrayed][ms][sampled][format]
-    builder.op(kOpTypeImage, {kImage, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
-    builder.op(kOpTypeSampledImage, {kSampled, kImage});
+    builder.op(opTypeImage, {imageTypeId, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
+    builder.op(opTypeSampledImage, {sampledTypeId, imageTypeId});
 
-    std::uint32_t pointee = kSampled;
+    std::uint32_t pointee = sampledTypeId;
     if (count != 1) {
-        builder.op(kOpTypeFloat, {kLengthType, 32u});
-        builder.op(kOpConstant, {kLengthType, kLength, count});
-        builder.op(kOpTypeArray, {kArray, kSampled, kLength});
-        pointee = kArray;
+        builder.op(opTypeFloat, {lengthTypeId, 32u});
+        builder.op(opConstant, {lengthTypeId, lengthId, count});
+        builder.op(opTypeArray, {arrayTypeId, sampledTypeId, lengthId});
+        pointee = arrayTypeId;
     }
 
-    builder.op(kOpTypePointer, {kPointer, kStorageClassUniformConstant, pointee});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassUniformConstant});
-    builder.op(kOpDecorate, {kVariable, kDecorationDescriptorSet, set});
-    builder.op(kOpDecorate, {kVariable, kDecorationBinding, binding});
+    builder.op(opTypePointer, {pointerTypeId, storageClassUniformConstant, pointee});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassUniformConstant});
+    builder.op(opDecorate, {variableId, decorationDescriptorSet, set});
+    builder.op(opDecorate, {variableId, decorationBinding, binding});
 }
 
 /// Declares a push-constant block holding a single vec4, at offset 0.
 inline void addVec4PushConstant(Builder& builder) {
-    constexpr std::uint32_t kFloat = 20;
-    constexpr std::uint32_t kVec4 = 21;
-    constexpr std::uint32_t kStruct = 22;
-    constexpr std::uint32_t kPointer = 23;
-    constexpr std::uint32_t kVariable = 24;
+    constexpr std::uint32_t floatTypeId = 20;
+    constexpr std::uint32_t vec4TypeId = 21;
+    constexpr std::uint32_t structTypeId = 22;
+    constexpr std::uint32_t pointerTypeId = 23;
+    constexpr std::uint32_t variableId = 24;
 
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeVector, {kVec4, kFloat, 4u});
-    builder.op(kOpTypeStruct, {kStruct, kVec4});
-    builder.op(kOpMemberDecorate, {kStruct, 0u, kDecorationOffset, 0u});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassPushConstant, kStruct});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassPushConstant});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeVector, {vec4TypeId, floatTypeId, 4u});
+    builder.op(opTypeStruct, {structTypeId, vec4TypeId});
+    builder.op(opMemberDecorate, {structTypeId, 0u, decorationOffset, 0u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
 }
 
 }  // namespace mdux::test::spirv

@@ -1,5 +1,4 @@
 /**
- * @file Schema.cppm
  * @brief Governed-zone shader package types: the canonical shape of every shader `package.json`.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
@@ -65,7 +64,7 @@ import mdux.evidence.report;
 export namespace mdux::shader {
 
 /// The `<kind>` component of `generated/<kind>/<id>/`, and the value of a package's `kind` member.
-inline constexpr std::string_view kKind = "shader";
+inline constexpr std::string_view kind = "shader";
 
 /// The pipeline stage a module is compiled for. v1 is a graphics pipeline with two stages;
 /// compute and the geometry stages are out of scope and need a schema version, not a quiet
@@ -73,14 +72,14 @@ inline constexpr std::string_view kKind = "shader";
 enum class Stage : std::uint8_t { Vertex, Fragment };
 
 /// Wire spellings for Stage. Order is load-bearing: an enumerator's numeric value is its index.
-inline constexpr std::array<std::string_view, 2> kStageWireValues{"vertex", "fragment"};
+inline constexpr std::array<std::string_view, 2> stageWireValues{"vertex", "fragment"};
 
 /// A set of stages, as a bitmask of `1u << static_cast<std::uint8_t>(Stage)`.
 using StageMask = std::uint8_t;
 
-inline constexpr StageMask kVertexBit = 1u << 0;
-inline constexpr StageMask kFragmentBit = 1u << 1;
-inline constexpr StageMask kAllStages = kVertexBit | kFragmentBit;
+inline constexpr StageMask vertexBit = 1u << 0;
+inline constexpr StageMask fragmentBit = 1u << 1;
+inline constexpr StageMask allStages = vertexBit | fragmentBit;
 
 [[nodiscard]] constexpr StageMask stageBit(Stage stage) noexcept {
     return static_cast<StageMask>(1u << static_cast<std::uint8_t>(stage));
@@ -96,8 +95,8 @@ enum class DescriptorKind : std::uint8_t {
     Sampler,
 };
 
-/// Wire spellings for DescriptorKind. Order is load-bearing, as for kStageWireValues.
-inline constexpr std::array<std::string_view, 5> kDescriptorKindWireValues{
+/// Wire spellings for DescriptorKind. Order is load-bearing, as for stageWireValues.
+inline constexpr std::array<std::string_view, 5> descriptorKindWireValues{
     "uniformBuffer", "storageBuffer", "combinedImageSampler", "sampledImage", "sampler"};
 
 enum class SchemaError : std::uint8_t {
@@ -119,7 +118,7 @@ enum class SchemaError : std::uint8_t {
     UnalignedPushConstantRange, ///< offset or size is not a multiple of 4
     OverlappingPushConstants,
     UnsupportedSchemaVersion,
-    UnknownStage,               ///< a wire value outside kStageWireValues
+    UnknownStage,               ///< a wire value outside stageWireValues
     UnknownDescriptorKind,
     MalformedPackage,           ///< parsed JSON did not have the expected shape
     ReportRejected,             ///< the embedded PackageHeader failed its own validate()
@@ -171,7 +170,7 @@ struct ShaderPackage {
     /// because a partial designated initializer is a -Wmissing-field-initializers error here.
     evidence::PackageHeader header{.schemaVersion = evidence::kSchemaVersion,
                                    .id = {},
-                                   .kind = std::string{kKind}};
+                                   .kind = std::string{kind}};
     std::string sidecarPath;  ///< bare filename beside package.json, e.g. "shaders.spv"
     std::uint64_t sidecarByteLength{0};
     evidence::Digest sidecarSha256{};

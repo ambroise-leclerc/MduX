@@ -1,5 +1,4 @@
 /**
- * @file Spirv.cppm
  * @brief Host-only SPIR-V reflection: enough of the binary format to state a shader's contract.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone: never linked into MduXCore or MduX)
@@ -86,7 +85,7 @@ struct Reflection {
     std::span<const std::byte> spirv) noexcept;
 
 /// The lowest and highest SPIR-V version this tool accepts, as (major << 8) | minor.
-inline constexpr std::uint32_t kMinVersion = (1u << 8) | 0u;
-inline constexpr std::uint32_t kMaxVersion = (1u << 8) | 6u;
+inline constexpr std::uint32_t minVersion = (1u << 8) | 0u;
+inline constexpr std::uint32_t maxVersion = (1u << 8) | 6u;
 
 }  // namespace mdux::tools::spirv

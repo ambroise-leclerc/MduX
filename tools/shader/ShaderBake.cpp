@@ -1,5 +1,4 @@
 /**
- * @file ShaderBake.cpp
  * @brief Implementation of the shader baker's recipe model and bake/verify core.
  *
  * @compliance ADR-004 Trust zones in C++
@@ -28,18 +27,18 @@ namespace {
 
 /// Diagnostic codes. Stable once published: an agent keys off these, and a reworded message must
 /// not break it. See docs/governance/schemas/diagnostic.schema.json.
-constexpr std::string_view kRecipeUnparsed = "SHB001";
-constexpr std::string_view kRecipeMissingMember = "SHB002";
-constexpr std::string_view kRecipeArrayLengthMismatch = "SHB003";
-constexpr std::string_view kRecipeEmptyModules = "SHB004";
-constexpr std::string_view kSourceUnreadable = "SHB005";
-constexpr std::string_view kSpirvRejected = "SHB006";
-constexpr std::string_view kDescriptorConflict = "SHB007";
-constexpr std::string_view kPackageInvalid = "SHB008";
-constexpr std::string_view kOutputUnwritable = "SHB009";
-constexpr std::string_view kArtifactMissing = "SHB010";
-constexpr std::string_view kArtifactDiffers = "SHB011";
-constexpr std::string_view kRecipeDuplicateModuleId = "SHB012";
+constexpr std::string_view recipeUnparsed = "SHB001";
+constexpr std::string_view recipeMissingMember = "SHB002";
+constexpr std::string_view recipeArrayLengthMismatch = "SHB003";
+constexpr std::string_view recipeEmptyModules = "SHB004";
+constexpr std::string_view sourceUnreadable = "SHB005";
+constexpr std::string_view spirvRejected = "SHB006";
+constexpr std::string_view descriptorConflict = "SHB007";
+constexpr std::string_view packageInvalid = "SHB008";
+constexpr std::string_view outputUnwritable = "SHB009";
+constexpr std::string_view artifactMissing = "SHB010";
+constexpr std::string_view artifactDiffers = "SHB011";
+constexpr std::string_view recipeDuplicateModuleId = "SHB012";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
             std::string_view code, std::string message, std::string fixHint = {}) {
@@ -117,7 +116,7 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     try {
         document = toml::parse(text);
     } catch (const toml::TomlError& error) {
-        report(diagnostics, std::string{recipePath}, error.line(), kRecipeUnparsed, error.what(),
+        report(diagnostics, std::string{recipePath}, error.line(), recipeUnparsed, error.what(),
                "See tools/shader/ShaderBake.cppm for the recipe format.");
         return std::nullopt;
     }
@@ -126,7 +125,7 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
 
     const toml::Table* package = document.table("package");
     if (package == nullptr) {
-        report(diagnostics, std::string{recipePath}, 0, kRecipeMissingMember,
+        report(diagnostics, std::string{recipePath}, 0, recipeMissingMember,
                "recipe has no [package] table",
                "Add a [package] table with an 'id' key.");
         return std::nullopt;
@@ -138,14 +137,14 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
             recipe.sidecar = sidecar->asString();
         }
     } catch (const toml::TomlError& error) {
-        report(diagnostics, std::string{recipePath}, error.line(), kRecipeMissingMember,
+        report(diagnostics, std::string{recipePath}, error.line(), recipeMissingMember,
                error.what());
         return std::nullopt;
     }
 
     const toml::Table* modules = document.table("modules");
     if (modules == nullptr) {
-        report(diagnostics, std::string{recipePath}, 0, kRecipeMissingMember,
+        report(diagnostics, std::string{recipePath}, 0, recipeMissingMember,
                "recipe has no [modules] table",
                "Add a [modules] table with parallel 'ids' and 'sources' arrays.");
         return std::nullopt;
@@ -160,21 +159,21 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
         ids = idsValue.asStringArray();
         sources = modules->require("sources").asStringArray();
     } catch (const toml::TomlError& error) {
-        report(diagnostics, std::string{recipePath}, error.line(), kRecipeMissingMember,
+        report(diagnostics, std::string{recipePath}, error.line(), recipeMissingMember,
                error.what(),
                "[modules] needs an 'ids' array and a 'sources' array, both of strings.");
         return std::nullopt;
     }
 
     if (ids.size() != sources.size()) {
-        report(diagnostics, std::string{recipePath}, idsLine, kRecipeArrayLengthMismatch,
+        report(diagnostics, std::string{recipePath}, idsLine, recipeArrayLengthMismatch,
                "[modules] ids has " + std::to_string(ids.size()) + " entries but sources has " +
                    std::to_string(sources.size()),
                "The two arrays are positional: entry N of ids names entry N of sources.");
         return std::nullopt;
     }
     if (ids.empty()) {
-        report(diagnostics, std::string{recipePath}, idsLine, kRecipeEmptyModules,
+        report(diagnostics, std::string{recipePath}, idsLine, recipeEmptyModules,
                "[modules] declares no modules",
                "A shader package with no modules has nothing to bake.");
         return std::nullopt;
@@ -183,7 +182,7 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     for (std::size_t i = 0; i < ids.size(); ++i) {
         for (std::size_t j = 0; j < i; ++j) {
             if (ids[j] == ids[i]) {
-                report(diagnostics, std::string{recipePath}, idsLine, kRecipeDuplicateModuleId,
+                report(diagnostics, std::string{recipePath}, idsLine, recipeDuplicateModuleId,
                        "duplicate module id '" + ids[i] + "'",
                        "Module ids identify a module within its package and must be unique.");
                 return std::nullopt;
@@ -208,7 +207,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
 
     shader::ShaderPackage package;
     package.header.id = recipe.id;
-    package.header.kind = std::string{shader::kKind};
+    package.header.kind = std::string{shader::kind};
     package.sidecarPath = recipe.sidecar;
 
     std::vector<evidence::FileRecord> inputs;
@@ -221,7 +220,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
         const std::filesystem::path source = root / entry.source;
         auto bytes = readFile(source);
         if (!bytes.has_value()) {
-            report(diagnostics, entry.source, 0, kSourceUnreadable,
+            report(diagnostics, entry.source, 0, sourceUnreadable,
                    "cannot read SPIR-V for module '" + entry.id + "'",
                    "Check the path in the recipe's [modules] sources array.");
             return std::nullopt;
@@ -229,7 +228,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
 
         auto reflection = spirv::reflect(*bytes);
         if (!reflection.has_value()) {
-            report(diagnostics, entry.source, 0, kSpirvRejected,
+            report(diagnostics, entry.source, 0, spirvRejected,
                    "module '" + entry.id + "' was rejected: " +
                        std::string{spirv::describe(reflection.error())},
                    "Recompile the shader, or see tools/shader/Spirv.cppm for what is supported.");
@@ -260,7 +259,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
             // Silently taking one of them would produce a pipeline layout that matches neither.
             if (existing->second.kind != binding.kind ||
                 existing->second.count != binding.count) {
-                report(diagnostics, entry.source, 0, kDescriptorConflict,
+                report(diagnostics, entry.source, 0, descriptorConflict,
                        "module '" + entry.id + "' declares set " + std::to_string(binding.set) +
                            " binding " + std::to_string(binding.binding) + " as " +
                            std::string{shader::toWire(binding.kind)} + " x" +
@@ -299,7 +298,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
 
     auto packageText = package.write();
     if (!packageText.has_value()) {
-        report(diagnostics, std::string{recipePath}, 0, kPackageInvalid,
+        report(diagnostics, std::string{recipePath}, 0, packageInvalid,
                "assembled package is not valid: " +
                    std::string{shader::describe(packageText.error())});
         return std::nullopt;
@@ -309,7 +308,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
     outputs.moduleCount = package.modules.size();
 
     evidence::BakeReport bakeReport;
-    bakeReport.tool = std::string{kToolName};
+    bakeReport.tool = std::string{toolName};
     bakeReport.toolVersion = MDUX_TOOL_VERSION;
     bakeReport.recipe = fileRecord(std::string{recipePath}, recipeBytes);
     bakeReport.inputs = std::move(inputs);
@@ -321,7 +320,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
 
     auto reportText = bakeReport.write();
     if (!reportText.has_value()) {
-        report(diagnostics, std::string{recipePath}, 0, kPackageInvalid,
+        report(diagnostics, std::string{recipePath}, 0, packageInvalid,
                "bake report is not valid: " +
                    std::string{evidence::describe(reportText.error())});
         return std::nullopt;
@@ -341,13 +340,13 @@ namespace {
                               std::vector<cli::Diagnostic>& diagnostics) {
     std::ofstream file{path, std::ios::binary | std::ios::trunc};
     if (!file) {
-        report(diagnostics, reportPath(path), 0, kOutputUnwritable, "cannot open for writing");
+        report(diagnostics, reportPath(path), 0, outputUnwritable, "cannot open for writing");
         return false;
     }
     file.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
     if (!file) {
-        report(diagnostics, reportPath(path), 0, kOutputUnwritable, "write failed");
+        report(diagnostics, reportPath(path), 0, outputUnwritable, "write failed");
         return false;
     }
     return true;
@@ -363,7 +362,7 @@ namespace {
                                    std::vector<cli::Diagnostic>& diagnostics) {
     auto committed = readFile(committedPath);
     if (!committed.has_value()) {
-        report(diagnostics, reportPath(committedPath), 0, kArtifactMissing,
+        report(diagnostics, reportPath(committedPath), 0, artifactMissing,
                std::string{label} + " is missing or unreadable",
                "Run `cmake --build <dir> --target mdux-bake-update` to stage it.");
         return false;
@@ -372,7 +371,7 @@ namespace {
     const std::size_t common = std::min(produced.size(), committed->size());
     for (std::size_t i = 0; i < common; ++i) {
         if (produced[i] != (*committed)[i]) {
-            report(diagnostics, reportPath(committedPath), 0, kArtifactDiffers,
+            report(diagnostics, reportPath(committedPath), 0, artifactDiffers,
                    std::string{label} + " differs at byte " + std::to_string(i) + ": produced 0x" +
                        std::format("{:02x}", std::to_integer<unsigned>(produced[i])) +
                        ", committed 0x" +
@@ -382,7 +381,7 @@ namespace {
         }
     }
     if (produced.size() != committed->size()) {
-        report(diagnostics, reportPath(committedPath), 0, kArtifactDiffers,
+        report(diagnostics, reportPath(committedPath), 0, artifactDiffers,
                std::string{label} + " length differs: produced " +
                    std::to_string(produced.size()) + " bytes, committed " +
                    std::to_string(committed->size()),
@@ -399,7 +398,7 @@ bool write(const BakeOutputs& outputs, const std::filesystem::path& outputDir,
     std::error_code code;
     std::filesystem::create_directories(outputDir, code);
     if (code) {
-        report(diagnostics, reportPath(outputDir), 0, kOutputUnwritable,
+        report(diagnostics, reportPath(outputDir), 0, outputUnwritable,
                "cannot create output directory: " + code.message());
         return false;
     }

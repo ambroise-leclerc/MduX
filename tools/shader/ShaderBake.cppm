@@ -1,5 +1,4 @@
 /**
- * @file ShaderBake.cppm
  * @brief The shader baker's recipe model and bake/verify core, separated from `main()`.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)
@@ -50,7 +49,7 @@ import mdux.tools.cli;
 export namespace mdux::tools::shaderbake {
 
 /// The tool name that appears in every diagnostic and in `report.json`.
-inline constexpr std::string_view kToolName = "mdux-shaderbake";
+inline constexpr std::string_view toolName = "mdux-shaderbake";
 
 /// One `[[module]]` entry, in recipe order.
 struct RecipeModule {
@@ -79,12 +78,17 @@ struct Recipe {
  * exercises the reader on the writer's own output instead of inspecting a value that never made
  * the round trip.
  *
- * There is a second, duller reason. GCC 15 rejects a struct exported from this module that embeds
- * `ShaderPackage` - a plain translation unit importing it gets "use of deleted function
- * ~ShaderPackage()" because the implicit destructor's exception specification is computed
- * inconsistently across the module boundary. `ShaderPackage` itself is fine in a plain TU that
- * imports mdux.shader.schema directly, so this is specifically about re-exporting a governed type
- * embedded in a host-tools one. Worth knowing before #121 and #124 design their own interfaces.
+ * There is a second, duller reason, and it is worth stating precisely because #121 and #124 will
+ * meet it too. **GCC 15 cannot instantiate `std::optional<T>` when `T` is, or contains, a class
+ * imported from another named module**: the implicit destructor's exception specification is
+ * computed inconsistently across the module boundary, and `std::optional`'s destructor is where
+ * that surfaces, as "use of deleted function ~ShaderPackage()".
+ *
+ * `std::expected<T, E>` is *not* affected - `ShaderPackage::parse()` returns one and is used from
+ * plain translation units without trouble - and neither is holding such a value directly. So the
+ * rule is narrow: prefer `mdux::core::Result` over `std::optional` for a type that crosses a
+ * module boundary. Here it means `run()` returning `std::optional<BakeOutputs>` would not compile
+ * had `BakeOutputs` kept its `ShaderPackage`, which is what first exposed this.
  */
 struct BakeOutputs {
     std::string packageJson;         ///< canonical `package.json` text

@@ -1,5 +1,4 @@
 /**
- * @file main.cpp
  * @brief `mdux-shaderbake` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)
@@ -54,7 +53,7 @@ namespace bake = mdux::tools::shaderbake;
 int main(int argc, char** argv) {
     cli::Invocation invocation;
     try {
-        invocation = cli::parse(bake::kToolName, argc, argv);
+        invocation = cli::parse(bake::toolName, argc, argv);
     } catch (const cli::UsageError& error) {
         std::println(std::cerr, "{}", error.what());
         return 2;
@@ -73,7 +72,7 @@ int main(int argc, char** argv) {
                             : bake::verify(*outputs, invocation.verify.packagePath,
                                            invocation.verify.reportPath, diagnostics);
         if (ok) {
-            summary = std::format("{}: OK ({} {}: {} modules, {} sidecar bytes)", bake::kToolName,
+            summary = std::format("{}: OK ({} {}: {} modules, {} sidecar bytes)", bake::toolName,
                                   invocation.mode == cli::Mode::Bake ? "baked" : "verified",
                                   outputs->packageId, outputs->moduleCount,
                                   outputs->sidecar.size());
@@ -87,7 +86,7 @@ int main(int argc, char** argv) {
     //
     // In JSON mode `render` emits the envelope even with no findings, so a consumer always has
     // something to parse; the human-readable summary is suppressed there for the same reason.
-    const std::string rendered = cli::render(diagnostics, invocation.format, bake::kToolName);
+    const std::string rendered = cli::render(diagnostics, invocation.format, bake::toolName);
     if (!rendered.empty()) {
         std::print(std::cout, "{}", rendered);
     }

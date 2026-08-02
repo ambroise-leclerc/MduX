@@ -1,5 +1,4 @@
 /**
- * @file SpirvTests.cpp
  * @brief Tests for the host-only SPIR-V reflector.
  *
  * Fixtures come from SpirvFixtures.hpp, which assembles modules word by word - see its comment
@@ -103,7 +102,7 @@ TEST_CASE("An instruction claiming zero words is rejected rather than looping", 
     // A word count of zero would leave the cursor where it was; without this check the parser
     // would spin forever on a malformed file.
     Builder builder = minimal();
-    builder.poke(5, kOpEntryPoint);  // word count 0 in the high half
+    builder.poke(5, opEntryPoint);  // word count 0 in the high half
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
     CHECK(result.error() == ParseError::ZeroWordCount);
@@ -111,7 +110,7 @@ TEST_CASE("An instruction claiming zero words is rejected rather than looping", 
 
 TEST_CASE("An instruction extending past the module is rejected", "evidence-unit") {
     Builder builder = minimal();
-    builder.poke(5, (99u << 16) | kOpEntryPoint);
+    builder.poke(5, (99u << 16) | opEntryPoint);
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
     CHECK(result.error() == ParseError::TruncatedInstruction);
@@ -126,7 +125,7 @@ TEST_CASE("A module with no entry point is rejected", "evidence-unit") {
 
 TEST_CASE("A second entry point is rejected", "evidence-unit") {
     Builder builder = minimal();
-    builder.opWithName(kOpEntryPoint, {kExecutionModelFragment, 2u}, "other");
+    builder.opWithName(opEntryPoint, {executionModelFragment, 2u}, "other");
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
     CHECK(result.error() == ParseError::MultipleEntryPoints);
@@ -135,26 +134,26 @@ TEST_CASE("A second entry point is rejected", "evidence-unit") {
 TEST_CASE("An unsupported execution model is rejected", "evidence-unit") {
     // The schema has no Stage enumerator for compute, and inventing one here would put the
     // schema's vocabulary in two places.
-    auto result = reflect(minimal(kExecutionModelGLCompute).bytes());
+    auto result = reflect(minimal(executionModelGLCompute).bytes());
     REQUIRE(!result.has_value());
     CHECK(result.error() == ParseError::UnsupportedExecutionModel);
 }
 
 TEST_CASE("A fragment module reflects as fragment", "evidence-unit") {
-    auto result = reflect(minimal(kExecutionModelFragment).bytes());
+    auto result = reflect(minimal(executionModelFragment).bytes());
     REQUIRE(result.has_value());
     CHECK(result->stage == shader::Stage::Fragment);
 }
 
 TEST_CASE("A non-default entry point name is preserved", "evidence-unit") {
-    auto result = reflect(minimal(kExecutionModelVertex, "vertexMain").bytes());
+    auto result = reflect(minimal(executionModelVertex, "vertexMain").bytes());
     REQUIRE(result.has_value());
     CHECK(result->entryPoint == "vertexMain");
 }
 
 TEST_CASE("An entry point name whose length is a multiple of four decodes", "evidence-unit") {
     // The packing edge case: "abcd" fills one word exactly, so the NUL needs a word of its own.
-    auto result = reflect(minimal(kExecutionModelVertex, "abcd").bytes());
+    auto result = reflect(minimal(executionModelVertex, "abcd").bytes());
     REQUIRE(result.has_value());
     CHECK(result->entryPoint == "abcd");
 }
@@ -164,7 +163,7 @@ TEST_CASE("An entry point name whose length is a multiple of four decodes", "evi
 // ---------------------------------------------------------------------------
 
 TEST_CASE("A combined image sampler is reflected with its set and binding", "evidence-unit") {
-    Builder builder = minimal(kExecutionModelFragment);
+    Builder builder = minimal(executionModelFragment);
     addCombinedImageSampler(builder, 0, 3);
     auto result = reflect(builder.bytes());
     REQUIRE(result.has_value());
@@ -173,11 +172,11 @@ TEST_CASE("A combined image sampler is reflected with its set and binding", "evi
     CHECK(result->descriptors[0].binding == 3);
     CHECK(result->descriptors[0].kind == shader::DescriptorKind::CombinedImageSampler);
     CHECK(result->descriptors[0].count == 1);
-    CHECK(result->descriptors[0].stages == shader::kFragmentBit);
+    CHECK(result->descriptors[0].stages == shader::fragmentBit);
 }
 
 TEST_CASE("An array binding reports its element count once", "evidence-unit") {
-    Builder builder = minimal(kExecutionModelFragment);
+    Builder builder = minimal(executionModelFragment);
     addCombinedImageSampler(builder, 0, 0, 4);
     auto result = reflect(builder.bytes());
     REQUIRE(result.has_value());
@@ -187,19 +186,19 @@ TEST_CASE("An array binding reports its element count once", "evidence-unit") {
 }
 
 TEST_CASE("A uniform block is reflected as a uniform buffer", "evidence-unit") {
-    constexpr std::uint32_t kFloat = 30;
-    constexpr std::uint32_t kStruct = 31;
-    constexpr std::uint32_t kPointer = 32;
-    constexpr std::uint32_t kVariable = 33;
+    constexpr std::uint32_t floatTypeId = 30;
+    constexpr std::uint32_t structTypeId = 31;
+    constexpr std::uint32_t pointerTypeId = 32;
+    constexpr std::uint32_t variableId = 33;
 
     Builder builder = minimal();
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeStruct, {kStruct, kFloat});
-    builder.op(kOpDecorate, {kStruct, kDecorationBlock});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassUniform, kStruct});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassUniform});
-    builder.op(kOpDecorate, {kVariable, kDecorationDescriptorSet, 0u});
-    builder.op(kOpDecorate, {kVariable, kDecorationBinding, 0u});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opDecorate, {structTypeId, decorationBlock});
+    builder.op(opTypePointer, {pointerTypeId, storageClassUniform, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassUniform});
+    builder.op(opDecorate, {variableId, decorationDescriptorSet, 0u});
+    builder.op(opDecorate, {variableId, decorationBinding, 0u});
 
     auto result = reflect(builder.bytes());
     REQUIRE(result.has_value());
@@ -210,17 +209,17 @@ TEST_CASE("A uniform block is reflected as a uniform buffer", "evidence-unit") {
 TEST_CASE("A descriptor missing its set is rejected", "evidence-unit") {
     // A binding the shader author forgot to decorate cannot be placed in a pipeline layout, and
     // guessing a set of 0 would produce a layout that silently disagrees with the shader.
-    constexpr std::uint32_t kImage = 10;
-    constexpr std::uint32_t kSampled = 11;
-    constexpr std::uint32_t kPointer = 13;
-    constexpr std::uint32_t kVariable = 14;
+    constexpr std::uint32_t imageTypeId = 10;
+    constexpr std::uint32_t sampledTypeId = 11;
+    constexpr std::uint32_t pointerTypeId = 13;
+    constexpr std::uint32_t variableId = 14;
 
-    Builder builder = minimal(kExecutionModelFragment);
-    builder.op(kOpTypeImage, {kImage, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
-    builder.op(kOpTypeSampledImage, {kSampled, kImage});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassUniformConstant, kSampled});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassUniformConstant});
-    builder.op(kOpDecorate, {kVariable, kDecorationBinding, 0u});
+    Builder builder = minimal(executionModelFragment);
+    builder.op(opTypeImage, {imageTypeId, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
+    builder.op(opTypeSampledImage, {sampledTypeId, imageTypeId});
+    builder.op(opTypePointer, {pointerTypeId, storageClassUniformConstant, sampledTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassUniformConstant});
+    builder.op(opDecorate, {variableId, decorationBinding, 0u});
 
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
@@ -228,17 +227,17 @@ TEST_CASE("A descriptor missing its set is rejected", "evidence-unit") {
 }
 
 TEST_CASE("A descriptor missing its binding is rejected", "evidence-unit") {
-    constexpr std::uint32_t kImage = 10;
-    constexpr std::uint32_t kSampled = 11;
-    constexpr std::uint32_t kPointer = 13;
-    constexpr std::uint32_t kVariable = 14;
+    constexpr std::uint32_t imageTypeId = 10;
+    constexpr std::uint32_t sampledTypeId = 11;
+    constexpr std::uint32_t pointerTypeId = 13;
+    constexpr std::uint32_t variableId = 14;
 
-    Builder builder = minimal(kExecutionModelFragment);
-    builder.op(kOpTypeImage, {kImage, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
-    builder.op(kOpTypeSampledImage, {kSampled, kImage});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassUniformConstant, kSampled});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassUniformConstant});
-    builder.op(kOpDecorate, {kVariable, kDecorationDescriptorSet, 0u});
+    Builder builder = minimal(executionModelFragment);
+    builder.op(opTypeImage, {imageTypeId, 0u, 1u, 0u, 0u, 0u, 1u, 0u});
+    builder.op(opTypeSampledImage, {sampledTypeId, imageTypeId});
+    builder.op(opTypePointer, {pointerTypeId, storageClassUniformConstant, sampledTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassUniformConstant});
+    builder.op(opDecorate, {variableId, decorationDescriptorSet, 0u});
 
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
@@ -249,15 +248,15 @@ TEST_CASE("Descriptors are ordered by set then binding", "evidence-unit") {
     // Emitted out of order so the ordering cannot pass by accident. Without the sort the committed
     // package would depend on the id allocation order inside whatever compiler produced the
     // SPIR-V, which byte-identity cannot tolerate.
-    constexpr std::uint32_t kFloat = 40;
-    constexpr std::uint32_t kStruct = 41;
-    constexpr std::uint32_t kPointer = 42;
+    constexpr std::uint32_t floatTypeId = 40;
+    constexpr std::uint32_t structTypeId = 41;
+    constexpr std::uint32_t pointerTypeId = 42;
 
     Builder builder = minimal();
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeStruct, {kStruct, kFloat});
-    builder.op(kOpDecorate, {kStruct, kDecorationBlock});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassUniform, kStruct});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opDecorate, {structTypeId, decorationBlock});
+    builder.op(opTypePointer, {pointerTypeId, storageClassUniform, structTypeId});
 
     struct Placement {
         std::uint32_t id;
@@ -266,9 +265,9 @@ TEST_CASE("Descriptors are ordered by set then binding", "evidence-unit") {
     };
     const std::array<Placement, 3> placements{{{50, 1, 0}, {51, 0, 5}, {52, 0, 1}}};
     for (const Placement& placement : placements) {
-        builder.op(kOpVariable, {kPointer, placement.id, kStorageClassUniform});
-        builder.op(kOpDecorate, {placement.id, kDecorationDescriptorSet, placement.set});
-        builder.op(kOpDecorate, {placement.id, kDecorationBinding, placement.binding});
+        builder.op(opVariable, {pointerTypeId, placement.id, storageClassUniform});
+        builder.op(opDecorate, {placement.id, decorationDescriptorSet, placement.set});
+        builder.op(opDecorate, {placement.id, decorationBinding, placement.binding});
     }
 
     auto result = reflect(builder.bytes());
@@ -294,26 +293,26 @@ TEST_CASE("A vec4 push constant block reflects as offset 0 size 16", "evidence-u
     REQUIRE(result->pushConstant.has_value());
     CHECK(result->pushConstant->offset == 0);
     CHECK(result->pushConstant->size == 16);
-    CHECK(result->pushConstant->stages == shader::kVertexBit);
+    CHECK(result->pushConstant->stages == shader::vertexBit);
 }
 
 TEST_CASE("A push constant block's size follows its member offsets", "evidence-unit") {
     // Two vec4s at offsets 0 and 16 make a 32-byte block. Deriving the size from the offsets is
     // what makes any padding the shader compiler inserted come out right.
-    constexpr std::uint32_t kFloat = 60;
-    constexpr std::uint32_t kVec4 = 61;
-    constexpr std::uint32_t kStruct = 62;
-    constexpr std::uint32_t kPointer = 63;
-    constexpr std::uint32_t kVariable = 64;
+    constexpr std::uint32_t floatTypeId = 60;
+    constexpr std::uint32_t vec4TypeId = 61;
+    constexpr std::uint32_t structTypeId = 62;
+    constexpr std::uint32_t pointerTypeId = 63;
+    constexpr std::uint32_t variableId = 64;
 
     Builder builder = minimal();
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeVector, {kVec4, kFloat, 4u});
-    builder.op(kOpTypeStruct, {kStruct, kVec4, kVec4});
-    builder.op(kOpMemberDecorate, {kStruct, 0u, kDecorationOffset, 0u});
-    builder.op(kOpMemberDecorate, {kStruct, 1u, kDecorationOffset, 16u});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassPushConstant, kStruct});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassPushConstant});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeVector, {vec4TypeId, floatTypeId, 4u});
+    builder.op(opTypeStruct, {structTypeId, vec4TypeId, vec4TypeId});
+    builder.op(opMemberDecorate, {structTypeId, 0u, decorationOffset, 0u});
+    builder.op(opMemberDecorate, {structTypeId, 1u, decorationOffset, 16u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
 
     auto result = reflect(builder.bytes());
     REQUIRE(result.has_value());
@@ -323,14 +322,14 @@ TEST_CASE("A push constant block's size follows its member offsets", "evidence-u
 }
 
 TEST_CASE("A push constant variable pointing at a non-struct is rejected", "evidence-unit") {
-    constexpr std::uint32_t kFloat = 70;
-    constexpr std::uint32_t kPointer = 71;
-    constexpr std::uint32_t kVariable = 72;
+    constexpr std::uint32_t floatTypeId = 70;
+    constexpr std::uint32_t pointerTypeId = 71;
+    constexpr std::uint32_t variableId = 72;
 
     Builder builder = minimal();
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassPushConstant, kFloat});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassPushConstant});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, floatTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
 
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
@@ -338,16 +337,16 @@ TEST_CASE("A push constant variable pointing at a non-struct is rejected", "evid
 }
 
 TEST_CASE("A struct with no member offsets has no computable size", "evidence-unit") {
-    constexpr std::uint32_t kFloat = 80;
-    constexpr std::uint32_t kStruct = 81;
-    constexpr std::uint32_t kPointer = 82;
-    constexpr std::uint32_t kVariable = 83;
+    constexpr std::uint32_t floatTypeId = 80;
+    constexpr std::uint32_t structTypeId = 81;
+    constexpr std::uint32_t pointerTypeId = 82;
+    constexpr std::uint32_t variableId = 83;
 
     Builder builder = minimal();
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeStruct, {kStruct, kFloat});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassPushConstant, kStruct});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassPushConstant});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
 
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());
@@ -355,18 +354,18 @@ TEST_CASE("A struct with no member offsets has no computable size", "evidence-un
 }
 
 TEST_CASE("A second push constant block is rejected", "evidence-unit") {
-    constexpr std::uint32_t kFloat = 90;
-    constexpr std::uint32_t kStruct = 91;
-    constexpr std::uint32_t kPointer = 92;
-    constexpr std::uint32_t kVariable = 93;
+    constexpr std::uint32_t floatTypeId = 90;
+    constexpr std::uint32_t structTypeId = 91;
+    constexpr std::uint32_t pointerTypeId = 92;
+    constexpr std::uint32_t variableId = 93;
 
     Builder builder = minimal();
     addVec4PushConstant(builder);
-    builder.op(kOpTypeFloat, {kFloat, 32u});
-    builder.op(kOpTypeStruct, {kStruct, kFloat});
-    builder.op(kOpMemberDecorate, {kStruct, 0u, kDecorationOffset, 0u});
-    builder.op(kOpTypePointer, {kPointer, kStorageClassPushConstant, kStruct});
-    builder.op(kOpVariable, {kPointer, kVariable, kStorageClassPushConstant});
+    builder.op(opTypeFloat, {floatTypeId, 32u});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opMemberDecorate, {structTypeId, 0u, decorationOffset, 0u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
 
     auto result = reflect(builder.bytes());
     REQUIRE(!result.has_value());

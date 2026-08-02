@@ -99,7 +99,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXShaderBakeLib PRIVATE /experimental:module /std:c++latest)
 endif()
 
-add_executable(mdux-shaderbake shader/main.cpp)
+add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
 target_link_libraries(mdux-shaderbake PRIVATE MduX::ShaderBakeLib MduX_warnings)
 
 set_target_properties(mdux-shaderbake

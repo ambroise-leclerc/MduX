@@ -1,5 +1,4 @@
 /**
- * @file ShaderBakeTests.cpp
  * @brief Tests for the shader baker's recipe model and bake/verify core.
  *
  * These drive `run()`, `write()` and `verify()` as calls rather than spawning mdux-shaderbake,
@@ -91,9 +90,9 @@ struct Fixture {
     Recipe recipe;
 
     Fixture() {
-        Builder vertex = minimal(kExecutionModelVertex);
+        Builder vertex = minimal(executionModelVertex);
         addVec4PushConstant(vertex);
-        Builder fragment = minimal(kExecutionModelFragment);
+        Builder fragment = minimal(executionModelFragment);
         addCombinedImageSampler(fragment, 0, 0);
 
         writeBytes(dir.path() / "shaders/test.vert.spv", vertex.bytes());
@@ -281,19 +280,19 @@ TEST_CASE("Descriptors and push constants carry the stages that declared them",
 
     REQUIRE(package->descriptors.size() == 1);
     CHECK(package->descriptors[0].kind == shader::DescriptorKind::CombinedImageSampler);
-    CHECK(package->descriptors[0].stages == shader::kFragmentBit);
+    CHECK(package->descriptors[0].stages == shader::fragmentBit);
 
     REQUIRE(package->pushConstants.size() == 1);
     CHECK(package->pushConstants[0].size == 16);
-    CHECK(package->pushConstants[0].stages == shader::kVertexBit);
+    CHECK(package->pushConstants[0].stages == shader::vertexBit);
 }
 
 TEST_CASE("A binding declared by both stages becomes one binding visible to both",
           "evidence-unit") {
     TempDir dir;
-    Builder vertex = minimal(kExecutionModelVertex);
+    Builder vertex = minimal(executionModelVertex);
     addCombinedImageSampler(vertex, 0, 0);
-    Builder fragment = minimal(kExecutionModelFragment);
+    Builder fragment = minimal(executionModelFragment);
     addCombinedImageSampler(fragment, 0, 0);
     writeBytes(dir.path() / "v.spv", vertex.bytes());
     writeBytes(dir.path() / "f.spv", fragment.bytes());
@@ -309,7 +308,7 @@ TEST_CASE("A binding declared by both stages becomes one binding visible to both
     auto package = shader::ShaderPackage::parse(outputs->packageJson);
     REQUIRE(package.has_value());
     REQUIRE(package->descriptors.size() == 1);
-    CHECK(package->descriptors[0].stages == (shader::kVertexBit | shader::kFragmentBit));
+    CHECK(package->descriptors[0].stages == (shader::vertexBit | shader::fragmentBit));
 }
 
 TEST_CASE("Two stages disagreeing about a binding is an error, not a silent choice",
@@ -317,9 +316,9 @@ TEST_CASE("Two stages disagreeing about a binding is an error, not a silent choi
     // Taking either declaration would produce a pipeline layout that matches one shader and not
     // the other, which the driver reports much later and much less clearly.
     TempDir dir;
-    Builder vertex = minimal(kExecutionModelVertex);
+    Builder vertex = minimal(executionModelVertex);
     addCombinedImageSampler(vertex, 0, 0, 1);
-    Builder fragment = minimal(kExecutionModelFragment);
+    Builder fragment = minimal(executionModelFragment);
     addCombinedImageSampler(fragment, 0, 0, 4);
     writeBytes(dir.path() / "v.spv", vertex.bytes());
     writeBytes(dir.path() / "f.spv", fragment.bytes());

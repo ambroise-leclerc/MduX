@@ -1,5 +1,4 @@
 /**
- * @file Schema.cpp
  * @brief Implementation of the governed shader package types.
  *
  * @compliance ADR-004 Trust zones in C++
@@ -158,18 +157,18 @@ std::string_view describe(SchemaError error) noexcept {
 
 std::string_view toWire(Stage stage) noexcept {
     const auto index = static_cast<std::size_t>(stage);
-    return index < kStageWireValues.size() ? kStageWireValues[index] : std::string_view{};
+    return index < stageWireValues.size() ? stageWireValues[index] : std::string_view{};
 }
 
 std::string_view toWire(DescriptorKind kind) noexcept {
     const auto index = static_cast<std::size_t>(kind);
-    return index < kDescriptorKindWireValues.size() ? kDescriptorKindWireValues[index]
+    return index < descriptorKindWireValues.size() ? descriptorKindWireValues[index]
                                                      : std::string_view{};
 }
 
 Result<Stage, SchemaError> stageFromWire(std::string_view wire) noexcept {
-    for (std::size_t i = 0; i < kStageWireValues.size(); ++i) {
-        if (kStageWireValues[i] == wire) {
+    for (std::size_t i = 0; i < stageWireValues.size(); ++i) {
+        if (stageWireValues[i] == wire) {
             return static_cast<Stage>(i);
         }
     }
@@ -177,8 +176,8 @@ Result<Stage, SchemaError> stageFromWire(std::string_view wire) noexcept {
 }
 
 Result<DescriptorKind, SchemaError> descriptorKindFromWire(std::string_view wire) noexcept {
-    for (std::size_t i = 0; i < kDescriptorKindWireValues.size(); ++i) {
-        if (kDescriptorKindWireValues[i] == wire) {
+    for (std::size_t i = 0; i < descriptorKindWireValues.size(); ++i) {
+        if (descriptorKindWireValues[i] == wire) {
             return static_cast<DescriptorKind>(i);
         }
     }
@@ -189,10 +188,10 @@ json::Value stagesToJson(StageMask stages) noexcept {
     // Written in enumerator order rather than bit order so the array is stable regardless of how
     // the mask was assembled - two packages with the same stage set must produce the same bytes.
     json::Value array = json::Value::array({});
-    for (std::size_t i = 0; i < kStageWireValues.size(); ++i) {
+    for (std::size_t i = 0; i < stageWireValues.size(); ++i) {
         if ((stages & stageBit(static_cast<Stage>(i))) != 0) {
             // A fresh array cannot reject a push; the result is checked by the caller's writer.
-            static_cast<void>(array.push(json::Value::string(std::string{kStageWireValues[i]})));
+            static_cast<void>(array.push(json::Value::string(std::string{stageWireValues[i]})));
         }
     }
     return array;
@@ -225,7 +224,7 @@ ResultVoid<SchemaError> ShaderPackage::validate() const noexcept {
     if (auto headerOk = header.validate(); !headerOk.has_value()) {
         return err(SchemaError::ReportRejected);
     }
-    if (header.kind != kKind) {
+    if (header.kind != kind) {
         return err(SchemaError::WrongKind);
     }
     if (header.schemaVersion != evidence::kSchemaVersion) {

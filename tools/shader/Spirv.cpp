@@ -1,5 +1,4 @@
 /**
- * @file Spirv.cpp
  * @brief Implementation of the host-only SPIR-V reflector.
  *
  * @compliance ADR-004 Trust zones in C++
@@ -30,9 +29,9 @@ using mdux::core::Result;
 
 namespace {
 
-constexpr std::uint32_t kMagic = 0x07230203u;
-constexpr std::uint32_t kMagicSwapped = 0x03022307u;
-constexpr std::size_t kHeaderWords = 5;
+constexpr std::uint32_t spirvMagic = 0x07230203u;
+constexpr std::uint32_t spirvMagicSwapped = 0x03022307u;
+constexpr std::size_t headerWords = 5;
 
 // Opcodes, from the SPIR-V specification's instruction table. Only the ones a contract needs.
 enum Op : std::uint16_t {
@@ -348,15 +347,15 @@ Result<Reflection, ParseError> reflect(std::span<const std::byte> spirv) noexcep
     if (spirv.size() % 4 != 0) {
         return err(ParseError::NotWordAligned);
     }
-    if (spirv.size() / 4 < kHeaderWords) {
+    if (spirv.size() / 4 < headerWords) {
         return err(ParseError::TooShort);
     }
 
     const std::uint32_t magic = *wordAt(spirv, 0);
-    if (magic == kMagicSwapped) {
+    if (magic == spirvMagicSwapped) {
         return err(ParseError::ForeignEndianness);
     }
-    if (magic != kMagic) {
+    if (magic != spirvMagic) {
         return err(ParseError::BadMagic);
     }
 
@@ -364,7 +363,7 @@ Result<Reflection, ParseError> reflect(std::span<const std::byte> spirv) noexcep
     const std::uint32_t major = (versionWord >> 16) & 0xffu;
     const std::uint32_t minor = (versionWord >> 8) & 0xffu;
     const std::uint32_t version = (major << 8) | minor;
-    if (version < kMinVersion || version > kMaxVersion) {
+    if (version < minVersion || version > maxVersion) {
         return err(ParseError::UnsupportedVersion);
     }
     if (*wordAt(spirv, 4) != 0) {
@@ -381,7 +380,7 @@ Result<Reflection, ParseError> reflect(std::span<const std::byte> spirv) noexcep
 
     // ---- First pass: index definitions and decorations ----
     Module module;
-    for (std::size_t cursor = kHeaderWords; cursor < totalWords;) {
+    for (std::size_t cursor = headerWords; cursor < totalWords;) {
         const std::uint32_t header = words[cursor];
         const auto wordCount = static_cast<std::uint16_t>(header >> 16);
         const auto opcode = static_cast<std::uint16_t>(header & 0xffffu);
