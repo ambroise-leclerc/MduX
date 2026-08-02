@@ -224,7 +224,7 @@ ResultVoid<SchemaError> ShaderPackage::validate() const noexcept {
     if (auto headerOk = header.validate(); !headerOk.has_value()) {
         return err(SchemaError::ReportRejected);
     }
-    if (header.kind != kind) {
+    if (header.kind != packageKind) {
         return err(SchemaError::WrongKind);
     }
     if (header.schemaVersion != evidence::kSchemaVersion) {

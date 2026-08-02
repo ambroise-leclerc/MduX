@@ -207,7 +207,7 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
 
     shader::ShaderPackage package;
     package.header.id = recipe.id;
-    package.header.kind = std::string{shader::kind};
+    package.header.kind = std::string{shader::packageKind};
     package.sidecarPath = recipe.sidecar;
 
     std::vector<evidence::FileRecord> inputs;

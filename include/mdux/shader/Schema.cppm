@@ -64,7 +64,11 @@ import mdux.evidence.report;
 export namespace mdux::shader {
 
 /// The `<kind>` component of `generated/<kind>/<id>/`, and the value of a package's `kind` member.
-inline constexpr std::string_view kind = "shader";
+///
+/// Named packageKind rather than kind: MSVC raises C4459 ("declaration hides global declaration")
+/// wherever a parameter is called `kind`, which for a type named DescriptorKind is most of them,
+/// and warnings are errors here.
+inline constexpr std::string_view packageKind = "shader";
 
 /// The pipeline stage a module is compiled for. v1 is a graphics pipeline with two stages;
 /// compute and the geometry stages are out of scope and need a schema version, not a quiet
@@ -170,7 +174,7 @@ struct ShaderPackage {
     /// because a partial designated initializer is a -Wmissing-field-initializers error here.
     evidence::PackageHeader header{.schemaVersion = evidence::kSchemaVersion,
                                    .id = {},
-                                   .kind = std::string{kind}};
+                                   .kind = std::string{packageKind}};
     std::string sidecarPath;  ///< bare filename beside package.json, e.g. "shaders.spv"
     std::uint64_t sidecarByteLength{0};
     evidence::Digest sidecarSha256{};
