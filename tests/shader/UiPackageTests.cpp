@@ -14,6 +14,7 @@ import std;
 import mdux.core.result;
 import mdux.evidence.digest;
 import mdux.shader.schema;
+import mdux.tools.spirv;
 import mdux.test;
 
 #include "../framework/MduXTest.hpp"
@@ -22,6 +23,7 @@ namespace {
 
 namespace shader = mdux::shader;
 namespace evidence = mdux::evidence;
+namespace spirv = mdux::tools::spirv;
 
 const std::filesystem::path packageDir =
     std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "shader" / "mdux-ui";
@@ -31,8 +33,16 @@ const std::filesystem::path packageDir =
     if (!file) {
         return std::nullopt;
     }
-    const auto size = static_cast<std::streamsize>(file.tellg());
-    file.seekg(0);
+    // tellg() answers -1 on a stream error rather than throwing. Casting that to an unsigned
+    // size would ask for a vector of 2^64-1 bytes, so the failure has to be caught here - the
+    // symptom otherwise is a bad_alloc or a kill, neither of which names the file.
+    const std::streamoff size = file.tellg();
+    if (size < 0) {
+        return std::nullopt;
+    }
+    if (!file.seekg(0)) {
+        return std::nullopt;
+    }
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     file.read(reinterpret_cast<char*>(bytes.data()), size);
     if (!file) {
@@ -146,13 +156,17 @@ TEST_CASE("Every module in the sidecar is well-formed SPIR-V for its declared st
     for (const shader::ShaderModule& module : package->modules) {
         const std::span<const std::byte> range{sidecar->data() + module.byteOffset,
                                                static_cast<std::size_t>(module.byteLength)};
-        REQUIRE(range.size() >= 4);
-        const std::uint32_t magic =
-            static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(range[0])) |
-            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(range[1])) << 8) |
-            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(range[2])) << 16) |
-            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(range[3])) << 24);
-        CHECK(magic == 0x07230203u);
+
+        // Reflecting the range rather than checking its first four bytes is what makes this test
+        // match its own name. The magic number only says the range starts like SPIR-V; reflection
+        // parses it and reports the execution model, so two modules swapped in the sidecar - both
+        // valid SPIR-V, both correctly digested, each under the other's id - fails here. That is
+        // the failure a magic-number check cannot see, and it reaches a device as a vertex shader
+        // bound to the fragment stage.
+        auto reflection = spirv::reflect(range);
+        REQUIRE(reflection.has_value());
+        CHECK(reflection->stage == module.stage);
+        CHECK(reflection->entryPoint == module.entryPoint);
         CHECK(module.byteLength % 4 == 0);
     }
 }
