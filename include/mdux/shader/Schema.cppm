@@ -170,8 +170,6 @@ struct ShaderModule {
 struct ShaderPackage {
     /// `kind` is defaulted so a hand-built package cannot forget it; every member is named
     /// because a partial designated initializer is a -Wmissing-field-initializers error here.
-    /// `kind` is defaulted so a hand-built package cannot forget it; every member is named
-    /// because a partial designated initializer is a -Wmissing-field-initializers error here.
     evidence::PackageHeader header{.schemaVersion = evidence::kSchemaVersion,
                                    .id = {},
                                    .kind = std::string{packageKind}};
