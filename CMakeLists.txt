@@ -176,10 +176,12 @@ target_sources(MduX
         FILE_SET CXX_MODULES
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         FILES
+            include/mdux/render/VulkanRenderer.cppm
             include/mdux/mdux.cppm
             include/mdux/vulkansc/MemoryPoolManager.cppm
             include/mdux/vulkansc/DeviceObjectManager.cppm
     PRIVATE
+        src/render/VulkanRenderer.cpp
         src/mdux.cpp
         src/vulkansc/MemoryPoolManager.cpp
         src/vulkansc/DeviceObjectManager.cpp

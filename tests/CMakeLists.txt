@@ -218,6 +218,39 @@ endif()
 
 mdux_discover_tests(draw_tests)
 
+# Adapter-zone Vulkan renderer (issue #124)
+#
+# Links MduX::MduX, so this suite sees Vulkan where draw_tests deliberately does not. Only the
+# device-free half of the renderer is covered here - create()'s validation runs before the first
+# Vulkan call, so it is testable with no ICD present, which is what CI currently has. The device
+# path lands with #125's headless harness.
+add_executable(render_tests
+    render/RenderTestMain.cpp
+    render/VulkanRendererTests.cpp
+)
+
+target_sources(render_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(render_tests PRIVATE MduX::MduX)
+target_include_directories(render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(render_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(render_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(render_tests PRIVATE /experimental:module)
+    target_compile_options(render_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(render_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp
