@@ -132,6 +132,7 @@ jobs:
           vulkan-tools \
           vulkan-utility-libraries-dev \
           spirv-tools \
+          mesa-vulkan-drivers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
@@ -188,6 +189,26 @@ jobs:
     - name: Verify evidence artifacts (GCC 15)
       run: ctest --preset ninja-gcc -L evidence
 
+    # Rendered-truth verification (issue #125). Until mesa-vulkan-drivers was installed above,
+    # this leg had no Vulkan ICD at all and vkCreateInstance found zero physical devices.
+    #
+    # VK_DRIVER_FILES pins lavapipe explicitly rather than letting the loader choose: mesa also
+    # ships radv and anv, and on a runner with no matching hardware "which driver answered" should
+    # not be left to chance in a test that asserts pixel values.
+    #
+    # The grep is the point of the step. offscreen_tests exits 77 when no device is present and
+    # CTest reports Skipped, which does not fail a run - so without this check a broken ICD would
+    # turn the only test that renders anything into a silent no-op while the job stayed green.
+    - name: Verify rendered output (lavapipe)
+      env:
+        VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+      run: |
+        ctest --preset ninja-gcc -L pixel --output-on-failure --no-tests=error 2>&1 | tee pixel.log
+        if grep -q "Skipped" pixel.log; then
+          echo "::error::Pixel tests were skipped - no Vulkan device. They must run on this leg."
+          exit 1
+        fi
+
     - name: Verify no source-tree writes
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -222,6 +243,7 @@ jobs:
           vulkan-tools \
           vulkan-utility-libraries-dev \
           spirv-tools \
+          mesa-vulkan-drivers \
           libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
