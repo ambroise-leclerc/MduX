@@ -27,6 +27,22 @@
  * modules, the descriptor set layout, the pipeline layout, the pipeline, the two buffers and their
  * memory - and it destroys those in reverse order in its destructor and nowhere else.
  *
+ * ## The renderer owns a default atlas, so a solid rectangle needs no ceremony
+ *
+ * The fragment shader samples an atlas in two of its three modes, so the pipeline layout declares
+ * a combined image sampler - and a draw recorded without a descriptor set bound is undefined
+ * behaviour, whatever mode the vertices ask for. Rather than make every caller build a descriptor
+ * set before it can draw a rectangle, the renderer creates and binds a 1x1 opaque white texture.
+ *
+ * That is not a placeholder to be removed. Sampling white and multiplying by the vertex colour is
+ * the identity for the sampled-RGBA path and a full-coverage mask for the R8 path, so a default
+ * atlas is the correct neutral value rather than a stand-in for a real one. #14 and #17 replace
+ * the *contents* when they have glyphs and images to put there; the mechanism stays.
+ *
+ * This is why the context carries a queue: uploading one white pixel needs a layout transition,
+ * and a layout transition needs a submitted command. It is used once, during `create()`, and
+ * never touched per frame.
+ *
  * ## No runtime shader I/O
  *
  * Shader bytes come from a `shader::PackageView`, which generated code supplies as `constexpr`
@@ -61,13 +77,18 @@ struct VulkanRenderContext {
     VkRenderPass renderPass{VK_NULL_HANDLE};
     std::uint32_t subpass{0};
 
+    /// Used once, during `create()`, to upload the default atlas. Never touched per frame.
+    VkQueue queue{VK_NULL_HANDLE};
+    std::uint32_t queueFamilyIndex{0};
+
     /// The area the vertex shader converts pixel coordinates against. Not a framebuffer size:
     /// a renderer drawing into a region of a larger target passes that region's extent.
     mdux::core::Extent2D viewport{};
 
     [[nodiscard]] bool isValid() const noexcept {
         return device != VK_NULL_HANDLE && physicalDevice != VK_NULL_HANDLE &&
-               renderPass != VK_NULL_HANDLE && viewport.width > 0 && viewport.height > 0;
+               renderPass != VK_NULL_HANDLE && queue != VK_NULL_HANDLE && viewport.width > 0 &&
+               viewport.height > 0;
     }
 };
 
@@ -75,6 +96,7 @@ enum class RenderError : std::uint8_t {
     NullDevice,
     NullPhysicalDevice,
     NullRenderPass,
+    NullQueue,
     EmptyViewport,
     EmptyBudget,
     BudgetExceedsIndexWidth,
@@ -88,6 +110,14 @@ enum class RenderError : std::uint8_t {
     NoSuitableMemoryType,     ///< no host-visible, host-coherent memory type on this device
     MemoryAllocationFailed,
     MemoryMapFailed,
+    ImageCreationFailed,      ///< the default atlas
+    ImageViewCreationFailed,
+    SamplerCreationFailed,
+    DescriptorPoolCreationFailed,
+    DescriptorSetAllocationFailed,
+    CommandPoolCreationFailed,    ///< the one-shot pool used to upload the default atlas
+    CommandBufferAllocationFailed,
+    AtlasUploadFailed,
     NullCommandBuffer,
     FrameExceedsBudget,       ///< the DrawList is larger than the renderer was built for
 };
@@ -128,8 +158,8 @@ public:
      * @brief Copies `list` into the mapped buffers and records its commands.
      *
      * The command buffer must already be recording, inside a render pass compatible with the one
-     * the renderer was created against. Binding the descriptor set for the atlas is the caller's
-     * job for now; #14 gives the renderer an atlas to bind.
+     * the renderer was created against. The atlas descriptor set is bound here, so a caller that
+     * only draws solid rectangles needs no descriptor plumbing of its own.
      */
     [[nodiscard]] mdux::core::ResultVoid<RenderError> record(
         VkCommandBuffer commandBuffer, const mdux::draw::DrawList& list) noexcept;
@@ -163,6 +193,12 @@ private:
     VkDeviceMemory vertexMemory_{VK_NULL_HANDLE};
     VkBuffer indexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory indexMemory_{VK_NULL_HANDLE};
+    VkImage atlasImage_{VK_NULL_HANDLE};
+    VkDeviceMemory atlasMemory_{VK_NULL_HANDLE};
+    VkImageView atlasView_{VK_NULL_HANDLE};
+    VkSampler atlasSampler_{VK_NULL_HANDLE};
+    VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
+    VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
     void* vertexMapped_{nullptr};
     void* indexMapped_{nullptr};
     VkDeviceSize vertexBytes_{0};

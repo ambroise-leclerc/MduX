@@ -44,6 +44,7 @@ namespace shader = mdux::shader;
     context.device = reinterpret_cast<VkDevice>(std::uintptr_t{0x1000});
     context.physicalDevice = reinterpret_cast<VkPhysicalDevice>(std::uintptr_t{0x2000});
     context.renderPass = reinterpret_cast<VkRenderPass>(std::uintptr_t{0x3000});
+    context.queue = reinterpret_cast<VkQueue>(std::uintptr_t{0x4000});
     context.viewport = core::Extent2D{.width = 800, .height = 600};
     return context;
 }
@@ -95,6 +96,7 @@ TEST_CASE("A default-constructed context is invalid on every axis", "evidence-un
     CHECK(context.device == VK_NULL_HANDLE);
     CHECK(context.physicalDevice == VK_NULL_HANDLE);
     CHECK(context.renderPass == VK_NULL_HANDLE);
+    CHECK(context.queue == VK_NULL_HANDLE);
     CHECK(context.viewport.width == 0);
     CHECK(context.viewport.height == 0);
     CHECK(context.subpass == 0);
@@ -112,6 +114,10 @@ TEST_CASE("A context missing any one member is invalid", "evidence-unit") {
     VulkanRenderContext noRenderPass = plausibleContext();
     noRenderPass.renderPass = VK_NULL_HANDLE;
     CHECK(!noRenderPass.isValid());
+
+    VulkanRenderContext noQueue = plausibleContext();
+    noQueue.queue = VK_NULL_HANDLE;
+    CHECK(!noQueue.isValid());
 
     VulkanRenderContext noViewport = plausibleContext();
     noViewport.viewport = core::Extent2D{};
@@ -138,6 +144,10 @@ TEST_CASE("Each missing context member is reported distinctly", "evidence-unit")
     context = plausibleContext();
     context.renderPass = VK_NULL_HANDLE;
     CHECK(creationError(context, package, workableBudget) == RenderError::NullRenderPass);
+
+    context = plausibleContext();
+    context.queue = VK_NULL_HANDLE;
+    CHECK(creationError(context, package, workableBudget) == RenderError::NullQueue);
 
     context = plausibleContext();
     context.viewport = core::Extent2D{.width = 0, .height = 600};
@@ -226,10 +236,11 @@ TEST_CASE("UiPushConstants matches the block the shader package declares", "evid
 }
 
 TEST_CASE("Every RenderError has its own description", "evidence-unit") {
-    constexpr std::array<RenderError, 18> all{
+    constexpr std::array<RenderError, 27> all{
         RenderError::NullDevice,
         RenderError::NullPhysicalDevice,
         RenderError::NullRenderPass,
+        RenderError::NullQueue,
         RenderError::EmptyViewport,
         RenderError::EmptyBudget,
         RenderError::BudgetExceedsIndexWidth,
@@ -243,6 +254,14 @@ TEST_CASE("Every RenderError has its own description", "evidence-unit") {
         RenderError::NoSuitableMemoryType,
         RenderError::MemoryAllocationFailed,
         RenderError::MemoryMapFailed,
+        RenderError::ImageCreationFailed,
+        RenderError::ImageViewCreationFailed,
+        RenderError::SamplerCreationFailed,
+        RenderError::DescriptorPoolCreationFailed,
+        RenderError::DescriptorSetAllocationFailed,
+        RenderError::CommandPoolCreationFailed,
+        RenderError::CommandBufferAllocationFailed,
+        RenderError::AtlasUploadFailed,
         RenderError::NullCommandBuffer,
         RenderError::FrameExceedsBudget,
     };

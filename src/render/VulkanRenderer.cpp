@@ -135,6 +135,194 @@ struct MappedBuffer {
     return module;
 }
 
+/// Creates the 1x1 opaque white default atlas, uploads it, and leaves it sampleable.
+///
+/// White is the neutral value rather than a placeholder: multiplying the vertex colour by white is
+/// the identity for the sampled-RGBA path, and a red channel of 1.0 is full coverage for the R8
+/// path. A renderer with no glyphs or images yet therefore behaves correctly rather than
+/// approximately.
+struct DefaultAtlas {
+    VkImage image{VK_NULL_HANDLE};
+    VkDeviceMemory memory{VK_NULL_HANDLE};
+    VkImageView view{VK_NULL_HANDLE};
+};
+
+[[nodiscard]] Result<DefaultAtlas, RenderError> createDefaultAtlas(
+    const VulkanRenderContext& context) noexcept {
+    DefaultAtlas atlas;
+
+    const VkImageCreateInfo imageInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {1, 1, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    if (vkCreateImage(context.device, &imageInfo, nullptr, &atlas.image) != VK_SUCCESS) {
+        return err(RenderError::ImageCreationFailed);
+    }
+
+    VkMemoryRequirements requirements{};
+    vkGetImageMemoryRequirements(context.device, atlas.image, &requirements);
+    const auto typeIndex = findMemoryType(context.physicalDevice, requirements.memoryTypeBits,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (!typeIndex.has_value()) {
+        vkDestroyImage(context.device, atlas.image, nullptr);
+        return err(RenderError::NoSuitableMemoryType);
+    }
+    const VkMemoryAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                        .pNext = nullptr,
+                                        .allocationSize = requirements.size,
+                                        .memoryTypeIndex = *typeIndex};
+    if (vkAllocateMemory(context.device, &allocate, nullptr, &atlas.memory) != VK_SUCCESS ||
+        vkBindImageMemory(context.device, atlas.image, atlas.memory, 0) != VK_SUCCESS) {
+        vkFreeMemory(context.device, atlas.memory, nullptr);
+        vkDestroyImage(context.device, atlas.image, nullptr);
+        return err(RenderError::MemoryAllocationFailed);
+    }
+
+    // Four bytes through a staging buffer and a one-shot command buffer. Everything created here
+    // is destroyed before returning: the atlas outlives this function, the machinery does not.
+    auto staging = createMappedBuffer(context, 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    if (!staging.has_value()) {
+        vkFreeMemory(context.device, atlas.memory, nullptr);
+        vkDestroyImage(context.device, atlas.image, nullptr);
+        return err(staging.error());
+    }
+    constexpr std::array<std::uint8_t, 4> white{255, 255, 255, 255};
+    std::memcpy(staging->mapped, white.data(), white.size());
+
+    const VkCommandPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                           .pNext = nullptr,
+                                           .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+                                           .queueFamilyIndex = context.queueFamilyIndex};
+    VkCommandPool pool = VK_NULL_HANDLE;
+    RenderError failure = RenderError::AtlasUploadFailed;
+    bool ok = vkCreateCommandPool(context.device, &poolInfo, nullptr, &pool) == VK_SUCCESS;
+    if (!ok) {
+        failure = RenderError::CommandPoolCreationFailed;
+    }
+
+    VkCommandBuffer commands = VK_NULL_HANDLE;
+    if (ok) {
+        const VkCommandBufferAllocateInfo commandInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .commandPool = pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1};
+        ok = vkAllocateCommandBuffers(context.device, &commandInfo, &commands) == VK_SUCCESS;
+        if (!ok) {
+            failure = RenderError::CommandBufferAllocationFailed;
+        }
+    }
+
+    if (ok) {
+        const VkCommandBufferBeginInfo begin{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = nullptr};
+        ok = vkBeginCommandBuffer(commands, &begin) == VK_SUCCESS;
+    }
+
+    if (ok) {
+        VkImageMemoryBarrier toTransfer{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = atlas.image,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+        vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                             &toTransfer);
+
+        const VkBufferImageCopy copy{.bufferOffset = 0,
+                                     .bufferRowLength = 0,
+                                     .bufferImageHeight = 0,
+                                     .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                                     .imageOffset = {0, 0, 0},
+                                     .imageExtent = {1, 1, 1}};
+        vkCmdCopyBufferToImage(commands, staging->buffer, atlas.image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+
+        VkImageMemoryBarrier toShader{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = atlas.image,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+        vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                             &toShader);
+
+        ok = vkEndCommandBuffer(commands) == VK_SUCCESS;
+    }
+
+    if (ok) {
+        const VkSubmitInfo submit{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                                  .pNext = nullptr,
+                                  .waitSemaphoreCount = 0,
+                                  .pWaitSemaphores = nullptr,
+                                  .pWaitDstStageMask = nullptr,
+                                  .commandBufferCount = 1,
+                                  .pCommandBuffers = &commands,
+                                  .signalSemaphoreCount = 0,
+                                  .pSignalSemaphores = nullptr};
+        ok = vkQueueSubmit(context.queue, 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS &&
+             vkQueueWaitIdle(context.queue) == VK_SUCCESS;
+    }
+
+    if (pool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(context.device, pool, nullptr);
+    }
+    vkUnmapMemory(context.device, staging->memory);
+    vkDestroyBuffer(context.device, staging->buffer, nullptr);
+    vkFreeMemory(context.device, staging->memory, nullptr);
+
+    if (!ok) {
+        vkFreeMemory(context.device, atlas.memory, nullptr);
+        vkDestroyImage(context.device, atlas.image, nullptr);
+        return err(failure);
+    }
+
+    const VkImageViewCreateInfo viewInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .image = atlas.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .components = {},
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+    if (vkCreateImageView(context.device, &viewInfo, nullptr, &atlas.view) != VK_SUCCESS) {
+        vkFreeMemory(context.device, atlas.memory, nullptr);
+        vkDestroyImage(context.device, atlas.image, nullptr);
+        return err(RenderError::ImageViewCreationFailed);
+    }
+
+    return atlas;
+}
+
 [[nodiscard]] VkDescriptorType toVulkan(shader::DescriptorKind kind) noexcept {
     switch (kind) {
     case shader::DescriptorKind::UniformBuffer: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -165,6 +353,7 @@ std::string_view describe(RenderError error) noexcept {
     case RenderError::NullDevice:          return "context has no device";
     case RenderError::NullPhysicalDevice:  return "context has no physical device";
     case RenderError::NullRenderPass:      return "context has no render pass";
+    case RenderError::NullQueue:           return "context has no queue";
     case RenderError::EmptyViewport:       return "context viewport has zero width or height";
     case RenderError::EmptyBudget:         return "budget has no room for a primitive";
     case RenderError::BudgetExceedsIndexWidth:
@@ -182,6 +371,18 @@ std::string_view describe(RenderError error) noexcept {
         return "no host-visible, host-coherent memory type on this device";
     case RenderError::MemoryAllocationFailed: return "vkAllocateMemory failed";
     case RenderError::MemoryMapFailed:        return "vkMapMemory failed";
+    case RenderError::ImageCreationFailed:    return "vkCreateImage failed for the default atlas";
+    case RenderError::ImageViewCreationFailed:
+        return "vkCreateImageView failed for the default atlas";
+    case RenderError::SamplerCreationFailed:  return "vkCreateSampler failed";
+    case RenderError::DescriptorPoolCreationFailed: return "vkCreateDescriptorPool failed";
+    case RenderError::DescriptorSetAllocationFailed:
+        return "vkAllocateDescriptorSets failed";
+    case RenderError::CommandPoolCreationFailed:
+        return "vkCreateCommandPool failed for the atlas upload";
+    case RenderError::CommandBufferAllocationFailed:
+        return "vkAllocateCommandBuffers failed for the atlas upload";
+    case RenderError::AtlasUploadFailed:      return "uploading the default atlas failed";
     case RenderError::NullCommandBuffer:      return "command buffer is null";
     case RenderError::FrameExceedsBudget:
         return "draw list is larger than the renderer's budget";
@@ -218,6 +419,13 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     vertexMemory_ = std::exchange(other.vertexMemory_, VK_NULL_HANDLE);
     indexBuffer_ = std::exchange(other.indexBuffer_, VK_NULL_HANDLE);
     indexMemory_ = std::exchange(other.indexMemory_, VK_NULL_HANDLE);
+    atlasImage_ = std::exchange(other.atlasImage_, VK_NULL_HANDLE);
+    atlasMemory_ = std::exchange(other.atlasMemory_, VK_NULL_HANDLE);
+    atlasView_ = std::exchange(other.atlasView_, VK_NULL_HANDLE);
+    atlasSampler_ = std::exchange(other.atlasSampler_, VK_NULL_HANDLE);
+    descriptorPool_ = std::exchange(other.descriptorPool_, VK_NULL_HANDLE);
+    // The set is owned by the pool and freed with it, so it is carried but never freed directly.
+    descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
     vertexMapped_ = std::exchange(other.vertexMapped_, nullptr);
     indexMapped_ = std::exchange(other.indexMapped_, nullptr);
     vertexBytes_ = std::exchange(other.vertexBytes_, 0);
@@ -256,6 +464,29 @@ void UiRenderer::destroy() noexcept {
     if (vertexMemory_ != VK_NULL_HANDLE) {
         vkFreeMemory(device_, vertexMemory_, nullptr);
         vertexMemory_ = VK_NULL_HANDLE;
+    }
+    if (descriptorPool_ != VK_NULL_HANDLE) {
+        // Frees the set allocated from it; no separate vkFreeDescriptorSets is needed or allowed
+        // without VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT.
+        vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+        descriptorPool_ = VK_NULL_HANDLE;
+        descriptorSet_ = VK_NULL_HANDLE;
+    }
+    if (atlasSampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, atlasSampler_, nullptr);
+        atlasSampler_ = VK_NULL_HANDLE;
+    }
+    if (atlasView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, atlasView_, nullptr);
+        atlasView_ = VK_NULL_HANDLE;
+    }
+    if (atlasImage_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, atlasImage_, nullptr);
+        atlasImage_ = VK_NULL_HANDLE;
+    }
+    if (atlasMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, atlasMemory_, nullptr);
+        atlasMemory_ = VK_NULL_HANDLE;
     }
     if (pipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, pipeline_, nullptr);
@@ -297,6 +528,9 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
     }
     if (context.renderPass == VK_NULL_HANDLE) {
         return err(RenderError::NullRenderPass);
+    }
+    if (context.queue == VK_NULL_HANDLE) {
+        return err(RenderError::NullQueue);
     }
     if (context.viewport.width <= 0 || context.viewport.height <= 0) {
         return err(RenderError::EmptyViewport);
@@ -553,6 +787,86 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
     renderer.indexMemory_ = indexBuffer->memory;
     renderer.indexMapped_ = indexBuffer->mapped;
 
+    // The default atlas, and the descriptor set that binds it. Without these a draw is undefined
+    // behaviour whatever mode its vertices carry, because the pipeline layout declares a sampler.
+    auto atlas = createDefaultAtlas(context);
+    if (!atlas.has_value()) {
+        return err(atlas.error());
+    }
+    renderer.atlasImage_ = atlas->image;
+    renderer.atlasMemory_ = atlas->memory;
+    renderer.atlasView_ = atlas->view;
+
+    const VkSamplerCreateInfo samplerInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        // Nearest, not linear: a coverage atlas is sampled at texel centres by construction, and
+        // filtering it would blur glyph edges that the rasteriser already antialiased.
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .mipLodBias = 0.0F,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 1.0F,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0F,
+        .maxLod = 0.0F,
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE};
+    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &renderer.atlasSampler_) !=
+        VK_SUCCESS) {
+        return err(RenderError::SamplerCreationFailed);
+    }
+
+    const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                        .descriptorCount = 1};
+    const VkDescriptorPoolCreateInfo descriptorPoolInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        // No FREE_DESCRIPTOR_SET_BIT: the set lives as long as the renderer, and destroying the
+        // pool frees it. A pool that permitted individual frees would allow per-frame descriptor
+        // churn, which is the cost this design exists to not have.
+        .flags = 0,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize};
+    if (vkCreateDescriptorPool(context.device, &descriptorPoolInfo, nullptr,
+                               &renderer.descriptorPool_) != VK_SUCCESS) {
+        return err(RenderError::DescriptorPoolCreationFailed);
+    }
+
+    const VkDescriptorSetAllocateInfo setInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .descriptorPool = renderer.descriptorPool_,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &renderer.descriptorSetLayout_};
+    if (vkAllocateDescriptorSets(context.device, &setInfo, &renderer.descriptorSet_) !=
+        VK_SUCCESS) {
+        return err(RenderError::DescriptorSetAllocationFailed);
+    }
+
+    const VkDescriptorImageInfo imageInfo{
+        .sampler = renderer.atlasSampler_,
+        .imageView = renderer.atlasView_,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                     .pNext = nullptr,
+                                     .dstSet = renderer.descriptorSet_,
+                                     .dstBinding = 0,
+                                     .dstArrayElement = 0,
+                                     .descriptorCount = 1,
+                                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                     .pImageInfo = &imageInfo,
+                                     .pBufferInfo = nullptr,
+                                     .pTexelBufferView = nullptr};
+    vkUpdateDescriptorSets(context.device, 1, &write, 0, nullptr);
+
     return renderer;
 }
 
@@ -581,6 +895,12 @@ ResultVoid<RenderError> UiRenderer::record(VkCommandBuffer commandBuffer,
     }
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+    // Bound for every frame, including one that draws nothing but solid rectangles: the pipeline
+    // layout declares the sampler, so a draw without a set bound is undefined behaviour whatever
+    // the vertices' mode says. Found the hard way - it faults inside the driver, not at a
+    // validation message.
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                            &descriptorSet_, 0, nullptr);
 
     const VkViewport viewport{.x = 0.0F,
                               .y = 0.0F,
