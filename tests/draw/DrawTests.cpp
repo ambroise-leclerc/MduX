@@ -1,5 +1,4 @@
 /**
- * @file DrawTests.cpp
  * @brief Tests for mdux.draw.
  *
  * Three groups, and the boundaries are where the value is. The layout assertions are compile-time
@@ -45,8 +44,8 @@ struct Storage {
 /// Room for four rectangles under two clips.
 using SmallStorage = Storage<16, 24, 2>;
 
-constexpr core::Rect kRect{.x = 10, .y = 20, .width = 30, .height = 40};
-constexpr core::ColorRgba8 kRed{.r = 255, .g = 0, .b = 0, .a = 255};
+constexpr core::Rect rect{.x = 10, .y = 20, .width = 30, .height = 40};
+constexpr core::ColorRgba8 red{.r = 255, .g = 0, .b = 0, .a = 255};
 
 }  // namespace
 
@@ -134,7 +133,7 @@ TEST_CASE("A budget beyond the index width is rejected", "evidence-unit") {
     std::array<DrawCommand, 1> commands{};
     auto list = DrawList::create(
         vertices, indices, commands,
-        DrawBudget{.maxVertices = kMaxVertices + 1, .maxIndices = 6, .maxCommands = 1});
+        DrawBudget{.maxVertices = maxIndexableVertices + 1, .maxIndices = 6, .maxCommands = 1});
     REQUIRE(!list.has_value());
     CHECK(list.error() == DrawError::BudgetExceedsIndexWidth);
 }
@@ -160,7 +159,7 @@ TEST_CASE("A solid rectangle records four vertices and six indices", "evidence-u
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     REQUIRE(list->vertices().size() == 4);
     REQUIRE(list->indices().size() == 6);
@@ -183,7 +182,7 @@ TEST_CASE("A solid rectangle records four vertices and six indices", "evidence-u
 
     for (const UiVertex& vertex : list->vertices()) {
         CHECK(vertex.mode == static_cast<std::uint32_t>(DrawMode::Solid));
-        CHECK(vertex.color == packColor(kRed));
+        CHECK(vertex.color == packColor(red));
     }
 
     CHECK(list->commands()[0].firstIndex == 0);
@@ -196,7 +195,7 @@ TEST_CASE("A solid rectangle's uv is zeroed rather than left undefined", "eviden
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     for (const UiVertex& vertex : list->vertices()) {
         CHECK(vertex.u == 0.0F);
         CHECK(vertex.v == 0.0F);
@@ -208,7 +207,7 @@ TEST_CASE("A textured rectangle carries its uv corners", "evidence-unit") {
     auto list = storage.list();
     REQUIRE(list.has_value());
     const core::Rect uv{.x = 1, .y = 2, .width = 3, .height = 4};
-    REQUIRE(list->addRect(kRect, kRed, DrawMode::SampledRgba, uv).has_value());
+    REQUIRE(list->addRect(rect, red, DrawMode::SampledRgba, uv).has_value());
 
     CHECK(list->vertices()[0].u == 1.0F);
     CHECK(list->vertices()[0].v == 2.0F);
@@ -224,11 +223,11 @@ TEST_CASE("A degenerate rectangle is refused and records nothing", "evidence-uni
     auto list = storage.list();
     REQUIRE(list.has_value());
 
-    auto zeroWidth = list->addSolidRect(core::Rect{.x = 0, .y = 0, .width = 0, .height = 5}, kRed);
+    auto zeroWidth = list->addSolidRect(core::Rect{.x = 0, .y = 0, .width = 0, .height = 5}, red);
     REQUIRE(!zeroWidth.has_value());
     CHECK(zeroWidth.error() == DrawError::DegenerateRect);
 
-    auto negative = list->addSolidRect(core::Rect{.x = 0, .y = 0, .width = 5, .height = -1}, kRed);
+    auto negative = list->addSolidRect(core::Rect{.x = 0, .y = 0, .width = 5, .height = -1}, red);
     REQUIRE(!negative.has_value());
     CHECK(negative.error() == DrawError::DegenerateRect);
 
@@ -240,8 +239,8 @@ TEST_CASE("Indices address the right vertices as a list grows", "evidence-unit")
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     const std::array<Index, 12> expected{0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
     CHECK(std::ranges::equal(list->indices(), expected));
@@ -257,9 +256,9 @@ TEST_CASE("Primitives under one clip share a command", "evidence-unit") {
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     REQUIRE(list->commands().size() == 1);
     CHECK(list->commands()[0].firstIndex == 0);
@@ -270,11 +269,11 @@ TEST_CASE("A clip change starts a new command", "evidence-unit") {
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     const core::Rect clip{.x = 0, .y = 0, .width = 100, .height = 100};
     list->setClip(clip);
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     REQUIRE(list->commands().size() == 2);
     CHECK(list->commands()[0].indexCount == 6);
@@ -297,7 +296,7 @@ TEST_CASE("A clip set with nothing drawn under it produces no command", "evidenc
     list->setClip(second);
     CHECK(list->commands().empty());
 
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     REQUIRE(list->commands().size() == 1);
     CHECK(list->commands()[0].clip == second);
 }
@@ -311,9 +310,9 @@ TEST_CASE("Returning to a previous clip still starts a new command", "evidence-u
     const core::Rect a{.x = 0, .y = 0, .width = 10, .height = 10};
 
     list->setClip(a);
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     list->setClip(core::Rect{.x = 5, .y = 5, .width = 10, .height = 10});
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     CHECK(list->commands().size() == 2);
 }
@@ -327,8 +326,8 @@ TEST_CASE("A frame that exactly fills its budget succeeds", "evidence-unit") {
     Storage<8, 12, 1> storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     CHECK(list->vertices().size() == 8);
     CHECK(list->indices().size() == 12);
@@ -338,10 +337,10 @@ TEST_CASE("The primitive past the budget fails and records nothing", "evidence-u
     Storage<8, 12, 1> storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
-    auto overflow = list->addSolidRect(kRect, kRed);
+    auto overflow = list->addSolidRect(rect, red);
     REQUIRE(!overflow.has_value());
     CHECK(overflow.error() == DrawError::VertexBudgetExceeded);
 
@@ -357,9 +356,9 @@ TEST_CASE("An index budget can bind before the vertex budget", "evidence-unit") 
     Storage<64, 6, 4> storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
-    auto overflow = list->addSolidRect(kRect, kRed);
+    auto overflow = list->addSolidRect(rect, red);
     REQUIRE(!overflow.has_value());
     CHECK(overflow.error() == DrawError::IndexBudgetExceeded);
 }
@@ -370,12 +369,12 @@ TEST_CASE("A command budget binds when clips change too often", "evidence-unit")
     REQUIRE(list.has_value());
 
     list->setClip(core::Rect{.x = 0, .y = 0, .width = 1, .height = 1});
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     list->setClip(core::Rect{.x = 1, .y = 1, .width = 1, .height = 1});
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     list->setClip(core::Rect{.x = 2, .y = 2, .width = 1, .height = 1});
-    auto overflow = list->addSolidRect(kRect, kRed);
+    auto overflow = list->addSolidRect(rect, red);
     REQUIRE(!overflow.has_value());
     CHECK(overflow.error() == DrawError::CommandBudgetExceeded);
 
@@ -390,7 +389,7 @@ TEST_CASE("A command budget of one is not exceeded while the clip holds", "evide
     auto list = storage.list();
     REQUIRE(list.has_value());
     for (int i = 0; i < 8; ++i) {
-        REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+        REQUIRE(list->addSolidRect(rect, red).has_value());
     }
     CHECK(list->commands().size() == 1);
     CHECK(list->commands()[0].indexCount == 48);
@@ -404,7 +403,7 @@ TEST_CASE("reset() empties the list and the budget survives", "evidence-unit") {
     SmallStorage storage;
     auto list = storage.list();
     REQUIRE(list.has_value());
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     list->reset();
 
     CHECK(list->empty());
@@ -414,7 +413,7 @@ TEST_CASE("reset() empties the list and the budget survives", "evidence-unit") {
     CHECK(list->budget() == SmallStorage::budget());
 
     // And the list is usable again, from the start of its storage.
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     CHECK(list->vertices().size() == 4);
     CHECK(list->indices()[0] == 0);
 }
@@ -424,9 +423,9 @@ TEST_CASE("reset() clears the clip, so the next frame does not inherit one", "ev
     auto list = storage.list();
     REQUIRE(list.has_value());
     list->setClip(core::Rect{.x = 7, .y = 7, .width = 7, .height = 7});
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
     list->reset();
-    REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+    REQUIRE(list->addSolidRect(rect, red).has_value());
 
     CHECK(list->commands()[0].clip == core::Rect{});
 }
@@ -447,13 +446,13 @@ TEST_CASE("The same primitives produce byte-identical buffers", "evidence-unit")
     constexpr core::ColorRgba8 other{.r = 9, .g = 8, .b = 7, .a = 6};
 
     // The second list has drawn a different frame before, so its storage is dirty.
-    REQUIRE(b->addRect(unit, kRed, DrawMode::CoverageR8, core::Rect{}).has_value());
+    REQUIRE(b->addRect(unit, red, DrawMode::CoverageR8, core::Rect{}).has_value());
     b->reset();
 
     for (DrawList* list : {&*a, &*b}) {
-        REQUIRE(list->addSolidRect(kRect, kRed).has_value());
+        REQUIRE(list->addSolidRect(rect, red).has_value());
         list->setClip(clip);
-        REQUIRE(list->addRect(kRect, other, DrawMode::CoverageR8, unit).has_value());
+        REQUIRE(list->addRect(rect, other, DrawMode::CoverageR8, unit).has_value());
     }
 
     CHECK(std::ranges::equal(a->vertices(), b->vertices()));

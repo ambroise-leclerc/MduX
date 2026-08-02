@@ -1,5 +1,4 @@
 /**
- * @file Draw.cpp
  * @brief Implementation of the governed fixed-budget draw types.
  *
  * @compliance ADR-004 Trust zones in C++
@@ -26,8 +25,8 @@ using mdux::core::ResultVoid;
 namespace {
 
 /// Vertices and indices one rectangle costs. Two triangles sharing a diagonal.
-constexpr std::uint32_t kVerticesPerRect = 4;
-constexpr std::uint32_t kIndicesPerRect = 6;
+constexpr std::uint32_t verticesPerRect = 4;
+constexpr std::uint32_t indicesPerRect = 6;
 
 }  // namespace
 
@@ -54,11 +53,11 @@ std::string_view describe(DrawError error) noexcept {
 Result<DrawList, DrawError> DrawList::create(std::span<UiVertex> vertices, std::span<Index> indices,
                                              std::span<DrawCommand> commands,
                                              const DrawBudget& budget) noexcept {
-    if (budget.maxVertices < kVerticesPerRect || budget.maxIndices < kIndicesPerRect ||
+    if (budget.maxVertices < verticesPerRect || budget.maxIndices < indicesPerRect ||
         budget.maxCommands == 0) {
         return err(DrawError::EmptyBudget);
     }
-    if (budget.maxVertices > kMaxVertices) {
+    if (budget.maxVertices > maxIndexableVertices) {
         return err(DrawError::BudgetExceedsIndexWidth);
     }
     if (vertices.size() < budget.maxVertices || indices.size() < budget.maxIndices ||
@@ -105,10 +104,10 @@ ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core
 
     // Subtraction against remaining capacity, never addition against the limit: with counts near
     // the top of their range an addition could wrap and read as acceptable.
-    if (budget_.maxVertices - vertexCount_ < kVerticesPerRect) {
+    if (budget_.maxVertices - vertexCount_ < verticesPerRect) {
         return err(DrawError::VertexBudgetExceeded);
     }
-    if (budget_.maxIndices - indexCount_ < kIndicesPerRect) {
+    if (budget_.maxIndices - indexCount_ < indicesPerRect) {
         return err(DrawError::IndexBudgetExceeded);
     }
 
@@ -154,14 +153,14 @@ ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core
 
     if (needsCommand) {
         commands_[commandCount_] =
-            DrawCommand{.firstIndex = indexCount_, .indexCount = kIndicesPerRect, .clip = clip_};
+            DrawCommand{.firstIndex = indexCount_, .indexCount = indicesPerRect, .clip = clip_};
         ++commandCount_;
     } else {
-        commands_[commandCount_ - 1].indexCount += kIndicesPerRect;
+        commands_[commandCount_ - 1].indexCount += indicesPerRect;
     }
 
-    vertexCount_ += kVerticesPerRect;
-    indexCount_ += kIndicesPerRect;
+    vertexCount_ += verticesPerRect;
+    indexCount_ += indicesPerRect;
     return {};
 }
 

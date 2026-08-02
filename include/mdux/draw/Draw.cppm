@@ -1,5 +1,4 @@
 /**
- * @file Draw.cppm
  * @brief Governed-zone fixed-budget draw types: what a frame is, before Vulkan sees it.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
@@ -87,7 +86,7 @@ static_assert(offsetof(UiVertex, mode) == 20, "mode must be at offset 20");
 /// sixteen thousand rectangles in one frame has a budget problem the index width would only hide.
 using Index = std::uint16_t;
 
-inline constexpr std::uint32_t kMaxVertices = 65536;
+inline constexpr std::uint32_t maxIndexableVertices = 65536;
 
 /// One recorded draw: a contiguous run of indices, under one clip rectangle.
 struct DrawCommand {
@@ -114,7 +113,7 @@ struct DrawBudget {
 
 enum class DrawError : std::uint8_t {
     EmptyBudget,             ///< a budget with no room for even one primitive
-    BudgetExceedsIndexWidth, ///< maxVertices > kMaxVertices, which a 16-bit index cannot address
+    BudgetExceedsIndexWidth, ///< maxVertices > maxIndexableVertices, which a 16-bit index cannot address
     StorageTooSmall,         ///< the spans supplied are smaller than the budget claims
     VertexBudgetExceeded,
     IndexBudgetExceeded,
