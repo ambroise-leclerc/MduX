@@ -353,6 +353,47 @@ TEST_CASE("A struct with no member offsets has no computable size", "evidence-un
     CHECK(result.error() == ParseError::UnsupportedType);
 }
 
+TEST_CASE("A bit width that is not a whole number of bytes is rejected", "evidence-unit") {
+    // SPIR-V encodes widths this reflector cannot lay out: 1-bit integers are legal, and wider
+    // odd widths are legal under capabilities not implemented here. `width / 8` answers 0 for
+    // the first and truncates the second, so an unusable type would otherwise be reported as a
+    // plausible size and flow into offsets and stride arithmetic.
+    constexpr std::uint32_t floatTypeId = 100;
+    constexpr std::uint32_t structTypeId = 101;
+    constexpr std::uint32_t pointerTypeId = 102;
+    constexpr std::uint32_t variableId = 103;
+    constexpr std::uint32_t unalignedWidth = 12;
+
+    Builder builder = minimal();
+    builder.op(opTypeFloat, {floatTypeId, unalignedWidth});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opMemberDecorate, {structTypeId, 0u, decorationOffset, 0u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
+
+    auto result = reflect(builder.bytes());
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ParseError::UnsupportedType);
+}
+
+TEST_CASE("A zero bit width is rejected rather than sized as empty", "evidence-unit") {
+    constexpr std::uint32_t floatTypeId = 110;
+    constexpr std::uint32_t structTypeId = 111;
+    constexpr std::uint32_t pointerTypeId = 112;
+    constexpr std::uint32_t variableId = 113;
+
+    Builder builder = minimal();
+    builder.op(opTypeFloat, {floatTypeId, 0u});
+    builder.op(opTypeStruct, {structTypeId, floatTypeId});
+    builder.op(opMemberDecorate, {structTypeId, 0u, decorationOffset, 0u});
+    builder.op(opTypePointer, {pointerTypeId, storageClassPushConstant, structTypeId});
+    builder.op(opVariable, {pointerTypeId, variableId, storageClassPushConstant});
+
+    auto result = reflect(builder.bytes());
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ParseError::UnsupportedType);
+}
+
 TEST_CASE("A second push constant block is rejected", "evidence-unit") {
     constexpr std::uint32_t floatTypeId = 90;
     constexpr std::uint32_t structTypeId = 91;

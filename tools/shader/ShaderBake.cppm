@@ -51,7 +51,12 @@ export namespace mdux::tools::shaderbake {
 /// The tool name that appears in every diagnostic and in `report.json`.
 inline constexpr std::string_view toolName = "mdux-shaderbake";
 
-/// One `[[module]]` entry, in recipe order.
+/// One module from the recipe's `[modules]` table, in recipe order.
+///
+/// The recipe pairs a `ids` array with a `sources` array by index rather than using TOML's
+/// array-of-tables syntax, because the parser this tool uses does not implement that syntax -
+/// see `tools/common/Toml.cppm:13`, where it is listed as unsupported on purpose. Hence
+/// `[modules]` with parallel arrays, and hence the length check in `parseRecipe()`.
 struct RecipeModule {
     std::string id;
     std::string source;  ///< repository-relative path to the compiled SPIR-V

@@ -198,12 +198,22 @@ struct Module {
 
     switch (type.opcode) {
     case OpTypeInt:
-    case OpTypeFloat:
+    case OpTypeFloat: {
         // operands: [resultId][width][signedness?]
         if (operands.size() < 2) {
             return err(ParseError::UnsupportedType);
         }
-        return operands[1] / 8;
+        // A width that is zero or not a whole number of bytes cannot be laid out, and dividing
+        // it by 8 would quietly answer 0 - which propagates into offsets and sizes as a plausible
+        // number rather than an error. SPIR-V permits 1-bit integers (booleans in kernels) and
+        // arbitrary widths under capabilities this reflector does not implement, so this is a
+        // real input, not a hypothetical one.
+        const std::uint32_t width = operands[1];
+        if (width == 0 || width % 8 != 0) {
+            return err(ParseError::UnsupportedType);
+        }
+        return width / 8;
+    }
 
     case OpTypeVector:
     case OpTypeMatrix: {
