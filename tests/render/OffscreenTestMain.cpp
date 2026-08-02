@@ -26,5 +26,11 @@ int main(int argc, char** argv) {
         std::println(std::cout, "MduX Offscreen Tests: skipped - {}", gpu.reason());
         return mdux::test::skipExitCode;
     }
+    // Printed unconditionally, and on one line CI can grep for. Whether the validation layers are
+    // loaded decides whether the layout and synchronisation assertions in this suite check
+    // anything at all - and a passing ctest run prints nothing, so without this the difference
+    // between "the layers approved" and "there were no layers" is invisible in a green log.
+    std::println(std::cout, "MduX Offscreen Tests: validation layers {}",
+                 gpu.validationEnabled() ? "enabled" : "UNAVAILABLE");
     return mdux::test::runMain(argc, argv, "MduX Offscreen Tests");
 }
