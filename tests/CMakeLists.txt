@@ -186,6 +186,38 @@ endif()
 
 mdux_discover_tests(shader_tests)
 
+# Governed fixed-budget draw types (issue #123)
+#
+# Links MduX::Core only, deliberately. mdux.draw contains no Vulkan handle and no device concept,
+# so a test that needed MduX::MduX to build it would mean the trust-zone boundary had moved -
+# which is the property #125's headless verification and #126's pixel test both rest on.
+add_executable(draw_tests
+    draw/DrawTestMain.cpp
+    draw/DrawTests.cpp
+)
+
+target_sources(draw_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(draw_tests PRIVATE MduX::Core)
+target_include_directories(draw_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(draw_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(draw_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(draw_tests PRIVATE /experimental:module)
+    target_compile_options(draw_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(draw_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp
