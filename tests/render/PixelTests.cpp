@@ -43,6 +43,20 @@ using mdux::test::ExpectedImage;
 using mdux::test::sharedDevice;
 
 constexpr core::Extent2D surface{.width = 48, .height = 32};
+
+/// The index of (x, y) in a readback row-major buffer of `surface`.
+///
+/// Derived rather than written out: a readback is a flat vector, so the stride is the one number
+/// that silently converts a change of `surface` into a test that pokes the wrong pixel and still
+/// passes - it would just be asserting about somewhere else.
+[[nodiscard]] constexpr std::size_t indexOf(core::Px x, core::Px y) noexcept {
+    return static_cast<std::size_t>(y) * static_cast<std::size_t>(surface.width) +
+           static_cast<std::size_t>(x);
+}
+
+/// How many pixels a full-surface comparison reports on, for the message assertions below.
+constexpr std::size_t surfacePixels =
+    static_cast<std::size_t>(surface.width) * static_cast<std::size_t>(surface.height);
 constexpr core::ColorRgba8 background{.r = 0, .g = 0, .b = 0, .a = 255};
 constexpr core::ColorRgba8 red{.r = 255, .g = 0, .b = 0, .a = 255};
 constexpr core::ColorRgba8 blue{.r = 0, .g = 0, .b = 255, .a = 255};
@@ -95,7 +109,7 @@ TEST_CASE("An exact match reports no differences", "pixel") {
     CHECK(diff.matched());
     CHECK(diff.differing == 0);
     CHECK(diff.message.empty());
-    CHECK(diff.total == 48 * 32);
+    CHECK(diff.total == surfacePixels);
 }
 
 TEST_CASE("One wrong pixel is detected, and reported with its coordinate", "pixel") {
@@ -107,7 +121,7 @@ TEST_CASE("One wrong pixel is detected, and reported with its coordinate", "pixe
     std::vector<core::ColorRgba8> actual = renderExpected(expected);
     constexpr core::Px x = 17;
     constexpr core::Px y = 9;
-    actual[static_cast<std::size_t>(y) * 48 + static_cast<std::size_t>(x)] = blue;
+    actual[indexOf(x, y)] = blue;
 
     const auto diff = compare(expected, actual);
     CHECK(!diff.matched());
@@ -115,7 +129,8 @@ TEST_CASE("One wrong pixel is detected, and reported with its coordinate", "pixe
     CHECK(diff.message.find("(17, 9)") != std::string::npos);
     CHECK(diff.message.find("expected #000000ff") != std::string::npos);
     CHECK(diff.message.find("actual #0000ffff") != std::string::npos);
-    CHECK(diff.message.find("1 of 1536 pixels differ") != std::string::npos);
+    CHECK(diff.message.find(std::format("1 of {} pixels differ", surfacePixels)) !=
+          std::string::npos);
 }
 
 TEST_CASE("A one-channel difference is detected", "pixel") {
@@ -125,7 +140,7 @@ TEST_CASE("A one-channel difference is detected", "pixel") {
     expected.paint(core::Rect{.x = 2, .y = 2, .width = 4, .height = 4}, red);
 
     std::vector<core::ColorRgba8> actual = renderExpected(expected);
-    constexpr std::size_t index = 3 * 48 + 3;
+    constexpr std::size_t index = indexOf(3, 3);
     actual[index] = core::ColorRgba8{.r = 254, .g = 0, .b = 0, .a = 255};
 
     const auto diff = compare(expected, actual);
@@ -148,12 +163,14 @@ TEST_CASE("An alpha-only difference is detected", "pixel") {
 TEST_CASE("A wholly wrong frame reports the count and truncates the list", "pixel") {
     // Thousands of identical lines would bury the count, which is the useful part.
     ExpectedImage expected{surface, background};
-    const std::vector<core::ColorRgba8> actual(48 * 32, blue);
+    const std::vector<core::ColorRgba8> actual(surfacePixels, blue);
 
     const auto diff = compare(expected, actual);
-    CHECK(diff.differing == 48 * 32);
-    CHECK(diff.message.find("1536 of 1536 pixels differ") != std::string::npos);
-    CHECK(diff.message.find("and 1528 more") != std::string::npos);
+    CHECK(diff.differing == surfacePixels);
+    CHECK(diff.message.find(std::format("{0} of {0} pixels differ", surfacePixels)) !=
+          std::string::npos);
+    CHECK(diff.message.find(std::format("and {} more", surfacePixels - 8)) !=
+          std::string::npos);
 }
 
 TEST_CASE("A frame of the wrong size is reported as such, not as every pixel", "pixel") {
@@ -163,7 +180,8 @@ TEST_CASE("A frame of the wrong size is reported as such, not as every pixel", "
     const auto diff = compare(expected, actual);
     CHECK(!diff.matched());
     CHECK(diff.message.find("size mismatch") != std::string::npos);
-    CHECK(diff.message.find("48x32") != std::string::npos);
+    CHECK(diff.message.find(std::format("{}x{}", surface.width, surface.height)) !=
+          std::string::npos);
 }
 
 TEST_CASE("Later rectangles paint over earlier ones", "pixel") {

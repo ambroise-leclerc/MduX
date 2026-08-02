@@ -17,6 +17,15 @@
  * The same reasoning the shader emitter uses for not committing generated C++: review the thing a
  * human can actually check, and derive the rest.
  *
+ * ## Include order
+ *
+ * A header rather than a module because it is test scaffolding, in the same spirit as
+ * MduXTest.hpp and SpirvFixtures.hpp: **include it after `import std;` and after
+ * `import mdux.core.units;`**. It names `std::vector`, `std::span` and `std::format`, and
+ * `mdux::core::ColorRgba8`, `Rect` and `Extent2D`, and declares none of them itself - so included
+ * before those imports it fails with a list of undeclared identifiers that does not suggest the
+ * cause.
+ *
  * ## Actionable output
  *
  * A failure reports the first differing pixels by coordinate with expected and actual values in
