@@ -120,6 +120,14 @@ enum class RenderError : std::uint8_t {
     AtlasUploadFailed,
     NullCommandBuffer,
     FrameExceedsBudget,       ///< the DrawList is larger than the renderer was built for
+
+    // The package declares a pipeline contract this renderer does not implement. Refused at
+    // create() rather than mistranslated, because every one of these becomes either a
+    // validation-layer message far from its cause or a set bound at the wrong index.
+    UnsupportedDescriptorSet,     ///< a descriptor outside set 0; only one set layout is built
+    DuplicateDescriptorBinding,   ///< two descriptors share a binding number within a set
+    UnsupportedDescriptorContract,///< not exactly one non-array combined image sampler
+    UnsupportedPushConstantContract, ///< not exactly one vertex-visible UiPushConstants range
 };
 
 [[nodiscard]] std::string_view describe(RenderError error) noexcept;
@@ -205,6 +213,15 @@ private:
     VkDeviceSize indexBytes_{0};
     mdux::draw::DrawBudget budget_{};
     mdux::core::Extent2D viewport_{};
+
+    // What create() validated the package declares, so record() and the descriptor write use the
+    // package's numbers rather than repeating literals that were only ever true for the current
+    // shader. If the contract changes, create() refuses; it does not silently disagree with the
+    // pipeline layout it built.
+    std::uint32_t atlasBinding_{0};
+    VkShaderStageFlags pushStages_{0};
+    std::uint32_t pushOffset_{0};
+    std::uint32_t pushSize_{0};
 };
 
 /// The push-constant block the UI vertex shader declares: the viewport size, in pixels.

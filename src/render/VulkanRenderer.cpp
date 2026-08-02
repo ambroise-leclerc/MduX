@@ -386,6 +386,15 @@ std::string_view describe(RenderError error) noexcept {
     case RenderError::NullCommandBuffer:      return "command buffer is null";
     case RenderError::FrameExceedsBudget:
         return "draw list is larger than the renderer's budget";
+    case RenderError::UnsupportedDescriptorSet:
+        return "package declares a descriptor outside set 0; this renderer builds one set layout";
+    case RenderError::DuplicateDescriptorBinding:
+        return "package declares two descriptors with the same binding number";
+    case RenderError::UnsupportedDescriptorContract:
+        return "package must declare exactly one non-array combined image sampler";
+    case RenderError::UnsupportedPushConstantContract:
+        return "package must declare one vertex-visible push constant range matching "
+               "UiPushConstants";
     }
     return "unknown render error";
 }
@@ -558,12 +567,67 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
         return err(RenderError::MissingFragmentModule);
     }
 
+    // Check the package declares the contract this renderer implements, before any of it is
+    // translated into Vulkan objects.
+    //
+    // The layout below is built from `package.descriptors`, but everything downstream of it - one
+    // set layout, a pool sized for one combined image sampler, a write to one binding, a push
+    // constant recorded with a fixed stage and size - assumes a specific shape. Where the package
+    // could disagree, it has to be refused here: `vkCreateDescriptorSetLayout` reports duplicate
+    // bindings as a validation message far from this code, and a descriptor in set 1 would
+    // silently build a pipeline layout that does not match the package at all.
+    //
+    // Refusing rather than generalising is deliberate. Multi-set support is machinery for a case
+    // no package in this repository has, and #124's budget argument applies to descriptor sets as
+    // much as to vertices: the renderer should do one predictable thing.
+    for (std::size_t i = 0; i < package.descriptors.size(); ++i) {
+        const shader::DescriptorBinding& descriptor = package.descriptors[i];
+        if (descriptor.set != 0) {
+            return err(RenderError::UnsupportedDescriptorSet);
+        }
+        for (std::size_t j = i + 1; j < package.descriptors.size(); ++j) {
+            if (package.descriptors[j].binding == descriptor.binding) {
+                return err(RenderError::DuplicateDescriptorBinding);
+            }
+        }
+    }
+
+    // Exactly one combined image sampler, not an array: that is what the atlas write below
+    // performs and what the pool is sized for. Its binding number comes from the package rather
+    // than being assumed to be 0.
+    if (package.descriptors.size() != 1 ||
+        package.descriptors.front().kind != shader::DescriptorKind::CombinedImageSampler ||
+        package.descriptors.front().count != 1) {
+        return err(RenderError::UnsupportedDescriptorContract);
+    }
+    const std::uint32_t atlasBinding = package.descriptors.front().binding;
+
+    // One push-constant range, matching UiPushConstants exactly and visible to the vertex stage,
+    // because record() writes that struct. A range of a different size would have record()
+    // disagreeing with the pipeline layout it was built from.
+    if (package.pushConstants.size() != 1) {
+        return err(RenderError::UnsupportedPushConstantContract);
+    }
+    const shader::PushConstantRange& declaredPush = package.pushConstants.front();
+    if (declaredPush.offset != 0 || declaredPush.size != sizeof(UiPushConstants) ||
+        (declaredPush.stages & shader::vertexBit) == 0) {
+        return err(RenderError::UnsupportedPushConstantContract);
+    }
+    const VkShaderStageFlags pushStages = toVulkan(declaredPush.stages);
+    const std::uint32_t pushOffset = declaredPush.offset;
+    const std::uint32_t pushSize = declaredPush.size;
+
+
     // Built into a local whose destructor cleans up on every error path below, so there is one
     // teardown routine rather than one per failure point.
     UiRenderer renderer;
     renderer.device_ = context.device;
     renderer.budget_ = budget;
     renderer.viewport_ = context.viewport;
+    renderer.atlasBinding_ = atlasBinding;
+    renderer.pushStages_ = pushStages;
+    renderer.pushOffset_ = pushOffset;
+    renderer.pushSize_ = pushSize;
 
     auto vertexModule = createShaderModule(context.device, package.moduleSpirv(vertex->id));
     if (!vertexModule.has_value()) {
@@ -823,8 +887,13 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
         return err(RenderError::SamplerCreationFailed);
     }
 
-    const VkDescriptorPoolSize poolSize{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                        .descriptorCount = 1};
+    // Sized from the package rather than from a literal. The contract check above already
+    // guarantees this is one combined image sampler with count 1, so today these agree - but a
+    // package that changes descriptor type is then refused by that check instead of allocating a
+    // pool of the wrong type here and failing at vkAllocateDescriptorSets.
+    const VkDescriptorPoolSize poolSize{
+        .type = toVulkan(package.descriptors.front().kind),
+        .descriptorCount = package.descriptors.front().count};
     const VkDescriptorPoolCreateInfo descriptorPoolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
@@ -858,10 +927,10 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
     const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                      .pNext = nullptr,
                                      .dstSet = renderer.descriptorSet_,
-                                     .dstBinding = 0,
+                                     .dstBinding = renderer.atlasBinding_,
                                      .dstArrayElement = 0,
-                                     .descriptorCount = 1,
-                                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                     .descriptorCount = package.descriptors.front().count,
+                                     .descriptorType = toVulkan(package.descriptors.front().kind),
                                      .pImageInfo = &imageInfo,
                                      .pBufferInfo = nullptr,
                                      .pTexelBufferView = nullptr};
@@ -912,8 +981,9 @@ ResultVoid<RenderError> UiRenderer::record(VkCommandBuffer commandBuffer,
 
     const UiPushConstants push{.viewportWidth = static_cast<float>(viewport_.width),
                                .viewportHeight = static_cast<float>(viewport_.height)};
-    vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(push), &push);
+    // Stage, offset and size come from what create() validated the package declares, not from
+    // literals here: record() must agree with the pipeline layout that was actually built.
+    vkCmdPushConstants(commandBuffer, pipelineLayout_, pushStages_, pushOffset_, pushSize_, &push);
 
     // An empty frame still binds and sets state, so a caller that records every frame the same
     // way gets the same command stream shape whether or not anything was drawn.

@@ -60,9 +60,28 @@ constexpr std::array<shader::ModuleView, 2> bothStages{
     shader::ModuleView{.id = "ui.frag", .stage = shader::Stage::Fragment, .entryPoint = "main",
                        .byteOffset = 0, .byteLength = 4}};
 
+/// The descriptor and push-constant contract `create()` requires: one non-array combined image
+/// sampler in set 0, and one vertex-visible range the size of UiPushConstants. Declared once so
+/// the tests below vary the thing they are about and nothing else.
+constexpr std::array<shader::DescriptorBinding, 1> conformingDescriptors{
+    shader::DescriptorBinding{.set = 0,
+                              .binding = 0,
+                              .kind = shader::DescriptorKind::CombinedImageSampler,
+                              .count = 1,
+                              .stages = shader::fragmentBit}};
+
+constexpr std::array<shader::PushConstantRange, 1> conformingPushConstants{
+    shader::PushConstantRange{.offset = 0,
+                              .size = sizeof(UiPushConstants),
+                              .stages = shader::vertexBit}};
+
 [[nodiscard]] shader::PackageView packageWith(
     std::span<const shader::ModuleView> modules) noexcept {
-    return shader::PackageView{.id = "test", .spirv = payload, .modules = modules};
+    return shader::PackageView{.id = "test",
+                               .spirv = payload,
+                               .modules = modules,
+                               .descriptors = conformingDescriptors,
+                               .pushConstants = conformingPushConstants};
 }
 
 /// The error `create()` reports, or nullopt when it got past validation. Never expected to
@@ -284,4 +303,101 @@ TEST_CASE("A moved-from renderer is safe to destroy", "evidence-unit") {
     CHECK(std::is_move_constructible_v<UiRenderer>);
     CHECK(std::is_move_assignable_v<UiRenderer>);
     CHECK(std::is_nothrow_move_constructible_v<UiRenderer>);
+}
+
+// ---------------------------------------------------------------------------
+// The package's pipeline contract
+// ---------------------------------------------------------------------------
+
+TEST_CASE("A descriptor outside set 0 is refused rather than mistranslated", "evidence-unit") {
+    // create() builds one descriptor set layout and passes it as set 0. A package declaring set 1
+    // would produce a pipeline layout that does not match its own contract, and nothing would say
+    // so until a draw sampled whatever happened to be bound.
+    constexpr std::array<shader::DescriptorBinding, 1> secondSet{
+        shader::DescriptorBinding{.set = 1,
+                                  .binding = 0,
+                                  .kind = shader::DescriptorKind::CombinedImageSampler,
+                                  .count = 1,
+                                  .stages = shader::fragmentBit}};
+    shader::PackageView package = packageWith(bothStages);
+    package.descriptors = secondSet;
+
+    CHECK(creationError(plausibleContext(), package, workableBudget) ==
+          RenderError::UnsupportedDescriptorSet);
+}
+
+TEST_CASE("Two descriptors sharing a binding number are refused", "evidence-unit") {
+    // vkCreateDescriptorSetLayout reports this as a validation message with no reference to the
+    // package that caused it.
+    constexpr std::array<shader::DescriptorBinding, 2> collide{
+        shader::DescriptorBinding{.set = 0,
+                                  .binding = 0,
+                                  .kind = shader::DescriptorKind::CombinedImageSampler,
+                                  .count = 1,
+                                  .stages = shader::fragmentBit},
+        shader::DescriptorBinding{.set = 0,
+                                  .binding = 0,
+                                  .kind = shader::DescriptorKind::UniformBuffer,
+                                  .count = 1,
+                                  .stages = shader::vertexBit}};
+    shader::PackageView package = packageWith(bothStages);
+    package.descriptors = collide;
+
+    CHECK(creationError(plausibleContext(), package, workableBudget) ==
+          RenderError::DuplicateDescriptorBinding);
+}
+
+TEST_CASE("A descriptor contract the atlas write cannot satisfy is refused", "evidence-unit") {
+    shader::PackageView noDescriptors = packageWith(bothStages);
+    noDescriptors.descriptors = {};
+    CHECK(creationError(plausibleContext(), noDescriptors, workableBudget) ==
+          RenderError::UnsupportedDescriptorContract);
+
+    // An array of samplers: the pool and the write both assume a count of one.
+    constexpr std::array<shader::DescriptorBinding, 1> samplerArray{
+        shader::DescriptorBinding{.set = 0,
+                                  .binding = 0,
+                                  .kind = shader::DescriptorKind::CombinedImageSampler,
+                                  .count = 4,
+                                  .stages = shader::fragmentBit}};
+    shader::PackageView arrayed = packageWith(bothStages);
+    arrayed.descriptors = samplerArray;
+    CHECK(creationError(plausibleContext(), arrayed, workableBudget) ==
+          RenderError::UnsupportedDescriptorContract);
+
+    // A uniform buffer where the renderer writes an image.
+    constexpr std::array<shader::DescriptorBinding, 1> wrongKind{
+        shader::DescriptorBinding{.set = 0,
+                                  .binding = 0,
+                                  .kind = shader::DescriptorKind::UniformBuffer,
+                                  .count = 1,
+                                  .stages = shader::fragmentBit}};
+    shader::PackageView mistyped = packageWith(bothStages);
+    mistyped.descriptors = wrongKind;
+    CHECK(creationError(plausibleContext(), mistyped, workableBudget) ==
+          RenderError::UnsupportedDescriptorContract);
+}
+
+TEST_CASE("A push constant range record() could not fill is refused", "evidence-unit") {
+    // record() writes a UiPushConstants at the offset and stage the package declared. Every case
+    // here would leave record() disagreeing with the pipeline layout built from the same package.
+    shader::PackageView none = packageWith(bothStages);
+    none.pushConstants = {};
+    CHECK(creationError(plausibleContext(), none, workableBudget) ==
+          RenderError::UnsupportedPushConstantContract);
+
+    constexpr std::array<shader::PushConstantRange, 1> wrongSize{
+        shader::PushConstantRange{.offset = 0, .size = 4, .stages = shader::vertexBit}};
+    shader::PackageView sized = packageWith(bothStages);
+    sized.pushConstants = wrongSize;
+    CHECK(creationError(plausibleContext(), sized, workableBudget) ==
+          RenderError::UnsupportedPushConstantContract);
+
+    constexpr std::array<shader::PushConstantRange, 1> fragmentOnly{
+        shader::PushConstantRange{
+            .offset = 0, .size = sizeof(UiPushConstants), .stages = shader::fragmentBit}};
+    shader::PackageView staged = packageWith(bothStages);
+    staged.pushConstants = fragmentOnly;
+    CHECK(creationError(plausibleContext(), staged, workableBudget) ==
+          RenderError::UnsupportedPushConstantContract);
 }
