@@ -7,9 +7,11 @@ Accepted (2026-07-26)
 MduX has no stated error-handling policy, and current code is inconsistent with the direction the
 MduX ↔ TrustSC parity programme requires:
 
-- `src/mdux.cpp:221` threw `std::runtime_error` from `MedicalUiRenderer`'s constructor. That type
-  was deleted with the HTML/CSS path (issue #127), which resolved this instance by removal rather
-  than by rewrite - as this ADR anticipated below.
+- `MedicalUiRenderer`'s constructor threw `std::runtime_error`. That type was deleted with the
+  HTML/CSS path (issue #127), which resolved this instance by removal rather than by rewrite - as
+  this ADR anticipated below. Deliberately cited without a file:line anchor: the code is gone, and
+  `src/mdux.cpp` was trimmed from 575 lines to 85 in the same change, so any line number here
+  would now point at something unrelated. Git history is the reference for what it looked like.
 - `include/mdux/vulkansc/MemoryPoolManager.cppm:100` documents throwing behavior.
 - `.clang-tidy:9` **disables** `bugprone-exception-escape` — the check that would otherwise flag an
   exception escaping a `noexcept` boundary.

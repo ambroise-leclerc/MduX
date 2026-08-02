@@ -55,22 +55,17 @@ MduX enables medical device manufacturers to accelerate development while mainta
 
 ### Integrated Framework Overview
 
-MduX operates as a **Medical Device Software Manufacturer** with three interconnected compliance frameworks:
+The sections below describe the regulatory framing this repository is *organised around*. They
+describe intent and documentation structure, not implemented capability - the code that exists is:
 
 ```cpp
-// Core compliance integration
-#include "mdux/compliance/RiskManagement.cppm"     // ISO 14971
-#include "mdux/compliance/QualityManagement.cppm"  // ISO 13485  
-#include "mdux/compliance/SoftwareLifecycle.cppm"  // IEC 62304
-
-namespace mdux {
-    struct MedicalDeviceContext {
-        risk::RiskManagementSystem riskSystem;
-        qms::QualityManagementSystem qualitySystem;
-        lifecycle::SoftwareLifecycleFramework lifecycleFramework;
-        ComplianceMetadata metadata;
-    };
-}
+// The modules that exist today. There is no mdux::risk, mdux::qms or mdux::lifecycle namespace,
+// and no mdux/compliance/ headers - the regulatory work in this repository is documentation and
+// governance records, not code. See "Implementation Status" below.
+import mdux;                  // version, compliance metadata, initialize/shutdown
+import mdux.core.units;       // Px, Rect, ColorRgba8, Extent2D
+import mdux.draw;             // fixed-budget DrawList - governed, names no Vulkan type
+import mdux.render.vulkan;    // UiRenderer - adapter zone, records into your command buffer
 ```
 
 #### ISO 14971:2019 - Risk Management Framework
@@ -104,113 +99,84 @@ As a **Medical Device Software Manufacturer**, MduX provides:
 
 ## Implementation Status
 
-| Framework/Module              | Status      | Regulatory Standard | Safety Class | Notes |
-|-------------------------------|-------------|--------------------|--------------| ------|
-| **Medical Device Compliance** |             |                    |              |       |
-| Risk Management System        | Completed   | ISO 14971:2019     | A/B/C        | Risk analysis, hazard ID, controls |
-| Quality Management System     | Completed   | ISO 13485:2016     | A/B/C        | Design controls, CAPA, documentation |
-| Software Lifecycle Framework  | Completed   | IEC 62304:2006     | A/B/C        | Development planning, safety classification |
-| **Core Technical Framework**  |             |                    |              |       |
-| C++23 Modules Architecture    | Completed   | -                  | A/B/C        | Modern module system with compliance |
-| Vulkan Graphics Integration   | Completed   | -                  | A/B/C        | Deterministic rendering performance |
-| Medical Compliance Metadata   | Completed   | ISO 14971/13485    | A/B/C        | Audit trails, traceability |
-| **Regulatory Documentation**  |             |                    |              |       |
-| Design History File (DHF)     | Completed   | ISO 13485          | B/C          | Complete development documentation |
-| Risk Management File (RMF)    | Completed   | ISO 14971          | A/B/C        | Risk analysis and control records |
-| Software Documentation        | Completed   | IEC 62304          | A/B/C        | Lifecycle documentation |
-| **Development Infrastructure** |            |                    |              |       |
-| UI Components Library         | Started     | IEC 62366          | A/B/C        | Medical device specific controls |
-| Testing & Validation Framework| Started     | IEC 62304          | A/B/C        | Class-specific test requirements |
-| Build & Integration Tools     | Started     | -                  | A/B/C        | CMake with compliance validation |
-| Post-Market Surveillance      | Started     | ISO 14971          | B/C          | Incident reporting and monitoring |
+| Area | Status | What is actually there |
+|------|--------|------------------------|
+| **Governed core** (`MduXCore`, no Vulkan) | | |
+| `mdux.core.result`, `mdux.core.units` | Implemented | `Result` over `std::expected`; `Px`, `Rect`, `ColorRgba8`, `Extent2D` |
+| `mdux.draw` | Implemented | 24-byte `UiVertex`, fixed-budget `DrawList`, explicit refusal on overflow |
+| `mdux.shader.schema` | Implemented | canonical shader package types; names no Vulkan type |
+| `mdux.evidence.*` | Implemented | SHA-256, canonical JSON, `BakeReport` |
+| `mdux.governance*` | Implemented | governance records and compliance program types |
+| **Adapter zone** (Vulkan) | | |
+| `mdux.render.vulkan` | Implemented | pipeline built from a baked package, fixed-budget `record()` |
+| `mdux.render.offscreen` | Implemented | headless target and CPU readback, used by the pixel tests |
+| `mdux.vulkansc.*` | Partial | memory-pool and device-object patterns; not true Vulkan SC |
+| **Host tools** (never linked into a device target) | | |
+| `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
+| `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
+| **Regulatory material** | | |
+| Standards corpus under `docs/` | Documentation only | structured notes and indexes; establishes no compliance |
+| Software Development File | Documentation only | templates and records under `software_development_file/` |
+| Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
+| **Not yet started** | | |
+| `.medui` compiler, text and glyph rendering, ML inference | Planned | see issues #15, #17, #18 |
 
-Update this table as features are implemented.
+This repository is experimental. It establishes no certification, validation, production readiness
+or regulatory compliance, and nothing in it has been assessed by a notified body. The documentation
+under `docs/` records how such work would be organised; it is not evidence that it has been done.
+
 
 ---
 
 ## Framework Integration and Usage
 
-### Basic Medical Device Integration
+### Building and recording a frame
+
+Every symbol below exists. `mdux::initialize()` takes no arguments; there is no
+`MedicalDeviceContext`, and a module is consumed with `import`, not `#include` of a `.cppm`.
 
 ```cpp
-#include "mdux/mdux.cppm"
-#include "mdux/compliance/MedicalDevice.cppm"
+import std;
+import mdux;
+import mdux.core.units;
+import mdux.draw;
+import mdux.render.vulkan;
 
-// Initialize medical device context
-mdux::MedicalDeviceContext context;
-context.metadata.deviceClass = "Class B";
-context.metadata.standardsCompliance = "ISO 14971, ISO 13485, IEC 62304";
-context.metadata.manufacturerId = "YOUR_MANUFACTURER_ID";
-context.metadata.deviceId = "YOUR_DEVICE_ID";
-
-// Initialize compliance systems
-mdux::initialize(context);
+mdux::initialize();
 
 // Build a frame. Governed: no Vulkan types, no allocation, storage supplied by the caller.
 static std::array<mdux::draw::UiVertex, 64> vertices;
 static std::array<mdux::draw::Index, 96> indices;
 static std::array<mdux::draw::DrawCommand, 8> commands;
+constexpr mdux::draw::DrawBudget budget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 8};
+
 auto list = mdux::draw::DrawList::create(vertices, indices, commands, budget);
-list->addSolidRect({.x = 16, .y = 64, .width = 120, .height = 24}, statusColor);
+if (!list.has_value()) {
+    return handleError(mdux::draw::describe(list.error()));
+}
+
+// Every add* either records the primitive completely or records nothing and returns an error.
+// A frame that does not fit its budget is refused, never truncated.
+constexpr mdux::core::ColorRgba8 statusGreen{.r = 60, .g = 107, .b = 44, .a = 255};
+if (auto added = list->addSolidRect({.x = 16, .y = 64, .width = 120, .height = 24}, statusGreen);
+    !added.has_value()) {
+    return handleError(mdux::draw::describe(added.error()));
+}
 
 // Record it. Adapter zone: the caller owns the device, render pass and command buffer.
 renderer.record(commandBuffer, *list);
 ```
 
-### Risk Management Integration (ISO 14971)
+See `examples/SimpleMedicalUiExample.cpp` for the complete version of the governed half, which
+needs no device and no window, and `examples/VulkanSCTriangleExample.cpp` for the device half.
 
-```cpp
-// Risk assessment and control
-mdux::risk::RiskAnalysis riskAnalysis;
-riskAnalysis.addHazard("UI_FREEZE", mdux::risk::SeverityLevel::Major, 
-                      mdux::risk::ProbabilityLevel::Remote);
-riskAnalysis.addRiskControl("WATCHDOG_TIMER", 
-                           mdux::risk::ControlType::ProtectiveMeasure);
+### What is not here
 
-// Integration with medical device context
-context.riskSystem.registerRiskAnalysis(riskAnalysis);
-```
-
-### Quality Management Integration (ISO 13485)
-
-```cpp
-// Design control and documentation
-mdux::qms::DesignControl designControl;
-designControl.setDesignInput("User interface requirements specification");
-designControl.setDesignOutput("MduX medical UI implementation");
-designControl.addVerificationRecord("UI component unit tests passed");
-designControl.addValidationRecord("Clinical usability validation completed");
-
-context.qualitySystem.registerDesignControl(designControl);
-```
-
-### Software Lifecycle Integration (IEC 62304)
-
-```cpp
-// Software safety classification
-mdux::lifecycle::SoftwareItem softwareItem;
-softwareItem.setName("Medical UI Renderer");
-softwareItem.setSafetyClassification(mdux::lifecycle::SafetyClass::ClassB);
-softwareItem.addRequirement("REQ-UI-001", "Display patient data accurately");
-
-// Integration with validation framework
-context.lifecycleFramework.registerSoftwareItem(softwareItem);
-```
-
-### Regulatory Documentation Generation
-
-```cpp
-// Generate compliance documentation
-mdux::compliance::DocumentationGenerator docGen(context);
-
-// Generate regulatory submission documents
-docGen.generateDesignHistoryFile("docs/dhf/");
-docGen.generateRiskManagementFile("docs/rmf/");
-docGen.generateSoftwareDocumentation("docs/lifecycle/");
-
-// Generate audit trails
-docGen.generateAuditTrail("audit/audit_trail.json");
-```
+Earlier revisions of this file showed `mdux::risk::RiskAnalysis`, `mdux::qms::DesignControl`,
+`mdux::lifecycle::SoftwareItem` and `mdux::compliance::DocumentationGenerator`. **None of those
+types, namespaces or headers exist**, and no code in this repository generates a Design History
+File, a Risk Management File or an audit trail. The regulatory material here is documentation and
+governance records under `docs/` and `software_development_file/`.
 
 ---
 
@@ -339,7 +305,8 @@ vulkaninfo --summary
    # Ensure Vulkan SDK is installed and findable by CMake
    vulkaninfo --summary
    
-   # Build with medical device compliance
+   # MDUX_ENABLE_REGULATORY_DOCS selects the Doxygen theme; it does not turn on any
+   # compliance behaviour, because there is none to turn on.
    cmake -B build -S . -DMDUX_ENABLE_REGULATORY_DOCS=ON
    cmake --build build
    
@@ -347,24 +314,24 @@ vulkaninfo --summary
    ./build/compliance_tests
    ```
 
-3. **Medical Device Integration**
+3. **Using the library**
    ```cpp
-   // Initialize medical device framework
-   #include "mdux/mdux.cppm"
-   #include "mdux/compliance/MedicalDevice.cppm"
-   
-   mdux::MedicalDeviceContext context;
-   context.metadata.deviceClass = "Class B";  // or Class A/C
-   context.metadata.standardsCompliance = "ISO 14971, ISO 13485, IEC 62304";
-   
-   mdux::initialize(context);
+   import mdux;
+
+   // Takes no arguments. The compliance metadata below is a constant describing what this
+   // build declares, not a context you populate - there is no MedicalDeviceContext.
+   if (!mdux::initialize()) {
+       return 1;
+   }
+   std::println("{} - {}", mdux::Version::getString(), mdux::Compliance::standards);
    ```
 
 4. **Development Workflow**
-   - Follow IEC 62304 software lifecycle processes
-   - Integrate with ISO 13485 design controls
-   - Maintain ISO 14971 risk management throughout development
-   - Generate regulatory documentation automatically
+   - Read `AGENTS.md` and `CONTRIBUTING.md` before the first change
+   - The trust zones in ADR-004 are enforced at configure time; a governed module that names a
+     Vulkan type fails the build rather than review
+   - Committed artifacts under `generated/` are byte-compared by `ctest -L evidence`
+   - Regulatory documentation is written and reviewed by hand; nothing generates it
 
 ---
 

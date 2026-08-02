@@ -11,18 +11,6 @@ add_executable(MedicalUiExample
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
 
-# GLFW is the triangle demo's, and only the triangle demo's - the examples-only windowing
-# boundary. MduX itself never links it, which mdux_verify_trust_zones() enforces from the other
-# side for the governed target.
-find_package(glfw3 QUIET)
-if(NOT glfw3_FOUND)
-    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4
-                  OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF")
-    message(STATUS "Using CPM GLFW for VulkanSCTriangleExample")
-else()
-    message(STATUS "Using system GLFW for VulkanSCTriangleExample")
-endif()
-
 # No shader compilation here any more. SPIR-V is committed under recipes/shader/triangle/ and
 # baked into generated/shader/triangle/ (issue #122), which removes both the build-time dependency
 # on glslangValidator and the runtime dependency on the working directory.
@@ -43,6 +31,22 @@ endif()
 if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
         AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0
         AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0))
+    # GLFW is the triangle demo's, and only the triangle demo's - the examples-only windowing
+    # boundary. MduX itself never links it, which mdux_verify_trust_zones() enforces from the
+    # other side for the governed target.
+    #
+    # Discovered inside the guard rather than above it: when this example is excluded nothing
+    # links GLFW, and resolving it anyway means a find_package on every configure and, where the
+    # system has no GLFW, a source download for a target that will not be built.
+    find_package(glfw3 QUIET)
+    if(NOT glfw3_FOUND)
+        CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4
+                      OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF")
+        message(STATUS "Using CPM GLFW for VulkanSCTriangleExample")
+    else()
+        message(STATUS "Using system GLFW for VulkanSCTriangleExample")
+    endif()
+
     add_executable(VulkanSCTriangleExample
         VulkanSCTriangleExample.cpp
     )
