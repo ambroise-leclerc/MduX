@@ -101,6 +101,40 @@ endif()
 
 mdux_discover_tests(tools_tests)
 
+# Shader schema and baker (issue #119)
+#
+# Links MduX::ShaderBakeLib rather than the executable, so the tests drive run()/write()/verify()
+# as calls. Spawning mdux-shaderbake per case would make a failing assertion report only that an
+# exit status was wrong, which is the least useful thing it could say.
+add_executable(shader_tests
+    shader/ShaderTestMain.cpp
+    shader/SchemaTests.cpp
+    shader/SpirvTests.cpp
+    shader/ShaderBakeTests.cpp
+)
+
+target_sources(shader_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+target_link_libraries(shader_tests PRIVATE MduX::ShaderBakeLib)
+target_include_directories(shader_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(shader_tests
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(shader_tests PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(shader_tests PRIVATE /experimental:module)
+    target_compile_options(shader_tests PRIVATE /std:c++latest)
+endif()
+
+mdux_discover_tests(shader_tests)
+
 # Basic unit tests
 add_executable(unit_tests
     TestMain.cpp
