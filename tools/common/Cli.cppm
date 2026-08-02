@@ -21,13 +21,18 @@
  *
  * ## The diagnostic envelope
  *
- * `--format=json` emits `{file, line, code, severity, message, fixHint}` per finding - the first
- * instance of the stable envelope issue #19 (S3) extends to every tool. It is deliberately the
- * same shape `mdux-docs-lint` and `mdux-evidence-lint` already emit, so an agent parses one
- * schema for the whole repository rather than one per tool.
+ * `--format=json` emits `{file, line, column, code, severity, message, fixHint}` per finding -
+ * the stable envelope issue #19 (S3) extends to every tool, published as
+ * `docs/governance/schemas/diagnostic.schema.json`. It is deliberately the same shape
+ * `mdux-docs-lint` and `mdux-evidence-lint` emit, so an agent parses one schema for the whole
+ * repository rather than one per tool.
  *
  * Defining it here, once, is the point: a baker gets the envelope by using this module and
  * cannot accidentally invent its own.
+ *
+ * The envelope is fixed before the bakers multiply, deliberately. Adding `column` once the
+ * shader, `.medui` and ML tools already emit diagnostics would mean changing every one of them
+ * and every consumer keyed to them; adding it here costs one edit.
  */
 module;
 
@@ -57,13 +62,18 @@ enum class Severity : std::uint8_t { Error, Warning, Note };
 /**
  * @brief One finding, in the envelope every MduX tool shares.
  *
- * `line` is 1-based; 0 means "the finding is about the file as a whole". `code` is a short stable
- * identifier a tool can be grepped for, and must not change meaning once published - an agent
- * keying off it should not be broken by a message reword.
+ * `line` and `column` are both 1-based; 0 means "no precise position on this axis". A finding
+ * about the file as a whole leaves both 0; a finding about a whole line sets `line` and leaves
+ * `column` 0. The two are independent, so a tool that knows the line but not the column - which
+ * is most line-oriented recipe parsing - is not forced to invent a column it does not have.
+ *
+ * `code` is a short stable identifier a tool can be grepped for, and must not change meaning
+ * once published - an agent keying off it should not be broken by a message reword.
  */
 struct Diagnostic {
     std::string file;
     std::size_t line{0};
+    std::size_t column{0};
     std::string code;
     Severity severity{Severity::Error};
     std::string message;

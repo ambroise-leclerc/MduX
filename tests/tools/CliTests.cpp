@@ -145,12 +145,17 @@ TEST_CASE("JSON diagnostics use the published envelope shape", "evidence-unit") 
     const std::vector<Diagnostic> diagnostics{
         Diagnostic{.file = "recipes/font/roboto-ui.toml",
                    .line = 7,
+                   .column = 22,
                    .code = "FB001",
                    .severity = Severity::Error,
                    .message = "glyph budget exceeded",
                    .fixHint = "raise atlasWidth or reduce the charset"},
     };
 
+    // Pinned literally, and deliberately so: this is the published contract of
+    // docs/governance/schemas/diagnostic.schema.json, which every later baker emits. A field
+    // added, renamed or reordered here changes what agents parse repository-wide, so it should
+    // cost a visible test edit rather than passing unnoticed.
     CHECK(render(diagnostics, Format::Json, kTool) ==
           "{\n"
           "  \"tool\": \"mdux-fontbake\",\n"
@@ -158,6 +163,7 @@ TEST_CASE("JSON diagnostics use the published envelope shape", "evidence-unit") 
           "    {\n"
           "      \"file\": \"recipes/font/roboto-ui.toml\",\n"
           "      \"line\": 7,\n"
+          "      \"column\": 22,\n"
           "      \"code\": \"FB001\",\n"
           "      \"severity\": \"error\",\n"
           "      \"message\": \"glyph budget exceeded\",\n"
@@ -165,6 +171,18 @@ TEST_CASE("JSON diagnostics use the published envelope shape", "evidence-unit") 
           "    }\n"
           "  ]\n"
           "}\n");
+}
+
+TEST_CASE("An unknown position is carried as zero on both axes", "evidence-unit") {
+    // A tool with no position at all must still emit both fields. Omitting them would make the
+    // envelope's shape depend on the finding, which is exactly what a strict consumer cannot
+    // tolerate - `column` is always present, and 0 is how "no column" is spelled.
+    const std::vector<Diagnostic> diagnostics{
+        Diagnostic{.file = "recipes/font/roboto-ui.toml", .code = "FB003", .message = "no charset"},
+    };
+    const std::string json = render(diagnostics, Format::Json, kTool);
+    CHECK(json.find("\"line\": 0,\n") != std::string::npos);
+    CHECK(json.find("\"column\": 0,\n") != std::string::npos);
 }
 
 TEST_CASE("JSON diagnostics separate multiple findings with a comma", "evidence-unit") {
@@ -206,15 +224,23 @@ TEST_CASE("JSON diagnostics escape what would otherwise break the envelope", "ev
     CHECK(json.find('\n', messageStart) > json.find("tabbed"));
 }
 
-TEST_CASE("Text diagnostics follow the file:line: severity: [code] message convention",
+TEST_CASE("Text diagnostics follow the file:line:column: severity: [code] message convention",
           "evidence-unit") {
     const std::vector<Diagnostic> diagnostics{
         Diagnostic{.file = "recipes/font/roboto-ui.toml",
                    .line = 7,
+                   .column = 22,
                    .code = "FB001",
                    .severity = Severity::Error,
                    .message = "glyph budget exceeded",
                    .fixHint = "raise atlasWidth"},
+        // Knows the line but not the column: the position printed stops at the line rather than
+        // gaining a ":0" an editor would jump to.
+        Diagnostic{.file = "recipes/font/roboto-ui.toml",
+                   .line = 3,
+                   .code = "FB004",
+                   .severity = Severity::Note,
+                   .message = "charset resolved from the default"},
         Diagnostic{.file = "recipes/font/roboto-ui.toml",
                    .line = 0,
                    .code = "FB002",
@@ -223,8 +249,9 @@ TEST_CASE("Text diagnostics follow the file:line: severity: [code] message conve
     };
 
     CHECK(render(diagnostics, Format::Text, kTool) ==
-          "recipes/font/roboto-ui.toml:7: error: [FB001] glyph budget exceeded\n"
+          "recipes/font/roboto-ui.toml:7:22: error: [FB001] glyph budget exceeded\n"
           "    fix: raise atlasWidth\n"
+          "recipes/font/roboto-ui.toml:3: note: [FB004] charset resolved from the default\n"
           "recipes/font/roboto-ui.toml: warning: [FB002] charset has no digits\n");
 }
 
