@@ -35,7 +35,12 @@ endif()
 # on GCC 15.2.0 while writing this: "internal compiler error: Segmentation fault" inside
 # <array>:102 compiling this translation unit. GCC 16 is presumed fixed and is now enabled - if
 # that is wrong, the GCC 16 leg says so rather than the example being quietly absent everywhere.
-if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0))
+# The lower bound is explicit rather than implied by the project's GCC >= 15 floor. If that floor
+# ever drops, an open-ended "less than 16" would silently start excluding compilers this ICE was
+# never observed on, and the guard would no longer describe what it is for.
+if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0))
     add_executable(VulkanSCTriangleExample
         VulkanSCTriangleExample.cpp
     )
