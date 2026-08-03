@@ -47,7 +47,7 @@
         {
             "name": "ninja-gcc",
             "displayName": "Ninja with GCC",
-            "description": "Ninja generator with GCC 15+ for C++23 modules and import std support. Mirrors the configure line .github/workflows/ci.yml's linux-build job actually runs.",
+            "description": "Ninja generator with GCC 16+ for C++23 modules and import std support. Mirrors the configure line .github/workflows/ci.yml's linux-build job actually runs.",
             "generator": "Ninja",
             "binaryDir": "build-gcc",
             "condition": {

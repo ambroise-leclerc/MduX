@@ -43,8 +43,8 @@ ground truth for current conventions, not this document.
 - These conventions exist to work around current C++23 modules toolchain limitations (see
   `docs/adr/ADR-003-compiler-modernization.md`, status "Accepted") — don't restructure them
   without checking whether the change still compiles on all three supported compilers (see
-  `mdux-build-and-test` for the per-compiler caveats, notably the GCC 15 ICE and unverified Clang
-  CI).
+  `mdux-build-and-test` for the per-compiler caveats, notably the `-O0` requirement for
+  `vulkansc_memory_tests` on GCC and the unverified Clang CI).
 
 ## Vulkan / Vulkan SC resource-ownership model
 
