@@ -433,3 +433,50 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 mdux_discover_tests(vulkansc_object_tests)
+
+# ---------------------------------------------------------------------------
+# SpecLab BDD specs
+# ---------------------------------------------------------------------------
+#
+# SpecLab (https://github.com/ambroise-leclerc/SpecLab) provides Given/When/Then without macros,
+# via `import speclab;`. It is a test-only dependency: no library target links it, and
+# mdux_verify_trust_zones() would fail the configure step if a governed target ever did.
+#
+# It is also the reason this project's GCC floor is 16. GCC 15 cannot build SpecLab at all -
+# reading a named module that transitively re-exports parts of `std` fails with "failed to load
+# pendings for 'std::_Sp_counted_ptr_inplace'", a defect in GCC's own std BMI.
+CPMAddPackage(
+    NAME SpecLab
+    GITHUB_REPOSITORY ambroise-leclerc/SpecLab
+    GIT_TAG main
+    OPTIONS
+        "SPECLAB_BUILD_TESTS OFF"
+        "SPECLAB_BUILD_EXAMPLES OFF"
+        "ENABLE_CACHE OFF"
+)
+
+# The bridge's own coverage. Deliberately a separate binary from the converted suites: if the
+# integration breaks, this fails with a name that says so rather than looking like a draw-list bug.
+add_executable(bridge_spec
+    spec/BridgeSpec.cpp
+)
+
+target_link_libraries(bridge_spec PRIVATE MduX::Core speclab)
+target_include_directories(bridge_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(bridge_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(bridge_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(bridge_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(bridge_spec)
