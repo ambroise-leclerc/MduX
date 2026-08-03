@@ -101,6 +101,16 @@ jobs:
       run: ctest --preset ninja-msvc -L evidence
       shell: cmd
 
+    # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
+    # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a
+    # *cross-toolchain* contract - the Linux/GCC step is the other. Neither leg alone can falsify
+    # "these kernels compute the same bits everywhere", so do not reduce this to one.
+    #
+    # A failure here is never fixed by updating the constants. See that file's header comment.
+    - name: Verify ML determinism (MSVC)
+      run: ctest --preset ninja-msvc -L determinism
+      shell: cmd
+
     - name: Verify no source-tree writes
       shell: pwsh
       run: |
@@ -186,6 +196,13 @@ jobs:
     # claim ADR-007 makes, and one leg alone could not falsify it.
     - name: Verify evidence artifacts (GCC 16)
       run: ctest --preset ninja-gcc -L evidence --output-on-failure
+
+    # The second toolchain for the determinism contract (ADR-008, issue #59). Pairs with the MSVC
+    # step: two unrelated compilers, standard libraries and code generators producing identical
+    # bit patterns is the evidence, and it is why expF32() exists rather than std::exp - see
+    # ADR-008 decision 3.
+    - name: Verify ML determinism (GCC 16)
+      run: ctest --preset ninja-gcc -L determinism --output-on-failure
 
     # Rendered-truth verification (issue #125), moved here when the GCC 15 leg was retired.
     # Without it a broken ICD turns the only test that renders anything into a silent no-op:

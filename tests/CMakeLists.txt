@@ -519,6 +519,7 @@ add_executable(ml_spec
     ml/MlSpecMain.cpp
     ml/SchemaTests.cpp
     ml/KernelTests.cpp
+    ml/DeterminismTests.cpp
 )
 
 target_link_libraries(ml_spec PRIVATE MduX::Core speclab::speclab)
