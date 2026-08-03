@@ -551,10 +551,16 @@ mdux_discover_tests(ml_spec)
 add_executable(ml_tools_spec
     ml/MlToolsSpecMain.cpp
     ml/SafetensorsTests.cpp
+    ml/WeightSwapTests.cpp
 )
 
 target_link_libraries(ml_tools_spec PRIVATE MduX::MlBakeLib speclab::speclab)
 target_include_directories(ml_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# WeightSwapTests reads the two committed model packages under generated/, a fixed location in the
+# source tree rather than anything the build produces. It reads only, so CI's
+# source-tree-cleanliness gate stays satisfied - the same arrangement shader_spec uses.
+target_compile_definitions(ml_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 set_target_properties(ml_tools_spec
     PROPERTIES

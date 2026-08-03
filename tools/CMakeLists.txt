@@ -119,11 +119,13 @@ target_sources(MduXMlBakeLib
             ml/ArchValidate.cppm
             ml/GoldenGen.cppm
             ml/MlBake.cppm
+            ml/PackageLoad.cppm
     PRIVATE
         ml/Safetensors.cpp
         ml/ArchValidate.cpp
         ml/GoldenGen.cpp
         ml/MlBake.cpp
+        ml/PackageLoad.cpp
 )
 
 target_compile_features(MduXMlBakeLib PUBLIC cxx_std_23)
