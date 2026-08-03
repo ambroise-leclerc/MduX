@@ -1,0 +1,26 @@
+# Layer 3 of issue #63, scoped to the ML implementation sources.
+#
+# Inherits the repository root .clang-tidy and adds the allocation checks as errors rather than
+# warnings. The root configuration governs style for the whole tree; this file only tightens what
+# ADR-008 requires of the governed ML zone, so a check disabled at the root stays disabled here
+# unless it is named below.
+#
+# Layers 1 and 2 (the interposition test and the object-file symbol scan) catch an allocation that
+# is *reachable* and one that is *linked*. This layer catches the source construct, with a message
+# pointing at the line, which is the fastest of the three to act on.
+#
+# -Wframe-larger-than=4096 belongs with these and lives in cmake/MduXDeterminism.cmake, applied to
+# MduXCore alongside the floating-point flags: "no heap" must not quietly become "enormous stack",
+# which on a device is the same bug wearing a different hat.
+
+InheritParentConfig: true
+
+Checks: >
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-pro-type-vararg,
+  cppcoreguidelines-prefer-member-initializer
+
+WarningsAsErrors: >
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory
