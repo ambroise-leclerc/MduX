@@ -111,9 +111,13 @@ private:
 
 /// Implements `--list-tests` and `--run=<name>`; with neither, runs everything.
 ///
-/// Returns 0 when every selected scenario passed and 1 otherwise. A `--run` naming a scenario
-/// that does not exist is an error rather than a silent pass: a stale generated CTest file would
-/// otherwise report success for a test that no longer exists.
+/// Returns 0 when every selected scenario passed and 1 otherwise - including when `--run` names a
+/// scenario that does not exist, which is an error rather than a silent pass: a stale generated
+/// CTest file would otherwise report success for a test that no longer exists.
+///
+/// 1 rather than a distinct code, to match `mdux::test::runMain` (tests/framework/MduXTest.cppm),
+/// which also answers 1 for a missing named case. Both binaries are driven by the same CTest
+/// machinery, and the message on stderr is what distinguishes the two situations for a reader.
 inline int main(int argc, char** argv, std::string_view suiteName) {
     const std::span<char*> args{argv, static_cast<std::size_t>(argc)};
 
@@ -133,7 +137,7 @@ inline int main(int argc, char** argv, std::string_view suiteName) {
                 registry(), [wanted](const Scenario& s) { return s.name == wanted; });
             if (found == registry().end()) {
                 std::println(std::cerr, "{}: no scenario named '{}'", suiteName, wanted);
-                return 2;
+                return 1;
             }
             const speclab::core::TestResult result = found->run();
             if (!result.passed()) {
