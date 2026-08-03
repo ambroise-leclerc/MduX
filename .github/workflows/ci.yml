@@ -111,7 +111,7 @@ jobs:
           exit 1
         }
 
-  # Linux Build with GCC 15 container
+  # Linux Build with GCC 16 container
   linux-build-gcc16:
     name: Linux (GCC 16, Vulkan)
     runs-on: ubuntu-latest
@@ -166,23 +166,26 @@ jobs:
         cmake --version
         ninja --version
 
+    # Through the preset, not a hand-written configure line. CMakePresets.json describes
+    # ninja-gcc as mirroring what this job runs, and the only way that statement stays true is
+    # for the job to actually use it - otherwise the preset is unexercised by CI and free to rot.
     - name: Configure CMake
-      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
+      run: cmake --preset ninja-gcc
 
     - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+      run: cmake --build --preset ninja-gcc
 
     - name: Run Tests
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure
+        ctest --preset ninja-gcc --output-on-failure
 
     # The second toolchain for the byte-identity check (ADR-007). With the GCC 15 leg retired
     # this pairs with MSVC: an artifact that is byte-identical on two unrelated toolchains is the
     # claim ADR-007 makes, and one leg alone could not falsify it.
     - name: Verify evidence artifacts (GCC 16)
-      run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} -L evidence --output-on-failure
+      run: ctest --preset ninja-gcc -L evidence --output-on-failure
 
     # Rendered-truth verification (issue #125), moved here when the GCC 15 leg was retired.
     # Without it a broken ICD turns the only test that renders anything into a silent no-op:
@@ -198,7 +201,7 @@ jobs:
         ls -1 /usr/share/vulkan/icd.d/ || true
         # -V rather than --output-on-failure: a passing run must still print, because two of the
         # things this step verifies are only visible in the output of tests that succeeded.
-        ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} -L pixel -V --no-tests=error 2>&1 | tee pixel.log
+        ctest --preset ninja-gcc -L pixel -V --no-tests=error 2>&1 | tee pixel.log
         if grep -q "Skipped" pixel.log; then
           echo "::error::Pixel tests were skipped - no Vulkan device. They must run on this leg."
           exit 1

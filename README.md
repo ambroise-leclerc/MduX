@@ -278,7 +278,8 @@ vulkaninfo --summary
 ### Platform Support
 - **Windows 10/11** - Full Vulkan support
 - **Linux** - X11/Wayland with Vulkan support
-- **MacOS** - MoltenVK works, but no GCC 16 is packaged for it yet, so macOS is unsupported
+- **MacOS** - not supported. Nothing in the build refuses it, and MoltenVK provides a working
+  Vulkan device, but no CI leg covers it and no claim is made that it builds
 
 ### Quick Start for Medical Device Development
 
