@@ -542,3 +542,73 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 mdux_discover_tests(ml_spec)
+
+# No-heap verification, layer 1 (issue #63): global operator new interposition.
+#
+# Its own binary because it replaces the global allocator - see tests/ml/NoHeapSpecMain.cpp.
+add_executable(ml_noheap_spec
+    ml/NoHeapSpecMain.cpp
+    ml/NoHeapTests.cpp
+)
+
+target_link_libraries(ml_noheap_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(ml_noheap_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(ml_noheap_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(ml_noheap_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(ml_noheap_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(ml_noheap_spec)
+
+# No-heap verification, layer 2 (issue #63): object-file symbol scan.
+#
+# Catches an allocator reference at build time, in the PR that introduced it, rather than whenever
+# someone next executes the path that would have allocated. The object list is written by
+# file(GENERATE) rather than passed as a -D argument, because a generator expression producing a
+# ;-separated list would be split into separate arguments by add_test().
+set(mdux_ml_object_list "${CMAKE_CURRENT_BINARY_DIR}/ml_objects_$<CONFIG>.txt")
+file(GENERATE
+    OUTPUT "${mdux_ml_object_list}"
+    CONTENT "$<JOIN:$<FILTER:$<TARGET_OBJECTS:MduXCore>,INCLUDE,/ml/>,\n>"
+)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    find_program(MDUX_SYMBOL_TOOL NAMES dumpbin)
+    set(mdux_symbol_tool_kind "dumpbin")
+else()
+    # CMAKE_NM is set by the toolchain; fall back to a plain nm on PATH.
+    if(CMAKE_NM)
+        set(MDUX_SYMBOL_TOOL "${CMAKE_NM}")
+    else()
+        find_program(MDUX_SYMBOL_TOOL NAMES nm)
+    endif()
+    set(mdux_symbol_tool_kind "nm")
+endif()
+
+if(MDUX_SYMBOL_TOOL)
+    add_test(NAME ml.noheap.symbolScan
+        COMMAND ${CMAKE_COMMAND}
+            -DMDUX_NOHEAP_OBJECT_LIST=${mdux_ml_object_list}
+            -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
+            -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
+    )
+    set_tests_properties(ml.noheap.symbolScan PROPERTIES LABELS "noheap")
+else()
+    # Deliberately not silent. A missing tool means this layer is not running, and the other two
+    # layers do not cover what it covers.
+    message(WARNING
+        "No symbol tool (nm/dumpbin) found - ml.noheap.symbolScan will not run, so issue #63's "
+        "layer 2 is unverified in this build.")
+endif()
