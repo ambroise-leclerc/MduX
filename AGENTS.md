@@ -190,7 +190,9 @@ cmake --build build
 **Targets** (verified in `CMakeLists.txt`, `examples/CMakeLists.txt`, `tests/CMakeLists.txt`):
 - Library: `MduX` (alias `MduX::MduX`)
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
-  GCC 15 ICE guard was removed when the floor rose to GCC 16)
+  GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
+  links `MduX::MlBakeLib`, needs no Vulkan and no window, and embeds its model with
+  `mdux_embed_blob()`)
 - Tests: `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`,
   registered with CTest as `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
   `VulkanSCDeviceObjectTests`
@@ -234,7 +236,7 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 | [`mdux-cpp23-vulkan-development`](.agents/skills/mdux-cpp23-vulkan-development/SKILL.md) | Changing module interfaces/implementations, Vulkan or Vulkan SC integration, rendering resources, examples, or public APIs. | Module file placement and CMake registration, import/export conventions, the Vulkan/Vulkan SC resource-ownership model, windowing policy, required test/doc updates. |
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
-| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — the evidence kernel and `mdux-shaderbake` exist; no artifact is committed under `generated/` yet (issue `#120`). |
+| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
 | [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Planned** — no `.medui` compiler exists yet (issue `#15`). |
 | [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Planned** — `software_development_file/` doesn't exist yet (issue `#9`). |
 

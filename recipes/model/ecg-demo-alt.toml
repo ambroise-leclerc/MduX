@@ -1,0 +1,64 @@
+# The ECG demonstrator model package, second weight set.
+#
+# **This recipe exists to be proof, not to be shipped.** It declares byte-for-byte the same
+# architecture as ecg-demo.toml and points at a different weights file, so that issue #64's
+# weight-swap test can demonstrate ADR-008 decision 2's headline claim: replacing a demonstrator's
+# weights with a manufacturer's own qualified weights is a re-bake, with **zero application source
+# change**.
+#
+# The test asserts exactly that - that the only differences between the two builds are under
+# generated/model/<id>/, that Classifier1D::create() succeeds against the new package and its new
+# goldens, and that pairing the *old* weights.bin with the *new* package.json fails closed on
+# digestMismatch. That last one is the difference between an integrity check and a comment claiming
+# there is one.
+#
+# Its weights are synthetic, exactly as ecg-demo's are, and carry no clinical validity either. The
+# two files differ only in the LCG seed - see generate-alt-weights.py beside them.
+
+[package]
+id = "ecg-demo-alt"
+source = "recipes/model/ecg-demo/ecg-demo-alt.safetensors"
+
+# Total floats in and out, channels included. 180 samples is one second at 180 Hz.
+inputLength = 180
+outputLength = 4
+
+# maxScratchFloats is deliberately omitted. The baker derives it from the layer chain as twice the
+# largest activation, and a hand-written value here could only ever agree with that or be wrong.
+
+[goldens]
+# Four vectors: the first four are the fixed patterns (zeros, ones, an alternating square wave, and
+# a ramp), which between them exercise saturation, sign handling and monotone response. Beyond four
+# the generator draws from the LCG.
+count = 4
+seed = 20260803
+# Named, not implied. A seed alone does not determine a sequence, and the two CI legs have to agree
+# on the algorithm as well as the seed for the bake to be byte-identical. mdux-mlbake rejects a
+# value it does not implement rather than silently substituting its own.
+algorithm = "lcg-numerical-recipes-32"
+
+# The architecture (issue #64). Exercises every v1 kernel:
+#
+#   180 x 1 -> Conv1D k=9 s=1, 8 filters, relu  -> 172 x 8
+#           -> MaxPool1D k=4 s=4                ->  43 x 8
+#           -> Conv1D k=5 s=1, 16 filters, relu ->  39 x 16
+#           -> Flatten                          -> 624
+#           -> Dense 624 -> 4, softmax          ->   4
+#
+# Parallel arrays rather than an array of tables: mdux.tools.toml implements a deliberate subset
+# with no [[table]] support, and the shader recipe already uses this shape. Entry N of every array
+# describes layer N, and the baker rejects a length mismatch by name.
+#
+# Order is load-bearing. The weight blob is packed in layer order, so reordering these changes
+# every byte offset in the package.
+[layers]
+kinds       = ["conv1d",   "maxPool1d", "conv1d",   "flatten", "dense"]
+activations = ["relu",     "none",      "relu",     "none",    "softmax"]
+inLengths   = [180,        172,         43,         39,        624]
+inChannels  = [1,          8,           8,          16,        1]
+outLengths  = [172,        43,          39,         624,       4]
+outChannels = [8,          8,           16,         1,         1]
+kernelSizes = [9,          4,           5,          0,         0]
+strides     = [1,          4,           1,          0,         0]
+weightNames = ["conv1.weight", "",      "conv2.weight", "",    "dense.weight"]
+biasNames   = ["conv1.bias",   "",      "conv2.bias",   "",    "dense.bias"]

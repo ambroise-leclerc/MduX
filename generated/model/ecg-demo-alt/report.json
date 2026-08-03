@@ -1,0 +1,34 @@
+{
+  "inputs": [
+    {
+      "path": "recipes/model/ecg-demo/ecg-demo-alt.safetensors",
+      "sha256": "6f679ec81b94b58fc579738c8bab316f7a419d1b057b9b9d3cc965493a85312e"
+    }
+  ],
+  "options": {
+    "goldenCount": 4,
+    "goldenPrng": "lcg-numerical-recipes-32",
+    "goldenSeed": 20260803,
+    "inputLength": 180,
+    "layerCount": 5,
+    "maxScratchFloats": 2752,
+    "outputLength": 4
+  },
+  "outputs": [
+    {
+      "path": "package.json",
+      "sha256": "5afb1d98dce5aba070d3955bd9c91b8bbdbc01d0442f9aabc3cbe4c702d88b1f"
+    },
+    {
+      "path": "weights.bin",
+      "sha256": "896262d79290239b8876b97acaeedf138cebf20812852db92ff61a6518c020a0"
+    }
+  ],
+  "recipe": {
+    "path": "recipes/model/ecg-demo-alt.toml",
+    "sha256": "451942ff5242878d1b87175a220690f296d5e9b2891f7121db3ffeff555e376b"
+  },
+  "schemaVersion": 1,
+  "tool": "mdux-mlbake",
+  "toolVersion": "0.3.0"
+}

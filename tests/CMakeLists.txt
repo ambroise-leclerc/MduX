@@ -543,6 +543,42 @@ endif()
 
 mdux_discover_tests(ml_spec)
 
+# ML host-tools suite (issue #60)
+#
+# Links MduX::MlBakeLib, the host-tools-zone target. Deliberately separate from ml_spec, which
+# links MduX::Core only - keeping the two apart is what preserves ml_spec's standing evidence that
+# the governed ML modules reach nothing but std.
+add_executable(ml_tools_spec
+    ml/MlToolsSpecMain.cpp
+    ml/SafetensorsTests.cpp
+    ml/WeightSwapTests.cpp
+)
+
+target_link_libraries(ml_tools_spec PRIVATE MduX::MlBakeLib speclab::speclab)
+target_include_directories(ml_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# WeightSwapTests reads the two committed model packages under generated/, a fixed location in the
+# source tree rather than anything the build produces. It reads only, so CI's
+# source-tree-cleanliness gate stays satisfied - the same arrangement shader_spec uses.
+target_compile_definitions(ml_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+set_target_properties(ml_tools_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(ml_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(ml_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(ml_tools_spec)
+
 # No-heap verification, layer 1 (issue #63): global operator new interposition.
 #
 # Its own binary because it replaces the global allocator - see tests/ml/NoHeapSpecMain.cpp.
