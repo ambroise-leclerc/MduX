@@ -105,6 +105,62 @@ const mdux::spec::Register governedTypesReachable{
             .Execute();
     }};
 
+const mdux::spec::Register checksCollect{
+    "Checks reports every failed expectation, not just the first", "evidence-unit", [] {
+        // The reason Checks exists. MduXTest's CHECK is soft, so a converted test asserting six
+        // things must still report all six that are wrong - otherwise the conversion trades a
+        // one-pass fix for one rerun per failure.
+        struct State {
+            std::string message;
+            bool threw{false};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("bridge-checks-collect")
+            .Given("three expectations of which two fail",
+                   [state] {
+                       mdux::spec::Checks checks;
+                       checks.expect(true, "the one that holds");
+                       checks.expect(false, "first failure");
+                       checks.expect(false, "second failure");
+                       try {
+                           checks.raise();
+                       } catch (const speclab::core::AssertionFailure& failure) {
+                           state->threw = true;
+                           state->message = failure.what();
+                       }
+                   })
+            .When("the collected failures are inspected", [] {})
+            .Then("both are named in one message",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->threw, "raise() threw");
+                      checks.expect(state->message.find("first failure") != std::string::npos,
+                                    "the first failure is named");
+                      checks.expect(state->message.find("second failure") != std::string::npos,
+                                    "the second failure is named");
+                      checks.expect(state->message.find("the one that holds") == std::string::npos,
+                                    "the passing expectation is not mentioned");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register checksSilentWhenClean{
+    "Checks throws nothing when every expectation holds", "evidence-unit", [] {
+        return speclab::Test("bridge-checks-clean")
+            .Given("only passing expectations", [] {})
+            .When("raise() is called", [] {})
+            .Then("it returns normally",
+                  [] {
+                      mdux::spec::Checks checks;
+                      checks.expect(1 + 1 == 2, "arithmetic");
+                      checks.expect(!checks.anyFailed(), "nothing recorded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 }  // namespace
 
 int main(int argc, char** argv) {

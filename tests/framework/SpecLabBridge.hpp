@@ -57,6 +57,58 @@ struct Register {
     }
 };
 
+/// Collects several failed expectations and reports them together.
+///
+/// SpecLab's assertions all throw, so the first failure inside a `Then` ends the scenario. That is
+/// right for a scenario making one behavioural claim, and wrong for the ones being converted from
+/// MduXTest, where `CHECK` is deliberately soft: a test asserting six things reports all six that
+/// are wrong, and the reader fixes them in one pass rather than rerunning six times.
+///
+/// `Checks` restores that inside a single `Then`. Record as many expectations as the claim needs,
+/// then call `raise()`; nothing is thrown unless at least one failed, and what is thrown names
+/// every one of them.
+///
+///     Checks checks;
+///     checks.expect(vertex.x == 4, "x");
+///     checks.expect(vertex.y == 8, "y");
+///     checks.raise();
+class Checks {
+public:
+    /// Records `condition`. `what` should name the thing being checked, not restate the operator.
+    void expect(bool condition, std::string_view what,
+                std::source_location where = std::source_location::current()) {
+        if (!condition) {
+            failures_.push_back(
+                std::format("{} ({}:{})", what, fileName(where.file_name()), where.line()));
+        }
+    }
+
+    /// Throws a single AssertionFailure listing every failed expectation, or returns if none did.
+    void raise(std::source_location where = std::source_location::current()) const {
+        if (failures_.empty()) {
+            return;
+        }
+        std::string message =
+            std::format("{} expectation(s) failed:", failures_.size());
+        for (const std::string& failure : failures_) {
+            message += "\n    - " + failure;
+        }
+        throw speclab::core::AssertionFailure(message, where);
+    }
+
+    [[nodiscard]] bool anyFailed() const noexcept { return !failures_.empty(); }
+
+private:
+    /// Just the filename: a source_location carries an absolute build path, which is noise in a
+    /// message and differs between machines for the same failure.
+    [[nodiscard]] static std::string_view fileName(std::string_view path) noexcept {
+        const std::size_t slash = path.find_last_of("/\\");
+        return slash == std::string_view::npos ? path : path.substr(slash + 1);
+    }
+
+    std::vector<std::string> failures_;
+};
+
 /// Implements `--list-tests` and `--run=<name>`; with neither, runs everything.
 ///
 /// Returns 0 when every selected scenario passed and 1 otherwise. A `--run` naming a scenario
