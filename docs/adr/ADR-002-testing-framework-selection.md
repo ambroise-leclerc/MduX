@@ -1,7 +1,19 @@
 # ADR-002: Testing Framework Selection for Medical Device Compliance
 
 ## Status
-Proposed
+**Superseded by [ADR-009](ADR-009-in-repository-test-framework.md)** (2026-08-03).
+
+This decision selected Catch2 v3 and was never implemented. The repository tests through the
+in-repository `MduXTest` framework and, for BDD scenarios, through SpecLab — neither of which is
+Catch2. ADR-009 records what is actually used and why Catch2 was not adopted.
+
+Retained unedited below for the decision trail. **Nothing in the text below describes the current
+build**; read ADR-009 instead.
+
+---
+
+## Original status
+Proposed (never implemented)
 
 ## Context
 MduX requires a comprehensive testing framework that supports Behavior-Driven Development (BDD) methodology while maintaining strict compliance with IEC 62304 (software lifecycle) and IEC 62366 (usability engineering) standards for Class B and Class C medical devices.

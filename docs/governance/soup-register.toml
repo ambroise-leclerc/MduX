@@ -86,3 +86,25 @@ risk_controls = [
     "ADR-003 records why each floor was chosen (the C++23 modules feature set each version added), so a future floor change is a reviewable decision, not a silent drift.",
 ]
 known_anomaly_tracking = "Tool qualification, and any anomaly found in a specific compiler version, is the manufacturer's responsibility per IEC 62304 §8.1.2; this register records only that the version floors are mechanically enforced."
+
+[[entries]]
+component_id = "speclab"
+name = "SpecLab"
+version = "commit 84631c9f01f5309baf1d12618b2ef66c3512b511 (no tagged release upstream)"
+classification = "SOUP"
+supplier = "ambroise-leclerc / SpecLab contributors"
+repository = "https://github.com/ambroise-leclerc/SpecLab"
+license = "See upstream repository"
+usage = "Given/When/Then BDD scenarios in seven test executables (shader_spec, draw_spec, tools_spec, bridge_spec, ml_spec, ml_tools_spec, ml_noheap_spec), adapted to this project's CTest discovery contract by tests/framework/SpecLabBridge.hpp. Never linked into a library, an example, or the install/export set."
+trust_zone = "tests"
+integration_path = "tests/CMakeLists.txt (CPMAddPackage NAME SpecLab, pinned by commit); linked only into test executables"
+pinned_by = ["tests/CMakeLists.txt"]
+runtime_deployment = false
+support_model = "Single-maintainer open-source project with no tagged release and no support agreement. Pinned by commit rather than by branch or tag precisely because a moving reference would make the build non-reproducible, which the evidence pipeline (ADR-007) cannot tolerate."
+boundary_rationale = "Test-only. No library target links it, it is absent from the install/export set, and mdux_verify_trust_zones() would reject it on a governed target. A defect in it cannot reach a device; its risk is false confidence in test results, not patient harm - see ADR-009."
+risk_controls = [
+    "Pinned to an immutable commit, so a rebuild uses the same source or fails outright.",
+    "bridge_spec exists solely to test the SpecLab integration, so a broken adapter fails with a name that says so rather than looking like a failure in the code under test.",
+    "Nine further test executables use the in-repository MduXTest framework instead, so a SpecLab regression cannot silence the whole suite.",
+]
+known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry. Note this dependency is also why the project's GCC floor is 16: GCC 15 cannot build it."
