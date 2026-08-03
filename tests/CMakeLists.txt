@@ -76,7 +76,6 @@ mdux_discover_tests(evidence_tests)
 add_executable(tools_tests
     tools/ToolsTestMain.cpp
     tools/TomlTests.cpp
-    tools/CliTests.cpp
 )
 
 target_sources(tools_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
@@ -101,13 +100,14 @@ endif()
 
 mdux_discover_tests(tools_tests)
 
-# Shader schema and baker (issue #119)
+# Shader schema, baker and emitter (issues #119, #141)
 #
-# Links MduX::ShaderBakeLib rather than the executable, so the tests drive run()/write()/verify()
+# Links MduX::ShaderBakeLib rather than the executable, so the scenarios drive run()/write()/verify()
 # as calls. Spawning mdux-shaderbake per case would make a failing assertion report only that an
-# exit status was wrong, which is the least useful thing it could say.
-add_executable(shader_tests
-    shader/ShaderTestMain.cpp
+# exit status was wrong, which is the least useful thing it could say. The whole suite converted to
+# SpecLab (issue #141), so this is a spec target rather than an MduXTest one.
+add_executable(shader_spec
+    shader/ShaderSpecMain.cpp
     shader/SchemaTests.cpp
     shader/SpirvTests.cpp
     shader/ShaderBakeTests.cpp
@@ -128,17 +128,16 @@ add_executable(shader_tests
 #
 # The generated module needs its own named file set: the default CXX_MODULES set's base directory
 # is this source directory, and a generated module lives in the build tree.
-target_sources(shader_tests
+target_sources(shader_spec
     PRIVATE
-        FILE_SET CXX_MODULES FILES framework/MduXTest.cppm
         FILE_SET generated_modules
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
             FILES ${MDUX_UI_SHADER_MODULE}
 )
-add_dependencies(shader_tests emit-shader-mdux-ui)
-target_link_libraries(shader_tests PRIVATE MduX::ShaderBakeLib)
-target_include_directories(shader_tests PRIVATE
+add_dependencies(shader_spec emit-shader-mdux-ui)
+target_link_libraries(shader_spec PRIVATE MduX::ShaderBakeLib speclab::speclab)
+target_include_directories(shader_spec PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MDUX_GENERATED_SHADER_DIR}
 )
@@ -146,7 +145,7 @@ target_include_directories(shader_tests PRIVATE
 # UiPackageTests reads the committed artifact under generated/, which is a fixed location in the
 # source tree rather than anything the build produces. It reads only; the source-tree-cleanliness
 # gate in CI stays satisfied.
-target_compile_definitions(shader_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(shader_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 # The build's own answers for mdux_shader_identifier(), written where GeneratedTests can read them
 # and compare against identifierFor() in the C++ emitter.
@@ -165,10 +164,10 @@ foreach(mdux_identifier_parity_id IN LISTS mdux_identifier_parity_ids)
 endforeach()
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/shader_identifier_parity.tsv"
      "${mdux_identifier_parity_lines}")
-target_compile_definitions(shader_tests PRIVATE
+target_compile_definitions(shader_spec PRIVATE
     MDUX_IDENTIFIER_PARITY_FILE="${CMAKE_CURRENT_BINARY_DIR}/shader_identifier_parity.tsv")
 
-set_target_properties(shader_tests
+set_target_properties(shader_spec
     PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
@@ -176,31 +175,30 @@ set_target_properties(shader_tests
 )
 
 if(TARGET __CMAKE::CXX23)
-    set_target_properties(shader_tests PROPERTIES CXX_MODULE_STD ON)
+    set_target_properties(shader_spec PROPERTIES CXX_MODULE_STD ON)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(shader_tests PRIVATE /experimental:module)
-    target_compile_options(shader_tests PRIVATE /std:c++latest)
+    target_compile_options(shader_spec PRIVATE /experimental:module /std:c++latest)
 endif()
 
-mdux_discover_tests(shader_tests)
+mdux_discover_tests(shader_spec)
 
-# Governed fixed-budget draw types (issue #123)
+# Governed fixed-budget draw types (issue #123), Wave 3 conversion (issue #141)
 #
 # Links MduX::Core only, deliberately. mdux.draw contains no Vulkan handle and no device concept,
-# so a test that needed MduX::MduX to build it would mean the trust-zone boundary had moved -
-# which is the property #125's headless verification and #126's pixel test both rest on.
-add_executable(draw_tests
-    draw/DrawTestMain.cpp
+# so a scenario that needed MduX::MduX to build it would mean the trust-zone boundary had moved -
+# which is the property #125's headless verification and #126's pixel test both rest on. The whole
+# suite converted to SpecLab, so this is a spec target rather than an MduXTest one.
+add_executable(draw_spec
+    draw/DrawSpecMain.cpp
     draw/DrawTests.cpp
 )
 
-target_sources(draw_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(draw_tests PRIVATE MduX::Core)
-target_include_directories(draw_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(draw_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(draw_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-set_target_properties(draw_tests
+set_target_properties(draw_spec
     PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
@@ -208,19 +206,18 @@ set_target_properties(draw_tests
 )
 
 if(TARGET __CMAKE::CXX23)
-    set_target_properties(draw_tests PROPERTIES CXX_MODULE_STD ON)
+    set_target_properties(draw_spec PROPERTIES CXX_MODULE_STD ON)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(draw_tests PRIVATE /experimental:module)
-    target_compile_options(draw_tests PRIVATE /std:c++latest)
+    target_compile_options(draw_spec PRIVATE /experimental:module /std:c++latest)
 endif()
 
-mdux_discover_tests(draw_tests)
+mdux_discover_tests(draw_spec)
 
 # Adapter-zone Vulkan renderer (issue #124)
 #
-# Links MduX::MduX, so this suite sees Vulkan where draw_tests deliberately does not. Only the
+# Links MduX::MduX, so this suite sees Vulkan where draw_spec deliberately does not. Only the
 # device-free half of the renderer is covered here - create()'s validation runs before the first
 # Vulkan call, so it is testable with no ICD present, which is what CI currently has. The device
 # path lands with #125's headless harness.
@@ -255,7 +252,7 @@ mdux_discover_tests(render_tests)
 #
 # Separate from render_tests because this suite needs a real Vulkan device where that one
 # deliberately needs none. It consumes the generated shader module, so it depends on the emitter
-# the same way shader_tests does.
+# the same way shader_spec does.
 #
 # SKIP_RETURN_CODE 77 is the point: with no loader, no ICD or no device the binary exits 77 and
 # CTest reports Skipped, which is a distinct outcome from passing. A contributor without Vulkan
@@ -484,3 +481,31 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 mdux_discover_tests(bridge_spec)
+
+# Wave 3 conversions (issue #141) - the host-tools CLI suite. Links MduX::ToolsCommon, the same
+# host-tools-zone target tools_tests links: a SpecLab binary is still a test, not a governed or
+# library target.
+add_executable(tools_spec
+    tools/ToolsSpecMain.cpp
+    tools/CliTests.cpp
+)
+
+target_link_libraries(tools_spec PRIVATE MduX::ToolsCommon speclab::speclab)
+target_include_directories(tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(tools_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(tools_spec)
