@@ -55,10 +55,15 @@ const std::filesystem::path packageDir =
 
 /// Hard failure (REQUIRE-equivalent): the committed package must have parsed.
 [[nodiscard]] shader::ShaderPackage requireCommitted(
-    mdux::core::Result<shader::ShaderPackage, shader::SchemaError> result) {
+    mdux::core::Result<shader::ShaderPackage, shader::SchemaError> result,
+    std::source_location where = std::source_location::current()) {
     if (!result.has_value()) {
+        // `where` defaults at the call site, so the failure names the calling step; the
+        // SchemaError names the parse or validation reason, which is what makes it actionable.
         throw speclab::core::AssertionFailure(
-            "the committed package did not parse", std::source_location::current());
+            std::format("the committed package did not parse: {}",
+                        shader::describe(result.error())),
+            where);
     }
     return std::move(*result);
 }

@@ -29,24 +29,27 @@ constexpr std::string_view kTool = "mdux-fontbake";
 ///
 /// The unexpected-throw case is a precondition for everything the scenario then dereferences, so
 /// it stays a thrown AssertionFailure (REQUIRE-equivalent) rather than a collected expectation.
-[[nodiscard]] Invocation parsedOk(std::vector<std::string_view> arguments) {
+[[nodiscard]] Invocation parsedOk(std::vector<std::string_view> arguments,
+                                  std::source_location where = std::source_location::current()) {
     try {
         return parse(kTool, arguments);
     } catch (const UsageError& error) {
+        // `where` defaults at the call site, so the failure names the step that called this.
         throw speclab::core::AssertionFailure(std::string{"unexpected UsageError: "} + error.what(),
-                                              std::source_location::current());
+                                              where);
     }
 }
 
 /// Parses `arguments` and returns the UsageError's message, failing hard if none is raised.
-[[nodiscard]] std::string usageErrorOf(std::vector<std::string_view> arguments) {
+[[nodiscard]] std::string usageErrorOf(
+    std::vector<std::string_view> arguments,
+    std::source_location where = std::source_location::current()) {
     try {
         (void)parse(kTool, arguments);
     } catch (const UsageError& error) {
         return error.what();
     }
-    throw speclab::core::AssertionFailure("expected a UsageError but none was raised",
-                                          std::source_location::current());
+    throw speclab::core::AssertionFailure("expected a UsageError but none was raised", where);
 }
 
 // ---------------------------------------------------------------------------

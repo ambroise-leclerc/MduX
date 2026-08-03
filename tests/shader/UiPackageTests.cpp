@@ -73,11 +73,16 @@ const std::filesystem::path packageDir =
 
 /// Hard failure (REQUIRE-equivalent): the committed package must have parsed.
 [[nodiscard]] shader::ShaderPackage requirePackage(
-    mdux::core::Result<shader::ShaderPackage, shader::SchemaError> result, std::string_view what) {
+    mdux::core::Result<shader::ShaderPackage, shader::SchemaError> result, std::string_view what,
+    std::source_location where = std::source_location::current()) {
     if (!result.has_value()) {
+        // `where` defaults at the call site, so a failure names the step that called this rather
+        // than this line - and the SchemaError says *why* the committed artifact is unreadable,
+        // which is the whole question when this fails.
         throw speclab::core::AssertionFailure(
-            std::format("{}: the committed package did not parse", what),
-            std::source_location::current());
+            std::format("{}: the committed package did not parse: {}", what,
+                        shader::describe(result.error())),
+            where);
     }
     return std::move(*result);
 }

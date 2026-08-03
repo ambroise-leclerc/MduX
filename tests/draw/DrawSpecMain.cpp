@@ -5,8 +5,9 @@
  *
  * Runs SpecLab scenarios under the rest of the suite's discovery contract: `--list-tests` prints
  * one `name<TAB>labels` line per scenario, and `--run=<name>` executes exactly one. Like
- * draw_tests, the draw_spec target links MduX::Core only - mdux.draw contains no Vulkan handle, so
- * a scenario that needed MduX::MduX to build would mean the trust-zone boundary had moved.
+ * the MduXTest suites it replaces, draw_spec links MduX::Core only - mdux.draw contains no Vulkan
+ * handle, so a scenario that needed MduX::MduX to build would mean the trust-zone boundary had
+ * moved.
  */
 
 import std;

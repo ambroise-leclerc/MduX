@@ -56,42 +56,49 @@ constexpr core::ColorRgba8 red{.r = 255, .g = 0, .b = 0, .a = 255};
 
 /// Hard failure (REQUIRE-equivalent): a create() that was expected to succeed must have a list.
 [[nodiscard]] DrawList requireCreated(core::Result<DrawList, DrawError> result,
-                                      std::string_view what) {
+                                      std::string_view what,
+                                      std::source_location where =
+                                          std::source_location::current()) {
     if (!result.has_value()) {
         throw speclab::core::AssertionFailure(
             std::format("{}: create() failed: {}", what, describe(result.error())),
-            std::source_location::current());
+            where);
     }
     return std::move(*result);
 }
 
 /// Hard failure (REQUIRE-equivalent): an add/set that was expected to succeed must have succeeded.
-void requireAdded(core::ResultVoid<DrawError> result, std::string_view what) {
+void requireAdded(core::ResultVoid<DrawError> result, std::string_view what,
+                  std::source_location where = std::source_location::current()) {
     if (!result.has_value()) {
         throw speclab::core::AssertionFailure(
             std::format("{}: {}", what, describe(result.error())),
-            std::source_location::current());
+            where);
     }
 }
 
 /// Hard failure (REQUIRE-equivalent): a create() that was expected to be rejected must fail.
 [[nodiscard]] DrawError requireRejected(core::Result<DrawList, DrawError> result,
-                                        std::string_view what) {
+                                        std::string_view what,
+                                        std::source_location where =
+                                            std::source_location::current()) {
     if (result.has_value()) {
         throw speclab::core::AssertionFailure(
             std::format("{}: expected a rejection but the list was created", what),
-            std::source_location::current());
+            where);
     }
     return result.error();
 }
 
 /// Hard failure (REQUIRE-equivalent): an add that was expected to be refused must be refused.
 [[nodiscard]] DrawError requireRejectedAdd(core::ResultVoid<DrawError> result,
-                                           std::string_view what) {
+                                           std::string_view what,
+                                           std::source_location where =
+                                               std::source_location::current()) {
     if (result.has_value()) {
         throw speclab::core::AssertionFailure(
             std::format("{}: expected a rejection but the primitive was recorded", what),
-            std::source_location::current());
+            where);
     }
     return result.error();
 }
@@ -195,7 +202,6 @@ const mdux::spec::Register createdEmpty{
                       mdux::spec::Checks checks;
                       checks.expect(state->list->empty(), "the list is empty");
                       checks.expect(state->list->vertices().empty(), "no vertices");
-                      checks.expect(state->list->indices().empty(), "no indices");
                       checks.expect(state->list->indices().empty(), "no indices");
                       checks.expect(state->list->commands().empty(), "no commands");
                       checks.expect(state->list->budget() == SmallStorage::budget(),
