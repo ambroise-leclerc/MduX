@@ -101,6 +101,46 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXShaderBakeLib PRIVATE /experimental:module /std:c++latest)
 endif()
 
+# Zero-SOUP ML weight import and baking (epic #18, ADR-008)
+#
+# Host-tools zone, exactly like the shader baker: it parses untrusted weight files and may throw,
+# so it is deliberately not declared governed. It links MduX::ToolsCommon (and through it
+# MduX::Core), which is how the baker reaches mdux.ml.kernels - the same governed module the device
+# runtime executes. That identity is the whole basis of the golden-vector argument in ADR-008.
+add_library(MduXMlBakeLib)
+add_library(MduX::MlBakeLib ALIAS MduXMlBakeLib)
+
+target_sources(MduXMlBakeLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            ml/Safetensors.cppm
+            ml/ArchValidate.cppm
+    PRIVATE
+        ml/Safetensors.cpp
+        ml/ArchValidate.cpp
+)
+
+target_compile_features(MduXMlBakeLib PUBLIC cxx_std_23)
+target_link_libraries(MduXMlBakeLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXMlBakeLib PRIVATE MduX_warnings)
+
+set_target_properties(MduXMlBakeLib
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXMlBakeLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXMlBakeLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
 add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
 target_link_libraries(mdux-shaderbake PRIVATE MduX::ShaderBakeLib MduX_warnings)
 
