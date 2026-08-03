@@ -355,6 +355,24 @@ mdux_bake_artifact(
 # The triangle example's shaders (issue #122), so the example stops loading SPIR-V from the
 # working directory at runtime. Also the first package with an empty contract - no descriptors,
 # no push constants - which mdux-ui never exercises.
+# The ECG demonstrator model (epic #18, ADR-008). Its weights are synthetic and carry no clinical
+# validity - the recipe says so at length, and so does generate-demonstrator-weights.py beside it.
+#
+# Registered here for the same reason the shader packages are: the artifact is a property of the
+# repository, and mdux_bake_artifact() requires its TOOL target to exist already.
+mdux_bake_artifact(
+    KIND model
+    ID ecg-demo
+    TOOL mdux-mlbake
+    RECIPE recipes/model/ecg-demo.toml
+    SOURCES
+        recipes/model/ecg-demo/ecg-demo.safetensors
+    OUTPUTS
+        package.json
+        report.json
+        weights.bin
+)
+
 mdux_bake_artifact(
     KIND shader
     ID triangle

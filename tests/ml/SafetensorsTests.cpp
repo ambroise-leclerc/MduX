@@ -83,6 +83,30 @@ const std::vector<Case>& corpus() {
     static const std::vector<Case> cases{
         {"a well-formed file", "ok", [] { return validFile(); }},
 
+        // Real exporters pad the header to an alignment boundary, and the padding is counted in
+        // the declared header length. These two cover the trimming that makes such a file readable
+        // at all - added because the trimming shipped without a fixture, so nothing would have
+        // caught it accepting spaces but not NULs, or trimming into the JSON itself.
+        {"a header padded with spaces", "ok",
+         [] {
+             const std::array<float, 8> values{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 0.5f, -0.5f};
+             std::string header =
+                 R"({"bias":{"dtype":"F32","shape":[2],"data_offsets":[24,32]},)"
+                 R"("weight":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]}})";
+             header.append(13, ' ');
+             return buildFile(header, floatBytes(values));
+         }},
+
+        {"a header padded with NULs", "ok",
+         [] {
+             const std::array<float, 8> values{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 0.5f, -0.5f};
+             std::string header =
+                 R"({"bias":{"dtype":"F32","shape":[2],"data_offsets":[24,32]},)"
+                 R"("weight":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]}})";
+             header.append(5, '\0');
+             return buildFile(header, floatBytes(values));
+         }},
+
         {"a file too short to hold a header length",
          "mdux.ml.safetensors.malformedTruncatedHeaderLength",
          [] { return std::vector<std::byte>(4, std::byte{0}); }},

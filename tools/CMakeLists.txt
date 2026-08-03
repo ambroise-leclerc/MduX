@@ -117,9 +117,13 @@ target_sources(MduXMlBakeLib
         FILES
             ml/Safetensors.cppm
             ml/ArchValidate.cppm
+            ml/GoldenGen.cppm
+            ml/MlBake.cppm
     PRIVATE
         ml/Safetensors.cpp
         ml/ArchValidate.cpp
+        ml/GoldenGen.cpp
+        ml/MlBake.cpp
 )
 
 target_compile_features(MduXMlBakeLib PUBLIC cxx_std_23)
@@ -139,6 +143,24 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXMlBakeLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-mlbake ml/MlBakeMain.cpp)
+target_link_libraries(mdux-mlbake PRIVATE MduX::MlBakeLib MduX_warnings)
+
+set_target_properties(mdux-mlbake
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-mlbake PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-mlbake PRIVATE /experimental:module /std:c++latest)
 endif()
 
 add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)

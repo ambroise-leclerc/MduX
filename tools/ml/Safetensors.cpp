@@ -115,9 +115,19 @@ mdux::core::Result<SafetensorsFile, cli::Diagnostic> parseSafetensors(
     }
 
     const std::size_t dataStart = headerLengthSize + static_cast<std::size_t>(headerLength);
-    const std::string_view headerText{
-        reinterpret_cast<const char*>(bytes.data() + headerLengthSize),
-        static_cast<std::size_t>(headerLength)};
+    std::string_view headerText{reinterpret_cast<const char*>(bytes.data() + headerLengthSize),
+                                static_cast<std::size_t>(headerLength)};
+
+    // Real exporters pad the header with spaces (and occasionally NULs) so the data section starts
+    // on an alignment boundary. The padding is part of the declared header length, and the
+    // canonical JSON reader is strict about trailing bytes, so it is trimmed here rather than
+    // being tolerated further in. Only trailing whitespace is removed; anything else stays and is
+    // reported as malformed JSON, which is what it is.
+    while (!headerText.empty() && (headerText.back() == ' ' || headerText.back() == '\0' ||
+                                   headerText.back() == '\n' || headerText.back() == '\r' ||
+                                   headerText.back() == '\t')) {
+        headerText.remove_suffix(1);
+    }
 
     auto parsed = json::parse(headerText);
     if (!parsed.has_value()) {
