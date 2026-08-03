@@ -142,6 +142,9 @@ inline int main(int argc, char** argv, std::string_view suiteName) {
             const speclab::core::TestResult result = found->run();
             if (!result.passed()) {
                 std::println(std::cerr, "FAILED: {}\n  {}", found->name, result.message);
+                if (!result.errorDetails.empty()) {
+                    std::println(std::cerr, "  {}", result.errorDetails);
+                }
                 return 1;
             }
             return 0;
@@ -156,6 +159,9 @@ inline int main(int argc, char** argv, std::string_view suiteName) {
             std::println(std::cout, "PASS  {}", scenario.name);
         } else {
             std::println(std::cout, "FAIL  {}\n      {}", scenario.name, result.message);
+            if (!result.errorDetails.empty()) {
+                std::println(std::cout, "      {}", result.errorDetails);
+            }
             ++failed;
         }
     }
