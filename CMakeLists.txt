@@ -102,6 +102,7 @@ include(StaticAnalyzers)
 include(Doxygen)
 include(DependencySummaryTable)
 include(MduXTrustZones)
+include(MduXDeterminism)
 include(MduXBuildInfo)
 include(MduXBake)
 
@@ -139,6 +140,13 @@ add_library(MduX_warnings INTERFACE)
 # dependency, so this interface target is part of the governed graph too.
 mdux_declare_governed(MduXCore)
 mdux_declare_governed(MduX_warnings)
+
+# Floating-point determinism (ADR-008, issue #59). Applied to the whole governed
+# target rather than to src/ml/Kernels.cpp alone: the kernels are what the rule
+# exists for, but no governed module has any business being compiled with
+# contraction or fast-math, and a target-wide setting cannot be defeated by
+# someone adding a second ML source file and forgetting the per-source property.
+mdux_enforce_fp_determinism(MduXCore)
 
 # MduXCore's own module sources. Deliberately does not link MduX_options - that
 # interface target carries Vulkan::Vulkan (see the find_package(Vulkan) block
@@ -405,6 +413,11 @@ endif()
 # the full link graph (including test/example targets that might accidentally
 # link a governed target to something Vulkan-adjacent) is established.
 mdux_verify_trust_zones()
+
+# Floating-point determinism check (ADR-008) - run last for the same reason, so a
+# fast-math option arriving through any target's interface compile options, or
+# through CMAKE_CXX_FLAGS, is seen rather than assumed absent.
+mdux_verify_fp_determinism()
 
 # Installation
 #
