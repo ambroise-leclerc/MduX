@@ -38,7 +38,7 @@ namespace mdux::spec {
 struct Scenario {
     std::string name;
     std::string labels;  ///< comma-separated, as the discovery script expects
-    std::function<speclab::TestResult()> run;
+    std::function<speclab::core::TestResult()> run;
 };
 
 /// The registry. A function-local static so registration order across translation units cannot
@@ -51,7 +51,7 @@ inline std::vector<Scenario>& registry() {
 /// Registers one scenario at namespace scope. Construct one per scenario; the object itself is
 /// never used again.
 struct Register {
-    Register(std::string name, std::string labels, std::function<speclab::TestResult()> run) {
+    Register(std::string name, std::string labels, std::function<speclab::core::TestResult()> run) {
         registry().push_back(
             Scenario{.name = std::move(name), .labels = std::move(labels), .run = std::move(run)});
     }
@@ -83,7 +83,7 @@ inline int main(int argc, char** argv, std::string_view suiteName) {
                 std::println(std::cerr, "{}: no scenario named '{}'", suiteName, wanted);
                 return 2;
             }
-            const speclab::TestResult result = found->run();
+            const speclab::core::TestResult result = found->run();
             if (!result.passed()) {
                 std::println(std::cerr, "FAILED: {}\n  {}", found->name, result.message);
                 return 1;
@@ -95,7 +95,7 @@ inline int main(int argc, char** argv, std::string_view suiteName) {
     // No selection: run the lot, which is what a developer invoking the binary directly wants.
     std::size_t failed = 0;
     for (const Scenario& scenario : registry()) {
-        const speclab::TestResult result = scenario.run();
+        const speclab::core::TestResult result = scenario.run();
         if (result.passed()) {
             std::println(std::cout, "PASS  {}", scenario.name);
         } else {

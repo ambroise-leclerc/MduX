@@ -36,7 +36,7 @@ const mdux::spec::Register arithmetic{
             .Then("the sum is five",
                   [state] {
                       if (state->sum != 5) {
-                          throw speclab::AssertionFailure("2 + 3 did not produce 5",
+                          throw speclab::core::AssertionFailure("2 + 3 did not produce 5",
                                                           std::source_location::current());
                       }
                   })
@@ -53,13 +53,13 @@ const mdux::spec::Register assertionsFire{
         };
         auto state = std::make_shared<State>();
 
-        const speclab::TestResult inner =
+        const speclab::core::TestResult inner =
             speclab::Test("bridge-inner-failure")
                 .Given("a scenario that will fail", [] {})
                 .When("its assertion is evaluated", [] {})
                 .Then("it throws",
                       [] {
-                          throw speclab::AssertionFailure("deliberate",
+                          throw speclab::core::AssertionFailure("deliberate",
                                                           std::source_location::current());
                       })
                 .Execute();
@@ -71,7 +71,7 @@ const mdux::spec::Register assertionsFire{
             .Then("SpecLab reports it as not passed",
                   [state] {
                       if (!state->threw) {
-                          throw speclab::AssertionFailure(
+                          throw speclab::core::AssertionFailure(
                               "a throwing Then was reported as passing",
                               std::source_location::current());
                       }
@@ -98,7 +98,7 @@ const mdux::spec::Register governedTypesReachable{
             .Then("the members are what was written",
                   [state] {
                       if (state->rect.width != 16 || state->rect.height != 32) {
-                          throw speclab::AssertionFailure("Rect did not round-trip",
+                          throw speclab::core::AssertionFailure("Rect did not round-trip",
                                                           std::source_location::current());
                       }
                   })
