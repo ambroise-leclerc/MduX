@@ -105,6 +105,7 @@ include(MduXTrustZones)
 include(MduXDeterminism)
 include(MduXBuildInfo)
 include(MduXBake)
+include(MduXEmbedBlob)
 
 # Artifact provenance for host tools (ADR-007): defines MduX::BuildInfo carrying
 # MDUX_TOOL_VERSION and MDUX_GIT_SHA. Runs before any target is created so bakers can link it.
@@ -367,6 +368,22 @@ mdux_bake_artifact(
     RECIPE recipes/model/ecg-demo.toml
     SOURCES
         recipes/model/ecg-demo/ecg-demo.safetensors
+    OUTPUTS
+        package.json
+        report.json
+        weights.bin
+)
+
+# The second weight set, baked from the same architecture. It exists so that issue #64's
+# weight-swap test has two real committed packages to compare rather than a fixture it built
+# itself - the claim being proved is about committed artifacts, so the test has to use them.
+mdux_bake_artifact(
+    KIND model
+    ID ecg-demo-alt
+    TOOL mdux-mlbake
+    RECIPE recipes/model/ecg-demo-alt.toml
+    SOURCES
+        recipes/model/ecg-demo/ecg-demo-alt.safetensors
     OUTPUTS
         package.json
         report.json

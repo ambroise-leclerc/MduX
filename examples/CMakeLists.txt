@@ -105,3 +105,42 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # target_compile_options(MduXExample PRIVATE /experimental:module) # Disabled legacy example
     # target_compile_options(MduXExample PRIVATE /std:c++latest) # Disabled legacy example
 endif()
+
+# The ECG classifier demonstrator (issue #64, ADR-008).
+#
+# Links MduX::MlBakeLib rather than MduX::MduX: it needs no Vulkan and no window, and the governed
+# ML modules come through transitively. The host-tools dependency is only for the package loader -
+# a constexpr package emitter would remove it, and the runtime already needs no parser.
+#
+# The two mdux_embed_blob() calls are the whole "weights are data" story. Pointing them at
+# generated/model/ecg-demo-alt/ instead swaps the model with no change to
+# EcgClassifierExample.cpp - which is exactly what tests/ml/WeightSwapTests.cpp asserts.
+add_executable(EcgClassifierExample
+    EcgClassifierExample.cpp
+)
+
+target_link_libraries(EcgClassifierExample PRIVATE MduX::MlBakeLib)
+
+mdux_embed_blob(EcgClassifierExample
+    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/weights.bin
+    SYMBOL ecgModelWeights
+)
+mdux_embed_blob(EcgClassifierExample
+    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/package.json
+    SYMBOL ecgModelPackage
+)
+
+set_target_properties(EcgClassifierExample
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(EcgClassifierExample PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(EcgClassifierExample PRIVATE /experimental:module /std:c++latest)
+endif()
