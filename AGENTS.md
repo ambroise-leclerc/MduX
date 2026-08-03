@@ -71,6 +71,7 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.evidence.digest`, `.json`, `.report` | `include/mdux/evidence/` | `src/evidence/` |
 | `mdux.governance`, `mdux.governance.compliance` | `include/mdux/governance/` | `src/governance/` |
 | `mdux.shader.schema` (governed) | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.ml.schema` (governed) | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
 | `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |

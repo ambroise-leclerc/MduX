@@ -156,6 +156,7 @@ target_sources(MduXCore
             include/mdux/governance/Governance.cppm
             include/mdux/governance/Compliance.cppm
             include/mdux/shader/Schema.cppm
+            include/mdux/ml/Schema.cppm
             include/mdux/draw/Draw.cppm
     PRIVATE
         src/evidence/Digest.cpp

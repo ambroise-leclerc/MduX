@@ -509,3 +509,33 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 mdux_discover_tests(tools_spec)
+
+# Zero-SOUP ML inference (epic #18, ADR-008)
+#
+# Links MduX::Core only. The schema, kernels and runtime are governed modules by design - a
+# scenario that needed MduX::MduX to build one would mean the trust-zone boundary had moved, and
+# the whole zero-SOUP argument rests on the ML subsystem reaching nothing but std.
+add_executable(ml_spec
+    ml/MlSpecMain.cpp
+    ml/SchemaTests.cpp
+)
+
+target_link_libraries(ml_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(ml_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(ml_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(ml_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(ml_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(ml_spec)
