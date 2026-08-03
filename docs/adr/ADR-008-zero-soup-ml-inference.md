@@ -122,6 +122,22 @@ not sufficient (#59):
   configure step on `-ffast-math`, `-Ofast`, `-funsafe-math-optimizations` or `/fp:fast`. This is
   the guard that catches the change nobody thought was related to ML.
 
+There is a third, which only became visible once `Sigmoid` and `Softmax` were implemented:
+**`std::exp` cannot carry this claim.** Neither the C++ standard nor IEEE 754 requires a
+correctly-rounded `expf`, and glibc and the UCRT are different implementations. A golden vector
+containing a sigmoid or softmax output could therefore differ in its low bits between the Linux and
+Windows CI legs *while both compilers were behaving correctly* — which would break
+`ml.determinism.crossToolchain`, the strongest single piece of evidence in this epic.
+
+So `mdux.ml.kernels` provides its own `expF32()`: range reduction to `x = k·ln2 + r` followed by a
+degree-7 polynomial, using only IEEE-754 `f32` add, subtract, multiply and divide, an integer
+truncation for the floor, and an exponent built directly as a bit pattern. Every one of those is
+exactly specified, so the result is identical on any conforming toolchain. Note the floor is done
+by integer conversion rather than `std::floor` specifically so that the sentence below stays true. Accuracy is a few ULP against `std::exp`, which is irrelevant
+to a classifier — and, per the `std::fma` argument above, is emphatically not the property being
+maximised. This also removes libm from the device-side dependency argument entirely, which is
+consistent with the rest of the ADR rather than an exception to it.
+
 ### 4. Golden vectors baked into the package, re-run at construction, compared bitwise
 The baker generates golden input→output pairs by running the model through `mdux.ml.kernels` — the
 same governed module the device will execute — and stores them in the package as `u32` **bit
