@@ -518,6 +518,7 @@ mdux_discover_tests(tools_spec)
 add_executable(ml_spec
     ml/MlSpecMain.cpp
     ml/SchemaTests.cpp
+    ml/KernelTests.cpp
 )
 
 target_link_libraries(ml_spec PRIVATE MduX::Core speclab::speclab)
