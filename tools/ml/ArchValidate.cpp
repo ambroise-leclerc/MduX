@@ -187,11 +187,26 @@ mdux::core::Result<ResolvedArchitecture, std::vector<cli::Diagnostic>> resolveAr
         return err(std::move(diagnostics));
     }
 
-    resolved.maxScratchFloats =
-        spec.maxScratchFloats != 0
-            ? spec.maxScratchFloats
-            : static_cast<std::uint32_t>(
-                  ml::requiredScratchFloats(resolved.layers, spec.inputLength));
+    if (spec.maxScratchFloats != 0) {
+        resolved.maxScratchFloats = spec.maxScratchFloats;
+    } else {
+        // requiredScratchFloats() is uint64 and maxScratchFloats is uint32. A bare cast wraps for
+        // a large enough activation, and the wrapped value is *smaller* - so validate() then
+        // rejects the package as ScratchTooSmall, pointing at a budget the baker itself derived.
+        // That diagnostic sends the author looking in exactly the wrong place, so the real cause
+        // is reported here instead.
+        const std::uint64_t required = ml::requiredScratchFloats(resolved.layers, spec.inputLength);
+        if (required > std::numeric_limits<std::uint32_t>::max()) {
+            diagnostics.push_back(problem(
+                recipeName, "mdux.ml.arch.scratchTooSmall",
+                std::format("the layer chain needs {} scratch floats, which does not fit in the "
+                            "package's 32-bit budget",
+                            required),
+                "the architecture is too large for the v1 package format"));
+            return err(std::move(diagnostics));
+        }
+        resolved.maxScratchFloats = static_cast<std::uint32_t>(required);
+    }
 
     // The canonical rules, run once, from the governed module. See ArchValidate.cppm.
     const ml::ModelPackage package{.id = spec.id,

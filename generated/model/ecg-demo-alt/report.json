@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/model/ecg-demo/ecg-demo-alt.safetensors",
-      "sha256": "50e5ecc6ac16be3bf279b1291baedc2ad50287eb25ecb047bfcc1111d64ff57d"
+      "sha256": "6f679ec81b94b58fc579738c8bab316f7a419d1b057b9b9d3cc965493a85312e"
     }
   ],
   "options": {

@@ -167,6 +167,26 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::si
     return static_cast<std::uint32_t>(number);
 }
 
+/**
+ * @brief Narrows one entry of a layer dimension array, or reports where it went wrong.
+ *
+ * The [layers] arrays are parsed as signed 64-bit TOML integers and every field they feed is a
+ * uint32. A bare cast turns `inLengths = [-1, ...]` into 4294967295, which surfaces much later as
+ * an incomprehensible layer-chain error, and turns an over-large value into a small one that
+ * describes a different network than the author wrote. `line` is the array's line, which is the
+ * best position this TOML subset can give for an element.
+ */
+[[nodiscard]] std::uint32_t narrowDimension(std::int64_t value, std::string_view field,
+                                            std::size_t layerIndex, std::size_t line) {
+    if (value < 0 ||
+        value > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
+        throw toml::TomlError{
+            line, std::format("layer {}'s {} is {}, which is outside 0..4294967295", layerIndex,
+                              field, value)};
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
 /// Same range discipline for a count used as a size_t.
 [[nodiscard]] std::size_t requireCount(const toml::Table& table, std::string_view key) {
     const toml::Value& value = table.require(key);
@@ -303,15 +323,16 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        std::format("layer {} has unknown activation '{}'", i, activations[i]));
                 return std::nullopt;
             }
+            const std::size_t line = layers->require("inLengths").line();
             recipe.layers.push_back(
                 LayerSpec{.kind = *kind,
                           .activation = *activation,
-                          .inLength = static_cast<std::uint32_t>(inLengths[i]),
-                          .inChannels = static_cast<std::uint32_t>(inChannels[i]),
-                          .outLength = static_cast<std::uint32_t>(outLengths[i]),
-                          .outChannels = static_cast<std::uint32_t>(outChannels[i]),
-                          .kernelSize = static_cast<std::uint32_t>(kernelSizes[i]),
-                          .stride = static_cast<std::uint32_t>(strides[i]),
+                          .inLength = narrowDimension(inLengths[i], "inLength", i, line),
+                          .inChannels = narrowDimension(inChannels[i], "inChannels", i, line),
+                          .outLength = narrowDimension(outLengths[i], "outLength", i, line),
+                          .outChannels = narrowDimension(outChannels[i], "outChannels", i, line),
+                          .kernelSize = narrowDimension(kernelSizes[i], "kernelSize", i, line),
+                          .stride = narrowDimension(strides[i], "stride", i, line),
                           .weightsTensor = weightNames[i],
                           .biasTensor = biasNames[i]});
         }
