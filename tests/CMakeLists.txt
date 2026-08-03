@@ -217,7 +217,7 @@ mdux_discover_tests(draw_spec)
 
 # Adapter-zone Vulkan renderer (issue #124)
 #
-# Links MduX::MduX, so this suite sees Vulkan where draw_tests deliberately does not. Only the
+# Links MduX::MduX, so this suite sees Vulkan where draw_spec deliberately does not. Only the
 # device-free half of the renderer is covered here - create()'s validation runs before the first
 # Vulkan call, so it is testable with no ICD present, which is what CI currently has. The device
 # path lands with #125's headless harness.
@@ -252,7 +252,7 @@ mdux_discover_tests(render_tests)
 #
 # Separate from render_tests because this suite needs a real Vulkan device where that one
 # deliberately needs none. It consumes the generated shader module, so it depends on the emitter
-# the same way shader_tests does.
+# the same way shader_spec does.
 #
 # SKIP_RETURN_CODE 77 is the point: with no loader, no ICD or no device the binary exits 77 and
 # CTest reports Skipped, which is a distinct outcome from passing. A contributor without Vulkan
