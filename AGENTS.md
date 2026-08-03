@@ -157,7 +157,7 @@ scope, not a mechanically enforced restriction.
 
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
-- GCC 15+
+- GCC 16+
 - Clang 20+ — note the Clang CI job in `.github/workflows/ci.yml` is currently commented out
   (disabled), so Clang support is unverified in CI even though the version floor is enforced.
 - CMake 4.0+
@@ -186,9 +186,8 @@ cmake --build build
 
 **Targets** (verified in `CMakeLists.txt`, `examples/CMakeLists.txt`, `tests/CMakeLists.txt`):
 - Library: `MduX` (alias `MduX::MduX`)
-- Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (skipped on GCC 15 due to a documented
-  compiler internal-compiler-error with C++23 modules — see the comment in
-  `examples/CMakeLists.txt`)
+- Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
+  GCC 15 ICE guard was removed when the floor rose to GCC 16)
 - Tests: `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`,
   registered with CTest as `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
   `VulkanSCDeviceObjectTests`

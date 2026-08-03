@@ -16,7 +16,7 @@ Before configuring, check:
 
 1. **Platform**: Windows 10+ or Linux only. There is no macOS build path — a fatal CMake check in
    the root `CMakeLists.txt` rejects other platforms.
-2. **Compiler version**: MSVC 17.14+, GCC 15+, or Clang 20+. The root `CMakeLists.txt` fails fast
+2. **Compiler version**: MSVC 17.14+, GCC 16+, or Clang 20+. The root `CMakeLists.txt` fails fast
    with `message(FATAL_ERROR ...)` if the detected compiler is below these floors — read that
    error message; it names the exact required version.
 3. **CMake**: 4.0+ (`cmake_minimum_required(VERSION 4.0.0)`).
@@ -66,13 +66,15 @@ know will fail or guessing at results.
 
 ## Compiler-specific module limitations
 
-- **GCC 15+**: `VulkanSCTriangleExample` is currently skipped entirely on **any GCC version 15.0 or
-  later** in `examples/CMakeLists.txt` (the guard is `CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL
-  15.0`, not a check for exactly GCC 15) due to a documented internal-compiler-error (segfault in
-  `std::array` under C++23 modules). This means GCC 16 and newer are skipped too, not just GCC 15 —
-  do not assume a newer GCC re-enables the target. Do not try to force-enable it as a workaround for
-  a task — treat the skip as the working configuration and report the underlying GCC limitation if
-  it blocks your task.
+- **GCC**: the project floor is **GCC 16**, enforced by a `FATAL_ERROR` in the root
+  `CMakeLists.txt`. GCC 15 built the library but could not build a SpecLab-based test suite
+  (`failed to load pendings for 'std::_Sp_counted_ptr_inplace'`, a defect in GCC's own `std` BMI),
+  and it is also the compiler whose `<array>` ICE kept `VulkanSCTriangleExample` excluded. Both
+  problems are gone with the floor: the example is now built unconditionally, and there is no
+  version guard on it any more.
+- **GCC, still current**: `vulkansc_memory_tests` is compiled `-O0` on GCC. That one is *not*
+  historical - the ICE in the GIMPLE ealias pass reproduces on GCC 16 as well, and every level
+  above `-O0` triggers it. See `tests/CMakeLists.txt` and issue #48.
 - **Clang 20**: the Clang CI job in `.github/workflows/ci.yml` is present but commented out. Clang
   builds are not currently verified by CI even though the version floor is enforced in
   `CMakeLists.txt` — treat any Clang build result as unverified against the project's own CI and

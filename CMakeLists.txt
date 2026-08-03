@@ -31,15 +31,24 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         message(FATAL_ERROR "MSVC 17.14 (Visual Studio 2022 version 17.10) or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "15.0")
-        message(FATAL_ERROR "GCC 15 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+    # GCC 16, not 15. GCC 15 builds the library, but cannot build a test suite written against
+    # SpecLab: reading a named module that transitively re-exports parts of `std` fails with
+    # "failed to load pendings for 'std::_Sp_counted_ptr_inplace'", a defect in GCC's own std BMI
+    # rather than in any code here or in SpecLab. It is also the compiler whose ICE keeps
+    # VulkanSCTriangleExample excluded, and whose -Warray-bounds false positive on std::string
+    # concatenation has failed CI on code the other two toolchains accept.
+    #
+    # Raising the floor rather than excluding the BDD suites on one leg: a test that does not run
+    # on a supported compiler is a coverage hole that reads as coverage.
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
+        message(FATAL_ERROR "GCC 16 or later is required. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
         message(FATAL_ERROR "Clang 20 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 else()
-    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 15+, or Clang 20+ for C++23 modules support.")
+    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or Clang 20+ for C++23 modules support.")
 endif()
 
 # Platform validation

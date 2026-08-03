@@ -7,7 +7,7 @@
 > This project is an **experimental early evaluation** of C++23 modules feasibility for cross-platform development with rich dependencies (Vulkan graphics, medical device compliance frameworks). It represents an attempt to leverage **C++23 and emerging C++26 safety evolutions** for medical device software development.
 > 
 > **Current Status:**
-> - C++23 modules support requires cutting-edge toolchains (GCC 15+, MSVC 17.14+, Clang 20+)
+> - C++23 modules support requires cutting-edge toolchains (GCC 16+, MSVC 17.14+, Clang 20+)
 > - CMake 4.x+ experimental support for `import std;` 
 > - Cross-platform compatibility still evolving
 > - Medical device compliance framework is conceptual/educational
@@ -241,7 +241,7 @@ governance records under `docs/` and `software_development_file/`.
 **Technical Prerequisites:**
 - **C++23 compatible compiler** with modules support:
   - **MSVC 17.14+** (Visual Studio 2022 version 17.10+)
-  - **GCC 15+** 
+  - **GCC 16+** 
   - **Clang 20+**
 - **Vulkan SDK 1.3+** installed and findable by CMake
 - **CMake 4.0+** with C++23 modules support  
@@ -278,7 +278,8 @@ vulkaninfo --summary
 ### Platform Support
 - **Windows 10/11** - Full Vulkan support
 - **Linux** - X11/Wayland with Vulkan support
-- **MacOS** - MoltenVK + GCC15 will be evaluated for future support
+- **MacOS** - not supported. Nothing in the build refuses it, and MoltenVK provides a working
+  Vulkan device, but no CI leg covers it and no claim is made that it builds
 
 ### Quick Start for Medical Device Development
 
