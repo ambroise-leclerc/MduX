@@ -134,12 +134,10 @@ in `include/` or `src/`.
 - `docs/regulatory-compliance.md` — the scope limits this project claims, and the ones it does not.
 - `docs/governance/` — the citation convention, the shared `Justification` schema, the SOUP
   register, and `superseded-documents.md`, which records every point-in-time document that was
-  retired and why. Three were: the ISO 13485 and ISO 14971 framework monoliths and
-  `risk-assessment-templates.md`, all superseded by the corpus above. Read that file before
-  concluding content was lost.
-- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md` — the last remaining framework monolith,
-  superseded by `docs/iec62304/` but not yet retired; epic #10's "archive the point-in-time docs"
-  covers its disposition.
+  retired and why. The three framework monoliths (IEC 62304, ISO 13485, ISO 14971),
+  `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
+  superseded by the clause corpus above or by an ADR. Read that file before concluding content was
+  lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
 - `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
   CI.
 - `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
