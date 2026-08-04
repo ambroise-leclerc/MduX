@@ -101,11 +101,11 @@
       "justifications": []
     },
     {
-      "clause": "§9",
-      "title": "Software problem resolution process",
+      "clause": "§5.8",
+      "title": "Software release",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "9-software-problem-resolution-process",
-      "pointer": "MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).",
+      "anchor": "58-software-release",
+      "pointer": "The caveat stated throughout this directory applies with full force here: none of them was written against IEC 81001-5-1's documentation requirements, so they should be read as material a manufacturer can use, not as a deliverable this standard asks for and MduX has produced.",
       "justifications": []
     },
     {
@@ -117,11 +117,11 @@
       "justifications": []
     },
     {
-      "clause": "§5.8",
-      "title": "Software release",
+      "clause": "§9",
+      "title": "Software problem resolution process",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "58-software-release",
-      "pointer": "The caveat stated throughout this directory applies with full force here: none of them was written against IEC 81001-5-1's documentation requirements, so they should be read as material a manufacturer can use, not as a deliverable this standard asks for and MduX has produced.",
+      "anchor": "9-software-problem-resolution-process",
+      "pointer": "MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).",
       "justifications": []
     }
   ]

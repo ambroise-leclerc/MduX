@@ -111,9 +111,9 @@ they are recorded as gaps rather than left out, so that silence does not read as
 | File | Covers |
 |---|---|
 | [`01-scope-and-relationship-to-iec62304.md`](01-scope-and-relationship-to-iec62304.md) | §1–§3 scope, normative references and terms, plus the activity-by-activity relationship to IEC 62304's life cycle |
-| [`02-security-risk-management.md`](02-security-risk-management.md) | Security risk management, and why it produces records in the ISO 14971 risk file rather than a second one |
-| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | Secure design, secure implementation |
-| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | Security verification and validation, vulnerability and defect management, security update management, security documentation and guidance |
+| [`02-security-risk-management.md`](02-security-risk-management.md) | §4.2 and §7 — security risk management, and why it produces records in the ISO 14971 risk file rather than a second one |
+| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | §5.3–§5.4 architectural and software design, §5.5 unit implementation and verification |
+| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | §5.7 system testing, §5.8 release, §6 maintenance, §9 problem resolution |
 
 ## Schemas
 
@@ -129,9 +129,20 @@ by anything that reads risk records and cannot escape the review a safety hazard
 `tools/docs-lint/check_schema_type_drift.py`.
 
 [`AI-Reference.md`](AI-Reference.md) is the per-clause index, generated mechanically from this
-directory's own headings. It makes no claim beyond what is already here: rows for §1–§4 carry
-clause numbers, and every practice row shows `—`, because that is what this corpus asserts. It
-is not waiting on the numbering verification above — it will gain numbers when the modules do.
+directory's own headings. It makes no claim beyond what is already here: every row carries the
+clause its heading carries.
+
+Rows follow **module order, which is thematic** — scope, then risk management, then design and
+implementation, then verification through problem resolution. Within a module the sections are in
+clause order, but across modules they are not: §7 appears before §5 because security risk
+management is discussed before secure design. That ordering was chosen when this corpus was
+written and is kept, because the reading order is the useful one for a reader working out what
+MduX does and does not provide. Sort by the clause column for the standard's order.
+
+Two rows show `—` in the clause column, and both are deliberate. One indexes the
+activity-by-activity mapping to IEC 62304's life cycle, which is a relationship between two
+standards rather than a clause of this one; the other indexes a section recording what no MduX
+mechanism covers. Neither is a gap in the index.
 
 `AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
 the two cannot disagree, and validated against

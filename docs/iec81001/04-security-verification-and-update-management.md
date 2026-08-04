@@ -25,6 +25,30 @@ JSON reader, the TOML subset, and eventually the `.medui` compiler — and none 
 today. That is a real gap, not a scope exclusion, and it is stated here rather than left for a
 reader to notice by absence.
 
+## §5.8 Software release
+
+Documenting security-relevant information for the integrators and users who need it.
+
+This corpus and this project's ADRs are the closest MduX has today. The caveat stated throughout
+this directory applies with full force here: none of them was written against IEC 81001-5-1's
+documentation requirements, so they should be read as material a manufacturer can use, not as a
+deliverable this standard asks for and MduX has produced.
+
+## §6 Software maintenance process
+
+Getting a security fix onto a device that is already in the field.
+
+MduX has no deployed product, so it has no update mechanism to describe — the same honest gap
+already recorded for maintenance in
+[`../iec62304/04-maintenance-process.md`](../iec62304/04-maintenance-process.md). What a
+manufacturer needs from this library is narrower and does exist in part: versioned releases whose
+contents are verifiable, so that "which MduX is in this device" has an answer. The evidence
+pipeline supplies the verifiability; semantic versioning supplies the identity.
+
+What is missing is the part that only matters once there are downstream users: an advisory feed, a
+statement of which versions a fix applies to, and a supported-version policy. None of these can be
+usefully invented before there is anyone to notify.
+
 ## §9 Software problem resolution process
 
 MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in
@@ -42,27 +66,3 @@ The security-specific parts this practice asks for and MduX does not have:
 All three are gaps rather than exclusions. A library a device depends on is part of that device's
 attack surface, and the manufacturer's own vulnerability handling process cannot cover a
 dependency that has no way to tell it anything.
-
-## §6 Software maintenance process
-
-Getting a security fix onto a device that is already in the field.
-
-MduX has no deployed product, so it has no update mechanism to describe — the same honest gap
-already recorded for maintenance in
-[`../iec62304/04-maintenance-process.md`](../iec62304/04-maintenance-process.md). What a
-manufacturer needs from this library is narrower and does exist in part: versioned releases whose
-contents are verifiable, so that "which MduX is in this device" has an answer. The evidence
-pipeline supplies the verifiability; semantic versioning supplies the identity.
-
-What is missing is the part that only matters once there are downstream users: an advisory feed, a
-statement of which versions a fix applies to, and a supported-version policy. None of these can be
-usefully invented before there is anyone to notify.
-
-## §5.8 Software release
-
-Documenting security-relevant information for the integrators and users who need it.
-
-This corpus and this project's ADRs are the closest MduX has today. The caveat stated throughout
-this directory applies with full force here: none of them was written against IEC 81001-5-1's
-documentation requirements, so they should be read as material a manufacturer can use, not as a
-deliverable this standard asks for and MduX has produced.
