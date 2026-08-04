@@ -4,26 +4,39 @@ New content, following the same convention as [`docs/iso14971/`](../iso14971/):
 [`docs/governance/citation-convention.md`](../governance/citation-convention.md)'s citation-key
 format, original prose only, `Justification` objects where a real MduX mechanism applies.
 
-## What this directory cites, and what it does not
+## Authorized-source verification
 
-This corpus cites IEC 62366-1:2015 at the **top level only** — `§1` through `§5`. Those clause
-numbers are asserted; nothing below them is.
+This corpus's clause numbers and headings were checked against an authorized copy of the standard,
+clause by clause, under issue #113.
 
-An earlier version of [`03-usability-engineering-process.md`](03-usability-engineering-process.md)
-numbered the process steps from 5.1 to 5.9. Those numbers came from general professional
-familiarity with the usability engineering process rather than from the standard text, which this
-project does not hold a copy of (see
-[ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md)). The citation convention
-requires a clause number to be confirmed before it is cited, so they have been **removed rather
-than caveated**: a warning label does not stop a number being copied into a design history file,
-and a reader who copies it has cited something nobody checked. The named process steps — application
-specification, UI characteristics related to safety, UI specification, evaluation planning, design
-and implementation, formative evaluation, iteration, summative evaluation — are what this corpus
-asserts, and they are stated as headings rather than citations.
+| | |
+|---|---|
+| **Standard** | IEC 62366-1, Edition 1.0, 2015-02 (en-fr), ISBN 978-2-8322-2281-2 |
+| **Scope of review** | Every clause number, heading and sub-clause heading asserted by this directory, against the standard's own table of contents and clause headings |
+| **Verified** | 2026-08-04 |
+| **Source** | A licensed copy held by the maintainer. Not committed, not uploaded, and not quoted — see [ADR-006](../adr/ADR-006-no-reproduction-of-normative-standard-text.md) |
 
-Restoring the sub-clause numbering needs one thing this repository cannot supply: a maintainer with
-access to IEC 62366-1:2015, checking each heading against the standard's §5. That is tracked on
-issue #30.
+Sub-clause numbering is therefore now **asserted** rather than withheld. It was withheld before
+because the numbers then in the file came from professional familiarity rather than from the
+standard, and the check found that caution was justified — it corrected three substantive errors:
+
+1. **§4 was titled "General requirements".** The standard's §4 is **Principles**; "General
+   requirements" is §4.1. The module is renamed [`02-principles.md`](02-principles.md).
+2. **§5.1 was "application specification".** That is the superseded IEC 62366:2007 term; the 2015
+   edition calls it **use specification**.
+3. **§5.3, §5.4, §5.5 and §5.10 were absent.** The three hazard-identification and
+   scenario-selection steps are how this process connects to ISO 14971, and §5.10 covers a
+   *user interface of unknown provenance* — the clause an integrator is most likely to apply to
+   MduX itself.
+
+A step that was listed and is not a sub-clause — "iterate the design as evaluation results
+require" — is folded into §5.8, which is where the standard puts iteration.
+
+### What is still not asserted
+
+Requirement-level text. This corpus states clause numbers, headings and what MduX does or does not
+provide against them. It reproduces no normative text and paraphrases none closely, so it is not a
+substitute for the standard and cannot be read as one.
 
 ## What this is, and is not
 
@@ -41,13 +54,13 @@ have not been built.
 | File | Clause(s) | Covers |
 |---|---|---|
 | [`01-scope-and-terms.md`](01-scope-and-terms.md) | §1–§3 | Scope, normative references, terms and definitions |
-| [`02-general-requirements.md`](02-general-requirements.md) | §4 | General requirements for applying usability engineering |
-| [`03-usability-engineering-process.md`](03-usability-engineering-process.md) | §5 | Application specification through summative evaluation |
+| [`02-principles.md`](02-principles.md) | §4 | Principles — general requirements, usability engineering file, tailoring |
+| [`03-usability-engineering-process.md`](03-usability-engineering-process.md) | §5 | §5.1 prepare use specification through §5.10 user interface of unknown provenance |
 
 [`AI-Reference.md`](AI-Reference.md) is the per-clause index, generated mechanically from this
 directory's own headings. It makes no claim beyond what is already here, so it carries the same
-citation limits stated above rather than new ones — its named process steps are indexed without
-clause numbers, exactly as the modules state them.
+citation limits stated above rather than new ones — its process steps are indexed with the
+clause numbers verified above, exactly as the modules state them.
 
 `AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
 the two cannot disagree, and validated against

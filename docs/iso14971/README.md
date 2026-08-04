@@ -55,8 +55,10 @@ strings, and `scale_ref` names the document that gives them meaning.
 
 ## What this directory replaced
 
-Two documents are deleted as of issue #29: `docs/MduX_ISO-14971-Risk-Management-Framework.md`
-(713 lines) and `risk-assessment-templates.md` (935 lines). The second documented three C++
+Two documents are deleted as of issue #29: the ISO 14971 risk-management framework monolith
+(713 lines) and the risk-assessment templates (935 lines). Their paths and full disposition are
+recorded in [`../governance/superseded-documents.md`](../governance/superseded-documents.md), which
+is the one place a retired path is named. The second documented three C++
 namespaces that do not exist in the tree and prescribed severity and probability scales that are
 not this project's to prescribe. See
 [`../governance/superseded-documents.md`](../governance/superseded-documents.md) for the reasoning,

@@ -5,7 +5,16 @@
   "description": "One use-related risk, the user interface characteristic it arises from, and the control that addresses it. Two design choices are worth reading before using this schema. First, process_step is a set of named steps rather than clause numbers: this corpus asserts IEC 62366-1:2015 clause numbers at the top level only, and inventing sub-clause numbers here would put unverified citations into machine-readable form, which is worse than leaving them out of prose (see docs/iec62366/README.md). Second, control_status is required and has no default. A usability engineering file that cites a control which is not implemented is the precise failure this standard's evaluation steps exist to catch, so a record cannot be written without stating whether its control exists today - and 'planned' records carry the issue that would implement them.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["record_id", "process_step", "use_error", "harm", "ui_characteristic", "control", "control_status", "owner"],
+  "required": [
+    "record_id",
+    "process_step",
+    "use_error",
+    "harm",
+    "ui_characteristic",
+    "control",
+    "control_status",
+    "owner"
+  ],
   "properties": {
     "record_id": {
       "type": "string",
@@ -14,16 +23,18 @@
     },
     "process_step": {
       "type": "string",
-      "description": "Which step of the §5 usability engineering process this record belongs to. Named, not numbered - see the schema description. The order here is the order the steps run in.",
+      "description": "Which step of the §5 usability engineering process this record belongs to - one value per sub-clause §5.1 to §5.10, in the order the standard runs them. Verified against IEC 62366-1:2015 Edition 1.0 under issue #113. The earlier vocabulary used 'application_specification', which is the superseded IEC 62366:2007 term, and omitted the hazard-identification steps entirely.",
       "enum": [
-        "application_specification",
-        "ui_characteristics_related_to_safety",
+        "use_specification",
+        "ui_characteristics_and_use_errors",
+        "hazards_and_hazardous_situations",
+        "hazard_related_use_scenarios",
+        "scenario_selection_for_summative",
         "ui_specification",
         "evaluation_plan",
-        "design_and_implementation",
-        "formative_evaluation",
-        "design_iteration",
-        "summative_evaluation"
+        "design_implementation_and_formative_evaluation",
+        "summative_evaluation",
+        "user_interface_of_unknown_provenance"
       ]
     },
     "use_error": {
@@ -49,12 +60,19 @@
     "control_status": {
       "type": "string",
       "description": "Whether the control exists. 'implemented' requires evidence_refs to be present and non-empty; 'planned' requires planned_by_issue. There is no default: a record that did not have to say would let an unimplemented control read as an implemented one.",
-      "enum": ["implemented", "planned", "not_applicable"]
+      "enum": [
+        "implemented",
+        "planned",
+        "not_applicable"
+      ]
     },
     "owner": {
       "type": "string",
       "description": "Who the control belongs to. 'device_manufacturer' is the normal case - identifying use errors for an intended use and evaluating them with real users are device-level activities. 'mdux' is for controls this library enforces regardless of the integrating device.",
-      "enum": ["device_manufacturer", "mdux"]
+      "enum": [
+        "device_manufacturer",
+        "mdux"
+      ]
     },
     "requirement_id": {
       "type": "string",
@@ -88,20 +106,42 @@
   "allOf": [
     {
       "if": {
-        "properties": {"control_status": {"const": "implemented"}},
-        "required": ["control_status"]
+        "properties": {
+          "control_status": {
+            "const": "implemented"
+          }
+        },
+        "required": [
+          "control_status"
+        ]
       },
       "then": {
-        "required": ["evidence_refs"],
-        "properties": {"evidence_refs": {"minItems": 1}}
+        "required": [
+          "evidence_refs"
+        ],
+        "properties": {
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
       }
     },
     {
       "if": {
-        "properties": {"control_status": {"const": "planned"}},
-        "required": ["control_status"]
+        "properties": {
+          "control_status": {
+            "const": "planned"
+          }
+        },
+        "required": [
+          "control_status"
+        ]
       },
-      "then": {"required": ["planned_by_issue"]}
+      "then": {
+        "required": [
+          "planned_by_issue"
+        ]
+      }
     }
   ],
   "examples": [

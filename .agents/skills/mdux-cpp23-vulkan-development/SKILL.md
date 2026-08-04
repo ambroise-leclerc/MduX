@@ -85,10 +85,12 @@ ground truth for current conventions, not this document.
 ## Required test/doc updates
 
 - Add or extend tests under `tests/` following the existing plain-`TestRunner` pattern (see
-  `tests/TestMain.cpp`) and register new executables/tests in `tests/CMakeLists.txt` (both the
-  `add_executable` and the corresponding `add_test`). There is currently no third-party test
-  framework wired in — `docs/adr/ADR-002-testing-framework-selection.md` proposing Catch2/BDD is
-  still status "Proposed", not adopted; don't assume Catch2 headers are available.
+  `tests/TestMain.cpp`) and register new executables in `tests/CMakeLists.txt`, then call
+  `mdux_discover_tests(<target>)` — discovery produces one CTest entry per case, so a hand-written
+  `add_test` is not needed. Two frameworks are in use and both are fine for new work
+  (`docs/adr/ADR-009-in-repository-test-framework.md`): the in-repository `MduXTest`, and SpecLab
+  for Given/When/Then scenarios via `tests/framework/SpecLabBridge.hpp`. **Catch2 is not available**
+  — ADR-002 selected it, it was never adopted, and ADR-009 supersedes that decision.
 - Document new public API with Doxygen comments following `CONTRIBUTING.md`'s `@brief`-first
   style.
 - If the change affects an existing ADR's decision or introduces a new architectural decision,

@@ -54,7 +54,7 @@ bool VulkanSupport::isDeviceSuitable(VkPhysicalDevice physicalDevice) noexcept {
 }
 
 //=============================================================================
-// UiFileWatcher Implementation
+// Library lifecycle
 //=============================================================================
 
 static ComplianceMetadata globalCompliance;

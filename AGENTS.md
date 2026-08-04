@@ -32,10 +32,15 @@ When sources disagree, resolve the discrepancy using this precedence order:
 your task, state the contradiction explicitly and ask, or clearly flag the assumption you are
 making and why.
 
-Known existing contradiction: `README.md`'s "Implementation Status" table marks the ISO 14971 /
-ISO 13485 risk-management and quality-management frameworks as "Completed" with example
-namespaces (`risk::`, `qms::`, `lifecycle::`). No such code exists in `include/` or `src/` today —
-treat that table as aspirational/planned, not implemented, per the precedence order above.
+Two documents are now the fastest way to resolve a question about current state, and both are
+checked against the build rather than written from memory:
+[`docs/architecture.md`](docs/architecture.md) for what exists and what is planned, and
+[`docs/getting-started.md`](docs/getting-started.md) for supported build and consumption surfaces.
+
+The `README.md` contradiction previously recorded here — an "Implementation Status" table
+advertising risk-management and quality-management frameworks with `risk::`, `qms::` and
+`lifecycle::` namespaces that do not exist — was fixed by issue `#111`. No such code exists, and
+the README now says so rather than claiming otherwise above the table.
 
 ### The TrustSC parity programme
 
@@ -53,9 +58,20 @@ Three decisions from that programme apply repository-wide:
 2. **The trust-zone split has landed**: `MduXCore` is a governed target that never receives
    Vulkan's include directories, so `#include <vulkan/vulkan.h>` in governed code is a link-graph
    error `mdux_verify_trust_zones()` reports at configure time (issue `#11`).
-3. **Reproduced normative standard text is being purged** from `docs/` and from git history
-   (issue `#7`) — see `regulatory-citations` in § 7. Do not add new material that reproduces or
-   closely paraphrases a standard's wording, even though older files in the tree still do.
+3. **Reproduced normative standard text is gone**, from `docs/` and from git history (issue `#7`,
+   closed) — see `regulatory-citations` in § 7 and [ADR-006](docs/adr/ADR-006-no-reproduction-of-normative-standard-text.md).
+   Do not add new material that reproduces or closely paraphrases a standard's wording.
+   `mdux-docs-lint` enforces this in CI.
+4. **Evidence is baked and committed** (issue `#12`, closed). Four artifacts live under
+   `generated/`: two shader packages and two ML model packages. A normal build never writes into
+   the source tree — `mdux-bake-update` is the only path that does, run deliberately by an author
+   who commits the diff. CI asserts byte-identity on both toolchain legs.
+5. **Zero-SOUP ML inference has landed** (issue `#18`, closed). `mdux.ml.kernels` is imported by
+   both the device runtime and the host baker, and `Classifier1D::create()` fails closed on a
+   digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
+
+Waves 1 and 2 of that roadmap have shipped (v0.2.0, v0.3.0). Of Wave 3, the renderer slice (`#13`)
+and the ML pipeline (`#18`) are delivered; the documentation rebuild (`#10`) is in progress.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -102,9 +118,11 @@ carry their own `@compliance` Doxygen annotations referencing IEC 62304 Class C 
 GLFW is linked only into `VulkanSCTriangleExample`, as *one* way a host application can create a
 window and Vulkan surface — it is not a library requirement. `MedicalUiExample` deliberately does
 not link it: building a frame needs neither a window nor a device, and that is part of what the
-example demonstrates. `examples/BasicExample.cpp`
-exists in the tree but is not currently registered as a build target in
-`examples/CMakeLists.txt`; treat it as inactive/legacy unless you verify otherwise.
+example demonstrates. `EcgClassifierExample` links neither Vulkan nor GLFW either — it embeds its
+model and weights with `mdux_embed_blob()` and opens no files at all.
+
+All three examples in `examples/CMakeLists.txt` are active build targets; there is no inactive
+example source left in the tree.
 
 **Current implementation vs. planned/conceptual**: the shader pipeline (`mdux.shader.schema`,
 `mdux-shaderbake`, `mdux-shaderemit`), the governed draw types (`mdux.draw`), the Vulkan renderer
@@ -134,12 +152,10 @@ in `include/` or `src/`.
 - `docs/regulatory-compliance.md` — the scope limits this project claims, and the ones it does not.
 - `docs/governance/` — the citation convention, the shared `Justification` schema, the SOUP
   register, and `superseded-documents.md`, which records every point-in-time document that was
-  retired and why. Three were: the ISO 13485 and ISO 14971 framework monoliths and
-  `risk-assessment-templates.md`, all superseded by the corpus above. Read that file before
-  concluding content was lost.
-- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md` — the last remaining framework monolith,
-  superseded by `docs/iec62304/` but not yet retired; epic #10's "archive the point-in-time docs"
-  covers its disposition.
+  retired and why. The three framework monoliths (IEC 62304, ISO 13485, ISO 14971),
+  `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
+  superseded by the clause corpus above or by an ADR. Read that file before concluding content was
+  lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
 - `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
   CI.
 - `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
@@ -188,14 +204,23 @@ cmake --build build
 - `MDUX_ENABLE_REGULATORY_DOCS` (default `ON`)
 
 **Targets** (verified in `CMakeLists.txt`, `examples/CMakeLists.txt`, `tests/CMakeLists.txt`):
-- Library: `MduX` (alias `MduX::MduX`)
+- Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
+  PUBLIC-links `MduXCore`)
+- Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
+  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`. Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::MlBakeLib`, needs no Vulkan and no window, and embeds its model with
   `mdux_embed_blob()`)
-- Tests: `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`,
-  registered with CTest as `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
-  `VulkanSCDeviceObjectTests`
+- Tests: sixteen executables. Nine on the in-repository MduXTest framework (`core_tests`,
+  `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seven on SpecLab
+  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
+  `ml_noheap_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
+  `ctest -R <scenario>` selects an individual test.
+- Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
+  a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
+  `pixel`, `regulatory`.
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:
@@ -238,7 +263,7 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
 | [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
 | [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Planned** — no `.medui` compiler exists yet (issue `#15`). |
-| [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Planned** — `software_development_file/` doesn't exist yet (issue `#9`). |
+| [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Live** — `software_development_file/` exists with templates and records (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.
 
