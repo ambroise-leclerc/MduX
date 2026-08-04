@@ -35,52 +35,52 @@
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "One risk file, not two",
+      "clause": "§4.2",
+      "title": "Security risk management",
       "file": "02-security-risk-management.md",
-      "anchor": "one-risk-file-not-two",
+      "anchor": "42-security-risk-management",
       "pointer": "MduX's security records use the ISO 14971 risk-record shape, so a security hazard cannot escape the review every safety hazard gets.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "What MduX does not do",
+      "clause": "§7.1–§7.3",
+      "title": "Risk management context, identification and estimation",
       "file": "02-security-risk-management.md",
-      "anchor": "what-mdux-does-not-do",
+      "anchor": "7173-risk-management-context-identification-and-estimation",
       "pointer": "MduX performs no device-level security risk assessment, for the same reason it performs no device-level safety risk assessment: it has no device.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "What MduX does supply",
+      "clause": "§7.4",
+      "title": "Controlling security risks",
       "file": "02-security-risk-management.md",
-      "anchor": "what-mdux-does-supply",
+      "anchor": "74-controlling-security-risks",
       "pointer": "The governed/adapter/tools trust-zone split constrains a governed target's dependency surface at the architecture level - mechanically enforced by MduXTrustZones.cmake at configure time - rather than relying on a runtime security control layered on afterward.",
       "justifications": [
         "JUS-013"
       ]
     },
     {
-      "clause": "—",
-      "title": "The gap this corpus does not paper over",
+      "clause": "§7.5",
+      "title": "Monitoring the effectiveness of risk controls",
       "file": "02-security-risk-management.md",
-      "anchor": "the-gap-this-corpus-does-not-paper-over",
+      "anchor": "75-monitoring-the-effectiveness-of-risk-controls",
       "pointer": "None of MduX's three mechanisms was designed against this standard; they are inputs to a manufacturer's assessment, not evidence of a completed one.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Secure design",
+      "clause": "§5.3–§5.4",
+      "title": "Software architectural design and software design",
       "file": "03-secure-design-and-implementation.md",
-      "anchor": "secure-design",
+      "anchor": "5354-software-architectural-design-and-software-design",
       "pointer": "MduX's trust-zone architecture is the clearest instance of a design-time security property in this repository.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Secure implementation",
+      "clause": "§5.5",
+      "title": "Software unit implementation and verification",
       "file": "03-secure-design-and-implementation.md",
-      "anchor": "secure-implementation",
+      "anchor": "55-software-unit-implementation-and-verification",
       "pointer": "Where MduX ships a derived artifact rather than only source, the consumer verifies it before use.",
       "justifications": []
     },
@@ -93,35 +93,35 @@
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Security verification and validation",
+      "clause": "§5.7",
+      "title": "Software system testing",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "security-verification-and-validation",
+      "anchor": "57-software-system-testing",
       "pointer": "MduX verifies two properties this practice cares about - the trust-zone dependency boundary and cross-toolchain byte identity - and fuzzes none of its parsing surfaces, which is a gap rather than a scope exclusion.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Vulnerability and defect management",
+      "clause": "§5.8",
+      "title": "Software release",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "vulnerability-and-defect-management",
-      "pointer": "MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).",
+      "anchor": "58-software-release",
+      "pointer": "The caveat stated throughout this directory applies with full force here: none of them was written against IEC 81001-5-1's documentation requirements, so they should be read as material a manufacturer can use, not as a deliverable this standard asks for and MduX has produced.",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Security update management",
+      "clause": "§6",
+      "title": "Software maintenance process",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "security-update-management",
+      "anchor": "6-software-maintenance-process",
       "pointer": "MduX has no deployed product, so it has no update mechanism to describe — the same honest gap already recorded for maintenance in [`../iec62304/04-maintenance-process.md`](../iec62304/04-maintenance-process.md).",
       "justifications": []
     },
     {
-      "clause": "—",
-      "title": "Security documentation and guidance",
+      "clause": "§9",
+      "title": "Software problem resolution process",
       "file": "04-security-verification-and-update-management.md",
-      "anchor": "security-documentation-and-guidance",
-      "pointer": "The caveat stated throughout this directory applies with full force here: none of them was written against IEC 81001-5-1's documentation requirements, so they should be read as material a manufacturer can use, not as a deliverable this standard asks for and MduX has produced.",
+      "anchor": "9-software-problem-resolution-process",
+      "pointer": "MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).",
       "justifications": []
     }
   ]

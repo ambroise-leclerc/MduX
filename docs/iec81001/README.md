@@ -1,4 +1,4 @@
-# IEC 81001-5-1:2021 — practice reference, clause structure verified
+# IEC 81001-5-1:2021 — clause reference, verified against the published standard
 
 New content, following the same convention as [`docs/iso14971/`](../iso14971/) and
 [`docs/iec62366/`](../iec62366/): [`docs/governance/citation-convention.md`](../governance/citation-convention.md)'s
@@ -7,10 +7,9 @@ applies.
 
 ## What this directory cites, and what it does not
 
-This corpus cites IEC 81001-5-1:2021 at the **top level** — `§1` through `§4` — and its clause
-structure has been checked against the published standard (see below). The practice modules still
-use named headings rather than clause numbers; the verified correspondence between the two is
-tabulated in the clause map.
+This corpus cites IEC 81001-5-1:2021 by clause throughout, and every clause number in it has been
+checked against the published standard (see below). Section headings carry the clause they cover;
+the per-module correspondence is tabulated in the clause map.
 
 This directory once called itself a "clause-accurate reference" while stating that nothing below §4
 had been checked. Those were incompatible claims and the title was the wrong one. The structure is
@@ -70,21 +69,25 @@ verified, this is where each module sits in the standard:
 | Module | Published clauses it covers |
 |---|---|
 | [`01-scope-and-relationship-to-iec62304.md`](01-scope-and-relationship-to-iec62304.md) | §1, §2, §3 |
-| [`02-security-risk-management.md`](02-security-risk-management.md) | §4.2 security risk management; §7 security risk management process (§7.1–§7.5) |
-| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | §5.3 software architectural design, §5.4 software design, §5.5 software unit implementation and verification |
-| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | §5.7 software system testing, §5.8 software release, §6 software maintenance process, §9 software problem resolution process |
+| [`02-security-risk-management.md`](02-security-risk-management.md) | §4.2; §7.1–§7.3, §7.4, §7.5 |
+| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | §5.3–§5.4, §5.5 |
+| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | §5.7, §5.8, §6, §9 |
 
 The standard's full top-level structure is §1 scope, §2 normative references, §3 terms and
 definitions, §4 general requirements, §5 software development process, §6 software maintenance
 process, §7 security risk management process, §8 software configuration management process, §9
 software problem resolution process.
 
-### What is still not asserted
+### Depth of numbering, and where it stops
 
-Requirement-level numbering *inside* the practice modules — a heading in
-`03-secure-design-and-implementation.md` still reads "Secure design" rather than "§5.4.2 Secure
-design". The clause map above is the verified correspondence; carrying the numbers down into every
-heading is issue #31, and it is now unblocked rather than waiting on access.
+Every section heading in this directory now carries the clause it covers, taken from the verified
+structure. Numbering stops at the level where MduX has something to say: §7.4 rather than §7.4.1,
+§5.7 rather than §5.7.3.
+
+That is a deliberate floor, not an omission. The generated index refuses a row pointing at a
+heading with nothing behind it, and a corpus that split §5.7 into five sub-clause headings so it
+could write "no MduX mechanism" five times would be padding rather than precision. Where a
+sub-clause matters to a mechanism, the prose names it in words.
 
 No normative text is reproduced or closely paraphrased here, so this corpus is not a substitute for
 the standard and cannot be read as one.
@@ -108,9 +111,9 @@ they are recorded as gaps rather than left out, so that silence does not read as
 | File | Covers |
 |---|---|
 | [`01-scope-and-relationship-to-iec62304.md`](01-scope-and-relationship-to-iec62304.md) | §1–§3 scope, normative references and terms, plus the activity-by-activity relationship to IEC 62304's life cycle |
-| [`02-security-risk-management.md`](02-security-risk-management.md) | Security risk management, and why it produces records in the ISO 14971 risk file rather than a second one |
-| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | Secure design, secure implementation |
-| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | Security verification and validation, vulnerability and defect management, security update management, security documentation and guidance |
+| [`02-security-risk-management.md`](02-security-risk-management.md) | §4.2 and §7 — security risk management, and why it produces records in the ISO 14971 risk file rather than a second one |
+| [`03-secure-design-and-implementation.md`](03-secure-design-and-implementation.md) | §5.3–§5.4 architectural and software design, §5.5 unit implementation and verification |
+| [`04-security-verification-and-update-management.md`](04-security-verification-and-update-management.md) | §5.7 system testing, §5.8 release, §6 maintenance, §9 problem resolution |
 
 ## Schemas
 
@@ -126,9 +129,20 @@ by anything that reads risk records and cannot escape the review a safety hazard
 `tools/docs-lint/check_schema_type_drift.py`.
 
 [`AI-Reference.md`](AI-Reference.md) is the per-clause index, generated mechanically from this
-directory's own headings. It makes no claim beyond what is already here: rows for §1–§4 carry
-clause numbers, and every practice row shows `—`, because that is what this corpus asserts. It
-is not waiting on the numbering verification above — it will gain numbers when the modules do.
+directory's own headings. It makes no claim beyond what is already here: every row carries the
+clause its heading carries.
+
+Rows follow **module order, which is thematic** — scope, then risk management, then design and
+implementation, then verification through problem resolution. Within a module the sections are in
+clause order, but across modules they are not: §7 appears before §5 because security risk
+management is discussed before secure design. That ordering was chosen when this corpus was
+written and is kept, because the reading order is the useful one for a reader working out what
+MduX does and does not provide. Sort by the clause column for the standard's order.
+
+Two rows show `—` in the clause column, and both are deliberate. One indexes the
+activity-by-activity mapping to IEC 62304's life cycle, which is a relationship between two
+standards rather than a clause of this one; the other indexes a section recording what no MduX
+mechanism covers. Neither is a gap in the index.
 
 `AI-Reference.json` is the same rows in machine-readable form, written by the same pass so
 the two cannot disagree, and validated against
