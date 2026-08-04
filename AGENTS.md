@@ -70,8 +70,8 @@ Three decisions from that programme apply repository-wide:
    both the device runtime and the host baker, and `Classifier1D::create()` fails closed on a
    digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
 
-Waves 1 and 2 of that roadmap have shipped (v0.2.0, v0.3.0). Of Wave 3, the renderer slice (`#13`)
-and the ML pipeline (`#18`) are delivered; the documentation rebuild (`#10`) is in progress.
+Waves 1, 2 and 3 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0). Wave 4 is the font and
+text pipeline (`#14`), now unblocked.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
