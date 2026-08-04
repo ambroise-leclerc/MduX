@@ -21,7 +21,7 @@ is that a manufacturer runs one process, not two.
 | IEC 62304 activity | The security counterpart | Where they meet |
 |---|---|---|
 | IEC 62304:2006 §5.1 Software development planning | Security planning as part of the same plan | One development plan with security activities in it, not a separate security plan running in parallel |
-| IEC 62304:2006 §5.2 Software requirements analysis | Security requirements, derived from the security risk assessment | A security requirement is a requirement: same `Requirement` record, same verification obligation ([`../iec62304/02-planning-and-requirements.md`](../iec62304/02-planning-and-requirements.md)) |
+| IEC 62304:2006 §5.2 Software requirements analysis | Security requirements, derived from the security risk assessment | A security requirement is a requirement: same `Requirement` record, same verification obligation ([`../iec62304/03-development-process.md`](../iec62304/03-development-process.md#52-software-requirements-analysis)) |
 | IEC 62304:2006 §5.3 Software architectural design | Secure design — attack surface as an architectural property | [ADR-004](../adr/ADR-004-trust-zones-in-cpp.md)'s trust zones constrain both at once |
 | IEC 62304:2006 §7 Software risk management | Security risk management | Both feed the device's single ISO 14971 risk management file; see [`02-security-risk-management.md`](02-security-risk-management.md) |
 | IEC 62304:2006 §8 Software configuration management | SOUP and provenance, the supply-chain half of security | The SOUP register (issue #36) and the evidence pipeline's input digests are the same records read for a different question |

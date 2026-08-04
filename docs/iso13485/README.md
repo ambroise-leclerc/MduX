@@ -55,7 +55,10 @@ the full disposition.
 
 ## What this directory replaced
 
-`docs/MduX_ISO-13485-Quality-Management-Framework.md` (1,423 lines) is deleted as of issue #28. It
+The ISO 13485 quality-management framework monolith (1,423 lines) is deleted as of issue #28. It
 described MduX as fulfilling "the role of Medical Device Software Manufacturer" and as implementing
-an ISO 13485 quality management system — a claim a software library cannot support. Git history is
+an ISO 13485 quality management system — a claim a software library cannot support. Its path and
+full disposition are recorded in
+[`../governance/superseded-documents.md`](../governance/superseded-documents.md), which is the one
+place a retired path is named. Git history is
 its archive; the disposition record explains the reasoning.
