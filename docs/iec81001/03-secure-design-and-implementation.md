@@ -1,12 +1,12 @@
-# IEC 81001-5-1:2021 — Secure design and implementation
+# IEC 81001-5-1:2021 §5.3–§5.5 — Secure design and implementation
 
 Building security properties into the architecture and the code, rather than adding them after the
 fact.
 
-Practice categories are named rather than numbered throughout this directory; see
-[`README.md`](README.md) for what this corpus asserts and what it does not.
+Clause numbering verified against IEC 81001-5-1 Edition 1.0 (2021-12); see
+[`README.md`](README.md) for the review record.
 
-## Secure design
+## §5.3–§5.4 Software architectural design and software design
 
 ### Attack surface as an architectural constraint
 
@@ -29,7 +29,7 @@ governed behaviour, so a driver update or a transitively-pulled third-party libr
 it. For a security assessment this collapses a large class of "what else is in the process" to a
 short list.
 
-## Secure implementation
+## §5.5 Software unit implementation and verification
 
 ### Error handling that cannot escape
 
@@ -47,7 +47,7 @@ not match the digest compiled into the binary refuses to load, rather than runni
 verified. That is an integrity control on a shipped artifact — the property the supply-chain half
 of this standard is most concerned with — and it is fail-closed by construction.
 
-This is planned, not present. It is named here because issue #31 identifies it as one of this
+This is planned, not present. It is named here because it is one of this
 corpus's natural hooks, and because stating the intended mechanism is different from claiming it
 exists.
 

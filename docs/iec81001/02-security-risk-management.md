@@ -1,15 +1,18 @@
-# IEC 81001-5-1:2021 — Security risk management
+# IEC 81001-5-1:2021 §4.2, §7 — Security risk management
 
 Identifying security risks, evaluating them, controlling them, and feeding what remains into the
 device's overall risk management process.
 
-Practice categories are named rather than numbered throughout this directory; see
-[`README.md`](README.md) for what this corpus asserts and what it does not.
+Clause numbering verified against IEC 81001-5-1 Edition 1.0 (2021-12); see
+[`README.md`](README.md) for the review record. The standard splits this subject in two: §4.2 is
+the general requirement to run security risk management, and §7 is the process clause that says
+how. Both are covered here.
 
-## One risk file, not two
+## §4.2 Security risk management
 <!-- pointer: MduX's security records use the ISO 14971 risk-record shape, so a security hazard cannot escape the review every safety hazard gets. -->
 
-The most important thing to get right about this practice is what it is *not*: it is not a separate
+**One risk file, not two.** The most important thing to get right about this clause is what it is
+*not*: it is not a separate
 risk management system running beside ISO 14971's. A security failure that can lead to harm is a
 hazard, and it belongs in the same risk management file as every other hazard, controlled by the
 same requirements and verified the same way. IEC 81001-5-1 adds the security-specific *analysis*
@@ -22,7 +25,11 @@ is the record shape for a security risk too, and why
 with the threat-side fields rather than replacing it. A security record that could not be read as
 a risk record would let a security hazard escape the review that every safety hazard gets.
 
-## What MduX does not do
+## §7.1–§7.3 Risk management context, identification and estimation
+
+The process clause's first three steps: establishing the product security context, identifying
+vulnerabilities and threats with their adverse impacts, and estimating and evaluating the resulting
+risk.
 
 MduX performs no device-level security risk assessment, for the same reason it performs no
 device-level safety risk assessment: it has no device. Threat modelling needs an intended use, a
@@ -32,10 +39,11 @@ all of which change the answer.
 Nothing in this repository should be read as a security risk assessment for a device built on
 MduX.
 
-## What MduX does supply
+## §7.4 Controlling security risks
 
-Three inputs a manufacturer's security risk assessment can consume. Each is a fact about this
-library, not a conclusion about a device.
+Three inputs a manufacturer's security risk assessment can consume, each of which bears on how a
+risk is controlled. Each is a fact about this library, not a conclusion about a device — MduX
+controls no device-level risk, because it defines none.
 
 ### Dependency surface, mechanically bounded
 
@@ -72,7 +80,7 @@ narrower than tamper-evidence in a deployed running system — it covers the bui
 but it is a real integrity property over the artifacts it covers, and it is the mechanism the
 supply-chain rows of a security risk assessment can point at.
 
-## The gap this corpus does not paper over
+## §7.5 Monitoring the effectiveness of risk controls
 <!-- pointer: None of MduX's three mechanisms was designed against this standard; they are inputs to a manufacturer's assessment, not evidence of a completed one. -->
 
 None of the three mechanisms above was designed against IEC 81001-5-1. They were designed for

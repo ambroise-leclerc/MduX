@@ -1,12 +1,12 @@
-# IEC 81001-5-1:2021 — Security verification, vulnerability handling and update management
+# IEC 81001-5-1:2021 §5.7, §5.8, §6, §9 — Verification, release, maintenance and problem resolution
 
 Confirming that security properties hold, handling vulnerabilities and defects once found, and
 getting a fix to a device that is already deployed.
 
-Practice categories are named rather than numbered throughout this directory; see
-[`README.md`](README.md) for what this corpus asserts and what it does not.
+Clause numbering verified against IEC 81001-5-1 Edition 1.0 (2021-12); see
+[`README.md`](README.md) for the review record.
 
-## Security verification and validation
+## §5.7 Software system testing
 <!-- pointer: MduX verifies two properties this practice cares about - the trust-zone dependency boundary and cross-toolchain byte identity - and fuzzes none of its parsing surfaces, which is a gap rather than a scope exclusion. -->
 
 Testing that a security property actually holds, rather than asserting it was designed in.
@@ -25,7 +25,7 @@ JSON reader, the TOML subset, and eventually the `.medui` compiler — and none 
 today. That is a real gap, not a scope exclusion, and it is stated here rather than left for a
 reader to notice by absence.
 
-## Vulnerability and defect management
+## §9 Software problem resolution process
 
 MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in
 [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).
@@ -43,7 +43,7 @@ All three are gaps rather than exclusions. A library a device depends on is part
 attack surface, and the manufacturer's own vulnerability handling process cannot cover a
 dependency that has no way to tell it anything.
 
-## Security update management
+## §6 Software maintenance process
 
 Getting a security fix onto a device that is already in the field.
 
@@ -58,7 +58,7 @@ What is missing is the part that only matters once there are downstream users: a
 statement of which versions a fix applies to, and a supported-version policy. None of these can be
 usefully invented before there is anyone to notify.
 
-## Security documentation and guidance
+## §5.8 Software release
 
 Documenting security-relevant information for the integrators and users who need it.
 
