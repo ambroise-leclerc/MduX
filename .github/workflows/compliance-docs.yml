@@ -1,0 +1,71 @@
+name: Compliance & Documentation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
+    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
+    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
+    # every PR after the first would report no checks at all rather than reporting failures.
+    branches: [ main, develop, 'feat/**' ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # Compliance and Documentation Build
+  compliance-docs:
+    name: Compliance & Documentation
+    runs-on: ubuntu-latest
+    container: gcc:16
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          doxygen \
+          graphviz \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          libwayland-dev \
+          wayland-protocols \
+          wayland-scanner++ \
+          libxkbcommon-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          wget \
+          gnupg
+
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+
+    - name: Configure with regulatory documentation
+      run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMDUX_BUILD_DOCS=ON -DMDUX_ENABLE_REGULATORY_DOCS=ON
+
+    - name: Build documentation
+      run: cmake --build build --target doxygen-docs
+
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: medical-device-documentation
+        path: build/html/
+        retention-days: 30

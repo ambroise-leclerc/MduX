@@ -1,0 +1,35 @@
+name: OSV-Scanner
+
+# Report-only: uses Google's reusable workflows, which upload results as SARIF to the Security
+# tab instead of failing the job on a match. Covers the two CPM-fetched dependencies (Catch2 in
+# tests/CMakeLists.txt, glfw in examples/CMakeLists.txt) and the pinned GitHub Actions versions
+# used across .github/workflows/.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop, 'feat/**' ]
+  schedule:
+    - cron: '30 6 * * 1'
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  scan-scheduled:
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.0.0
+    with:
+      scan-args: |-
+        --recursive
+        ./
+
+  scan-pr:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.0.0
+    with:
+      scan-args: |-
+        --recursive
+        ./

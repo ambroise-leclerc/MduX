@@ -1,0 +1,68 @@
+name: Security Analysis
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
+    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
+    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
+    # every PR after the first would report no checks at all rather than reporting failures.
+    branches: [ main, develop, 'feat/**' ]
+
+jobs:
+  # Security and Code Quality
+  security-analysis:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    container: gcc:16
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          cppcheck \
+          clang-tidy \
+          wget \
+          gnupg \
+          libwayland-dev \
+          wayland-protocols \
+          libxkbcommon-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev
+
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+
+    - name: Run static analysis
+      run: |
+        # Static analysis with cppcheck
+        cppcheck --enable=all --std=c++23 --suppress=missingInclude include/ examples/ tests/ || true
+
+        # Configure for clang-tidy
+        cmake -B build -S . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
+
+        # Run clang-tidy on key files (if available)
+        if command -v clang-tidy &> /dev/null; then
+          find include/ -name "*.hpp" -exec clang-tidy {} -p build \; || true
+        fi

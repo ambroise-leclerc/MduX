@@ -1,0 +1,37 @@
+name: Evidence Pipeline Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
+    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
+    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
+    # every PR after the first would report no checks at all rather than reporting failures.
+    branches: [ main, develop, 'feat/**' ]
+
+jobs:
+  evidence-lint:
+    name: Evidence Pipeline Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Bans decimal float formatting anywhere in the evidence pipeline (ADR-007). Needs no build,
+    # so it runs as its own fast job rather than inside a toolchain leg.
+    - name: Run mdux-evidence-lint
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: |
+        python3 -m unittest discover -s tools/evidence-lint -p "test_*.py"
+        python3 tools/evidence-lint/mdux_evidence_lint.py
+
+    # There used to be a second step here checking that every committed report.json's
+    # toolGitSha wasn't "unknown". That field no longer exists: BakeReport dropped it entirely
+    # after review found it structurally unsound for a byte-compared, committed artifact - the
+    # SHA of the commit containing report.json can't be known while that file is being written,
+    # so an embedded "current commit" value could never survive being committed and re-baked.
+    # See ADR-007, decision 5, and issue #52. toolVersion is the report's only tooling identity
+    # now, and it needs no CI check beyond validate()'s existing EmptyToolVersion rejection.

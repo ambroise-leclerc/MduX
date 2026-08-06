@@ -12,6 +12,17 @@ An experimental C++23-modules UI library for medical-device software, built on V
 > compliance. Nothing in it has been assessed by a notified body.** The regulatory material under
 > `docs/` records how such work would be organised. It is not evidence that it has been done.
 
+![Status](https://img.shields.io/badge/status-experimental-orange)
+[![Version](https://img.shields.io/github/v/tag/ambroise-leclerc/MduX?label=version)](https://github.com/ambroise-leclerc/MduX/tags)
+[![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
+[![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
+
+[![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
+[![OSV-Scanner](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml)
+[![Security Analysis](https://github.com/ambroise-leclerc/MduX/actions/workflows/security-analysis.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/security-analysis.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ambroise-leclerc/MduX/badge)](https://scorecard.dev/viewer/?uri=github.com/ambroise-leclerc/MduX)
+[![License: EPL-2.0](https://img.shields.io/badge/License-EPL--2.0-blue)](LICENSE)
+
 ## What this actually is
 
 A library with three zones, checked at configure time rather than by review
@@ -173,7 +184,7 @@ certification or compliance claim.
 
 ## License
 
-To be determined based on regulatory requirements and intended distribution.
+Eclipse Public License 2.0 ([EPL-2.0](LICENSE)).
 
 ## Contact
 

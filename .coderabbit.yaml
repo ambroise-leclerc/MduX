@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# Requires the CodeRabbit GitHub App to be installed on this repository
+# (https://coderabbit.ai) - this file only configures its behavior once installed.
+
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  # Advisory only: never submit a blocking "Request changes" review. Findings still show up as
+  # PR comments, but merging is never gated on CodeRabbit's opinion.
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    # Generated indexes/schemas - docs-lint.yml already enforces these aren't stale; a
+    # human-authored-code reviewer commenting on generated output is just noise.
+    - "!**/AI-Reference.md"
+    - "!docs/**/schemas/*.json"
+    - "!build/**"
+    - "!build-mac/**"
+
+chat:
+  auto_reply: true

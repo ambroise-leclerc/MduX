@@ -1,0 +1,45 @@
+name: Documentation Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
+    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
+    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
+    # every PR after the first would report no checks at all rather than reporting failures.
+    branches: [ main, develop, 'feat/**' ]
+
+jobs:
+  # Documentation and regulatory citation lint - no C++ toolchain needed, so a
+  # docs-only PR gets fast feedback without waiting on the full build matrix.
+  docs-lint:
+    name: Documentation Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run mdux-docs-lint
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: |
+        python3 -m unittest discover -s tools/docs-lint -p "test_*.py"
+        python3 tools/docs-lint/mdux_docs_lint.py
+
+    # Every AI-Reference.md is generated, so an edited module with a stale index is a defect the
+    # build should catch rather than a reader. --check writes nothing; it fails when regenerating
+    # would change a byte, and when a clause is cited in prose that no index row covers.
+    - name: Check AI-Reference indexes are current
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: python3 tools/docs-lint/generate_ai_reference.py --check
+
+    # Issue #33: the alignment between docs/<standard>/schemas/*.json and the governance types is
+    # the point of those schemas. A schema that has silently diverged from the type it documents
+    # still looks authoritative, which is what makes the drift worth failing a build over.
+    - name: Check schemas have not drifted from the governance types
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: python3 tools/docs-lint/check_schema_type_drift.py

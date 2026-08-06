@@ -1,0 +1,115 @@
+name: Windows Build
+
+# NOTE: This project requires C++23 import std support:
+# - MSVC 17.14+ (Visual Studio 2022 v17.10+) ✅ Available in CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
+    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
+    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
+    # every PR after the first would report no checks at all rather than reporting failures.
+    branches: [ main, develop, 'feat/**' ]
+
+jobs:
+  # Windows Build with Vulkan
+  windows-build:
+    name: Windows (MSVC, Vulkan)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # to a specific UUID that only matches CMake's `import std` experimental-feature
+    # ABI as of 4.1.1 - CMake changes that UUID as the feature evolves release to
+    # release, so newer CMake versions reject it ("CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
+    # is set to incorrect value") and import std silently stops working, cascading
+    # into hundreds of "could not find module 'std'" errors at compile time. Every
+    # other job in this workflow already pins 4.1.1 for the same reason (grep
+    # CMAKE_VERSION="4.1.1" below) - 'latest' here was the one job that floated,
+    # and it broke as soon as 'latest' moved past 4.1.1.
+    - name: Setup CMake (4.1.1, matching every other job in this workflow)
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '4.1.1'
+
+    - name: Setup Vulkan SDK
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-query-version: 1.3.204.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+
+    - name: Verify Vulkan installation
+      run: |
+        echo "VK_SDK_PATH: $env:VULKAN_SDK"
+        if (Test-Path "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe") {
+          & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
+        }
+
+    - name: Install Ninja
+      run: |
+        $NINJA_URL = "https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip"
+        $NINJA_ZIP = "$env:TEMP\ninja.zip"
+        $NINJA_DIR = "$env:TEMP\ninja"
+        Invoke-WebRequest -Uri $NINJA_URL -OutFile $NINJA_ZIP
+        Expand-Archive -Path $NINJA_ZIP -DestinationPath $NINJA_DIR -Force
+        echo "$NINJA_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    # Locates whatever MSVC version is actually installed on the runner image via
+    # vswhere and exports its environment (INCLUDE/LIB/PATH/etc.) into GITHUB_ENV
+    # for every later step in this job. Replaces a hardcoded
+    # ".../Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat" call that
+    # broke silently when GitHub's windows-latest image moved to a newer Visual
+    # Studio release with a different install path - the failure mode was `call`
+    # failing to find the batch file, followed by a *different*, misleading error
+    # ("'#' is not recognized...") from the now-garbled command line, not a clear
+    # "path not found". Never hardcode a VS version/edition path here again.
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      with:
+        arch: x64
+
+    - name: Configure CMake (MSVC with Ninja)
+      run: cmake --preset ninja-msvc
+      shell: cmd
+
+    - name: Build
+      run: cmake --build --preset ninja-msvc
+      shell: cmd
+
+    - name: Run Tests
+      run: ctest --preset ninja-msvc
+      shell: cmd
+
+    # Byte-identity of every baked artifact, on this toolchain (ADR-007). Run as its own step
+    # rather than relying on the full suite above, so a drifted artifact is unmistakable in the
+    # job log instead of one line among hundreds. The corresponding Linux/GCC step is what makes
+    # the claim two-toolchain - see the comment there before removing either.
+    - name: Verify evidence artifacts (MSVC)
+      run: ctest --preset ninja-msvc -L evidence
+      shell: cmd
+
+    # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
+    # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a
+    # *cross-toolchain* contract - the Linux/GCC step is the other. Neither leg alone can falsify
+    # "these kernels compute the same bits everywhere", so do not reduce this to one.
+    #
+    # A failure here is never fixed by updating the constants. See that file's header comment.
+    - name: Verify ML determinism (MSVC)
+      run: ctest --preset ninja-msvc -L determinism
+      shell: cmd
+
+    - name: Verify no source-tree writes
+      shell: pwsh
+      run: |
+        $status = git status --porcelain
+        if ($status) {
+          Write-Host "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
+          Write-Host $status
+          exit 1
+        }

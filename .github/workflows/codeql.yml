@@ -1,0 +1,75 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop, 'feat/**' ]
+  schedule:
+    # Catch newly-disclosed CWE patterns in unchanged code, not just new commits.
+    - cron: '0 6 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (C++)
+    runs-on: ubuntu-latest
+    container: gcc:16
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          libwayland-dev \
+          wayland-protocols \
+          libxkbcommon-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          wget \
+          gnupg
+
+    - name: Install latest CMake
+      run: |
+        # Install CMake 4.x for C++23 import std support via direct download
+        # Avoid libssl1.1 dependency issues in Debian containers
+        CMAKE_VERSION="4.1.1"
+        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
+        build-mode: manual
+
+    # Manual build, not autobuild: the C++23 `import std` experimental support and CPM.cmake
+    # dependency fetching are not reliable under CodeQL's generic autobuild heuristics. Mirrors
+    # the same configure/build steps as security-analysis.yml and linux-gcc16-build.yml so CodeQL
+    # sees the same compiled surface as the rest of CI.
+    - name: Configure and build
+      run: |
+        cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
+        cmake --build build
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:cpp"
