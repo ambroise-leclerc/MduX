@@ -20,7 +20,7 @@ boundary between them enforced at configure time rather than by review:
 |---|---|---|---|
 | **Governed** | `MduXCore`, `MduX_warnings` | `std` only | never throws ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
 | **Adapter** | `MduX` | governed + Vulkan | throws where Vulkan makes it unavoidable |
-| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib` | anything | may throw freely; never linked into a device target |
+| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib`, `MduXTextBakeLib` | anything | may throw freely; never linked into a device target |
 
 `mdux_verify_trust_zones()` in [`cmake/MduXTrustZones.cmake`](../cmake/MduXTrustZones.cmake) walks
 the full link graph of every declared-governed target at the end of configure and fails on a
@@ -52,6 +52,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.governance` | `include/mdux/governance/Governance.cppm` | `src/governance/{Governance,Justification,Program}.cpp` |
 | `mdux.governance.compliance` | `include/mdux/governance/Compliance.cppm` | `src/governance/Compliance.cpp` |
 | `mdux.shader.schema` | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.text.schema` | `include/mdux/text/Schema.cppm` | `src/text/Schema.cpp` |
 | `mdux.draw` | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
 | `mdux.ml.schema` | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
@@ -85,6 +86,7 @@ performs no checking and confers no compliance.
 | `MduXToolsCommon` | `tools/common/` | TOML subset reader, CLI parser, shared diagnostic envelope |
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
+| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake` |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
@@ -206,7 +208,7 @@ Nothing below exists in the tree today.
 
 | Planned | Issue | Note |
 |---|---|---|
-| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | unblocked; static text bakes to positioned glyph runs |
+| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | S1 (`mdux.text.schema` + `mdux-textbake` skeleton) landed; S2–S6 open |
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | the replacement for the retired HTML/CSS path |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |

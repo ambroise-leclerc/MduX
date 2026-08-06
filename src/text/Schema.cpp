@@ -160,8 +160,13 @@ ResultVoid<SchemaError> TextPackage::validate() const noexcept {
     // No "no runs" rejection: an empty screen has zero runs, and zero runs is a valid (zero-byte)
     // sidecar. An empty sidecar with no runs is the smallest valid text package.
 
-    for (std::size_t i = 0; i < runs.size(); ++i) {
-        const TextRun& run = runs[i];
+    // Bounds pass: check each run in isolation first. `byteEnd()` is `byteOffset + byteLength`,
+    // which can wrap an unsigned when the run is huge; calling it here would be safe (any wrapping
+    // run fails its own bounds check below), but reasoning about it should not have to. The bounds
+    // check below is computed by subtraction from `sidecarByteLength`, which cannot overflow because
+    // we have just established `byteOffset <= sidecarByteLength`. Only after every run passes its
+    // bounds check does the pairwise overlap pass call `byteEnd()` on runs that are known to fit.
+    for (const TextRun& run : runs) {
         if (run.id.empty()) {
             return err(SchemaError::EmptyRunId);
         }
@@ -174,11 +179,18 @@ ResultVoid<SchemaError> TextPackage::validate() const noexcept {
             run.byteLength > sidecarByteLength - run.byteOffset) {
             return err(SchemaError::RunOutOfBounds);
         }
+    }
+
+    // Pairwise overlap pass. `byteEnd()` is safe to call now, since every run's bounds check has
+    // established `byteOffset + byteLength <= sidecarByteLength`, which cannot overflow a
+    // `uint64_t` given a size the evidence pipeline can actually commit.
+    for (std::size_t i = 0; i < runs.size(); ++i) {
         for (std::size_t j = i + 1; j < runs.size(); ++j) {
-            if (runs[j].id == run.id) {
+            if (runs[j].id == runs[i].id) {
                 return err(SchemaError::DuplicateRunId);
             }
-            if (overlaps(run.byteOffset, run.byteEnd(), runs[j].byteOffset, runs[j].byteEnd())) {
+            if (overlaps(runs[i].byteOffset, runs[i].byteEnd(), runs[j].byteOffset,
+                         runs[j].byteEnd())) {
                 return err(SchemaError::OverlappingRuns);
             }
         }
@@ -388,12 +400,16 @@ std::span<const std::byte> PackageView::runBytes(std::string_view runId) const n
     }
     // Bounds-checked even though the generated data is machine-written: a view can also be
     // assembled by hand in a test, and a span past the end of the sidecar is the one mistake
-    // here that would not fail visibly.
+    // here that would not fail visibly. `RunView` carries `uint64_t` offsets (parity with the
+    // owning `TextRun`); `runsBytes.size()` is `size_t`, so the comparison is widened rather
+    // than narrowed, and the empty-span return is what catches an out-of-range view before the
+    // subspan.
     if (run->byteOffset > runsBytes.size() ||
         run->byteLength > runsBytes.size() - run->byteOffset) {
         return {};
     }
-    return runsBytes.subspan(run->byteOffset, run->byteLength);
+    return runsBytes.subspan(static_cast<std::size_t>(run->byteOffset),
+                              static_cast<std::size_t>(run->byteLength));
 }
 
 }  // namespace mdux::text

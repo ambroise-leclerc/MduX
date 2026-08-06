@@ -14,8 +14,8 @@
  * ADR-008 decision 1, mirrored to text by ADR-010.
  *
  * A text package is one locale's worth of positioned glyph runs against one font package's
- * atlas. The runtime records `DrawMode::CoverageR8` rectangles drawn from the atlas (#13, S5 of
- * #14/#161) at positions the package records; it performs no shaping, no layout, and no parsing
+ * atlas. The runtime records `DrawMode::CoverageR8` rectangles drawn from the atlas (#13,
+ * #162 / S6) at positions the package records; it performs no shaping, no layout, and no parsing
  * of font tables. See ADR-010 for the architectural commitment.
  *
  * A text package looks like this:
@@ -90,17 +90,10 @@ inline constexpr std::string_view packageKind = "text";
 ///
 /// `recordSize` is the published stride every run's `byteLength` must be a multiple of. A change
 /// to this layout is a schema-version change, not a silent edit - every committed text package's
-/// digest depends on it.
-///
-/// The fields are: `glyphIndex` (an index into the referenced atlas's glyph table), `x` and `y`
-/// (signed pixel positions in the run's coordinate frame). The schema does not interpret them;
-/// it only confirms that the bytes are enumerable as whole records. Interpretation is #162's job.
+/// digest depends on it. The value is fixed for `schemaVersion == 1`; it is not serialised into
+/// `package.json` because the schema version already pins it. If a future wave grows the record,
+/// that wave bumps `kSchemaVersion` and a reader rejects the older stride by version, not by stride.
 inline constexpr std::size_t recordSize = 6;
-
-/// Wire spelling for the run-record size, recorded in `package.json` so an auditor can read the
-/// stride without consulting this module. The number is small and stable; spelling it explicitly
-/// also keeps two implementations honest if a future wave grows the record.
-inline constexpr std::string_view recordSizeWire = "6";
 
 enum class SchemaError : std::uint8_t {
     WrongKind,                  ///< `kind` is not "text"
@@ -185,8 +178,8 @@ struct TextPackage {
 /// One run as generated code exposes it: non-owning, `constexpr`-constructible.
 struct RunView {
     std::string_view id;
-    std::size_t byteOffset{0};
-    std::size_t byteLength{0};
+    std::uint64_t byteOffset{0};
+    std::uint64_t byteLength{0};
 
     [[nodiscard]] bool operator==(const RunView&) const noexcept = default;
 };

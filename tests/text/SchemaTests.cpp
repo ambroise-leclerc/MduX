@@ -99,7 +99,6 @@ const mdux::spec::Register kindAndRecordSizeConstants{
                         // silently invalidates every committed artifact that carries it.
                         checks.expect(packageKind == "text", "packageKind = \"text\"");
                         checks.expect(recordSize == 6, "recordSize = 6");
-                        checks.expect(recordSizeWire == "6", "recordSizeWire = \"6\"");
                         checks.raise();
                    })
             .Execute();
@@ -603,6 +602,185 @@ const mdux::spec::Register schemaErrorDescriptions{
                                            std::format("describe({}) is non-empty",
                                                         static_cast<unsigned>(error)));
                         }
+                        checks.raise();
+                   })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// PackageView / RunView
+// ---------------------------------------------------------------------------
+//
+// `PackageView` is the type the device runtime consumes: non-owning, `constexpr`-constructible,
+// assembled from generated code. Its own comment calls out the bounds guard on `runBytes()` as
+// the one mistake that "would not fail visibly" if a hand-assembled view pointed past the
+// sidecar. The scenarios below exercise that guard, plus the find/runBytes happy paths.
+
+const mdux::spec::Register viewFindsRunById{
+    "PackageView::find() locates a run by id and reports a miss", "evidence-unit", [] {
+        struct State {
+            std::array<RunView, 2> runs{};
+            PackageView view;
+            const RunView* found{nullptr};
+            const RunView* miss{nullptr};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-view-find-locates-run")
+            .Given("a view with two runs", [state] {
+                state->runs = {
+                    RunView{.id = "title", .byteOffset = 0, .byteLength = 6},
+                    RunView{.id = "subtitle", .byteOffset = 6, .byteLength = 6},
+                };
+                state->view = PackageView{.id = "label-welcome",
+                                          .atlasId = "roboto-ui",
+                                          .locale = "en-US",
+                                          .runsBytes = {},
+                                          .runs = std::span{state->runs}};
+                state->found = state->view.find("subtitle");
+                state->miss = state->view.find("missing-id");
+            })
+            .When("find() is called with a present and an absent id", [] {})
+            .Then("the present id is located and the absent id is null",
+                   [state] {
+                        mdux::spec::Checks checks;
+                        checks.expect(state->found != nullptr, "present run located");
+                        checks.expect(state->found != nullptr && state->found->id == "subtitle",
+                                       "the located run is the right one");
+                        checks.expect(state->miss == nullptr, "absent run is null");
+                        checks.raise();
+                   })
+            .Execute();
+    }};
+
+const mdux::spec::Register viewRunBytesForPresentRun{
+    "PackageView::runBytes() returns the slice for a present run", "evidence-unit", [] {
+        struct State {
+            std::array<std::byte, 12> sidecar{};
+            std::array<RunView, 2> runs{};
+            PackageView view;
+            std::span<const std::byte> titleBytes;
+            std::span<const std::byte> absentBytes;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-view-run-bytes-present")
+            .Given("a view whose sidecar holds two runs", [state] {
+                // Fill the 12 bytes with distinct values per run so the slice is checked
+                // against byte content, not just length. The first run is [0,6); the second is
+                // [6,12). The schema never interprets the records, so any bytes are fine here.
+                for (std::size_t i = 0; i < 6; ++i) {
+                    state->sidecar[i] =
+                        std::byte{static_cast<unsigned char>(0x10 + static_cast<unsigned char>(i))};
+                }
+                for (std::size_t i = 6; i < 12; ++i) {
+                    state->sidecar[i] = std::byte{
+                        static_cast<unsigned char>(0x20 + static_cast<unsigned char>(i - 6))};
+                }
+                state->runs = {
+                    RunView{.id = "title", .byteOffset = 0, .byteLength = 6},
+                    RunView{.id = "subtitle", .byteOffset = 6, .byteLength = 6},
+                };
+                state->view = PackageView{.id = "label-welcome",
+                                          .atlasId = "roboto-ui",
+                                          .locale = "en-US",
+                                          .runsBytes = std::span{state->sidecar},
+                                          .runs = std::span{state->runs}};
+            })
+            .When("runBytes() is called for a present and an absent id", [state] {
+                state->titleBytes = state->view.runBytes("title");
+                state->absentBytes = state->view.runBytes("missing-id");
+            })
+            .Then("the present slice matches the sidecar bytes and the absent slice is empty",
+                   [state] {
+                        mdux::spec::Checks checks;
+                        checks.expect(state->titleBytes.size() == 6, "title slice is 6 bytes");
+                        checks.expect(state->titleBytes.data() == state->sidecar.data(),
+                                       "title slice begins at the sidecar start");
+                        checks.expect(state->titleBytes[0] == std::byte{0x10},
+                                       "title slice first byte is 0x10");
+                        checks.expect(state->titleBytes[5] == std::byte{0x15},
+                                       "title slice last byte is 0x15");
+                        checks.expect(state->absentBytes.empty(), "absent slice is empty");
+                        checks.raise();
+                   })
+            .Execute();
+    }};
+
+const mdux::spec::Register viewRunBytesOutOfBoundsReturnsEmpty{
+    "PackageView::runBytes() returns an empty span when the range exceeds the sidecar",
+    "evidence-unit", [] {
+        // The bounds guard exists precisely for this case. A view assembled by hand (or by a
+        // buggy emitter) can record a range that points past `runsBytes`. Without the guard,
+        // `subspan` would have undefined behaviour; with it, the caller gets an empty span and
+        // `DrawList` records no glyphs, which a caller is entitled to detect. The schema module's
+        // own comment names this as the one mistake that would not fail visibly otherwise.
+        struct State {
+            std::array<std::byte, 4> sidecar{};
+            std::array<RunView, 1> runs{};
+            PackageView view;
+            std::span<const std::byte> bytes;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-view-run-bytes-out-of-bounds")
+            .Given("a view whose run points past the end of its sidecar", [state] {
+                // Sidecar is only 4 bytes; the run claims offset 0, length 6.
+                state->sidecar = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+                state->runs = {
+                    RunView{.id = "title", .byteOffset = 0, .byteLength = 6},
+                };
+                state->view = PackageView{.id = "label-welcome",
+                                          .atlasId = "roboto-ui",
+                                          .locale = "en-US",
+                                          .runsBytes = std::span{state->sidecar},
+                                          .runs = std::span{state->runs}};
+            })
+            .When("runBytes() is called", [state] {
+                state->bytes = state->view.runBytes("title");
+            })
+            .Then("the returned span is empty",
+                   [state] {
+                        mdux::spec::Checks checks;
+                        checks.expect(state->bytes.empty(), "out-of-bounds slice is empty");
+                        checks.raise();
+                   })
+            .Execute();
+    }};
+
+const mdux::spec::Register viewRunBytesOffsetPastEndReturnsEmpty{
+    "PackageView::runBytes() returns an empty span when the offset alone exceeds the sidecar",
+    "evidence-unit", [] {
+        // Companion to the length-past-end case: an offset that already points beyond the
+        // sidecar must also return empty, not a subspan that wraps or is taken from an empty
+        // range. Cheap to verify and the comment in `runBytes()` covers it explicitly.
+        struct State {
+            std::array<std::byte, 4> sidecar{};
+            std::array<RunView, 1> runs{};
+            PackageView view;
+            std::span<const std::byte> bytes;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-view-run-bytes-offset-past-end")
+            .Given("a view whose run offset alone exceeds the sidecar length", [state] {
+                state->sidecar = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+                state->runs = {
+                    RunView{.id = "title", .byteOffset = 8, .byteLength = 0},
+                };
+                state->view = PackageView{.id = "label-welcome",
+                                          .atlasId = "roboto-ui",
+                                          .locale = "en-US",
+                                          .runsBytes = std::span{state->sidecar},
+                                          .runs = std::span{state->runs}};
+            })
+            .When("runBytes() is called", [state] {
+                state->bytes = state->view.runBytes("title");
+            })
+            .Then("the returned span is empty",
+                   [state] {
+                        mdux::spec::Checks checks;
+                        checks.expect(state->bytes.empty(), "offset-past-end slice is empty");
                         checks.raise();
                    })
             .Execute();

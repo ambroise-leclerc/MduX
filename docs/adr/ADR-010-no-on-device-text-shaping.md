@@ -42,7 +42,7 @@ to one glyph baked at a known atlas slot with a known advance.
 
 - **IEC 62304 §5.1.2 (software architecture).** A device that does no parsing, layout
   or shaping at runtime has no parser, layout engine or shaping engine in its
-  software unit decomposition. The architecturalhazards those units introduce
+  software unit decomposition. The architectural hazards those units introduce
   (buffer handling, state machines, table lookups) are absent rather than mitigated.
 - **IEC 62304 §5.5 (software unit verification) and §5.7 (system testing).** A baked
   text package is a fixed input; unit and system tests assert against its bytes and
@@ -67,27 +67,36 @@ text package. The device runtime performs no parsing, no layout, and no shaping.
 
 Concretely:
 
-1. A font baker (`mdux-textbake`, child #157 / #160) produces a committed
-   `generated/font/<id>/` artifact through `mdux_bake_artifact()` (ADR-007): an R8
-   coverage atlas, glyph advances, kerning pairs the baker chose to bake, and a
-   restricted-charset table for dynamic text.
-2. A `.medui` screen (epic #15) records static text as fixed-position glyph runs
+1. A text baker (`mdux-textbake`, child #157) produces committed `generated/text/<id>/`
+   packages of positioned glyph runs through `mdux_bake_artifact()` (ADR-007). A text
+   package references one font package by id; it does not embed the atlas. See
+   `mdux.text.schema`'s module comment for the two reasons (atlas reuse across screens,
+   evidence-boundary separation between font and text artifacts).
+2. A font baker (#160, S4) produces committed `generated/font/<id>/` packages containing
+   the R8 coverage atlas, glyph advances, kerning pairs the baker chose to bake, and — via
+   #161 (S5) — the restricted-charset table for dynamic text. The font baker is what
+   rejects unsupported scripts; the text baker is what rejects a string the referenced
+   font package cannot render.
+3. A `.medui` screen (epic #15) records static text as fixed-position glyph runs
    against that package, authored or laid out at build time against the baked
    metrics. Dynamic text may reference only code points the restricted-charset table
    declares.
-3. The runtime's text path is `DrawList` recording of `CoverageR8` rectangles sampled
+4. The runtime's text path is `DrawList` recording of `CoverageR8` rectangles sampled
    against the baked atlas. There is no on-device code that walks a font table, no
    on-device code that maps code points to glyphs, and no on-device code that
    advances a pen by a runtime-computed width.
-4. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), composite
+5. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), composite
    glyph substitutions the baker did not pre-bake, CFF/CFF2 outlines, GPOS
-   positioning, ligatures and hinting **fail the font baker** with stable codes and
-   therefore fail the build. They never reach a device. The restricted-charset table
-   of #161 (#S5) is what makes this enforceable rather than aspirational.
-5. The canonical schema that describes both baked packages (`mdux.text.schema`,
-   `mdux.font.schema`) is governed and imported by both the host baker and the
-   device runtime — one definition, one set of compile flags (ADR-008 decision 1,
-   applied to text).
+   positioning, ligatures and hinting **fail the font baker (#160/#161)** with stable codes
+   and therefore fail the build. They never reach a device. The restricted-charset table
+   of #161 (S5) is what makes this enforceable rather than aspirational.
+- The canonical schema that describes both baked packages (`mdux.text.schema`,
+  `mdux.font.schema`) is governed and imported by both the host baker and the
+  device runtime — one definition, one set of compile flags (ADR-008 decision 1,
+  applied to text). The text schema references a font-package id; the font schema
+  holds the atlas, metrics and charset. They land in separate waves (#157 and #161
+  respectively) and live in separate modules, but share the same host/device
+  sharing doctrine.
 
 The enforcement point is **compile-time in the build host**: `mdux-textbake` and the
 `.medui` compiler reject any string, format or font that would require on-device
@@ -140,7 +149,9 @@ is what makes a rendered mismatch *diagnostic*.
   fails. The rendered-truth verifier (epic #16) can check localised text presence as
   a pure function over the baked atlas without a shaping engine.
 - A font change is a re-bake and a commit, reviewed like any other diff. The
-  deployed text corpus is auditable from `git log -- generated/font/`.
+  deployed text corpus is auditable from `git log -- generated/font/ generated/text/`,
+  the two artifact kinds tracked separately because a text package carries only the
+  runs local to a screen and a font package carries the shared atlas.
 
 ### Negative
 

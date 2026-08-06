@@ -29,7 +29,7 @@
  * ```toml
  * [package]
  * id      = "label-welcome"
- * atlas   = "roboto-ui"     # references a font package id produced by S5 (#161)
+ * atlas   = "roboto-ui"     # references a font package id produced by S4 (#160)
  * locale  = "en-US"
  * sidecar = "runs.bin"
  * ```

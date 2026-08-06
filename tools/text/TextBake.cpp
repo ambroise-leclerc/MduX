@@ -27,17 +27,19 @@ namespace {
 
 /// Diagnostic codes. Stable once published: an agent keys off these, and a reworded message must
 /// not break it. See docs/governance/schemas/diagnostic.schema.json.
+///
+/// `TXT000` is the recipe-unreadable code, emitted by `mdux-textbake`'s `main()` (matching
+/// `SHB000` in the shader baker). The numbered library codes below begin at `TXT001`.
 constexpr std::string_view recipeUnparsed = "TXT001";
 constexpr std::string_view recipeMissingMember = "TXT002";
 constexpr std::string_view recipeEmptyAtlas = "TXT003";
 constexpr std::string_view recipeEmptyLocale = "TXT004";
+constexpr std::string_view recipeEmptyId = "TXT009";
+constexpr std::string_view recipeSidecarPathHasSeparator = "TXT010";
 constexpr std::string_view packageInvalid = "TXT005";
 constexpr std::string_view outputUnwritable = "TXT006";
 constexpr std::string_view artifactMissing = "TXT007";
 constexpr std::string_view artifactDiffers = "TXT008";
-
-/// The TXT range is reserved for `mdux-textbake` and its successors. TXT000 stays free as a
-/// top-of-file marker a future caller may want; the first numbered code begins at TXT001.
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
@@ -137,13 +139,30 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     if (recipe.atlas.empty()) {
         report(diagnostics, std::string{recipePath}, 0, recipeEmptyAtlas,
                "recipe's 'atlas' is empty",
-               "A text package references a font package id produced by S5 (#161).");
+               "A text package references a font package id produced by S4 (#160).");
         return std::nullopt;
     }
     if (recipe.locale.empty()) {
         report(diagnostics, std::string{recipePath}, 0, recipeEmptyLocale,
                "recipe's 'locale' is empty",
                "Use a BCP 47 tag such as 'en-US'. An unlocalized text package is not meaningful.");
+        return std::nullopt;
+    }
+    // `id` and `sidecar` get dedicated recipe-level checks (rather than falling through to schema
+    // validation as generic TXT005 "assembled package is not valid") because both are recipe-authoring
+    // mistakes and a fix hint at the recipe line is more actionable than one at schema line 0.
+    if (recipe.id.empty()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeEmptyId,
+               "recipe's 'id' is empty",
+               "The id is the <id> in generated/text/<id>/ and must be non-empty.");
+        return std::nullopt;
+    }
+    if (recipe.sidecar.find('/') != std::string::npos ||
+        recipe.sidecar.find('\\') != std::string::npos) {
+        report(diagnostics, std::string{recipePath}, 0, recipeSidecarPathHasSeparator,
+               "recipe's 'sidecar' contains a path separator; it must be a bare filename",
+               "A sidecar sits beside package.json in generated/text/<id>/; a path would let it "
+               "escape that directory.");
         return std::nullopt;
     }
 
