@@ -16,8 +16,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-007](ADR-007-evidence-pipeline-doctrine.md) | Evidence pipeline doctrine | Accepted | 2026-07-27 |
 | [ADR-008](ADR-008-zero-soup-ml-inference.md) | Zero-SOUP ML inference | Accepted | 2026-08-03 |
 | [ADR-009](ADR-009-in-repository-test-framework.md) | In-repository test framework, and SpecLab for BDD | Accepted | 2026-08-03 |
+| [ADR-010](ADR-010-no-on-device-text-shaping.md) | No on-device text shaping | Accepted | 2026-08-06 |
 
-Every number from 001 to 009 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 010 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
@@ -51,7 +52,7 @@ decision record that lists only benefits documents an advertisement rather than 
 ## Writing a new ADR
 
 1. Copy [`template.md`](template.md).
-2. Take the next free number from the index above — currently **ADR-010**.
+2. Take the next free number from the index above — currently **ADR-011**.
 3. Name the file `ADR-NNN-short-description.md`, lowercase and hyphenated.
 4. Add a row to the index in this file. An ADR that is not indexed does not exist.
 5. If it supersedes an earlier decision, set that ADR's status to `Superseded by ADR-NNN`, link
