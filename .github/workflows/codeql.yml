@@ -23,6 +23,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # Matches the build-time subset of linux-gcc16-build.yml's dependency list (the ninja-gcc
+    # preset below builds the same MDUX_BUILD_EXAMPLES/MDUX_BUILD_TESTS=ON surface, including
+    # glfw-linked examples). Purely runtime packages that leg needs only to run tests
+    # (xvfb, mesa-vulkan-drivers, vulkan-validationlayers, wayland-utils) are omitted here since
+    # this job compiles but never executes anything.
     - name: Install dependencies
       run: |
         apt-get update
@@ -32,8 +37,12 @@ jobs:
           pkg-config \
           libvulkan-dev \
           vulkan-tools \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          libglfw3-dev \
           libwayland-dev \
           wayland-protocols \
+          libwayland-egl1 \
           libxkbcommon-dev \
           libx11-dev \
           libxrandr-dev \
@@ -61,13 +70,14 @@ jobs:
         build-mode: manual
 
     # Manual build, not autobuild: the C++23 `import std` experimental support and CPM.cmake
-    # dependency fetching are not reliable under CodeQL's generic autobuild heuristics. Mirrors
-    # the same configure/build steps as security-analysis.yml and linux-gcc16-build.yml so CodeQL
-    # sees the same compiled surface as the rest of CI.
+    # dependency fetching are not reliable under CodeQL's generic autobuild heuristics. Uses the
+    # same ninja-gcc preset as linux-gcc16-build.yml, rather than a hand-written configure line
+    # that resembles it, so CodeQL's compiled surface cannot drift from the rest of CI as CMake
+    # options change.
     - name: Configure and build
       run: |
-        cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
-        cmake --build build
+        cmake --preset ninja-gcc
+        cmake --build --preset ninja-gcc
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3

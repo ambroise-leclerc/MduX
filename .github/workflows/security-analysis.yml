@@ -62,7 +62,10 @@ jobs:
         # Configure for clang-tidy
         cmake -B build -S . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON
 
-        # Run clang-tidy on key files (if available)
+        # Run clang-tidy on key files (if available). This project has no *.hpp - public API is
+        # module interface units (*.cppm) under include/, backed by *.cpp implementation under
+        # src/ - so both patterns are needed or this step silently analyzes nothing.
         if command -v clang-tidy &> /dev/null; then
-          find include/ -name "*.hpp" -exec clang-tidy {} -p build \; || true
+          find include/ -name "*.cppm" -exec clang-tidy {} -p build \; || true
+          find src/ -name "*.cpp" -exec clang-tidy {} -p build \; || true
         fi
