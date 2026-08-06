@@ -169,6 +169,7 @@ target_sources(MduXCore
             include/mdux/ml/Kernels.cppm
             include/mdux/ml/Runtime.cppm
             include/mdux/draw/Draw.cppm
+            include/mdux/text/Schema.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
@@ -177,6 +178,7 @@ target_sources(MduXCore
         src/ml/Kernels.cpp
         src/ml/Runtime.cpp
         src/draw/Draw.cpp
+        src/text/Schema.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
         src/governance/Program.cpp

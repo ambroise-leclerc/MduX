@@ -200,3 +200,66 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-shaderemit PRIVATE /experimental:module /std:c++latest)
 endif()
+
+# ---------------------------------------------------------------------------
+# mdux-textbake (issue #157) - the text pipeline's baker
+# ---------------------------------------------------------------------------
+#
+# Host-tools zone, exactly like the shader and ML bakers: it parses recipes and may throw, so it
+# is deliberately not declared governed. It links MduX::ToolsCommon (and through it MduX::Core),
+# which is how the baker reaches mdux.text.schema - the same governed module the device runtime
+# will consume (#15). That identity is the host/device-sharing argument ADR-008 decision 1 makes
+# for ML, inherited by text via ADR-010.
+#
+# At S1 this is a skeleton: run() produces a no-run package whose sidecar is zero bytes. S4
+# (#160) extends it with the font pipeline inputs and S5 (#161) adds the restricted-charset
+# validation; no mdux_bake_artifact() call site is registered until S4 commits a real artifact.
+add_library(MduXTextBakeLib)
+add_library(MduX::TextBakeLib ALIAS MduXTextBakeLib)
+
+target_sources(MduXTextBakeLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            text/TextBake.cppm
+    PRIVATE
+        text/TextBake.cpp
+)
+
+target_compile_features(MduXTextBakeLib PUBLIC cxx_std_23)
+target_link_libraries(MduXTextBakeLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXTextBakeLib PRIVATE MduX_warnings)
+
+set_target_properties(MduXTextBakeLib
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXTextBakeLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXTextBakeLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-textbake text/TextBakeMain.cpp)
+target_link_libraries(mdux-textbake PRIVATE MduX::TextBakeLib MduX_warnings)
+
+set_target_properties(mdux-textbake
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-textbake PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-textbake PRIVATE /experimental:module /std:c++latest)
+endif()

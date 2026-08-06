@@ -543,6 +543,71 @@ endif()
 
 mdux_discover_tests(ml_spec)
 
+# Text pipeline schema (epic #14, issue #157, ADR-010)
+#
+# Links MduX::Core only. mdux.text.schema is governed and contains no Vulkan handle, so a
+# scenario that needed MduX::MduX to build it would mean the trust-zone boundary had moved -
+# the same standing evidence shader_spec, draw_spec and ml_spec give. S1 ships the schema and a
+# no-run baker skeleton; the TrueType parser (#158), rasteriser (#159), atlas font baker (#160),
+# font schema (#161) and coverage draw path (#162) follow as their blockers close.
+add_executable(text_spec
+    text/TextSpecMain.cpp
+    text/SchemaTests.cpp
+)
+
+target_link_libraries(text_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(text_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(text_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(text_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(text_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(text_spec)
+
+# Text baker host-tools suite (issue #157)
+#
+# Links MduX::TextBakeLib, the host-tools-zone target. Deliberately separate from text_spec, which
+# links MduX::Core only - keeping the two apart is what preserves text_spec's standing evidence
+# that the governed `mdux.text.schema` reaches nothing but std. The cases mirror the pattern
+# `ml_tools_spec` and `shader_spec` follow: drive `parseRecipe()` / `run()` / `write()` / `verify()`
+# as calls so a failing assertion names the diagnostic code that failed rather than only an exit
+# status from a spawned process.
+add_executable(text_tools_spec
+    text/TextToolsSpecMain.cpp
+    text/TextBakeTests.cpp
+)
+
+target_link_libraries(text_tools_spec PRIVATE MduX::TextBakeLib speclab::speclab)
+target_include_directories(text_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(text_tools_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(text_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(text_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(text_tools_spec)
+
 # ML host-tools suite (issue #60)
 #
 # Links MduX::MlBakeLib, the host-tools-zone target. Deliberately separate from ml_spec, which
