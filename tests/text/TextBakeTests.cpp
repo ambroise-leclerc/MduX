@@ -168,6 +168,13 @@ atlas = "roboto-ui"
 locale = "en-US"
 sidecar = "nested/runs.bin"
 )"},
+            {"an empty sidecar", "TXT010",
+             R"([package]
+id = "label-welcome"
+atlas = "roboto-ui"
+locale = "en-US"
+sidecar = ""
+)"},
         };
 
         return speclab::Test("text-bake-recipe-rejections")
@@ -395,42 +402,83 @@ const mdux::spec::Register verifyReportsByteDifference{
             std::vector<cli::Diagnostic> writeDiagnostics;
             std::vector<cli::Diagnostic> verifyDiagnostics;
             bool ok{true};
+            std::size_t flipIndex{0};
         };
         auto state = std::make_shared<State>();
 
         return speclab::Test("text-bake-verify-differs")
-            .Given("a valid recipe's outputs and a directory with corrupted committed bytes",
+            .Given("a valid recipe's outputs and a directory with a same-length corrupted "
+                   "committed package.json",
                    [state] {
-state->outputs = produceValid();
+                       state->outputs = produceValid();
                        state->dir = freshTempDir("verify-differs");
                        if (!bake::write(state->outputs, state->dir, state->writeDiagnostics)) {
                            throw speclab::core::AssertionFailure(
                                "write() failed for the diff setup",
                                std::source_location::current());
                        }
-                       // Overwrite the committed package.json with a single byte so the
-                       // first-differing-byte path is exercised: the file is shorter than the
-                       // produced bytes, so the comparison fails by length at byte 1.
-                       std::ofstream file{state->dir / "package.json",
-                                           std::ios::binary | std::ios::trunc};
-                       file.write("{", 1);
-                    })
+                       // Same-length corruption: read the committed package.json back, flip one
+                       // byte near the middle, and rewrite the file. The byte is flipped to a
+                       // value that is not what `run()` produced, so the first-differing-byte
+                       // loop in `compareArtifact()` actually fires - the length-differs branch
+                       // that a truncated file exercises is a separate path. This is the index
+                       // arithmetic the review flagged as "wrong once and then wrong quietly", so
+                       // the assertion below also pins the reported offset rather than merely the
+                       // code.
+                       const std::filesystem::path packagePath = state->dir / "package.json";
+                       std::ifstream input{packagePath, std::ios::binary | std::ios::ate};
+                       if (!input) {
+                           throw speclab::core::AssertionFailure(
+                               "could not open package.json for the diff setup",
+                               std::source_location::current());
+                       }
+                       const auto size = input.tellg();
+                       input.seekg(0);
+                       std::string text(static_cast<std::size_t>(size), '\0');
+                       input.read(text.data(), size);
+                       input.close();
+                       if (text.size() < 4) {
+                           throw speclab::core::AssertionFailure(
+                               "package.json is too short to flip a mid-file byte",
+                               std::source_location::current());
+                       }
+                       // Flip byte at size/2. Choose a replacement value that is not the original,
+                       // so the diff is real. `text[size / 2]` is well-defined because size >= 4.
+                       const std::size_t flipIndex = text.size() / 2;
+                       const char original = text[flipIndex];
+                       char replacement = (original == 'X') ? 'Y' : 'X';
+                       text[flipIndex] = replacement;
+                       state->flipIndex = flipIndex;
+                       std::ofstream output{packagePath, std::ios::binary | std::ios::trunc};
+                       output.write(text.data(), static_cast<std::streamsize>(text.size()));
+                   })
             .When("verify() is called against the corrupted committed bytes", [state] {
                 state->ok = bake::verify(state->outputs, state->dir / "package.json",
                                           state->dir / "report.json", state->verifyDiagnostics);
             })
-            .Then("verify fails and a TXT008 diagnostic is reported",
+            .Then("verify fails, a TXT008 diagnostic is reported, and it names the flipped byte offset",
                    [state] {
                         mdux::spec::Checks checks;
                         checks.expect(!state->ok, "verify returns false on a diff");
                         bool foundDiffers = false;
+                        bool offsetPinned = false;
                         for (const cli::Diagnostic& message : state->verifyDiagnostics) {
-                            if (message.code == "TXT008") {
+                            if (message.code == "TXT008" &&
+                                message.file.find("package.json") != std::string::npos) {
                                 foundDiffers = true;
+                                // The diagnostic's message carries the byte offset, e.g.
+                                // "package.json differs at byte 42: ...". Pin it against the
+                                // index we flipped so the offset reporting is actually tested,
+                                // not just the code.
+                                const std::string needle =
+                                    "at byte " + std::to_string(state->flipIndex) + ":";
+                                offsetPinned = message.message.find(needle) != std::string::npos;
                                 break;
                             }
                         }
-                        checks.expect(foundDiffers, "a TXT008 diagnostic is reported");
+                        checks.expect(foundDiffers, "a TXT008 diagnostic is reported for package.json");
+                        checks.expect(offsetPinned,
+                                       "the reported byte offset matches the flipped index");
                         std::error_code code;
                         std::filesystem::remove_all(state->dir, code);
                         checks.raise();

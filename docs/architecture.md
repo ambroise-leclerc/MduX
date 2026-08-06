@@ -204,7 +204,8 @@ before concluding content was lost.
 
 ## Planned, not built
 
-Nothing below exists in the tree today.
+The items below have not shipped — or, where noted, only the first slice has. Each row links the
+tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|

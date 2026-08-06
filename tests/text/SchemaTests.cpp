@@ -765,8 +765,13 @@ const mdux::spec::Register viewRunBytesOffsetPastEndReturnsEmpty{
         return speclab::Test("text-view-run-bytes-offset-past-end")
             .Given("a view whose run offset alone exceeds the sidecar length", [state] {
                 state->sidecar = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+                // A non-zero length is load-bearing here: a zero-length run returns an empty
+                // span even under a guardless `subspan(offset, 0)`, so the assertion would pass
+                // whether the guard existed or not. A length of 6 makes the empty span
+                // reachable only through the bounds check - exactly what `runBytes()`'s own
+                // comment promises.
                 state->runs = {
-                    RunView{.id = "title", .byteOffset = 8, .byteLength = 0},
+                    RunView{.id = "title", .byteOffset = 8, .byteLength = 6},
                 };
                 state->view = PackageView{.id = "label-welcome",
                                           .atlasId = "roboto-ui",

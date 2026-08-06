@@ -90,13 +90,13 @@ Concretely:
    positioning, ligatures and hinting **fail the font baker (#160/#161)** with stable codes
    and therefore fail the build. They never reach a device. The restricted-charset table
    of #161 (S5) is what makes this enforceable rather than aspirational.
-- The canonical schema that describes both baked packages (`mdux.text.schema`,
-  `mdux.font.schema`) is governed and imported by both the host baker and the
-  device runtime — one definition, one set of compile flags (ADR-008 decision 1,
-  applied to text). The text schema references a font-package id; the font schema
-  holds the atlas, metrics and charset. They land in separate waves (#157 and #161
-  respectively) and live in separate modules, but share the same host/device
-  sharing doctrine.
+6. The canonical schema that describes both baked packages (`mdux.text.schema`,
+   `mdux.font.schema`) is governed and imported by both the host baker and the
+   device runtime — one definition, one set of compile flags (ADR-008 decision 1,
+   applied to text). The text schema references a font-package id; the font schema
+   holds the atlas, metrics and charset. They land in separate waves (#157 and #161
+   respectively) and live in separate modules, but share the same host/device
+   sharing doctrine.
 
 The enforcement point is **compile-time in the build host**: `mdux-textbake` and the
 `.medui` compiler reject any string, format or font that would require on-device
@@ -194,7 +194,7 @@ is what makes a rendered mismatch *diagnostic*.
 - This ADR lands with issue #157 (S1 — `mdux.text.schema` and `mdux-textbake`
   skeleton). The schema module's `@compliance` block cites this ADR alongside
   ADR-004/005/007, matching how ADR-008 is cited in `mdux.ml.schema`.
-- The build-fail enforcement described in Decision paragraph 4 is delivered by the
+- The build-fail enforcement described in Decision paragraph 5 is delivered by the
   restricted-charset validation in #161 (S5); this ADR records the commitment it
   will enforce. The gap between #157 landing and #161 closing is an interval in
   which the rule is stated but not mechanically enforced — the same shape as the

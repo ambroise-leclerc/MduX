@@ -93,6 +93,11 @@ inline constexpr std::string_view packageKind = "text";
 /// digest depends on it. The value is fixed for `schemaVersion == 1`; it is not serialised into
 /// `package.json` because the schema version already pins it. If a future wave grows the record,
 /// that wave bumps `kSchemaVersion` and a reader rejects the older stride by version, not by stride.
+///
+/// The v1 record is 6 bytes: a `std::uint16_t glyphIndex` (an index into the referenced atlas's
+/// glyph table) followed by two `std::int16_t` values (`x` and `y`, signed pixel positions in the
+/// run's coordinate frame). The schema does not interpret these fields; it only confirms that
+/// the bytes are enumerable as whole records. Interpretation is #162/S6's job.
 inline constexpr std::size_t recordSize = 6;
 
 enum class SchemaError : std::uint8_t {

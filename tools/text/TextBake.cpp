@@ -34,12 +34,12 @@ constexpr std::string_view recipeUnparsed = "TXT001";
 constexpr std::string_view recipeMissingMember = "TXT002";
 constexpr std::string_view recipeEmptyAtlas = "TXT003";
 constexpr std::string_view recipeEmptyLocale = "TXT004";
-constexpr std::string_view recipeEmptyId = "TXT009";
-constexpr std::string_view recipeSidecarPathHasSeparator = "TXT010";
 constexpr std::string_view packageInvalid = "TXT005";
 constexpr std::string_view outputUnwritable = "TXT006";
 constexpr std::string_view artifactMissing = "TXT007";
 constexpr std::string_view artifactDiffers = "TXT008";
+constexpr std::string_view recipeEmptyId = "TXT009";
+constexpr std::string_view recipeSidecarPathHasSeparator = "TXT010";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
@@ -155,6 +155,12 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
         report(diagnostics, std::string{recipePath}, 0, recipeEmptyId,
                "recipe's 'id' is empty",
                "The id is the <id> in generated/text/<id>/ and must be non-empty.");
+        return std::nullopt;
+    }
+    if (recipe.sidecar.empty()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeSidecarPathHasSeparator,
+               "recipe's 'sidecar' is empty; it must be a bare filename",
+               "A sidecar sits beside package.json in generated/text/<id>/.");
         return std::nullopt;
     }
     if (recipe.sidecar.find('/') != std::string::npos ||
