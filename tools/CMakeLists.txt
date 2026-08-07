@@ -211,9 +211,13 @@ endif()
 # will consume (#15). That identity is the host/device-sharing argument ADR-008 decision 1 makes
 # for ML, inherited by text via ADR-010.
 #
-# At S1 this is a skeleton: run() produces a no-run package whose sidecar is zero bytes. S4
-# (#160) extends it with the font pipeline inputs and S5 (#161) adds the restricted-charset
-# validation; no mdux_bake_artifact() call site is registered until S4 commits a real artifact.
+# At S1 this is a skeleton: run() produces a no-run package whose sidecar is zero bytes. S2
+# (#158) lands the host-only TrueType parser alongside the skeleton: `mdux.tools.truetype`
+# walks the glyf table directly without linking freetype, and is registered as a public
+# module of MduXTextBakeLib so S4's font baker (#160) can import it through the same target
+# that hosts the recipe model. S4 extends the recipe with the font pipeline inputs and S5
+# (#161) adds the restricted-charset validation; no mdux_bake_artifact() call site is
+# registered until S4 commits a real artifact.
 add_library(MduXTextBakeLib)
 add_library(MduX::TextBakeLib ALIAS MduXTextBakeLib)
 
@@ -223,8 +227,10 @@ target_sources(MduXTextBakeLib
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             text/TextBake.cppm
+            text/Truetype.cppm
     PRIVATE
         text/TextBake.cpp
+        text/Truetype.cpp
 )
 
 target_compile_features(MduXTextBakeLib PUBLIC cxx_std_23)
