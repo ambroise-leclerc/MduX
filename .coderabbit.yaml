@@ -20,7 +20,9 @@ reviews:
     # human-authored-code reviewer commenting on generated output is just noise.
     - "!**/AI-Reference.md"
     - "!docs/**/schemas/*.json"
-    - "!build/**"
+    # Matches every CMakePresets.json binaryDir (build, build-gcc, build-clang,
+    # build-*-debug, ...), not just the default "build".
+    - "!build*/**"
     - "!build-mac/**"
 
 chat:

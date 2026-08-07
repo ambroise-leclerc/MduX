@@ -156,8 +156,10 @@ in `include/` or `src/`.
   `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
   superseded by the clause corpus above or by an ADR. Read that file before concluding content was
   lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
-- `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
-  CI.
+- `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
+  `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
+  `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
+  gets built/tested in CI.
 - `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
   `ninja-clang` (issue #45).
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
@@ -177,8 +179,9 @@ scope, not a mechanically enforced restriction.
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note the Clang CI job in `.github/workflows/ci.yml` is currently commented out
-  (disabled), so Clang support is unverified in CI even though the version floor is enforced.
+- Clang 20+ — note the Clang CI job in `.github/workflows/clang-build.yml.disabled` is disabled
+  (every step commented out, and the file renamed off `.yml` so GitHub does not parse it), so
+  Clang support is unverified in CI even though the version floor is enforced.
 - CMake 4.0+
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 

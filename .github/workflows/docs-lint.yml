@@ -10,6 +10,9 @@ on:
     # every PR after the first would report no checks at all rather than reporting failures.
     branches: [ main, develop, 'feat/**' ]
 
+permissions:
+  contents: read
+
 jobs:
   # Documentation and regulatory citation lint - no C++ toolchain needed, so a
   # docs-only PR gets fast feedback without waiting on the full build matrix.
@@ -19,7 +22,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
     - name: Run mdux-docs-lint
       env:

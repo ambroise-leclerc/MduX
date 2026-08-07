@@ -54,10 +54,12 @@ re-derive and compare — the control is designed, not yet exercised end-to-end.
 
 > IEC 81001-5-1:2021, security verification and validation practice category.
 
-The test suites (`core_tests`, `evidence_tests`) run on every push (`.github/workflows/ci.yml`); no
-dedicated fuzzing, dependency-vulnerability scanning, or penetration testing is currently part of
-this project's own CI — a gap a manufacturer should close in their own security verification plan
-rather than assume is covered.
+The test suites (`core_tests`, `evidence_tests`) run on every push
+(`.github/workflows/windows-build.yml`, `.github/workflows/linux-gcc16-build.yml`).
+`.github/workflows/codeql.yml` (static analysis) and `.github/workflows/osv-scanner.yml`
+(dependency-vulnerability scanning) run report-only, closing part of the gap noted here; no
+fuzzing or penetration testing is currently part of this project's own CI — a gap a manufacturer
+should close in their own security verification plan rather than assume is covered.
 
 ## 5. Vulnerability and defect management
 

@@ -35,8 +35,8 @@ know will fail or guessing at results.
    builds):
    - Windows: `cmake --preset ninja-msvc` (the only preset defined in `CMakePresets.json`; it
      targets Ninja + MSVC specifically).
-   - Linux (no preset exists yet): mirror what `.github/workflows/ci.yml`'s `linux-build` job
-     runs:
+   - Linux (no preset exists yet): mirror what `.github/workflows/linux-gcc16-build.yml`'s
+     `linux-build-gcc16` job runs:
      ```bash
      cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
      ```
@@ -75,8 +75,9 @@ know will fail or guessing at results.
 - **GCC, still current**: `vulkansc_memory_tests` is compiled `-O0` on GCC. That one is *not*
   historical - the ICE in the GIMPLE ealias pass reproduces on GCC 16 as well, and every level
   above `-O0` triggers it. See `tests/CMakeLists.txt` and issue #48.
-- **Clang 20**: the Clang CI job in `.github/workflows/ci.yml` is present but commented out. Clang
-  builds are not currently verified by CI even though the version floor is enforced in
+- **Clang 20**: the Clang CI job in `.github/workflows/clang-build.yml.disabled` is present but
+  commented out and file-disabled. Clang builds are not currently verified by CI even though the
+  version floor is enforced in
   `CMakeLists.txt` — treat any Clang build result as unverified against the project's own CI and
   say so.
 - **MSVC**: requires `/experimental:module` and `/std:c++latest`, already wired into

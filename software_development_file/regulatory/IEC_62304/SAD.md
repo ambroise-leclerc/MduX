@@ -85,7 +85,8 @@ See `software_development_file/regulatory/IEC_62304/SOUP.md`, derived from
 
 Every structural decision above is recorded as an `Accepted` ADR — see
 [`docs/adr/README.md`](../../../docs/adr/README.md) (7 ADRs at time of writing: ADR-001 through
-ADR-007). `mdux_verify_trust_zones()` also runs on every CI build (`.github/workflows/ci.yml`), so
+ADR-007). `mdux_verify_trust_zones()` also runs on every CI build
+(`.github/workflows/windows-build.yml`, `.github/workflows/linux-gcc16-build.yml`), so
 the segregation described in §4 is checked on every push, not only at review time.
 
 ## Justification records

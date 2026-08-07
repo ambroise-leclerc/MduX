@@ -47,7 +47,7 @@
         {
             "name": "ninja-gcc",
             "displayName": "Ninja with GCC",
-            "description": "Ninja generator with GCC 16+ for C++23 modules and import std support. This is the preset .github/workflows/ci.yml's linux-build-gcc16 job runs, rather than a separate configure line that resembles it.",
+            "description": "Ninja generator with GCC 16+ for C++23 modules and import std support. This is the preset .github/workflows/linux-gcc16-build.yml's linux-build-gcc16 job runs, rather than a separate configure line that resembles it.",
             "generator": "Ninja",
             "binaryDir": "build-gcc",
             "condition": {
@@ -77,7 +77,7 @@
         {
             "name": "ninja-clang",
             "displayName": "Ninja with Clang",
-            "description": "Ninja generator with Clang 20+ for C++23 modules and import std support. Mirrors the currently-disabled clang-build job in .github/workflows/ci.yml (see issue #48 for re-enabling it).",
+            "description": "Ninja generator with Clang 20+ for C++23 modules and import std support. Mirrors the currently-disabled clang-build job in .github/workflows/clang-build.yml.disabled (see issue #48 for re-enabling it).",
             "generator": "Ninja",
             "binaryDir": "build-clang",
             "condition": {

@@ -21,7 +21,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
     # Matches the build-time subset of linux-gcc16-build.yml's dependency list (the ninja-gcc
     # preset below builds the same MDUX_BUILD_EXAMPLES/MDUX_BUILD_TESTS=ON surface, including
@@ -64,10 +64,11 @@ jobs:
         cmake --version
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
       with:
         languages: cpp
         build-mode: manual
+        config-file: ./.github/codeql/codeql-config.yml
 
     # Manual build, not autobuild: the C++23 `import std` experimental support and CPM.cmake
     # dependency fetching are not reliable under CodeQL's generic autobuild heuristics. Uses the
@@ -80,6 +81,6 @@ jobs:
         cmake --build --preset ninja-gcc
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
       with:
         category: "/language:cpp"
