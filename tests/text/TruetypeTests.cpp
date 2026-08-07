@@ -15,10 +15,16 @@
  * Every rejection scenario asserts the specific `ParseError` code, not merely that parsing
  * failed. A parser that rejects everything with one generic error passes "it was rejected"
  * and is useless to the author who has to fix the font - and useless to S4 (#160), which has
- * to convert each code into a distinct `TXT` diagnostic. The first scenario belows holds the
- * success case; the two table-driven scenarios hold all rejection paths for `parse()` and
+ * to convert each code into a distinct `TXT` diagnostic. The scenarios below open with the
+ * success cases; the two table-driven scenarios hold all rejection paths for `parse()` and
  * `parseGlyph()`, so a new rejection added later lands next to its enumerator by index rather
  * than spread across the file.
+ *
+ * Two of those success cases exist because a purely synthetic corpus missed them once. The
+ * parser is meant to read fonts designers ship, and those carry `GPOS`/`GSUB` tables, hinting
+ * bytecode and zero-length `glyf` records (the encoding for the space character) - shapes no
+ * "build the minimal legal font" fixture produces by accident. `layoutTablesAreSkipped`,
+ * `hintedGlyphParses` and `zeroLengthGlyphParses` pin them explicitly.
  */
 
 import std;
@@ -516,7 +522,34 @@ private:
     return b;  // 10 bytes: no endPts, no instructionLength
 }
 
-/// A single-point glyph whose flag has bits 6-7 set: parser rejects with UnsupportedGlyphFlag.
+/// A single-point glyph whose flag has bit 6 (OVERLAP_SIMPLE) set. Bit 6 is a defined flag in
+/// the current OpenType spec with no shaping semantics, and modern tooling sets it, so this must
+/// parse - only bit 7 is reserved.
+[[nodiscard]] std::vector<std::byte> overlapSimpleGlyph() {
+    std::vector<std::byte> b;
+    auto                   i16 = [&](std::int16_t v) {
+        b.push_back(static_cast<std::byte>((static_cast<std::uint16_t>(v) >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(static_cast<std::uint16_t>(v) & 0xffu));
+    };
+    auto u16 = [&](std::uint16_t v) {
+        b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(v & 0xffu));
+    };
+    i16(1);
+    i16(0);
+    i16(0);
+    i16(7);
+    i16(9);
+    u16(0);                        // endPtsOfContours[0] = 0 - one point
+    u16(0);                        // instructionLength = 0
+    b.push_back(std::byte{0x41});  // on-curve + OVERLAP_SIMPLE (bit 6)
+    i16(7);                        // signed-16 X
+    i16(9);                        // signed-16 Y
+    return b;
+}
+
+/// A single-point glyph whose flag has bit 7 (genuinely reserved) set: the parser rejects with
+/// UnsupportedGlyphFlag.
 [[nodiscard]] std::vector<std::byte> reservedFlagGlyph() {
     std::vector<std::byte> b;
     auto                   i16 = [&](std::int16_t v) {
@@ -534,12 +567,52 @@ private:
     i16(0);
     u16(0);                        // endPtsOfContours[0] = 0 - one point
     u16(0);                        // instructionLength = 0
-    b.push_back(std::byte{0xC1});  // on-curve + reserved bit 7 set
+    b.push_back(std::byte{0x81});  // on-curve + reserved bit 7 set
     return b;
 }
 
-/// A glyph whose `instructionLength` is non-zero; the parser rejects before reading flags.
-[[nodiscard]] std::vector<std::byte> hintedGlyph() {
+/// The square glyph with `instructionLength` bytes of hinting bytecode between the instruction
+/// length field and the flag array. The parser steps over the bytecode, so this must parse to
+/// exactly the same outline `squareGlyph()` does - the instruction bytes are deliberately values
+/// that would be legal flags, so a parser that failed to skip them would mis-decode rather than
+/// merely run short.
+[[nodiscard]] std::vector<std::byte> hintedSquareGlyph() {
+    std::vector<std::byte> b;
+    auto                   i16 = [&](std::int16_t v) {
+        b.push_back(static_cast<std::byte>((static_cast<std::uint16_t>(v) >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(static_cast<std::uint16_t>(v) & 0xffu));
+    };
+    auto u16 = [&](std::uint16_t v) {
+        b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(v & 0xffu));
+    };
+    i16(1);  // numberOfContours = 1
+    i16(0);
+    i16(0);
+    i16(100);
+    i16(100);  // bbox
+    u16(3);    // endPtsOfContours[0] = 3
+    u16(4);    // instructionLength = 4
+    for (int i = 0; i < 4; ++i)
+        b.push_back(std::byte{0x01});  // bytecode that would read as an on-curve flag
+    b.push_back(std::byte{0x01});      // the real flags start here
+    b.push_back(std::byte{0x01});
+    b.push_back(std::byte{0x01});
+    b.push_back(std::byte{0x01});
+    i16(0);
+    i16(100);
+    i16(0);
+    i16(-100);  // X deltas
+    i16(0);
+    i16(0);
+    i16(100);
+    i16(0);  // Y deltas
+    return b;
+}
+
+/// A glyph whose `instructionLength` claims more bytecode than the record holds; the skip is
+/// bounds-checked, so this fails with TruncatedGlyphInstructions.
+[[nodiscard]] std::vector<std::byte> instructionsTruncatedGlyph() {
     std::vector<std::byte> b;
     auto                   i16 = [&](std::int16_t v) {
         b.push_back(static_cast<std::byte>((static_cast<std::uint16_t>(v) >> 8) & 0xffu));
@@ -554,14 +627,72 @@ private:
     i16(0);
     i16(0);
     i16(0);
-    u16(3);  // 4 points
-    u16(1);  // instructionLength = 1
-    // The instruction byte itself is irrelevant; HintingRejected fires before it would be read.
+    u16(3);      // 4 points
+    u16(1000);   // instructionLength = 1000, far past the end of this record
     b.push_back(std::byte{0x42});
     return b;
 }
 
-/// A glyph record shorter than the 10-byte header - the parser fails with TruncatedGlyph.
+/// A glyph declaring one contour of 2 points whose first flag carries REPEAT_FLAG with a count
+/// of 200 - far more points than endPtsOfContours claims. The flag stream and the contour list
+/// disagree, so the parser fails with GlyphFlagRepeatOverrun rather than truncating silently.
+[[nodiscard]] std::vector<std::byte> repeatOverrunGlyph() {
+    std::vector<std::byte> b;
+    auto                   i16 = [&](std::int16_t v) {
+        b.push_back(static_cast<std::byte>((static_cast<std::uint16_t>(v) >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(static_cast<std::uint16_t>(v) & 0xffu));
+    };
+    auto u16 = [&](std::uint16_t v) {
+        b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(v & 0xffu));
+    };
+    i16(1);
+    i16(0);
+    i16(0);
+    i16(0);
+    i16(0);
+    u16(1);                        // endPtsOfContours[0] = 1 -- two points
+    u16(0);                        // instructionLength = 0
+    b.push_back(std::byte{0x09});  // on-curve + REPEAT_FLAG
+    b.push_back(std::byte{200});   // ...repeated 200 more times
+    for (int i = 0; i < 8; ++i)    // coordinate bytes, never reached
+        b.push_back(std::byte{0});
+    return b;
+}
+
+/// Two points whose signed-16 X deltas accumulate past INT16_MAX. Well-formed fonts cannot reach
+/// this (coordinates are int16 bounded by the head bbox), so it is malformed input by
+/// construction - and the parser refuses with CoordinateOverflow rather than clamping to a
+/// plausible-looking wrong outline.
+[[nodiscard]] std::vector<std::byte> coordinateOverflowGlyph() {
+    std::vector<std::byte> b;
+    auto                   i16 = [&](std::int16_t v) {
+        b.push_back(static_cast<std::byte>((static_cast<std::uint16_t>(v) >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(static_cast<std::uint16_t>(v) & 0xffu));
+    };
+    auto u16 = [&](std::uint16_t v) {
+        b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(v & 0xffu));
+    };
+    i16(1);
+    i16(0);
+    i16(0);
+    i16(0);
+    i16(0);
+    u16(1);  // endPtsOfContours[0] = 1 -- two points
+    u16(0);  // instructionLength = 0
+    b.push_back(std::byte{0x01});
+    b.push_back(std::byte{0x01});
+    i16(30000);  // X deltas: 30000 then +30000 leaves int16
+    i16(30000);
+    i16(0);  // Y deltas
+    i16(0);
+    return b;
+}
+
+/// A glyph record shorter than the 10-byte header - the parser fails with TruncatedGlyph. Five
+/// bytes rather than zero: a *zero*-length record is the spec's encoding of a blank glyph and
+/// parses (see `zeroLengthGlyphParses`), so the truncation fixture has to be non-empty.
 [[nodiscard]] std::vector<std::byte> shortGlyph() {
     return std::vector<std::byte>(5, std::byte{0});
 }
@@ -624,11 +755,11 @@ const mdux::spec::Register validFontParses{"A minimal well-formed TrueType font 
                                            }};
 
 const mdux::spec::Register trueAndTyp1Acceptances{"parse() accepts 'true' and 'typ1' TrueType container variants", "evidence-unit", [] {
-                                                      // The directory records walk can pass on either 'true' or 'typ1' if they actually
-                                                      // describe a TrueType outline table set; the check at the version word is the first
-                                                      // gate, not the only one, and these two are alternative container spellings rather than
-                                                      // tow CFF-flavoured ones. (OTTO is the CFF OpenType container and would reject here too,
-                                                      // but parse() rejects CFF fonts later again on the 'CFF ' table tag, regardless.)
+                                                      // The directory walk can pass on either 'true' or 'typ1' if they actually describe a
+                                                      // TrueType outline table set; the check at the version word is the first gate, not the
+                                                      // only one, and these two are alternative container spellings for the same glyf-based
+                                                      // format. 'OTTO' also passes this gate, but for the opposite reason - it is admitted so
+                                                      // that its 'CFF ' table can produce CffOutlinesRejected, which the rejection corpus pins.
                                                       struct State {
                                                           Builder::Serialized     s1;
                                                           Builder::Serialized     s2;
@@ -664,6 +795,244 @@ const mdux::spec::Register trueAndTyp1Acceptances{"parse() accepts 'true' and 't
                                                                 })
                                                           .Execute();
                                                   }};
+
+const mdux::spec::Register layoutTablesAreSkipped{
+    "parse() accepts a font carrying GPOS, GSUB, GDEF and morx, reading none of them",
+    "evidence-unit",
+    [] {
+        // ADR-010 forbids on-device shaping, and the way this parser delivers that is by never
+        // reading a layout table - not by refusing a font that has one. Every font a designer
+        // ships carries GPOS and GSUB (8 of 8 stock DejaVu faces do), so a presence rule would
+        // accept no real input at all while adding no safety over simply not reading the bytes.
+        // This scenario is the regression guard on that decision.
+        struct State {
+            Builder::Serialized     serialized;
+            std::optional<tt::Font> font;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-layout-tables-skipped")
+            .Given("a font with GPOS, GSUB, GDEF and morx tables alongside its outlines",
+                   [state] {
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, squareGlyph())
+                                               .extraTable("GPOS", dummyExtra())
+                                               .extraTable("GSUB", dummyExtra())
+                                               .extraTable("GDEF", dummyExtra())
+                                               .extraTable("morx", dummyExtra())
+                                               .serialize();
+                   })
+            .When("parse() is called",
+                  [state] {
+                      auto font = tt::parse(state->serialized.bytes);
+                      if (!font.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("font with layout tables was rejected: {}", tt::describe(font.error())),
+                                                                std::source_location::current());
+                      }
+                      state->font = std::move(*font);
+                  })
+            .Then("it parses, and its glyphs still parse",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->font->numGlyphs == 2, "numGlyphs");
+                      auto glyph = tt::parseGlyph(*state->font, 1);
+                      checks.expect(glyph.has_value(), "the square glyph parses out of a font carrying layout tables");
+                      if (glyph.has_value()) {
+                          checks.expect(glyph->points.size() == 4, "4 points");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register zeroLengthGlyphParses{
+    "A zero-length glyf record (loca[i] == loca[i+1]) parses as a blank glyph",
+    "evidence-unit",
+    [] {
+        // This is the spec's encoding for a glyph with no outline, and it is how every real font
+        // stores the space character: DejaVuSans has 63 such records, gid 3 (space) among them.
+        // Treating it as a truncation would fail the space character of every stock font.
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-zero-length-glyph-parses")
+            .Given("a font whose glyph 0 occupies no bytes at all, followed by a square glyph",
+                   [state] {
+                       state->serialized = Builder().rawGlyph(0, {}).rawGlyph(1, squareGlyph()).serialize();
+                       auto font         = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the zero-length glyph",
+                  [state] {
+                      if (state->font->loca.size() < 2 || state->font->loca[0] != state->font->loca[1]) {
+                          throw speclab::core::AssertionFailure("the fixture did not produce a zero-length loca span",
+                                                                std::source_location::current());
+                      }
+                      auto glyph = tt::parseGlyph(*state->font, 0);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("zero-length glyph was rejected: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("it is a blank glyph, and the glyph after it is unaffected",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->glyph->glyphIndex == 0, "glyphIndex");
+                      checks.expect(state->glyph->endPtsOfContours.empty(), "no end points");
+                      checks.expect(state->glyph->points.empty(), "no contour points");
+                      auto next = tt::parseGlyph(*state->font, 1);
+                      checks.expect(next.has_value() && next->points.size() == 4, "the following glyph still parses");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register hintedGlyphParses{
+    "A glyph carrying hinting bytecode parses to the same outline as its unhinted twin",
+    "evidence-unit",
+    [] {
+        // The bytecode is stepped over rather than interpreted: the runtime has no hinting
+        // engine, so the bytes have no consumer, and roughly 16% of a stock font's glyphs carry
+        // them. The fixture's instruction bytes are values that would read as legal flags, so a
+        // parser that failed to skip them would produce a *different* outline rather than fail.
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-hinted-glyph-parses")
+            .Given("a font whose only glyph is the square glyph plus 4 bytes of bytecode",
+                   [state] {
+                       state->serialized = Builder().rawGlyph(0, hintedSquareGlyph()).serialize();
+                       auto font         = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called",
+                  [state] {
+                      auto glyph = tt::parseGlyph(*state->font, 0);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("hinted glyph was rejected: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("the outline matches squareGlyph()'s, and no instruction byte leaked into it",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          checks.expect(g.points[0].x == 0 && g.points[0].y == 0, "point 0 at (0,0)");
+                          checks.expect(g.points[1].x == 100 && g.points[1].y == 0, "point 1 at (100,0)");
+                          checks.expect(g.points[2].x == 100 && g.points[2].y == 100, "point 2 at (100,100)");
+                          checks.expect(g.points[3].x == 0 && g.points[3].y == 100, "point 3 at (0,100)");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register overlapSimpleFlagParses{
+    // No semicolon in this title: mdux_discover_tests() splits registered names on ';', so one
+    // would register as two bogus CTest cases.
+    "A glyph whose flag sets OVERLAP_SIMPLE (bit 6) parses, because only bit 7 is reserved",
+    "evidence-unit",
+    [] {
+        // Bit 6 is OVERLAP_SIMPLE in the current OpenType spec - a rasteriser hint with no
+        // shaping semantics that modern tooling sets. Masking it as reserved would refuse fonts
+        // whose only unusual property is having been built recently.
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-overlap-simple-flag-parses")
+            .Given("a one-point glyph whose flag is on-curve + OVERLAP_SIMPLE",
+                   [state] {
+                       state->serialized = Builder().rawGlyph(0, overlapSimpleGlyph()).serialize();
+                       auto font         = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called",
+                  [state] {
+                      auto glyph = tt::parseGlyph(*state->font, 0);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("OVERLAP_SIMPLE glyph was rejected: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("the point is read with its coordinates and on-curve bit intact",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.points.size() == 1, "1 point");
+                      if (g.points.size() == 1) {
+                          checks.expect(g.points[0].x == 7 && g.points[0].y == 9, "point at (7,9)");
+                          checks.expect(g.points[0].onCurve, "on-curve");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register overLongLocaIsAccepted{
+    "parse() accepts a 'loca' table longer than numGlyphs+1 entries",
+    "evidence-unit",
+    [] {
+        // The size check is `<`, not `!=`, and this pins why: sfnt pads every table to a 4-byte
+        // boundary, so a short-format loca with an even entry count legitimately carries two
+        // trailing bytes. `LocaSizeMismatch` means "too short", and only that.
+        struct State {
+            std::vector<std::byte>  bytes;
+            std::optional<tt::Font> font;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-over-long-loca-accepted")
+            .Given("a one-glyph font whose loca record declares 6 bytes where 4 are needed",
+                   [state] {
+                       state->bytes = Builder().rawGlyph(0, squareGlyph()).locaDeclaredLength(6).serialize().bytes;
+                   })
+            .When("parse() is called",
+                  [state] {
+                      auto font = tt::parse(state->bytes);
+                      if (!font.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("padded loca was rejected: {}", tt::describe(font.error())),
+                                                                std::source_location::current());
+                      }
+                      state->font = std::move(*font);
+                  })
+            .Then("only the numGlyphs+1 entries it needs are read",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->font->loca.size() == 2, "loca holds exactly numGlyphs+1 entries");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 // ---------------------------------------------------------------------------
 // parse(): rejection corpus - one scenario per ParseError the directory walk emits.
@@ -733,25 +1102,13 @@ const mdux::spec::Register parseRejections{
              [] {
              return Builder().extraTable("CFF2", dummyExtra()).serialize().bytes;
              }},
-            {                             "a 'GPOS' table present",
-             ParseError::GposRejected,
+            {  "an 'OTTO' container, which carries CFF outlines",
+             ParseError::CffOutlinesRejected,
              [] {
-             return Builder().extraTable("GPOS", dummyExtra()).serialize().bytes;
-             }},
-            {                             "a 'GSUB' table present",
-             ParseError::GsubRejected,
-             [] {
-             return Builder().extraTable("GSUB", dummyExtra()).serialize().bytes;
-             }},
-            {                             "a 'morx' table present",
-             ParseError::AppleLayoutRejected,
-             [] {
-             return Builder().extraTable("morx", dummyExtra()).serialize().bytes;
-             }},
-            {                             "a 'mort' table present",
-             ParseError::AppleLayoutRejected,
-             [] {
-             return Builder().extraTable("mort", dummyExtra()).serialize().bytes;
+             // 'OTTO' passes the version-word gate on purpose, so that the CFF table it
+             // always carries produces the code that names the actual problem rather than
+             // the generic "unfamiliar container word".
+             return Builder().sfnt(0x4F54544Fu).extraTable("CFF ", dummyExtra()).serialize().bytes;
              }},
             {               "a 'head' table shorter than 54 bytes",
              ParseError::TruncatedHead,
@@ -768,10 +1125,10 @@ const mdux::spec::Register parseRejections{
              [] {
              return Builder().unitsPerEm(8).serialize().bytes;
              }},
-            {            "a unitsPerEm value of 8192 (above 4096)",
+            {          "a unitsPerEm value of 32768 (above 16384)",
              ParseError::UnsupportedUnitsPerEm,
              [] {
-             return Builder().unitsPerEm(8192).serialize().bytes;
+             return Builder().unitsPerEm(32768).serialize().bytes;
              }},
             {                "a 'maxp' table shorter than 6 bytes",
              ParseError::TruncatedMaxp,
@@ -968,10 +1325,10 @@ const mdux::spec::Register parseGlyphRejections{
  return tt::parseGlyph(f, 0);
  }},
 
-            {                     "hinting instructions present",
-             ParseError::HintingRejected,
+            {  "instructionLength claiming more bytecode than exists",
+             ParseError::TruncatedGlyphInstructions,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, hintedGlyph()).serialize().bytes);
+             auto r = tt::parse(Builder().rawGlyph(0, instructionsTruncatedGlyph()).serialize().bytes);
              if (r.has_value())
              s.font = std::move(*r);
              return r;
@@ -1023,12 +1380,50 @@ const mdux::spec::Register parseGlyphRejections{
  return tt::parseGlyph(f, 0);
  }},
 
-            {                "a flag with reserved bits 6-7 set",
+            {                  "a flag with reserved bit 7 set",
              ParseError::UnsupportedGlyphFlag,
              [](State& s) {
              auto r = tt::parse(Builder().rawGlyph(0, reservedFlagGlyph()).serialize().bytes);
              if (r.has_value())
              s.font = std::move(*r);
+             return r;
+             }, [](const tt::Font& f) {
+ return tt::parseGlyph(f, 0);
+ }},
+
+            {  "a REPEAT_FLAG count claiming more points than exist",
+             ParseError::GlyphFlagRepeatOverrun,
+             [](State& s) {
+             auto r = tt::parse(Builder().rawGlyph(0, repeatOverrunGlyph()).serialize().bytes);
+             if (r.has_value())
+             s.font = std::move(*r);
+             return r;
+             }, [](const tt::Font& f) {
+ return tt::parseGlyph(f, 0);
+ }},
+
+            {      "coordinate deltas accumulating past int16",
+             ParseError::CoordinateOverflow,
+             [](State& s) {
+             auto r = tt::parse(Builder().rawGlyph(0, coordinateOverflowGlyph()).serialize().bytes);
+             if (r.has_value())
+             s.font = std::move(*r);
+             return r;
+             }, [](const tt::Font& f) {
+ return tt::parseGlyph(f, 0);
+ }},
+
+            {         "a hand-built Font whose loca is too short",
+             ParseError::LocaSizeMismatch,
+             [](State& s) {
+             // `Font` is an exported aggregate, so a caller can hand parseGlyph() one parse()
+             // never produced. Indexing loca[glyphIndex + 1] on this would be UB rather than a
+             // diagnostic, which is what the guard at the top of parseGlyph() prevents.
+             auto r = tt::parse(Builder().rawGlyph(0, squareGlyph()).serialize().bytes);
+             if (r.has_value()) {
+             s.font = std::move(*r);
+             s.font->numGlyphs = 5;  // loca still holds only 2 entries
+             }
              return r;
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);

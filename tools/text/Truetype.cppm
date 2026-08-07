@@ -26,23 +26,42 @@
  * it was given, and that anything it does not understand is a refusal with a specific code
  * rather than a guess - the same contract `Spirv.cpp` makes.
  *
- * ## v1 scope, and what gets rejected
+ * ## v1 scope: read what an atlas needs, refuse only what cannot be baked
  *
- * v1 supports TrueType `glyf` outlines and Latin/Cyrillic/Greek LTR only. The rejections the
- * parser itself emits are the ones detectable from the binary form:
+ * v1 supports TrueType `glyf` outlines and Latin/Cyrillic/Greek LTR only. The parser emits
+ * exactly two scope rejections, and both are cases where there is no outline for the baker to
+ * turn into coverage:
  *
- * - composite glyphs (numberOfContours == -1): `CompositeGlyphRejected`
- * - CFF or CFF2 outlines (`glyf` would be absent): `CffOutlinesRejected`
- * - hinting instruction bytecode per glyph: `HintingRejected`
- * - `GPOS` table present: `GposRejected`
- * - `GSUB` table present (carries ligatures and contextual substitutions): `GsubRejected`
- * - Apple AAT layout tables `morx` / `mort` present: `AppleLayoutRejected`
+ * - CFF or CFF2 outlines (`CFF `/`CFF2` present, so the outlines are not in `glyf` at all):
+ *   `CffOutlinesRejected`
+ * - composite glyphs (`numberOfContours == -1`), whose outline is a transform over other
+ *   glyphs rather than a contour list: `CompositeGlyphRejected`. ADR-010 decision 5 speaks of
+ *   "composite glyph substitutions the baker did not pre-bake", which is the seam S4 (#160)
+ *   fills - resolving a composite into a flat contour list is a baking step, and this code is
+ *   the signal S4 acts on.
+ *
+ * Everything else ADR-010 names is *skipped rather than refused*. `GPOS`, `GSUB`, `GDEF`,
+ * `morx`/`mort` and the per-glyph hinting `instructions[]` array are simply never read: the
+ * parser walks `head`, `maxp`, `loca` and `glyf`, and a table it does not read cannot reach a
+ * device. That is the shape ADR-010 actually asks for - decision 4 forbids *on-device* code
+ * that walks a font table or advances a pen by a runtime-computed width, not the presence of
+ * those bytes in the host's input file.
+ *
+ * The distinction matters because rejecting on presence would reject essentially every real
+ * font. Measured on DejaVu 2.37: 8 of 8 stock faces carry both `GPOS` and `GSUB`, and 16% of
+ * DejaVuSans' 6253 glyphs carry hinting bytecode - a presence rule accepts no shipping font
+ * and 41% of the glyphs of the one font it did accept. Skipping instead of refusing keeps the
+ * baker's input a font a designer actually shipped, while the runtime still has no shaping
+ * code, because the atlas the baker commits carries coverage bitmaps and baked advances and
+ * nothing else. Composites remain the one refusal that costs coverage (~42% of DejaVuSans'
+ * glyphs, which is where the accented Latin, Cyrillic and Greek forms live), and S4 is where
+ * that is paid down.
  *
  * RTL and complex scripts cannot be detected from the font binary alone - they are a property
  * of the string-to-glyph mapping, which is the `.medui` compiler's (#15) and the restricted
  * charset's (#161) job, not this parser's. The mechanical enforcement described in ADR-010
  * decision paragraph 5 is delivered by #161 (S5); this module is the structural half, refusing
- * the font features whose presence would require on-device shaping.
+ * the outline forms it cannot turn into a contour list.
  *
  * ## The two-step shape
  *
@@ -81,33 +100,32 @@ enum class ParseError : std::uint8_t {
     MissingRequiredTable,       ///< head, maxp, glyf or loca is absent
     TableOutOfBounds,           ///< a table's offset+length exceeds the file
     CffOutlinesRejected,        ///< 'CFF ' or 'CFF2' table present - this is a CFF outline font
-    GposRejected,               ///< 'GPOS' table present
-    GsubRejected,               ///< 'GSUB' table present
-    AppleLayoutRejected,        ///< 'morx' or 'mort' table present
     TruncatedHead,              ///< 'head' table is shorter than 54 bytes
     HeadBadMagicNumber,         ///< 'head' magic check (0x5F0F3CF5) failed
-    UnsupportedUnitsPerEm,      ///< unitsPerEm is zero or outside the supported [16, 4096] range
+    UnsupportedUnitsPerEm,      ///< unitsPerEm is outside the spec's [16, 16384] range
     TruncatedMaxp,              ///< 'maxp' table is shorter than 6 bytes
     UnsupportedLocaFormat,      ///< head.indexToLocFormat is neither 0 (short) nor 1 (long)
-    LocaSizeMismatch,           ///< 'loca' byte length does not match numGlyphs+1 entries
+    LocaSizeMismatch,           ///< 'loca' is too short to hold numGlyphs+1 entries
     LocaOutOfBounds,            ///< a 'loca' entry extends past the end of 'glyf'
     GlyphIndexOutOfRange,       ///< parseGlyph called with an index >= numGlyphs
-    TruncatedGlyph,             ///< glyf record is shorter than the 10-byte header
+    TruncatedGlyph,             ///< glyf record is non-empty but shorter than the 10-byte header
     CompositeGlyphRejected,     ///< numberOfContours == -1; composites are out of v1 scope
-    HintingRejected,            ///< instructionLength > 0; on-device hinting is out of scope
     TruncatedContourEndpoints,  ///< endPtsOfContours extends past the glyf record
+    TruncatedGlyphInstructions, ///< the (skipped) hinting instruction array runs past the record
     TruncatedGlyphFlags,        ///< the flag array extends past the glyf record
+    GlyphFlagRepeatOverrun,     ///< a REPEAT_FLAG count claims more points than the glyph has
     TruncatedGlyphCoords,       ///< x or y coordinates extend past the glyf record
-    UnsupportedGlyphFlag,       ///< a flag value bits 6 or 7 (reserved) are set
+    UnsupportedGlyphFlag,       ///< a flag value has reserved bit 7 set
+    CoordinateOverflow,         ///< an accumulated coordinate left the int16 range the spec allows
     NonMonotonicContours,       ///< endPtsOfContours[i] <= endPtsOfContours[i-1]
 };
 
 [[nodiscard]] std::string_view describe(ParseError error) noexcept;
 
 /// One contour point, with absolute coordinates already resolved from the per-byte deltas the
-/// filesystem form stores. Flags beyond on/off-curve (repeat, x-short, y-short, x-same, y-same)
-/// are consumed inside `parseGlyph()` and never reach the caller; a baker that wanted them
-/// would be re-walking the storage format this struct exists to hide.
+/// `glyf` storage form encodes them as. Flags beyond on/off-curve (repeat, x-short, y-short,
+/// x-same, y-same) are consumed inside `parseGlyph()` and never reach the caller; a baker that
+/// wanted them would be re-walking the storage format this struct exists to hide.
 struct GlyphPoint {
     std::int16_t x{0};
     std::int16_t y{0};
@@ -115,8 +133,11 @@ struct GlyphPoint {
 };
 
 /// A simple, non-composite glyph outline. `CompositeGlyphRejected` is returned before this
-/// struct is ever constructed, so the fields below describe a glyphs that has at least one
-/// contour with all-resolved coordinates and no hinting instructions.
+/// struct is ever constructed, so the fields below describe a glyph with all-resolved
+/// coordinates and no hinting instructions. Both vectors are empty for a glyph with no
+/// outline - the blank the TrueType format spells either as a zero-length `glyf` record
+/// (`loca[i] == loca[i+1]`, how every real font stores the space character) or as a header
+/// declaring `numberOfContours == 0`.
 struct SimpleGlyph {
     std::uint16_t              glyphIndex{0};
     std::int16_t               xMin{0};
@@ -154,18 +175,28 @@ struct Font {
 };
 
 /// Walks the offset table, head, maxp, loca and the implicit "is this a TrueType outline font"
-/// check. Rejects CFF/CFF2/GPOS/GSUB/morx/mort presence up front. Does not read any glyf record;
-/// `parseGlyph()` does that, one at a time, against the `Font` this returns.
+/// check. Rejects a CFF/CFF2 outline font up front, since it has no `glyf` to read; a `GPOS`,
+/// `GSUB`, `GDEF`, `morx` or `mort` table is left unread rather than refused (see "v1 scope"
+/// above). Does not read any glyf record; `parseGlyph()` does that, one at a time, against the
+/// `Font` this returns.
 [[nodiscard]] mdux::core::Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept;
 
 /// Walks one glyf record against `font`, identified by `glyphIndex`. Rejects a composite glyph
-/// before constructing any `SimpleGlyph` state, and a glyph with hinting instructions before
-/// touching its flag or coordinate arrays - so neither of those paths can accidentally read past
-/// a record that was malformed in a way the bound check has not yet run for.
+/// before constructing any `SimpleGlyph` state, so that path cannot accidentally read past a
+/// record that was malformed in a way the bound check has not yet run for. A glyph's hinting
+/// `instructions[]` array is stepped over, not interpreted and not returned - the runtime has no
+/// hinting engine, so the bytes have no consumer. A zero-length record
+/// (`loca[glyphIndex] == loca[glyphIndex + 1]`) is the spec's encoding of a glyph with no
+/// outline, not a truncation, and yields an empty `SimpleGlyph`.
 ///
 /// Reads nothing outside the `Font`'s own `glyf` span (and the trailing `loca` entry needed to
 /// compute the record length). The outer buffer has to stay alive for the lifetime of the
 /// `Font`; this function does not store it.
+///
+/// `Font` is an aggregate with public fields, so a caller can hand this function one that
+/// `parse()` did not build. The `numGlyphs`/`loca` consistency `parse()` guarantees is
+/// therefore re-checked here rather than assumed, and a `Font` that fails it is refused with
+/// `LocaSizeMismatch` instead of indexing a `std::vector` out of range.
 [[nodiscard]] mdux::core::Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyphIndex) noexcept;
 
 }  // namespace mdux::tools::truetype

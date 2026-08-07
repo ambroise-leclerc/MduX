@@ -32,11 +32,16 @@ using mdux::core::Result;
 namespace {
 
 // Recognised sfnt version words. 0x00010000 is the canonical TrueType ID; 'true' and 'typ1' are
-// the Apple and legacy alternative containers; 'OTTO' (0x4F54544F) is CFF-flavoured OpenType and
-// rejected here only if it carries a CFF table, which the directory walk below spots.
+// the Apple and legacy alternative containers. 'OTTO' is CFF-flavoured OpenType: it is admitted
+// at this gate and rejected by the directory walk below on its 'CFF '/'CFF2' tag, so an author
+// who hands the baker an OpenType/CFF font gets `CffOutlinesRejected`, which names the actual
+// problem, rather than `NotATrueTypeOutlineFont`, which would only say the container word was
+// unfamiliar. An 'OTTO' font carrying neither a CFF table nor glyf falls out as
+// MissingRequiredTable.
 constexpr std::uint32_t sfntVersionTrue    = 0x00010000u;
 constexpr std::uint32_t sfntVersionTrueTag = 0x74727565u;  // 'true'
 constexpr std::uint32_t sfntVersionTyp1    = 0x74797031u;  // 'typ1'
+constexpr std::uint32_t sfntVersionOtto    = 0x4F54544Fu;  // 'OTTO'
 
 constexpr std::uint32_t headMagic = 0x5F0F3CF5u;
 
@@ -60,7 +65,10 @@ constexpr std::uint8_t flagYShort          = 0x04u;
 constexpr std::uint8_t flagRepeat          = 0x08u;
 constexpr std::uint8_t flagXSameOrPositive = 0x10u;
 constexpr std::uint8_t flagYSameOrPositive = 0x20u;
-constexpr std::uint8_t flagReservedMask    = 0xC0u;
+// Bit 6 is OVERLAP_SIMPLE in the current OpenType spec - a rasteriser hint with no shaping
+// semantics, which modern tooling does set - so only bit 7 is genuinely reserved. Masking 0xC0
+// here would reject fonts whose only sin is having been built by a recent fontmake.
+constexpr std::uint8_t flagReservedMask    = 0x80u;
 
 [[nodiscard]] std::optional<std::uint16_t> beU16(std::span<const std::byte> bytes, std::size_t offset) noexcept {
     if (offset + 2 > bytes.size()) {
@@ -120,42 +128,40 @@ std::string_view describe(ParseError error) noexcept {
             return "a table's offset + length exceeds the file size";
         case ParseError::CffOutlinesRejected:
             return "a 'CFF ' or 'CFF2' table is present - this is a CFF outline font, not glyf";
-        case ParseError::GposRejected:
-            return "a 'GPOS' table is present; glyph positioning is out of v1 scope";
-        case ParseError::GsubRejected:
-            return "a 'GSUB' table is present; ligatures and substitutions are out of v1 scope";
-        case ParseError::AppleLayoutRejected:
-            return "an 'morx' or 'mort' table is present; Apple AAT layout is out of v1 scope";
         case ParseError::TruncatedHead:
             return "'head' table is shorter than 54 bytes";
         case ParseError::HeadBadMagicNumber:
             return "'head' magic check failed (expected 0x5F0F3CF5)";
         case ParseError::UnsupportedUnitsPerEm:
-            return "unitsPerEm is zero or outside the supported [16, 4096] range";
+            return "unitsPerEm is outside the specification's [16, 16384] range";
         case ParseError::TruncatedMaxp:
             return "'maxp' table is shorter than 6 bytes";
         case ParseError::UnsupportedLocaFormat:
             return "head.indexToLocFormat is neither 0 (short) nor 1 (long)";
         case ParseError::LocaSizeMismatch:
-            return "'loca' byte length does not match numGlyphs+1 entries";
+            return "'loca' is too short to hold numGlyphs+1 entries";
         case ParseError::LocaOutOfBounds:
             return "a 'loca' entry extends past the end of 'glyf'";
         case ParseError::GlyphIndexOutOfRange:
             return "parseGlyph called with an index >= numGlyphs";
         case ParseError::TruncatedGlyph:
-            return "glyf record is shorter than the 10-byte header";
+            return "glyf record is non-empty but shorter than the 10-byte header";
         case ParseError::CompositeGlyphRejected:
             return "numberOfContours == -1; composites are out of v1 scope";
-        case ParseError::HintingRejected:
-            return "instructionLength > 0; on-device hinting is out of v1 scope";
         case ParseError::TruncatedContourEndpoints:
             return "endPtsOfContours or the instruction length field extends past the glyf record";
+        case ParseError::TruncatedGlyphInstructions:
+            return "the hinting instruction array extends past the glyf record";
         case ParseError::TruncatedGlyphFlags:
             return "the flag array extends past the glyf record";
+        case ParseError::GlyphFlagRepeatOverrun:
+            return "a REPEAT_FLAG count claims more points than endPtsOfContours declares";
         case ParseError::TruncatedGlyphCoords:
             return "x or y coordinates extend past the glyf record";
         case ParseError::UnsupportedGlyphFlag:
-            return "a flag value has reserved bits 6 or 7 set";
+            return "a flag value has reserved bit 7 set";
+        case ParseError::CoordinateOverflow:
+            return "an accumulated coordinate left the int16 range the specification allows";
         case ParseError::NonMonotonicContours:
             return "endPtsOfContours is not strictly increasing";
     }
@@ -191,17 +197,19 @@ struct Directory {
             return err(ParseError::DuplicateTable);
         }
 
-        // Reject the unsupported layout/outline tables up front: the structure check at the top
-        // is not enough to refuse a font whose presence would force the runtime to do shaping,
-        // and the catalog of structural categories is the parser's first enforcement point.
+        // A CFF/CFF2 font is refused here rather than falling out as MissingRequiredTable: its
+        // outlines live in a table this parser does not read at all, so "no glyf" is a symptom
+        // and "these are CFF outlines" is the diagnosis the author needs.
+        //
+        // GPOS, GSUB, GDEF and the Apple AAT tables morx/mort are deliberately *not* refused.
+        // ADR-010 forbids on-device shaping, and this walk is what makes that true: those tags
+        // fall through the tag ladder below, so their bytes are never sliced, never read and
+        // never reach a `Font`. A baker that cannot see a table cannot bake it into an artifact,
+        // and a runtime handed that artifact has nothing to apply. Refusing on presence instead
+        // would refuse every font a designer has ever shipped (8 of 8 stock DejaVu faces carry
+        // both GPOS and GSUB) while adding no safety this omission does not already provide.
         if (tagStr == "CFF " || tagStr == "CFF2")
             return err(ParseError::CffOutlinesRejected);
-        if (tagStr == "GPOS")
-            return err(ParseError::GposRejected);
-        if (tagStr == "GSUB")
-            return err(ParseError::GsubRejected);
-        if (tagStr == "morx" || tagStr == "mort")
-            return err(ParseError::AppleLayoutRejected);
 
         // Bounds-check the record's slice before storing it; a later subspan() takes the validated
         // length without re-checking, which is the whole point of doing the walk in pass one.
@@ -226,8 +234,11 @@ struct Directory {
 [[nodiscard]] Result<std::vector<std::uint32_t>, ParseError>
 readLoca(std::span<const std::byte> loca, std::uint16_t numGlyphs, std::uint16_t indexToLocFormat, std::uint32_t glyfLength) noexcept {
     // numGlyphs + 1 entries; short form is uint16 × 2 (the storage value is half of the byte
-    // offset), long form is uint32 straight. The byte length is the size check, so a font that
-    // author declares one glyph but ships a two-entry short loca (4 bytes total) is well-formed.
+    // offset), long form is uint32 straight. The check below is `<`, not `!=`, deliberately: a
+    // table longer than numGlyphs+1 entries is well-formed, because sfnt pads every table to a
+    // 4-byte boundary and a short-format loca with an even entry count picks up two trailing
+    // bytes. Only a table too short to hold the entries the directory promises is a defect, so
+    // `LocaSizeMismatch` reads "too short for numGlyphs+1 entries", not "not exactly".
     const std::size_t entryCount  = static_cast<std::size_t>(numGlyphs) + 1u;
     const std::size_t elementSize = (indexToLocFormat == 0) ? 2u : 4u;
     if (loca.size() < entryCount * elementSize) {
@@ -273,7 +284,7 @@ Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept {
     if (!sfnt) {
         return err(ParseError::TruncatedOffsetTable);
     }
-    if (*sfnt != sfntVersionTrue && *sfnt != sfntVersionTrueTag && *sfnt != sfntVersionTyp1) {
+    if (*sfnt != sfntVersionTrue && *sfnt != sfntVersionTrueTag && *sfnt != sfntVersionTyp1 && *sfnt != sfntVersionOtto) {
         return err(ParseError::NotATrueTypeOutlineFont);
     }
 
@@ -318,7 +329,11 @@ Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept {
     if (!unitsPerEm) {
         return err(ParseError::TruncatedHead);
     }
-    if (*unitsPerEm < 16 || *unitsPerEm > 4096) {
+    // The OpenType specification's own range for head.unitsPerEm. Narrowing it further would
+    // reject spec-valid fonts (an 8192-upem face is legal and not unusual for display faces)
+    // with no ADR behind the narrowing - the baker scales to the atlas' pixel grid anyway, so
+    // a larger em square costs nothing downstream.
+    if (*unitsPerEm < 16 || *unitsPerEm > 16384) {
         return err(ParseError::UnsupportedUnitsPerEm);
     }
     const auto indexToLocFormat = beI16(head, headIndexToLocFormatOffset);
@@ -355,17 +370,19 @@ Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept {
 
 namespace {
 
-/// Saturating add of two int16s into int16, used for accumulating TrueType coordinate deltas that
-/// are themselves int16. The spec stores coordinates as absolute int16 values, so an accumulation
-/// that overflows int16 would already be malformed - clamp to int16_max/min rather than wrap, so a
-/// malformed accumulator stays deterministic rather than producing "anything is allowed".
-[[nodiscard]] std::int16_t satAdd(std::int16_t a, std::int16_t b) noexcept {
+/// Checked add of two int16s, used to accumulate the TrueType coordinate deltas that are
+/// themselves int16. The spec stores coordinates as absolute int16 values bounded by the `head`
+/// bounding box, so an accumulation that leaves int16 can only come from malformed input - and
+/// this file's contract is that anything it does not understand is a refusal with a specific
+/// code rather than a guess. Returning nullopt (which the caller turns into
+/// `CoordinateOverflow`) is the version of that contract for coordinates: a clamped value would
+/// be a plausible-looking but wrong outline, which S4 would then bake and byte-commit as
+/// evidence.
+[[nodiscard]] std::optional<std::int16_t> checkedAdd(std::int16_t a, std::int16_t b) noexcept {
     const auto sum = static_cast<std::int32_t>(a) + static_cast<std::int32_t>(b);
-    if (sum > static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::max())) {
-        return std::numeric_limits<std::int16_t>::max();
-    }
-    if (sum < static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::min())) {
-        return std::numeric_limits<std::int16_t>::min();
+    if (sum > static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::max())
+        || sum < static_cast<std::int32_t>(std::numeric_limits<std::int16_t>::min())) {
+        return std::nullopt;
     }
     return static_cast<std::int16_t>(sum);
 }
@@ -376,6 +393,13 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
     if (glyphIndex >= font.numGlyphs) {
         return err(ParseError::GlyphIndexOutOfRange);
     }
+    // `Font` is an exported aggregate with public fields, so this can be one a caller built or
+    // mutated rather than one `parse()` returned. `parse()` guarantees numGlyphs+1 loca entries;
+    // re-checking costs one comparison and is what keeps the two indexes below from being
+    // std::vector::operator[] out of range, which is UB rather than a diagnostic.
+    if (font.loca.size() < static_cast<std::size_t>(font.numGlyphs) + 1u) {
+        return err(ParseError::LocaSizeMismatch);
+    }
 
     const std::uint32_t start = font.loca[glyphIndex];
     const std::uint32_t end   = font.loca[glyphIndex + 1];
@@ -383,25 +407,34 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
         return err(ParseError::LocaOutOfBounds);
     }
     const auto span = font.glyf.subspan(start, end - start);
+
+    // A zero-length record - loca[i] == loca[i+1] - is how TrueType spells "this glyph has no
+    // outline". It is the mandated encoding for the space character and for every other blank,
+    // not a truncation: DejaVuSans stores 63 of its 6253 glyphs this way, gid 3 (space) among
+    // them. It has to be checked before the 10-byte header bound, because there is no header.
+    if (span.empty()) {
+        SimpleGlyph blank;
+        blank.glyphIndex = glyphIndex;
+        return blank;
+    }
     if (span.size() < 10) {
         return err(ParseError::TruncatedGlyph);
     }
 
     SimpleGlyph glyph;
-    glyph.glyphIndex            = glyphIndex;
-    const auto numberOfContours = beI16(span, 0);
+    glyph.glyphIndex = glyphIndex;
+    // The five int16 header fields are all inside the 10 bytes the guard above secured, so these
+    // five reads cannot fail; dereferencing without a second check is safe here and nowhere else.
+    const auto numberOfContours = *beI16(span, 0);
     glyph.xMin                  = *beI16(span, 2);
     glyph.yMin                  = *beI16(span, 4);
     glyph.xMax                  = *beI16(span, 6);
     glyph.yMax                  = *beI16(span, 8);
 
-    if (!numberOfContours) {
-        return err(ParseError::TruncatedGlyph);
-    }
-    if (*numberOfContours < 0) {
+    if (numberOfContours < 0) {
         return err(ParseError::CompositeGlyphRejected);
     }
-    const auto contours = static_cast<std::size_t>(*numberOfContours);
+    const auto contours = static_cast<std::size_t>(numberOfContours);
 
     // endPtsOfContours: contours × 2 bytes, starting at offset 10. The instruction-length field
     // follows immediately, so the bounds check below also reserves the 2 bytes for it; an attempt
@@ -423,23 +456,29 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
         previousEndPoint = *ep;
     }
 
+    // instructionLength and the hinting bytecode that follows it. The bytecode is stepped over,
+    // not read: the runtime has no hinting engine (ADR-010 decision 4), so the bytes have no
+    // consumer downstream, and a font whose only unsupported feature is that its designer ran
+    // ttfautohint is a font this parser can still produce an outline from. Only the step itself
+    // is checked, so a declared length that runs past the record is still a diagnostic.
     std::size_t cursor            = endPtsEnd;
-    const auto  instructionLength = beU16(span, cursor);
-    if (!instructionLength) {
-        return err(ParseError::TruncatedContourEndpoints);
-    }
+    const auto  instructionLength = *beU16(span, cursor);  // the endPtsEnd + 2 guard secured this
     cursor += 2u;
-    if (*instructionLength > 0) {
-        return err(ParseError::HintingRejected);
+    if (instructionLength > span.size() - cursor) {
+        return err(ParseError::TruncatedGlyphInstructions);
     }
+    cursor += instructionLength;
 
-    // An empty glyph (numberOfContours == 0): no end points, no instructions, no flags and
-    // no coordinates. Returns with empty point lists and a single zero-point contour state.
+    // An empty glyph (numberOfContours == 0) declares no end points, so it has no points either
+    // and the flag and coordinate loops below run zero times, leaving both vectors empty.
     const std::size_t numPoints = (contours == 0) ? 0u : static_cast<std::size_t>(previousEndPoint) + 1u;
 
     // Flags: one byte per point, with the REPEAT_FLAG encoding (the next byte is the count of
     // additional repetitions). The loop fills exactly numPoints flags; an abbreviated repeat or
-    // an absent byte fails with TruncatedGlyphFlags.
+    // an absent byte fails with TruncatedGlyphFlags, and a repeat count claiming more points
+    // than endPtsOfContours declared fails with GlyphFlagRepeatOverrun rather than being
+    // silently truncated - an over-long repeat means the flag stream and the contour list
+    // disagree about how many points the glyph has, and the parser cannot know which is right.
     std::vector<std::uint8_t> flags;
     flags.reserve(numPoints);
     while (flags.size() < numPoints) {
@@ -458,13 +497,11 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
             }
             const std::uint8_t repeatCount = std::to_integer<std::uint8_t>(span[cursor]);
             ++cursor;
-            for (std::uint8_t r = 0; r < repeatCount && flags.size() < numPoints; ++r) {
-                flags.push_back(flag);
+            if (static_cast<std::size_t>(repeatCount) > numPoints - flags.size()) {
+                return err(ParseError::GlyphFlagRepeatOverrun);
             }
+            flags.insert(flags.end(), repeatCount, flag);
         }
-    }
-    if (flags.size() != numPoints) {
-        return err(ParseError::TruncatedGlyphFlags);
     }
 
     // X coordinates. The two flag bits are X_SHORT_VECTOR and X_IS_SAME_OR_POSITIVE; the four
@@ -485,14 +522,22 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
             ++cursor;
             const std::int16_t delta = sameOrPositive ? static_cast<std::int16_t>(static_cast<std::uint16_t>(raw))
                                                       : -static_cast<std::int16_t>(static_cast<std::uint16_t>(raw));
-            x                        = satAdd(x, delta);
+            const auto         next  = checkedAdd(x, delta);
+            if (!next) {
+                return err(ParseError::CoordinateOverflow);
+            }
+            x = *next;
         } else if (!sameOrPositive) {
             const auto v = beI16(span, cursor);
             if (!v) {
                 return err(ParseError::TruncatedGlyphCoords);
             }
-            cursor += 2u;
-            x       = satAdd(x, *v);
+            cursor          += 2u;
+            const auto next  = checkedAdd(x, *v);
+            if (!next) {
+                return err(ParseError::CoordinateOverflow);
+            }
+            x = *next;
         }
         // else (!short && sameOrPositive): delta is zero, no bytes consumed.
         xCoords.push_back(x);
@@ -514,14 +559,22 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
             ++cursor;
             const std::int16_t delta = sameOrPositive ? static_cast<std::int16_t>(static_cast<std::uint16_t>(raw))
                                                       : -static_cast<std::int16_t>(static_cast<std::uint16_t>(raw));
-            y                        = satAdd(y, delta);
+            const auto         next  = checkedAdd(y, delta);
+            if (!next) {
+                return err(ParseError::CoordinateOverflow);
+            }
+            y = *next;
         } else if (!sameOrPositive) {
             const auto v = beI16(span, cursor);
             if (!v) {
                 return err(ParseError::TruncatedGlyphCoords);
             }
-            cursor += 2u;
-            y       = satAdd(y, *v);
+            cursor          += 2u;
+            const auto next  = checkedAdd(y, *v);
+            if (!next) {
+                return err(ParseError::CoordinateOverflow);
+            }
+            y = *next;
         }
         yCoords.push_back(y);
     }
