@@ -59,7 +59,7 @@ specification in a way a separate document describing it cannot stay in sync wit
 
 Each governed module's tests run in `core_tests`/`evidence_tests` (`tests/CMakeLists.txt`), built
 and executed by `.github/workflows/windows-build.yml` and `.github/workflows/linux-gcc16-build.yml`
-on every push. `mdux-evidence-lint`
+on every pull request and on every push to `main` or `develop`. `mdux-evidence-lint`
 (`tools/evidence-lint/mdux_evidence_lint.py`) additionally bans float-format specifiers under
 `src/evidence/` and `tools/`, a static check specific to the canonical-JSON byte-identity property
 `mdux.evidence.json` depends on.

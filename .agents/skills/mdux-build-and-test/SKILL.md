@@ -33,36 +33,40 @@ know will fail or guessing at results.
 
 1. **Configure** (out-of-source only — `cmake/PreventInSourceBuilds.cmake` blocks in-source
    builds):
-   - Windows: `cmake --preset ninja-msvc` (the only preset defined in `CMakePresets.json`; it
-     targets Ninja + MSVC specifically).
-   - Linux (no preset exists yet): mirror what `.github/workflows/linux-gcc16-build.yml`'s
-     `linux-build-gcc16` job runs:
-     ```bash
-     cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-     ```
+   Use a preset, not a hand-written configure line. Each CI leg invokes the preset named below
+   rather than a command that resembles it, so a preset is the only configure guaranteed not to
+   have drifted from what CI actually checks.
+   - Windows: `cmake --preset ninja-msvc` (binary dir `build`), then
+     `cmake --build --preset ninja-msvc`.
+   - Linux: `cmake --preset ninja-gcc` (binary dir `build-gcc`), then
+     `cmake --build --preset ninja-gcc`. This is the preset
+     `.github/workflows/linux-gcc16-build.yml`'s `linux-build-gcc16` job runs.
+   - Debug variants: `ninja-msvc-debug`, `ninja-gcc-debug`. `ninja-clang` also exists but no CI
+     leg currently runs it automatically (`clang-build.yml` is `workflow_dispatch` only).
    - Relevant options: `MDUX_BUILD_EXAMPLES`, `MDUX_BUILD_TESTS` (default `ON`),
      `MDUX_BUILD_DOCS`, `MDUX_ENABLE_REGULATORY_DOCS` (default `OFF`/`ON` respectively).
 
-2. **Build** a focused target first, then the full project if needed:
+2. **Build** a focused target first, then the full project if needed. `$BUILD` below is the
+   preset's binary dir — `build-gcc` on Linux, `build` on Windows:
    ```bash
-   cmake --build build --target MduX            # library only
-   cmake --build build --target MedicalUiExample # one example
-   cmake --build build                            # everything enabled by the configure options
+   cmake --build $BUILD --target MduX             # library only
+   cmake --build $BUILD --target MedicalUiExample # one example
+   cmake --build --preset ninja-gcc               # everything the configure options enabled
    ```
-   Known target names (verify against `cmake --build build --target help` if the list may have
+   Known target names (verify against `cmake --build $BUILD --target help` if the list may have
    changed since this skill was written): library `MduX`; examples `MedicalUiExample`,
    `VulkanSCTriangleExample`; tests `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`,
    `vulkansc_object_tests`; docs `doxygen-docs` (only exists when `MDUX_BUILD_DOCS=ON`).
 
 3. **Test**, focused before broad:
    ```bash
-   ctest --test-dir build -R MduXUnitTests --output-on-failure   # one suite
-   ctest --test-dir build --output-on-failure                    # full suite
+   ctest --test-dir $BUILD -R MduXUnitTests --output-on-failure  # one suite
+   ctest --preset ninja-gcc --output-on-failure                  # full suite, as CI runs it
    ```
    Registered CTest names: `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
    `VulkanSCDeviceObjectTests`.
 
-4. **Run an example** directly once built, e.g. `./build/examples/MedicalUiExample`.
+4. **Run an example** directly once built, e.g. `./build-gcc/examples/MedicalUiExample`.
 
 ## Compiler-specific module limitations
 
@@ -75,11 +79,10 @@ know will fail or guessing at results.
 - **GCC, still current**: `vulkansc_memory_tests` is compiled `-O0` on GCC. That one is *not*
   historical - the ICE in the GIMPLE ealias pass reproduces on GCC 16 as well, and every level
   above `-O0` triggers it. See `tests/CMakeLists.txt` and issue #48.
-- **Clang 20**: the Clang CI job in `.github/workflows/clang-build.yml.disabled` is present but
-  commented out and file-disabled. Clang builds are not currently verified by CI even though the
-  version floor is enforced in
-  `CMakeLists.txt` — treat any Clang build result as unverified against the project's own CI and
-  say so.
+- **Clang 20**: the Clang CI job in `.github/workflows/clang-build.yml` is a live, syntax-checked
+  workflow but carries only a `workflow_dispatch` trigger, so no push or PR runs it. Clang builds
+  are therefore not verified by CI even though the version floor is enforced in `CMakeLists.txt` —
+  treat any Clang build result as unverified against the project's own CI and say so.
 - **MSVC**: requires `/experimental:module` and `/std:c++latest`, already wired into
   `CMakeLists.txt`; the Visual Studio *generator* is explicitly rejected in favor of Ninja for
   `import std;` support (see the `CMAKE_GENERATOR MATCHES "Visual Studio"` fatal-error check).

@@ -179,7 +179,8 @@ scope, not a mechanically enforced restriction.
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note the Clang CI job in `.github/workflows/clang-build.yml.disabled` is disabled
+- Clang 20+ — note the Clang CI job in `.github/workflows/clang-build.yml` runs on manual
+  dispatch only and is not part of the automatic CI set, so it is disabled in practice
   (every step commented out, and the file renamed off `.yml` so GitHub does not parse it), so
   Clang support is unverified in CI even though the version floor is enforced.
 - CMake 4.0+

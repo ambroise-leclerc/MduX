@@ -16,6 +16,9 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![Version](https://img.shields.io/github/v/tag/ambroise-leclerc/MduX?label=version)](https://github.com/ambroise-leclerc/MduX/tags)
 [![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
 [![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
+[![Docs Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml)
+[![Evidence Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml)
+[![Compliance Docs](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml)
 
 [![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
 [![OSV-Scanner](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml)

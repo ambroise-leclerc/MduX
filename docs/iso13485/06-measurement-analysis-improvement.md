@@ -15,7 +15,7 @@ review.
   "justification_id": "JUS-010",
   "standard": "ISO 13485:2016",
   "clause_ref": "ISO 13485:2016 §8.2 Monitoring and measurement",
-  "rationale": "The evidence-kernel and host-tools test suites (91 cases as of the epic that introduced them) run on every pull request across three independent toolchains, giving continuous, reproducible monitoring of whether the codebase still meets its own specified behaviour - not a periodic audit sample.",
+  "rationale": "The evidence-kernel and host-tools test suites (91 cases as of the epic that introduced them) run on every pull request and on every push to main or develop, across the two toolchains CI currently exercises - MSVC and GCC 16; a Clang leg exists but is disabled - giving continuous, reproducible monitoring of whether the codebase still meets its own specified behaviour, not a periodic audit sample.",
   "evidence_refs": ["tests/evidence/", "tests/tools/", ".github/workflows/windows-build.yml", ".github/workflows/linux-gcc16-build.yml"]
 }
 ```

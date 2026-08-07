@@ -25,6 +25,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
 
     # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
     # to a specific UUID that only matches CMake's `import std` experimental-feature

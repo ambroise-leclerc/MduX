@@ -26,6 +26,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
 
     - name: Install dependencies
       run: |
@@ -112,10 +117,15 @@ jobs:
       run: |
         echo "Available Vulkan ICDs:"
         ls -1 /usr/share/vulkan/icd.d/ || true
+        # The log goes to $RUNNER_TEMP, not the workspace. Written into the checkout it would be
+        # covered by .gitignore's `*.log` - so the "Verify no source-tree writes" step below could
+        # not see it, and, more to the point, could not see any other .log a build step wrote
+        # either. Keeping this file outside the tree keeps that check honest.
+        PIXEL_LOG="$RUNNER_TEMP/pixel.log"
         # -V rather than --output-on-failure: a passing run must still print, because two of the
         # things this step verifies are only visible in the output of tests that succeeded.
-        ctest --preset ninja-gcc -L pixel -V --no-tests=error 2>&1 | tee pixel.log
-        if grep -q "Skipped" pixel.log; then
+        ctest --preset ninja-gcc -L pixel -V --no-tests=error 2>&1 | tee "$PIXEL_LOG"
+        if grep -q "Skipped" "$PIXEL_LOG"; then
           echo "::error::Pixel tests were skipped - no Vulkan device. They must run on this leg."
           exit 1
         fi
@@ -123,9 +133,9 @@ jobs:
         # check anything. Installing the package does not prove the layer loads, so the run says
         # which it was and this fails if it was not loaded - otherwise those assertions could go
         # quietly vacuous and the log would look identical.
-        if ! grep -q "validation layers enabled" pixel.log; then
+        if ! grep -q "validation layers enabled" "$PIXEL_LOG"; then
           echo "::error::Validation layers did not load on this leg - the layout and sync assertions are vacuous."
-          grep -i "validation layers" pixel.log || true
+          grep -i "validation layers" "$PIXEL_LOG" || true
           exit 1
         fi
 

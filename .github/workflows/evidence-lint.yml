@@ -21,6 +21,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
 
     # Bans decimal float formatting anywhere in the evidence pipeline (ADR-007). Needs no build,
     # so it runs as its own fast job rather than inside a toolchain leg.
