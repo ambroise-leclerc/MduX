@@ -47,6 +47,14 @@ constexpr std::uint32_t kHeadMagic = 0x5F0F3CF5u;
 /// the whole reason the long (uint32) form exists.
 constexpr std::uint32_t kShortFormLimit = 131072u;
 
+/// What every Builder-made font maps and measures, named so a scenario asserts against the
+/// builder's intent rather than a literal that could drift away from it.
+constexpr std::uint32_t firstMappedCodePoint = 0x41;  // 'A'
+constexpr std::uint32_t firstMappedGlyph     = 1;     // glyph 0 is .notdef and never mapped
+constexpr std::uint16_t firstAdvance         = 500;
+constexpr std::uint16_t advanceStep          = 10;
+constexpr std::int16_t  sideBearing          = 7;
+
 // ---------------------------------------------------------------------------
 // An assembler for in-memory TrueType files, plus helpers for the glyf records each scenario
 // uses. A real `.ttf` would be the same bytes in a different file; building them in code keeps
@@ -110,6 +118,45 @@ public:
     }
     Builder& dropGlyf() {
         dropGlyf_ = true;
+        return *this;
+    }
+    Builder& dropCmap() {
+        dropCmap_ = true;
+        return *this;
+    }
+    Builder& dropHhea() {
+        dropHhea_ = true;
+        return *this;
+    }
+    Builder& dropHmtx() {
+        dropHmtx_ = true;
+        return *this;
+    }
+
+    /// Emits the character map as a format 12 group list instead of format 4 segments. The two
+    /// encode the same mapping by very different means, so a corpus that only ever built one
+    /// leaves the other's decode path unexercised.
+    Builder& cmapFormat12() {
+        cmapFormat12_ = true;
+        return *this;
+    }
+
+    /// Overrides hhea's numberOfHMetrics. Values of 0 or above numGlyphs are the
+    /// `UnsupportedMetricCount` fixtures; a value below numGlyphs exercises the trailing run of
+    /// glyphs that inherit the last advance.
+    Builder& numberOfHMetrics(std::uint16_t n) {
+        numberOfHMetrics_ = n;
+        return *this;
+    }
+
+    /// An override for the byte length the 'hhea' or 'hmtx' directory record declares, for the
+    /// two truncation fixtures.
+    Builder& hheaDeclaredLength(std::uint32_t v) {
+        hheaLen_ = v;
+        return *this;
+    }
+    Builder& hmtxDeclaredLength(std::uint32_t v) {
+        hmtxLen_ = v;
         return *this;
     }
 
@@ -222,6 +269,71 @@ public:
                 }
             }
         }
+        // The character map. Both encodings describe the same thing: code points 'A'..'Z' map to
+        // glyphs 1..26, so a fixture with two glyphs resolves 'A' to glyph 1 and everything above
+        // its numGlyphs to nothing. `firstMappedCodePoint` and `firstMappedGlyph` name the two
+        // ends so a scenario asserts against the builder's intent rather than a literal.
+        std::vector<std::byte> cmap;
+        if (!dropCmap_) {
+            std::vector<std::byte> subtable;
+            if (cmapFormat12_) {
+                appendU16(subtable, 12);  // format
+                appendU16(subtable, 0);   // reserved
+                appendU32(subtable, 16 + 12);
+                appendU32(subtable, 0);  // language
+                appendU32(subtable, 1);  // nGroups
+                appendU32(subtable, firstMappedCodePoint);
+                appendU32(subtable, firstMappedCodePoint + 25u);
+                appendU32(subtable, firstMappedGlyph);
+            } else {
+                // Two segments: the mapped run, then the mandatory 0xFFFF terminator.
+                const std::uint16_t segCount = 2;
+                appendU16(subtable, 4);                 // format
+                appendU16(subtable, 16 + segCount * 8); // length
+                appendU16(subtable, 0);                 // language
+                appendU16(subtable, segCount * 2);
+                appendU16(subtable, 4);  // searchRange, unread by this parser
+                appendU16(subtable, 1);  // entrySelector
+                appendU16(subtable, 0);  // rangeShift
+                appendU16(subtable, static_cast<std::uint16_t>(firstMappedCodePoint + 25u));  // endCode[0]
+                appendU16(subtable, 0xFFFFu);                                                 // endCode[1]
+                appendU16(subtable, 0);                                                       // reservedPad
+                appendU16(subtable, static_cast<std::uint16_t>(firstMappedCodePoint));        // startCode[0]
+                appendU16(subtable, 0xFFFFu);                                                 // startCode[1]
+                // Affine segment: glyph = code + idDelta, so idDelta carries the offset that
+                // takes the first mapped code point to the first mapped glyph.
+                appendU16(subtable, static_cast<std::uint16_t>(firstMappedGlyph - firstMappedCodePoint));
+                appendU16(subtable, 1);  // idDelta[1], irrelevant for the terminator
+                appendU16(subtable, 0);  // idRangeOffset[0] - affine, no glyph array
+                appendU16(subtable, 0);  // idRangeOffset[1]
+            }
+            appendU16(cmap, 0);  // version
+            appendU16(cmap, 1);  // numTables
+            appendU16(cmap, 3);  // platformID: Windows
+            appendU16(cmap, cmapFormat12_ ? 10 : 1);
+            appendU32(cmap, 12);  // offset to the subtable that follows this record
+            cmap.insert(cmap.end(), subtable.begin(), subtable.end());
+        }
+
+        const std::uint16_t metricCount = numberOfHMetrics_.value_or(ng_);
+        std::vector<std::byte> hhea;
+        if (!dropHhea_) {
+            hhea.assign(36, std::byte{0});
+            putU32(hhea, 0, 0x00010000u);  // version 1.0
+            putU16(hhea, 34, metricCount);
+        }
+        std::vector<std::byte> hmtx;
+        if (!dropHmtx_) {
+            // metricCount full pairs, then one bearing per remaining glyph.
+            for (std::uint16_t i = 0; i < metricCount; ++i) {
+                appendU16(hmtx, static_cast<std::uint16_t>(firstAdvance + i * advanceStep));
+                appendU16(hmtx, static_cast<std::uint16_t>(sideBearing));
+            }
+            for (std::uint16_t i = metricCount; i < ng_; ++i) {
+                appendU16(hmtx, static_cast<std::uint16_t>(sideBearing));
+            }
+        }
+
         std::vector<std::byte> glyf;
         if (!dropGlyf_) {
             for (const auto& g : rawGlyphs_) {
@@ -246,6 +358,12 @@ public:
             entries.push_back({"loca", &loca});
         if (!dropGlyf_)
             entries.push_back({"glyf", &glyf});
+        if (!dropCmap_)
+            entries.push_back({"cmap", &cmap});
+        if (!dropHhea_)
+            entries.push_back({"hhea", &hhea});
+        if (!dropHmtx_)
+            entries.push_back({"hmtx", &hmtx});
         for (const auto& extra : extras_) {
             entries.push_back({extra.first, &extra.second});
         }
@@ -299,6 +417,12 @@ public:
             } else if (entries[i].tag == "glyf") {
                 out.glyfRecordStart = rec;
                 out.glyfDataStart   = cursor;
+            } else if (entries[i].tag == "hhea") {
+                if (hheaLen_.has_value())
+                    dataLength = *hheaLen_;
+            } else if (entries[i].tag == "hmtx") {
+                if (hmtxLen_.has_value())
+                    dataLength = *hmtxLen_;
             }
             putU32(out.bytes, rec + 8, dataOffset);
             putU32(out.bytes, rec + 12, dataLength);
@@ -378,6 +502,13 @@ private:
     std::optional<std::uint32_t>                                headLen_;
     std::optional<std::uint32_t>                                maxpLen_;
     std::optional<std::uint32_t>                                locaLen_;
+    std::optional<std::uint32_t>                                hheaLen_;
+    std::optional<std::uint32_t>                                hmtxLen_;
+    std::optional<std::uint16_t>                                numberOfHMetrics_;
+    bool                                                        dropCmap_     = false;
+    bool                                                        dropHhea_     = false;
+    bool                                                        dropHmtx_     = false;
+    bool                                                        cmapFormat12_ = false;
     std::map<std::size_t, std::uint16_t>                        locaOverrides_;
     std::vector<std::vector<std::byte>>                         rawGlyphs_;
     std::vector<std::pair<std::string, std::vector<std::byte>>> extras_;
@@ -1192,6 +1323,126 @@ const mdux::spec::Register longLocaReachesPastShortFormLimit{
             .Execute();
     }};
 
+const mdux::spec::Register characterMapResolvesCodePoints{
+    "Both cmap encodings resolve the same code points to the same glyphs",
+    "evidence-unit",
+    [] {
+        // Format 4 and format 12 store the mapping completely differently - four parallel arrays
+        // with a self-relative indirection versus a flat group list - so asserting they agree is
+        // the whole point. A parser that got one of them wrong would otherwise pass whichever
+        // half the corpus happened to build.
+        struct State {
+            std::vector<std::byte>  format4Bytes;
+            std::vector<std::byte>  format12Bytes;
+            std::optional<tt::Font> format4;
+            std::optional<tt::Font> format12;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-cmap-resolves")
+            .Given("the same mapping serialized as format 4 and as format 12",
+                   [state] {
+                       state->format4Bytes  = Builder().numGlyphs(30).rawGlyph(0, squareGlyph()).serialize().bytes;
+                       state->format12Bytes = Builder().numGlyphs(30).cmapFormat12().rawGlyph(0, squareGlyph()).serialize().bytes;
+                   })
+            .When("both are parsed",
+                  [state] {
+                      auto a = tt::parse(state->format4Bytes);
+                      auto b = tt::parse(state->format12Bytes);
+                      if (!a.has_value() || !b.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("format4={}, format12={}",
+                                          a.has_value() ? "ok" : std::string{tt::describe(a.error())},
+                                          b.has_value() ? "ok" : std::string{tt::describe(b.error())}),
+                              std::source_location::current());
+                      }
+                      state->format4  = std::move(*a);
+                      state->format12 = std::move(*b);
+                  })
+            .Then("both map the run identically, and neither invents a mapping outside it",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      for (const auto& [name, font] : {std::pair{"format 4", std::cref(*state->format4)},
+                                                       std::pair{"format 12", std::cref(*state->format12)}}) {
+                          const auto& f = font.get();
+                          for (std::uint32_t offset = 0; offset < 26; ++offset) {
+                              const auto point = static_cast<char32_t>(firstMappedCodePoint + offset);
+                              const auto glyph = tt::glyphForCodePoint(f, point);
+                              checks.expect(glyph.has_value() && *glyph == firstMappedGlyph + offset,
+                                            std::format("{}: U+{:04X} -> glyph {}, got {}", name, static_cast<std::uint32_t>(point),
+                                                        firstMappedGlyph + offset,
+                                                        glyph.has_value() ? std::to_string(*glyph) : std::string{"nothing"}));
+                          }
+                          // Just outside the run in both directions, and a code point no font
+                          // covers. An unmapped point must be nothing, not .notdef dressed up as
+                          // a successful lookup.
+                          checks.expect(!tt::glyphForCodePoint(f, static_cast<char32_t>(firstMappedCodePoint - 1)).has_value(),
+                                        std::format("{}: the point below the run is unmapped", name));
+                          checks.expect(!tt::glyphForCodePoint(f, static_cast<char32_t>(firstMappedCodePoint + 26)).has_value(),
+                                        std::format("{}: the point above the run is unmapped", name));
+                          checks.expect(!tt::glyphForCodePoint(f, U'\u4E2D').has_value(),
+                                        std::format("{}: an unmapped CJK point resolves to nothing", name));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register metricsAreReadPerGlyph{
+    "metricsFor() reads each glyph's advance, and the trailing run inherits the last one",
+    "evidence-unit",
+    [] {
+        // hmtx stores full (advance, bearing) pairs for the first numberOfHMetrics glyphs and
+        // only a bearing for the rest, which inherit the final advance. That compression is how
+        // a monospace or CJK font avoids repeating one advance thousands of times, and getting
+        // it wrong yields plausible-looking metrics for every glyph past the boundary.
+        struct State {
+            std::vector<std::byte>  bytes;
+            std::optional<tt::Font> font;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-hmtx-metrics")
+            .Given("a six-glyph font whose hmtx carries only four full metric pairs",
+                   [state] {
+                       state->bytes = Builder().numGlyphs(6).numberOfHMetrics(4).rawGlyph(0, squareGlyph()).serialize().bytes;
+                   })
+            .When("it is parsed",
+                  [state] {
+                      auto f = tt::parse(state->bytes);
+                      if (!f.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("font rejected: {}", tt::describe(f.error())),
+                                                                std::source_location::current());
+                      }
+                      state->font = std::move(*f);
+                  })
+            .Then("the first four advances differ and the last two repeat the fourth",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      const auto&        font = *state->font;
+                      checks.expect(font.numberOfHMetrics == 4, "numberOfHMetrics");
+                      for (std::uint16_t glyph = 0; glyph < 4; ++glyph) {
+                          auto m = tt::metricsFor(font, glyph);
+                          checks.expect(m.has_value() && m->advanceWidth == firstAdvance + glyph * advanceStep,
+                                        std::format("glyph {} advance is {}", glyph, firstAdvance + glyph * advanceStep));
+                          checks.expect(m.has_value() && m->leftSideBearing == sideBearing,
+                                        std::format("glyph {} bearing is {}", glyph, sideBearing));
+                      }
+                      const std::uint16_t inherited = firstAdvance + 3 * advanceStep;
+                      for (std::uint16_t glyph = 4; glyph < 6; ++glyph) {
+                          auto m = tt::metricsFor(font, glyph);
+                          checks.expect(m.has_value() && m->advanceWidth == inherited,
+                                        std::format("glyph {} inherits advance {}, got {}", glyph, inherited,
+                                                    m.has_value() ? std::to_string(m->advanceWidth) : std::string{"error"}));
+                      }
+                      auto past = tt::metricsFor(font, 6);
+                      checks.expect(!past.has_value() && past.error() == ParseError::GlyphIndexOutOfRange,
+                                    "a glyph index past numGlyphs is refused");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 // ---------------------------------------------------------------------------
 // parse(): rejection corpus - one scenario per ParseError the directory walk emits.
 // ---------------------------------------------------------------------------
@@ -1259,6 +1510,43 @@ const mdux::spec::Register parseRejections{
              ParseError::CffOutlinesRejected,
              [] {
              return Builder().extraTable("CFF2", dummyExtra()).serialize().bytes;
+             }},
+            {                     "a font with no 'cmap' table",
+             ParseError::MissingCharacterMap,
+             [] {
+             // A distinct code from MissingRequiredTable on purpose: the author needs to know the
+             // font cannot name characters, not merely that something is absent.
+             return Builder().dropCmap().serialize().bytes;
+             }},
+            {                     "a font with no 'hhea' table",
+             ParseError::MissingHorizontalMetrics,
+             [] {
+             return Builder().dropHhea().serialize().bytes;
+             }},
+            {                     "a font with no 'hmtx' table",
+             ParseError::MissingHorizontalMetrics,
+             [] {
+             return Builder().dropHmtx().serialize().bytes;
+             }},
+            {              "an 'hhea' table shorter than 36 bytes",
+             ParseError::TruncatedHhea,
+             [] {
+             return Builder().hheaDeclaredLength(20).serialize().bytes;
+             }},
+            {   "an 'hmtx' shorter than numberOfHMetrics requires",
+             ParseError::TruncatedHmtx,
+             [] {
+             return Builder().numGlyphs(8).hmtxDeclaredLength(4).serialize().bytes;
+             }},
+            {                    "a numberOfHMetrics of zero",
+             ParseError::UnsupportedMetricCount,
+             [] {
+             return Builder().numberOfHMetrics(0).serialize().bytes;
+             }},
+            {          "a numberOfHMetrics larger than numGlyphs",
+             ParseError::UnsupportedMetricCount,
+             [] {
+             return Builder().numGlyphs(2).numberOfHMetrics(9).serialize().bytes;
              }},
             {  "an 'OTTO' container, which carries CFF outlines",
              ParseError::CffOutlinesRejected,
