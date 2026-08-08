@@ -111,7 +111,13 @@ Result<AtlasLayout, PackError> pack(std::span<const GlyphExtent> extents) noexce
         }
 
         for (const GlyphExtent& extent : extents) {
-            if (extent.width + glyphPadding > maximumAtlasEdge || extent.height + glyphPadding > maximumAtlasEdge) {
+            // Subtraction, not addition. `extent.width + glyphPadding` is uint32 arithmetic and
+            // wraps to a small number for a width near 0xFFFFFFFF, so the addition form lets the
+            // very largest inputs slip past the guard that exists to catch them. Comparing
+            // against `maximumAtlasEdge - glyphPadding` cannot wrap, because the constant is
+            // larger than the padding.
+            static_assert(maximumAtlasEdge > glyphPadding, "the subtraction below would wrap");
+            if (extent.width > maximumAtlasEdge - glyphPadding || extent.height > maximumAtlasEdge - glyphPadding) {
                 // Distinct from AtlasBudgetExceeded: no sheet size can ever help, so an author
                 // should be told the glyph is the problem rather than the budget.
                 return err(PackError::GlyphTooLarge);
@@ -132,8 +138,12 @@ Result<AtlasLayout, PackError> pack(std::span<const GlyphExtent> extents) noexce
 
         for (std::uint32_t width = minimumAtlasEdge; width <= maximumAtlasEdge; width *= 2u) {
             for (std::uint32_t height = minimumAtlasEdge; height <= width; height *= 2u) {
-                // Width first, then height up to width, so the search visits squarish sheets
-                // before strips and settles on the smallest area that fits.
+                // Width first, then height up to width. The `height <= width` bound is the point:
+                // sheets taller than they are wide are never considered, so this finds the
+                // smallest area *among wide-or-square candidates*, not the smallest possible. A
+                // glyph set wanting 64x128 gets 128x128 instead. That is a deliberate trade for a
+                // texture atlas, and stating it here rather than claiming a minimum the search
+                // does not deliver.
                 auto slots = placeAt(sorted, width, height);
                 if (!slots.has_value()) {
                     continue;

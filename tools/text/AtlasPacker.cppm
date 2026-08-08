@@ -36,10 +36,15 @@
  * ## Power-of-two, and how the size is chosen
  *
  * Sheet dimensions are powers of two because a texture upload path should not have to care about
- * row padding. The packer starts at `minimumAtlasEdge` and doubles - width first, then height, so
- * a sheet grows squarish rather than into a strip - retrying the whole placement each time. It
- * refuses with `AtlasBudgetExceeded` once both edges would pass `maximumAtlasEdge`, which is the
- * "over-budget glyph set" rejection issue #160 asks for.
+ * row padding. The packer starts at `minimumAtlasEdge` and doubles - width first, then height up
+ * to the current width - retrying the whole placement each time. It refuses with
+ * `AtlasBudgetExceeded` once both edges would pass `maximumAtlasEdge`, which is the "over-budget
+ * glyph set" rejection issue #160 asks for.
+ *
+ * **The search is bounded to sheets at least as wide as they are tall.** A set that would fit a
+ * 64x128 sheet gets 128x128 instead, so the result is the smallest area among wide-or-square
+ * candidates rather than the smallest possible. That is deliberate for a texture atlas, and worth
+ * stating rather than describing the search as finding a minimum it does not look for.
  *
  * Retrying from scratch on each growth step, rather than incrementally fitting, keeps the result a
  * function of the final size alone: a sheet packed at 512 wide is identical whether or not the
@@ -110,7 +115,10 @@ struct AtlasLayout {
 };
 
 /**
- * @brief Places every extent on the smallest power-of-two sheet that holds them.
+ * @brief Places every extent on a power-of-two sheet.
+ *
+ * The sheet is the smallest that holds them *among candidates at least as wide as they are tall* -
+ * see "Power-of-two" above for why the search is bounded that way, and what it costs.
  *
  * Deterministic: identical input yields an identical layout on every toolchain, which is what
  * makes the committed `atlas.bin` byte-comparable across CI legs.
