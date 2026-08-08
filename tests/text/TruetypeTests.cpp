@@ -55,6 +55,10 @@ constexpr std::uint16_t firstAdvance         = 500;
 constexpr std::uint16_t advanceStep          = 10;
 constexpr std::int16_t  sideBearing          = 7;
 
+/// The glyph id the truncated-subtable fixture's filler decodes to. In range, so a decoder that
+/// reads past the declared length produces a plausible wrong answer rather than an obvious one.
+constexpr std::uint16_t strayGlyphInFiller = 5;
+
 // ---------------------------------------------------------------------------
 // An assembler for in-memory TrueType files, plus helpers for the glyf records each scenario
 // uses. A real `.ttf` would be the same bytes in a different file; building them in code keeps
@@ -130,6 +134,21 @@ public:
     }
     Builder& dropHmtx() {
         dropHmtx_ = true;
+        return *this;
+    }
+
+    /// Emits the format 4 segment through `idRangeOffset` - the self-relative indirection into a
+    /// trailing glyph array - instead of the affine `code + idDelta` form. Real fonts use both,
+    /// and the two take completely different paths through the decoder.
+    ///
+    /// `truncateGlyphArray` declares a subtable `length` that stops before the glyph array the
+    /// segment needs, and appends filler bytes after it standing in for whatever subtable would
+    /// follow in a real font. A decoder that slices the subtable to the end of `cmap` rather than
+    /// to its declared length reads that filler as glyph ids and returns *wrong mappings* with no
+    /// diagnostic; one that clips correctly refuses with TruncatedCmap.
+    Builder& cmapIndirect(bool truncateGlyphArray = false) {
+        cmapIndirect_          = true;
+        cmapTruncateGlyphArray_ = truncateGlyphArray;
         return *this;
     }
 
@@ -285,6 +304,50 @@ public:
                 appendU32(subtable, firstMappedCodePoint);
                 appendU32(subtable, firstMappedCodePoint + 25u);
                 appendU32(subtable, firstMappedGlyph);
+            } else if (cmapIndirect_) {
+                // Two segments, the first resolving through glyphIdArray. Layout, with the byte
+                // offset of each field, because the indirection below is computed from them:
+                //   0 format, 2 length, 4 language, 6 segCountX2, 8 searchRange,
+                //   10 entrySelector, 12 rangeShift, 14 endCode[2], 18 reservedPad,
+                //   20 startCode[2], 24 idDelta[2], 28 idRangeOffset[2], 32 glyphIdArray[]
+                const std::uint16_t segCount     = 2;
+                const std::uint16_t mappedCount  = 26;
+                const std::uint16_t fullLength   = static_cast<std::uint16_t>(32 + mappedCount * 2);
+                // Declared short on purpose in the truncated variant: four entries instead of 26.
+                const std::uint16_t declaredLen  = cmapTruncateGlyphArray_ ? static_cast<std::uint16_t>(32 + 4 * 2) : fullLength;
+                appendU16(subtable, 4);
+                appendU16(subtable, declaredLen);
+                appendU16(subtable, 0);
+                appendU16(subtable, segCount * 2);
+                appendU16(subtable, 4);
+                appendU16(subtable, 1);
+                appendU16(subtable, 0);
+                appendU16(subtable, static_cast<std::uint16_t>(firstMappedCodePoint + mappedCount - 1));  // endCode[0]
+                appendU16(subtable, 0xFFFFu);                                                            // endCode[1]
+                appendU16(subtable, 0);                                                                  // reservedPad
+                appendU16(subtable, static_cast<std::uint16_t>(firstMappedCodePoint));                   // startCode[0]
+                appendU16(subtable, 0xFFFFu);                                                            // startCode[1]
+                appendU16(subtable, 0);  // idDelta[0]: zero, so the glyph is the array entry itself
+                appendU16(subtable, 1);  // idDelta[1]
+                // idRangeOffset[0] sits at offset 28 and the glyph array starts at 32, and the
+                // spec measures the offset from the slot itself - so the value is 32 - 28 == 4.
+                appendU16(subtable, 4);
+                appendU16(subtable, 0);  // idRangeOffset[1]: the terminator is affine
+                // In the truncated variant only the entries the declared length covers are real;
+                // everything after is filler standing in for the next subtable. The filler is a
+                // valid, in-range glyph id on purpose - a decoder that reads it returns a
+                // confidently *wrong* mapping rather than something obviously broken, which is
+                // the failure this fixture exists to make visible.
+                const std::uint16_t realEntries = cmapTruncateGlyphArray_ ? 4u : mappedCount;
+                for (std::uint16_t i = 0; i < realEntries; ++i) {
+                    appendU16(subtable, static_cast<std::uint16_t>(firstMappedGlyph + i));
+                }
+                for (std::uint16_t i = realEntries; i < mappedCount + 32u; ++i) {
+                    if (!cmapTruncateGlyphArray_) {
+                        break;
+                    }
+                    appendU16(subtable, strayGlyphInFiller);
+                }
             } else {
                 // Two segments: the mapped run, then the mandatory 0xFFFF terminator.
                 const std::uint16_t segCount = 2;
@@ -508,7 +571,9 @@ private:
     bool                                                        dropCmap_     = false;
     bool                                                        dropHhea_     = false;
     bool                                                        dropHmtx_     = false;
-    bool                                                        cmapFormat12_ = false;
+    bool                                                        cmapFormat12_           = false;
+    bool                                                        cmapIndirect_           = false;
+    bool                                                        cmapTruncateGlyphArray_ = false;
     std::map<std::size_t, std::uint16_t>                        locaOverrides_;
     std::vector<std::vector<std::byte>>                         rawGlyphs_;
     std::vector<std::pair<std::string, std::vector<std::byte>>> extras_;
@@ -1382,6 +1447,102 @@ const mdux::spec::Register characterMapResolvesCodePoints{
                                         std::format("{}: the point above the run is unmapped", name));
                           checks.expect(!tt::glyphForCodePoint(f, U'\u4E2D').has_value(),
                                         std::format("{}: an unmapped CJK point resolves to nothing", name));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register indirectCmapSegmentResolves{
+    "A format 4 segment resolving through idRangeOffset maps the same run as an affine one",
+    "evidence-unit",
+    [] {
+        // The indirection is the fiddliest arithmetic in the format: idRangeOffset is a byte
+        // offset measured from its own slot, into a glyph array that follows the four parallel
+        // arrays. Every other scenario here builds the *affine* form, so without this one the
+        // indirect branch is never executed - and it is the branch that a real font with
+        // non-consecutive glyph ids takes.
+        struct State {
+            std::vector<std::byte>  bytes;
+            std::optional<tt::Font> font;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-cmap-indirect")
+            .Given("a font whose cmap segment resolves through a glyph array",
+                   [state] { state->bytes = Builder().numGlyphs(30).cmapIndirect().rawGlyph(0, squareGlyph()).serialize().bytes; })
+            .When("it is parsed",
+                  [state] {
+                      auto f = tt::parse(state->bytes);
+                      if (!f.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("indirect cmap rejected: {}", tt::describe(f.error())),
+                                                                std::source_location::current());
+                      }
+                      state->font = std::move(*f);
+                  })
+            .Then("it maps exactly the run the affine form maps",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      for (std::uint32_t offset = 0; offset < 26; ++offset) {
+                          const auto point = static_cast<char32_t>(firstMappedCodePoint + offset);
+                          const auto glyph = tt::glyphForCodePoint(*state->font, point);
+                          checks.expect(glyph.has_value() && *glyph == firstMappedGlyph + offset,
+                                        std::format("U+{:04X} -> glyph {}, got {}", static_cast<std::uint32_t>(point),
+                                                    firstMappedGlyph + offset,
+                                                    glyph.has_value() ? std::to_string(*glyph) : std::string{"nothing"}));
+                      }
+                      checks.expect(!tt::glyphForCodePoint(*state->font, static_cast<char32_t>(firstMappedCodePoint + 26)).has_value(),
+                                    "the point above the run is unmapped");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register subtableIsClippedToDeclaredLength{
+    "A subtable whose glyph array runs past its declared length is refused, not read on into the next one",
+    "evidence-unit",
+    [] {
+        // The regression test for a review finding: slicing the chosen subtable to the end of the
+        // whole `cmap` table, rather than to its own declared length, lets format 4's
+        // idRangeOffset indirection read into whatever subtable follows. Every read stays inside
+        // `cmap`, so no bounds check fires - the decoder just returns *someone else's glyph ids*.
+        // Silently drawing the wrong character is the worst failure mode this parser has, so the
+        // assertion is that it is refused rather than merely that it does not crash.
+        //
+        // The fixture declares a subtable length covering four glyph-array entries, needs
+        // twenty-six, and appends filler that would decode as plausible ids.
+        struct State {
+            std::vector<std::byte> bytes;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-cmap-subtable-clipped")
+            .Given("a font whose cmap subtable declares a length shorter than its glyph array",
+                   [state] {
+                       state->bytes = Builder()
+                                          .numGlyphs(30)
+                                          .cmapIndirect(/*truncateGlyphArray=*/true)
+                                          .rawGlyph(0, squareGlyph())
+                                          .serialize()
+                                          .bytes;
+                   })
+            .When("nothing", [] {})
+            .Then("parse() refuses with TruncatedCmap",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      auto               result = tt::parse(state->bytes);
+                      checks.expect(!result.has_value(), "the font is refused");
+                      if (!result.has_value()) {
+                          checks.expect(result.error() == ParseError::TruncatedCmap,
+                                        std::format("got '{}', expected '{}'", tt::describe(result.error()),
+                                                    tt::describe(ParseError::TruncatedCmap)));
+                      } else {
+                          // Spell out what a pass would have meant, so a future regression reads
+                          // as the bug it is rather than as a changed expectation.
+                          const auto stray = tt::glyphForCodePoint(*result, static_cast<char32_t>(firstMappedCodePoint + 10));
+                          checks.expect(false, std::format("it parsed, and U+{:04X} resolved to {} - read out of the next subtable",
+                                                           firstMappedCodePoint + 10,
+                                                           stray.has_value() ? std::to_string(*stray) : std::string{"nothing"}));
                       }
                       checks.raise();
                   })
