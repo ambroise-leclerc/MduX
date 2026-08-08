@@ -42,6 +42,11 @@ using tt::ParseError;
 constexpr std::uint32_t kSfntTrue  = 0x00010000u;
 constexpr std::uint32_t kHeadMagic = 0x5F0F3CF5u;
 
+/// The first byte offset a short-format `loca` cannot express. The short form stores half the
+/// offset in a uint16, so it tops out at 0xFFFF * 2 == 131070; 131072 is the next even offset and
+/// the whole reason the long (uint32) form exists.
+constexpr std::uint32_t kShortFormLimit = 131072u;
+
 // ---------------------------------------------------------------------------
 // An assembler for in-memory TrueType files, plus helpers for the glyf records each scenario
 // uses. A real `.ttf` would be the same bytes in a different file; building them in code keeps
@@ -193,24 +198,24 @@ public:
             const std::size_t entryCount = static_cast<std::size_t>(ng_) + 1u;
             std::uint32_t     cursor     = 0;
             for (std::size_t i = 0; i < entryCount; ++i) {
-                std::uint16_t stored = 0;
-                if (i < rawGlyphs_.size()) {
-                    if (const auto it = locaOverrides_.find(i); it != locaOverrides_.end()) {
-                        stored = static_cast<std::uint16_t>(it->second);
-                    } else {
-                        stored = static_cast<std::uint16_t>(cursor / 2u);
-                    }
-                } else if (const auto it = locaOverrides_.find(i); it != locaOverrides_.end()) {
-                    stored = static_cast<std::uint16_t>(it->second);
-                } else {
-                    stored = static_cast<std::uint16_t>(cursor / 2u);
+                // Carry the byte offset at full width, and narrow only when the short form is what
+                // is actually being written. Computing the short value first and scaling it back
+                // up for the long form - `uint16(cursor / 2) * 2` - wraps silently to 0 at cursor
+                // 131072, which is exactly the first offset the short form cannot express and so
+                // the entire reason the long form exists. Built that way, a long-format fixture
+                // can only ever reach offsets the short form could have carried anyway, and the
+                // u32 branch is exercised without being tested.
+                std::uint32_t byteOffset = cursor;
+                if (const auto it = locaOverrides_.find(i); it != locaOverrides_.end()) {
+                    // Overrides are written in short-form storage units - the raw uint16 the table
+                    // holds - so the offset one denotes is twice its value. `locaShortEntry(1,
+                    // 0xFFFF)` is the LocaOutOfBounds fixture and depends on that reading.
+                    byteOffset = static_cast<std::uint32_t>(it->second) * 2u;
                 }
                 if (longForm) {
-                    // The long form is not scaled, so the byte offset the short form encodes as
-                    // `stored` is `stored * 2` here - the same glyph layout, spelled the other way.
-                    appendU32(loca, static_cast<std::uint32_t>(stored) * 2u);
+                    appendU32(loca, byteOffset);
                 } else {
-                    appendU16(loca, stored);
+                    appendU16(loca, static_cast<std::uint16_t>(byteOffset / 2u));
                 }
                 if (i < rawGlyphs_.size()) {
                     cursor += static_cast<std::uint32_t>(roundUp2(rawGlyphs_[i].size()));
@@ -1108,6 +1113,79 @@ const mdux::spec::Register longLocaFormatParses{
                       if (g.points.size() == 4) {
                           checks.expect(g.points[1].x == 100 && g.points[1].y == 0, "point 1 at (100,0)");
                           checks.expect(g.points[3].x == 0 && g.points[3].y == 100, "point 3 at (0,100)");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register longLocaReachesPastShortFormLimit{
+    "A long-format loca addresses a glyph past the 128 KB the short form can reach",
+    "evidence-unit",
+    [] {
+        // The reason the u32 decode path exists at all. The short form stores half a byte offset
+        // in a uint16, so the largest offset it can name is 0x1FFFE (131070); the first offset it
+        // cannot is exactly 131072. A long-format corpus built only from small offsets never
+        // leaves short-form range, so it exercises the u32 branch without ever testing the thing
+        // that branch is for - which is what `longLocaFormatParses` alone does.
+        //
+        // Glyph 0 is a blank record padded to exactly kShortFormLimit bytes, so glyph 1 starts at
+        // the first offset the short form cannot express. If the trailing offsets wrap, `loca[1]`
+        // reads back as 0 and glyph 1 resolves to glyph 0's record instead of the square.
+        struct State {
+            std::vector<std::byte>         bytes;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-long-loca-past-short-limit")
+            .Given("a long-format font whose second glyph starts at byte 131072",
+                   [state] {
+                       std::vector<std::byte> padded = emptyGlyph();
+                       padded.resize(kShortFormLimit, std::byte{0});  // blank record, then filler
+                       state->bytes = Builder()
+                                          .indexToLocFormat(1)
+                                          .rawGlyph(0, std::move(padded))
+                                          .rawGlyph(1, squareGlyph())
+                                          .serialize()
+                                          .bytes;
+                   })
+            .When("it is parsed and the second glyph is read",
+                  [state] {
+                      auto font = tt::parse(state->bytes);
+                      if (!font.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("long-format font past 128 KB was rejected: {}", tt::describe(font.error())),
+                              std::source_location::current());
+                      }
+                      state->font = std::move(*font);
+                      auto g      = tt::parseGlyph(*state->font, 1);
+                      if (!g.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("glyph past the short-form limit failed: {}", tt::describe(g.error())),
+                              std::source_location::current());
+                      }
+                      state->glyph = std::move(*g);
+                  })
+            .Then("the offset is carried at full width and resolves to the square, not to glyph 0",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      const auto&        loca = state->font->loca;
+                      checks.expect(loca.size() == 3, "loca has numGlyphs+1 entries");
+                      if (loca.size() == 3) {
+                          checks.expect(loca[0] == 0u, "glyph 0 starts at 0");
+                          checks.expect(loca[1] == kShortFormLimit,
+                                        std::format("glyph 1 starts at {}, not a wrapped {}", kShortFormLimit, loca[1]));
+                          checks.expect(loca[2] > kShortFormLimit, "the trailing entry is past it too");
+                      }
+                      // Resolving to the square rather than to glyph 0's blank record is the
+                      // observable consequence: a wrapped offset parses without error and returns
+                      // the wrong glyph, which no bounds check would ever catch.
+                      const auto& g = *state->glyph;
+                      checks.expect(g.points.size() == 4, std::format("4 points, got {}", g.points.size()));
+                      if (g.points.size() == 4) {
+                          checks.expect(g.points[2].x == 100 && g.points[2].y == 100, "point 2 at (100,100)");
                       }
                       checks.raise();
                   })
