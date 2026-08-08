@@ -41,10 +41,16 @@
  * `AtlasBudgetExceeded` once both edges would pass `maximumAtlasEdge`, which is the "over-budget
  * glyph set" rejection issue #160 asks for.
  *
- * **The search is bounded to sheets at least as wide as they are tall.** A set that would fit a
- * 64x128 sheet gets 128x128 instead, so the result is the smallest area among wide-or-square
- * candidates rather than the smallest possible. That is deliberate for a texture atlas, and worth
- * stating rather than describing the search as finding a minimum it does not look for.
+ * **This is a first fit in width-major order, not a minimum.** Candidates are enumerated by
+ * increasing width and, within each width, by increasing height up to it - so area is not
+ * monotonic along the search and the first sheet that fits is not necessarily the smallest one
+ * that would have. 256x256 (65536 px) is reached before 512x64 (32768 px), and a glyph set
+ * fitting both takes the larger.
+ *
+ * That is kept deliberately. "Squarish" is the property worth having in a texture atlas and
+ * "minimal area" is not: a 512x64 strip wastes no pixels but is a worse shape to sample from and
+ * to fit under a device's texture limits. What ADR-007 needs is that the choice be a pure
+ * function of the glyph set, which a first fit in a fixed order is.
  *
  * Retrying from scratch on each growth step, rather than incrementally fitting, keeps the result a
  * function of the final size alone: a sheet packed at 512 wide is identical whether or not the
@@ -117,8 +123,8 @@ struct AtlasLayout {
 /**
  * @brief Places every extent on a power-of-two sheet.
  *
- * The sheet is the smallest that holds them *among candidates at least as wide as they are tall* -
- * see "Power-of-two" above for why the search is bounded that way, and what it costs.
+ * The sheet is the first that holds them in a width-major enumeration, which is not the same as
+ * the smallest - see "Power-of-two" above for the order, the example, and why it is kept.
  *
  * Deterministic: identical input yields an identical layout on every toolchain, which is what
  * makes the committed `atlas.bin` byte-comparable across CI legs.
