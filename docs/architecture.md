@@ -54,6 +54,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.shader.schema` | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
 | `mdux.text.schema` | `include/mdux/text/Schema.cppm` | `src/text/Schema.cpp` |
 | `mdux.text.raster` | `include/mdux/text/Raster.cppm` | `src/text/Raster.cpp` |
+| `mdux.font.schema` | `include/mdux/font/Schema.cppm` | `src/font/Schema.cpp` |
 | `mdux.draw` | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
 | `mdux.ml.schema` | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
@@ -210,7 +211,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | S1 (`mdux.text.schema` + `mdux-textbake` skeleton) landed. S2 (`mdux.tools.truetype`, #158) landed. S3 (`mdux.text.raster`, #159) landed. S4 (atlas packer + font baker, #160) landed with the first committed font package; S5–S6 open |
+| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | S1–S4 landed (`mdux.text.schema`, `mdux.tools.truetype`, `mdux.text.raster`, atlas packer + font baker with the first committed font package). S5 (`mdux.font.schema` + restricted charset, #161) landed; S6 open |
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | the replacement for the retired HTML/CSS path |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |

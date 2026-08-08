@@ -194,6 +194,7 @@ target_sources(MduXCore
             include/mdux/ml/Kernels.cppm
             include/mdux/ml/Runtime.cppm
             include/mdux/draw/Draw.cppm
+            include/mdux/font/Schema.cppm
             include/mdux/text/Schema.cppm
             include/mdux/text/Raster.cppm
     PRIVATE
@@ -204,6 +205,7 @@ target_sources(MduXCore
         src/ml/Kernels.cpp
         src/ml/Runtime.cpp
         src/draw/Draw.cpp
+        src/font/Schema.cpp
         src/text/Schema.cpp
         src/text/Raster.cpp
         src/governance/Governance.cpp

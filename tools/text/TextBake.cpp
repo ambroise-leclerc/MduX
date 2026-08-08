@@ -21,6 +21,7 @@ import mdux.tools.toml;
 import mdux.tools.truetype;
 import mdux.tools.atlaspacker;
 import mdux.text.raster;
+import mdux.font.schema;
 
 namespace mdux::tools::textbake {
 
@@ -28,6 +29,7 @@ namespace json     = mdux::evidence::json;
 namespace truetype = mdux::tools::truetype;
 namespace atlas    = mdux::tools::atlas;
 namespace raster   = mdux::text::raster;
+namespace fontpkg  = mdux::font;
 
 namespace {
 
@@ -58,6 +60,10 @@ constexpr std::string_view glyphOutlineRejected   = "TXT015";
 constexpr std::string_view glyphRasterFailed      = "TXT016";
 constexpr std::string_view atlasPackingFailed     = "TXT017";
 constexpr std::string_view recipePixelSizeInvalid = "TXT018";
+// The digits in a baked font must share an advance, or a numeric field jitters as its
+// value changes. Its own code because it is a property of the *font*, not the recipe:
+// the fix is a different font, not a different charset.
+constexpr std::string_view tabularFiguresMismatch = "TXT019";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
@@ -595,60 +601,70 @@ using SlotIndex = std::vector<const atlas::GlyphSlot*>;
     return sheet;
 }
 
-/// Builds the font package JSON.
+/// Assembles the governed `font::FontPackage` for this bake.
 ///
-/// Emitted directly rather than through a schema type because `mdux.font.schema` is S5 (#161),
-/// which lands after this. The shape below is what S5 formalises; keeping it in canonical JSON
-/// now means the committed artifact does not have to change when the schema module arrives, only
-/// gain a reader.
-[[nodiscard]] json::Value fontPackageJson(const Recipe& recipe, const truetype::Font& font, const atlas::AtlasLayout& layout,
-                                          const std::vector<BakedGlyph>& glyphs, const SlotIndex& slots,
-                                          std::string_view sidecarName, std::span<const std::byte> sheet) {
+/// S4 emitted this JSON by hand because the baker landed before `mdux.font.schema` did. Going
+/// through the governed type now is the point of S5: one definition, imported by both the baker
+/// that writes a package and the runtime that reads one, rather than a writer and a reader that
+/// could drift (ADR-008 decision 1, mirrored to text by ADR-010). `FontPackage::write()` also
+/// validates, so a package this baker emits is one that passed the same checks a consumer applies
+/// on the way in.
+[[nodiscard]] fontpkg::FontPackage buildFontPackage(const Recipe& recipe, const truetype::Font& font,
+                                                    const atlas::AtlasLayout& layout, const std::vector<BakedGlyph>& glyphs,
+                                                    const SlotIndex& slots, std::string_view sidecarName,
+                                                    std::span<const std::byte> sheet) {
     const FontSpec& spec = *recipe.font;
 
-    json::Value package = json::Value::emptyObject();
-    static_cast<void>(package.set("schemaVersion", json::Value::integer(1)));
-    static_cast<void>(package.set("id", json::Value::string(recipe.id)));
-    static_cast<void>(package.set("kind", json::Value::string("font")));
-    static_cast<void>(package.set("unitsPerEm", json::Value::integer(font.unitsPerEm)));
-    static_cast<void>(package.set("pixelSize", json::Value::integer(spec.pixelSize)));
+    fontpkg::FontPackage package;
+    package.id         = recipe.id;
+    package.unitsPerEm = font.unitsPerEm;
+    package.pixelSize  = spec.pixelSize;
+    package.locales    = spec.locales;
 
-    std::vector<json::Value> localeValues;
-    for (const std::string& tag : spec.locales) {
-        localeValues.push_back(json::Value::string(tag));
-    }
-    static_cast<void>(package.set("locales", json::Value::array(std::move(localeValues))));
+    const auto digest    = evidence::sha256(sheet);
+    const auto hex       = evidence::toHex(digest);
+    package.atlas.path             = std::string{sidecarName};
+    package.atlas.width            = layout.width;
+    package.atlas.height           = layout.height;
+    package.atlas.byteLength       = sheet.size();
+    package.atlas.sha256           = std::string{hex.data(), hex.size()};
+    package.atlas.occupancyPercent = layout.occupancyPercent();
 
-    json::Value atlasValue = json::Value::emptyObject();
-    static_cast<void>(atlasValue.set("path", json::Value::string(std::string{sidecarName})));
-    static_cast<void>(atlasValue.set("width", json::Value::integer(layout.width)));
-    static_cast<void>(atlasValue.set("height", json::Value::integer(layout.height)));
-    static_cast<void>(atlasValue.set("byteLength", json::Value::integer(static_cast<std::int64_t>(sheet.size()))));
-    const auto digest = evidence::sha256(sheet);
-    const auto hex    = evidence::toHex(digest);
-    static_cast<void>(atlasValue.set("sha256", json::Value::string(std::string{hex.data(), hex.size()})));
-    static_cast<void>(atlasValue.set("occupancyPercent", json::Value::integer(layout.occupancyPercent())));
-    static_cast<void>(package.set("atlas", std::move(atlasValue)));
-
-    std::vector<json::Value> glyphValues;
-    glyphValues.reserve(glyphs.size());
+    package.glyphs.reserve(glyphs.size());
     for (std::uint32_t index = 0; index < glyphs.size(); ++index) {
         const BakedGlyph&       glyph = glyphs[index];
         const atlas::GlyphSlot& slot  = *slots[index];
-        json::Value             entry = json::Value::emptyObject();
-        static_cast<void>(entry.set("codePoint", json::Value::integer(glyph.codePoint)));
-        static_cast<void>(entry.set("glyphIndex", json::Value::integer(glyph.glyphIndex)));
-        static_cast<void>(entry.set("advanceWidth", json::Value::integer(glyph.advanceWidth)));
-        static_cast<void>(entry.set("leftSideBearing", json::Value::integer(glyph.leftSideBearing)));
-        static_cast<void>(entry.set("x", json::Value::integer(slot.x)));
-        static_cast<void>(entry.set("y", json::Value::integer(slot.y)));
-        static_cast<void>(entry.set("width", json::Value::integer(slot.width)));
-        static_cast<void>(entry.set("height", json::Value::integer(slot.height)));
-        static_cast<void>(entry.set("bitmapOriginX", json::Value::integer(glyph.bitmapOriginX)));
-        static_cast<void>(entry.set("bitmapOriginY", json::Value::integer(glyph.bitmapOriginY)));
-        glyphValues.push_back(std::move(entry));
+        package.glyphs.push_back(fontpkg::GlyphRecord{.codePoint       = glyph.codePoint,
+                                                      .glyphIndex      = glyph.glyphIndex,
+                                                      .advanceWidth    = glyph.advanceWidth,
+                                                      .leftSideBearing = glyph.leftSideBearing,
+                                                      .x               = slot.x,
+                                                      .y               = slot.y,
+                                                      .width           = slot.width,
+                                                      .height          = slot.height,
+                                                      .bitmapOriginX   = glyph.bitmapOriginX,
+                                                      .bitmapOriginY   = glyph.bitmapOriginY});
     }
-    static_cast<void>(package.set("glyphs", json::Value::array(std::move(glyphValues))));
+    // The schema requires ascending code-point order so its find() can binary-search. The bake
+    // walks the recipe's ranges in the order they were written, which is not necessarily sorted.
+    std::sort(package.glyphs.begin(), package.glyphs.end(),
+              [](const fontpkg::GlyphRecord& a, const fontpkg::GlyphRecord& b) noexcept { return a.codePoint < b.codePoint; });
+
+    // The restricted charset is the recipe's ranges, sorted. It is what the .medui compiler (#15)
+    // will check a dynamic-text format against, and validate() refuses a package whose charset
+    // names a code point it has no glyph for - so the table cannot promise more than the atlas
+    // delivers.
+    package.restrictedCharset.reserve(spec.charset.size());
+    for (const CharsetRange& range : spec.charset) {
+        package.restrictedCharset.push_back(fontpkg::CharsetRange{.first = range.first, .last = range.last});
+    }
+    std::sort(package.restrictedCharset.begin(), package.restrictedCharset.end(),
+              [](const fontpkg::CharsetRange& a, const fontpkg::CharsetRange& b) noexcept { return a.first < b.first; });
+
+    // No kerning yet. The field exists and is emitted empty rather than omitted, so a consumer
+    // reads "this package bakes no kerning" instead of having to distinguish an absent member
+    // from an empty one. Populating it is future work; ADR-010's rule is that whatever is not
+    // here does not apply, because no runtime lookup can find it.
     return package;
 }
 
@@ -729,12 +745,18 @@ using SlotIndex = std::vector<const atlas::GlyphSlot*>;
     outputs.atlasWidth  = layout->width;
     outputs.atlasHeight = layout->height;
 
-    auto packageValue = fontPackageJson(recipe, *font, *layout, *glyphs, *slots, outputs.sidecarName, outputs.sidecar);
-    auto packageText  = json::write(packageValue);
+    const auto package     = buildFontPackage(recipe, *font, *layout, *glyphs, *slots, outputs.sidecarName, outputs.sidecar);
+    auto       packageText = package.write();
     if (!packageText.has_value()) {
-        // The writer's error carries a code plus context; only the code has a stable description.
-        report(diagnostics, std::string{recipePath}, 0, packageInvalid,
-               "assembled font package is not valid: " + std::string{json::describe(packageText.error().code)});
+        // Its own code when the digits disagree: that is a property of the font, so the fix is a
+        // different font rather than a different recipe, and sending an author to re-read their
+        // charset would waste their time.
+        const bool tabular = packageText.error() == fontpkg::SchemaError::TabularFigureMismatch;
+        report(diagnostics, std::string{recipePath}, 0, tabular ? tabularFiguresMismatch : packageInvalid,
+               std::format("font package is not valid: {}", fontpkg::describe(packageText.error())),
+               tabular ? "A numeric field redrawn as its value changes will jitter unless every digit "
+                         "shares an advance. Use a font with tabular figures."
+                       : "");
         return std::nullopt;
     }
     outputs.packageJson = std::move(*packageText);
