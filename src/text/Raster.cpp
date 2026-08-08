@@ -40,15 +40,15 @@ using mdux::core::Result;
 namespace {
 
 /// The widest coordinate the fixed-point format holds without a product overflowing the int64
-/// intermediates below. 1 << 23 fixed-point units is 32768 pixels, far past `kMaxPixelSize`, so
+/// intermediates below. 1 << 23 fixed-point units is 32768 pixels, far past `maxPixelSize`, so
 /// hitting this means the scale computation itself produced something absurd.
-constexpr std::int64_t kMaxFixedCoordinate = 1 << 23;
+constexpr std::int64_t maxFixedCoordinate = 1 << 23;
 
 /// Largest number of line segments one quadratic Bézier may flatten into. A curve needing more
 /// than this is either enormous or degenerate; capping keeps a hostile outline from producing an
 /// unbounded edge list, and at 64 segments the residual error is far below one subpixel for any
-/// glyph that fits `kMaxPixelSize`.
-constexpr std::int32_t kMaxCurveSegments = 64;
+/// glyph that fits `maxPixelSize`.
+constexpr std::int32_t maxCurveSegments = 64;
 
 /// Floor division for signed integers. `operator/` truncates toward zero, which rounds -3/2 to
 /// -1 and 3/2 to 1 - an asymmetry that would place a scanline crossing differently on the left
@@ -102,13 +102,13 @@ struct Crossing {
 
 /// Scales a font-unit coordinate into fixed-point pixel space.
 ///
-/// `(unit * pixelSize * kFixedOne) / unitsPerEm`, evaluated with the multiplications first so
+/// `(unit * pixelSize * fixedOne) / unitsPerEm`, evaluated with the multiplications first so
 /// the single truncation happens at the end. Doing the division first - scaling to pixels and
 /// then to fixed point - would round twice and lose roughly half a subpixel per coordinate.
 [[nodiscard]] std::optional<std::int32_t> scaleToFixed(std::int32_t unit, std::uint32_t pixelSize, std::uint16_t unitsPerEm) noexcept {
-    const std::int64_t scaled = floorDiv(static_cast<std::int64_t>(unit) * static_cast<std::int64_t>(pixelSize) * kFixedOne,
+    const std::int64_t scaled = floorDiv(static_cast<std::int64_t>(unit) * static_cast<std::int64_t>(pixelSize) * fixedOne,
                                          static_cast<std::int64_t>(unitsPerEm));
-    if (scaled > kMaxFixedCoordinate || scaled < -kMaxFixedCoordinate) {
+    if (scaled > maxFixedCoordinate || scaled < -maxFixedCoordinate) {
         return std::nullopt;
     }
     return static_cast<std::int32_t>(scaled);
@@ -131,11 +131,11 @@ struct Crossing {
     if (metric <= 0) {
         return 1;  // the control point is on the chord: the curve is a straight line
     }
-    // Divide by kFixedOne / 4 before the root so the count grows once the deviation passes a
+    // Divide by fixedOne / 4 before the root so the count grows once the deviation passes a
     // quarter-pixel rather than a whole one; below that the flattening error is invisible at 8
     // bits of coverage.
-    const std::int64_t segments = 1 + isqrt(floorDiv(metric * 4, kFixedOne));
-    return static_cast<std::int32_t>(std::min<std::int64_t>(segments, kMaxCurveSegments));
+    const std::int64_t segments = 1 + isqrt(floorDiv(metric * 4, fixedOne));
+    return static_cast<std::int32_t>(std::min<std::int64_t>(segments, maxCurveSegments));
 }
 
 /// Evaluates a quadratic Bézier at `t = index / count`, entirely in integers.
@@ -314,7 +314,7 @@ namespace {
     if (request.unitsPerEm == 0) {
         return err(RasterError::UnsupportedUnitsPerEm);
     }
-    if (request.pixelSize == 0 || request.pixelSize > kMaxPixelSize) {
+    if (request.pixelSize == 0 || request.pixelSize > maxPixelSize) {
         return err(RasterError::UnsupportedPixelSize);
     }
     if (request.outline.contourEnds.empty() || request.outline.points.empty()) {
@@ -335,10 +335,10 @@ namespace {
     if (!edges.has_value()) {
         return err(edges.error());
     }
-    if (edges->size() > kMaxEdges) {
+    if (edges->size() > maxEdges) {
         // The second half of the work bound. An outline can reach this without any single
         // contour looking unusual, because every off-curve point may flatten into
-        // kMaxCurveSegments edges - so the check belongs on the flattened count, not the input's.
+        // maxCurveSegments edges - so the check belongs on the flattened count, not the input's.
         return err(RasterError::OutlineTooComplex);
     }
     if (edges->empty()) {
@@ -360,27 +360,27 @@ namespace {
         maxY = std::max({maxY, edge.y0, edge.y1});
     }
 
-    const std::int64_t pixelMinX = floorDiv(minX, kFixedOne);
-    const std::int64_t pixelMinY = floorDiv(minY, kFixedOne);
-    const std::int64_t pixelMaxX = floorDiv(maxX + kFixedOne - 1, kFixedOne);
-    const std::int64_t pixelMaxY = floorDiv(maxY + kFixedOne - 1, kFixedOne);
+    const std::int64_t pixelMinX = floorDiv(minX, fixedOne);
+    const std::int64_t pixelMinY = floorDiv(minY, fixedOne);
+    const std::int64_t pixelMaxX = floorDiv(maxX + fixedOne - 1, fixedOne);
+    const std::int64_t pixelMaxY = floorDiv(maxY + fixedOne - 1, fixedOne);
 
     const std::int64_t width  = pixelMaxX - pixelMinX;
     const std::int64_t height = pixelMaxY - pixelMinY;
     if (width <= 0 || height <= 0) {
         return CoverageBitmap{};
     }
-    if (static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) > kMaxBitmapPixels) {
+    if (static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) > maxBitmapPixels) {
         return err(RasterError::BitmapTooLarge);
     }
 
     // Bucket the edges by the pixel rows they span, so the sweep visits an edge only on rows it
     // can actually cross.
     //
-    // Without this the sweep is `height * kSubScanlines * edgeCount`, and none of those three is
+    // Without this the sweep is `height * subScanlines * edgeCount`, and none of those three is
     // bounded by the bitmap-area check: `contourEnds` holds uint16 indices, so an outline can
-    // carry ~65k points, each off-curve one flattening into up to kMaxCurveSegments edges, while
-    // a tall narrow glyph reaches a large height well under kMaxBitmapPixels. The product is
+    // carry ~65k points, each off-curve one flattening into up to maxCurveSegments edges, while
+    // a tall narrow glyph reaches a large height well under maxBitmapPixels. The product is
     // quadratic in attacker-chosen quantities - a denial-of-service path through a baker that
     // never allocates enough to be refused. Bucketing makes the cost proportional to the geometry
     // instead: the total is the sum, over edges, of the rows each one spans.
@@ -394,8 +394,8 @@ namespace {
     const auto rowSpanOf = [pixelMinY, height](const Edge& edge) noexcept -> std::pair<std::int64_t, std::int64_t> {
         const std::int64_t topY    = std::min(edge.y0, edge.y1);
         const std::int64_t bottomY = std::max(edge.y0, edge.y1);
-        return {std::max<std::int64_t>(floorDiv(topY, kFixedOne) - pixelMinY, 0),
-                std::min<std::int64_t>(floorDiv(bottomY - 1, kFixedOne) - pixelMinY, height - 1)};
+        return {std::max<std::int64_t>(floorDiv(topY, fixedOne) - pixelMinY, 0),
+                std::min<std::int64_t>(floorDiv(bottomY - 1, fixedOne) - pixelMinY, height - 1)};
     };
 
     // Pass one: total the work and count each row's edges. Both come from the same spans, so the
@@ -408,7 +408,7 @@ namespace {
             continue;
         }
         sweepWork += static_cast<std::uint64_t>(lastRow - firstRow + 1);
-        if (sweepWork > kMaxSweepWork) {
+        if (sweepWork > maxSweepWork) {
             return err(RasterError::OutlineTooComplex);
         }
         for (std::int64_t r = firstRow; r <= lastRow; ++r) {
@@ -431,12 +431,26 @@ namespace {
         }
     }
 
-    // Accumulators, one per pixel, in subpixel-width units. `kAccumulatorMax` is the ceiling by
-    // construction: each sub-scanline contributes at most kFixedOne to any one pixel, because
+    // Accumulators, one per pixel, in subpixel-width units. `accumulatorMax` is the ceiling by
+    // construction: each sub-scanline contributes at most fixedOne to any one pixel, because
     // the span added is intersected with that pixel's own column first.
     std::vector<std::int32_t> accumulator(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0);
 
     std::vector<Crossing> crossings;
+
+    // Coverage is accumulated as *differences* along the row, then prefix-summed once at the end
+    // of it, rather than written pixel by pixel as each span is filled.
+    //
+    // Writing per pixel makes the fill cost `height * subScanlines * spanWidth`, which nothing
+    // above bounds: a solid 65536 x 1024 rectangle satisfies both the bitmap-area and sweep-work
+    // limits while asking for about 1.07e9 accumulator writes. Encoding a span as two range-adds
+    // makes each one O(1) regardless of width, and the single prefix pass costs O(width) per row.
+    // Total fill work becomes O(bitmap area), which `maxBitmapPixels` already bounds - so this
+    // removes the unbounded quantity instead of adding another ceiling to check against it.
+    //
+    // One entry longer than the row: a span ending on the last pixel writes its closing
+    // difference at index `width`.
+    std::vector<std::int32_t> rowDelta(static_cast<std::size_t>(width) + 1u, 0);
 
     for (std::int64_t row = 0; row < height; ++row) {
         const std::uint32_t rowBegin = rowOffset[static_cast<std::size_t>(row)];
@@ -444,11 +458,12 @@ namespace {
         if (rowBegin == rowEnd) {
             continue;  // no edge reaches this row
         }
-        for (std::int32_t sub = 0; sub < kSubScanlines; ++sub) {
-            // The sub-scanline's y, sampled at the centre of its band. kSubScanlines is a power
-            // of two and divides 2 * kFixedOne exactly, so this is an integer with no rounding.
+        std::fill(rowDelta.begin(), rowDelta.end(), 0);
+        for (std::int32_t sub = 0; sub < subScanlines; ++sub) {
+            // The sub-scanline's y, sampled at the centre of its band. subScanlines is a power
+            // of two and divides 2 * fixedOne exactly, so this is an integer with no rounding.
             const std::int64_t sampleY =
-                (pixelMinY + row) * kFixedOne + (2 * static_cast<std::int64_t>(sub) + 1) * kFixedOne / (2 * kSubScanlines);
+                (pixelMinY + row) * fixedOne + (2 * static_cast<std::int64_t>(sub) + 1) * fixedOne / (2 * subScanlines);
 
             crossings.clear();
             for (std::uint32_t slot = rowBegin; slot < rowEnd; ++slot) {
@@ -488,22 +503,43 @@ namespace {
                     continue;
                 }
                 if (previous != 0 && winding == 0) {
-                    // Clip to the bitmap, then add each pixel's exact overlap with the span.
-                    const std::int64_t left  = std::max<std::int64_t>(spanFrom, pixelMinX * kFixedOne);
-                    const std::int64_t right = std::min<std::int64_t>(crossing.x, pixelMaxX * kFixedOne);
+                    // Clip to the bitmap, then record the span as range-adds on rowDelta. The
+                    // three ranges are the partially covered first pixel, the fully covered
+                    // interior, and the partially covered last pixel - each an O(1) pair of
+                    // differences rather than a write per pixel.
+                    const std::int64_t left  = std::max<std::int64_t>(spanFrom, pixelMinX * fixedOne);
+                    const std::int64_t right = std::min<std::int64_t>(crossing.x, pixelMaxX * fixedOne);
                     if (right <= left) {
                         continue;
                     }
-                    const std::int64_t firstPixel = floorDiv(left, kFixedOne) - pixelMinX;
-                    const std::int64_t lastPixel  = floorDiv(right - 1, kFixedOne) - pixelMinX;
-                    for (std::int64_t px = firstPixel; px <= lastPixel; ++px) {
-                        const std::int64_t pixelLeft  = (pixelMinX + px) * kFixedOne;
-                        const std::int64_t pixelRight = pixelLeft + kFixedOne;
-                        const std::int64_t covered    = std::min(right, pixelRight) - std::max(left, pixelLeft);
-                        accumulator[static_cast<std::size_t>(row * width + px)] += static_cast<std::int32_t>(covered);
+                    const std::int64_t firstPixel = floorDiv(left, fixedOne) - pixelMinX;
+                    const std::int64_t lastPixel  = floorDiv(right - 1, fixedOne) - pixelMinX;
+                    const auto         addRange   = [&rowDelta](std::int64_t from, std::int64_t to, std::int32_t amount) noexcept {
+                        rowDelta[static_cast<std::size_t>(from)] += amount;
+                        rowDelta[static_cast<std::size_t>(to)] -= amount;
+                    };
+                    if (firstPixel == lastPixel) {
+                        addRange(firstPixel, firstPixel + 1, static_cast<std::int32_t>(right - left));
+                        continue;
+                    }
+                    const std::int64_t firstPixelRight = (pixelMinX + firstPixel + 1) * fixedOne;
+                    const std::int64_t lastPixelLeft   = (pixelMinX + lastPixel) * fixedOne;
+                    addRange(firstPixel, firstPixel + 1, static_cast<std::int32_t>(firstPixelRight - left));
+                    addRange(lastPixel, lastPixel + 1, static_cast<std::int32_t>(right - lastPixelLeft));
+                    if (lastPixel > firstPixel + 1) {
+                        addRange(firstPixel + 1, lastPixel, fixedOne);
                     }
                 }
             }
+        }
+
+        // Resolve the row's differences into per-pixel coverage. The running total is the sum of
+        // every span that covered this pixel across all subScanlines, so it is bounded by
+        // accumulatorMax exactly as the per-pixel version was.
+        std::int32_t running = 0;
+        for (std::int64_t px = 0; px < width; ++px) {
+            running += rowDelta[static_cast<std::size_t>(px)];
+            accumulator[static_cast<std::size_t>(row * width + px)] = running;
         }
     }
 
@@ -521,10 +557,10 @@ namespace {
         const std::size_t row    = i / static_cast<std::size_t>(width);
         const std::size_t column = i % static_cast<std::size_t>(width);
         const std::size_t target = (static_cast<std::size_t>(height) - 1u - row) * static_cast<std::size_t>(width) + column;
-        // No clamp, deliberately: `accumulator[i]` is bounded by kAccumulatorMax by construction,
+        // No clamp, deliberately: `accumulator[i]` is bounded by accumulatorMax by construction,
         // so this is in [0, 255] already. See Raster.cppm on why a clamp here would be a bug
         // rather than a safety net.
-        bitmap.coverage[target] = static_cast<std::uint8_t>(accumulator[i] * 255 / kAccumulatorMax);
+        bitmap.coverage[target] = static_cast<std::uint8_t>(accumulator[i] * 255 / accumulatorMax);
     }
     return bitmap;
 }
@@ -536,7 +572,7 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
     //
     // The header promises a diagnostic rather than a `bad_alloc` for a hostile outline, and the
     // size limits exist to make that promise keepable - but the accumulator alone can ask for
-    // 256 MiB at kMaxBitmapPixels, and `std::vector` reports failure by throwing. Declaring the
+    // 256 MiB at maxBitmapPixels, and `std::vector` reports failure by throwing. Declaring the
     // entry point `noexcept` without catching that would turn an ordinary out-of-memory condition
     // into `std::terminate`, taking down the baker instead of failing one glyph.
     //

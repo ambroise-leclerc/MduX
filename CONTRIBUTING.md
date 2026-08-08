@@ -11,7 +11,9 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 - **Functions/Methods:**
   - Use `lowerCamelCase` (e.g., `processData()`, `getValue()`).
 - **Variables (including const, constexpr, and constinit variables):**
-  - Use `lowerCamelCase` (e.g., `dataBuffer`, `isReady`).
+  - Use `lowerCamelCase` (e.g., `dataBuffer`, `isReady`, `maxSweepWork`).
+  - No Hungarian notation, and **no `k` prefix on constants**: `kMaxSweepWork` is wrong,
+    `maxSweepWork` is right. A constant is a variable and follows the same rule as one.
 - **Namespaces:**
   - Use 'lowercase' (e.g., 'mui', 'backend').
 - **Macros:**

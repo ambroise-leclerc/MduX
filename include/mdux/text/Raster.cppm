@@ -41,7 +41,7 @@
  *
  * Concretely, the arithmetic that would otherwise be float:
  *
- * - **Scaling** from font units to pixels is `(unit * pixelSize * kFixedOne) / unitsPerEm`,
+ * - **Scaling** from font units to pixels is `(unit * pixelSize * fixedOne) / unitsPerEm`,
  *   computed in `std::int64_t` and truncated once.
  * - **Curve flattening** picks a segment count from an integer curvature proxy and an integer
  *   square root, then evaluates the Bézier at `t = i/N` with the divisions done last, in
@@ -49,27 +49,27 @@
  * - **Edge/scanline intersection** is `x0 + (x1 - x0) * (y - y0) / (y1 - y0)`, again in
  *   `std::int64_t`, with a floor division so that negative coordinates round the same way as
  *   positive ones instead of toward zero.
- * - **Coverage** is a sum of subpixel widths, and the final byte is `acc * 255 / kAccumulatorMax`.
+ * - **Coverage** is a sum of subpixel widths, and the final byte is `acc * 255 / accumulatorMax`.
  *
  * ## Why coverage cannot leave [0, 255]
  *
  * Issue #159 asks for "coverage values in [0,255] with no clamping surprises", and the way to
  * have no clamping surprises is to have no clamp. A pixel's accumulator gains at most
- * `kFixedOne` per sub-scanline - the span contributing to it is intersected with that pixel's
- * own column before being added - and there are exactly `kSubScanlines` of them, so the
- * accumulator is bounded above by `kAccumulatorMax` by construction. The final
- * `acc * 255 / kAccumulatorMax` therefore lands in [0, 255] with 0 and 255 both reachable and
+ * `fixedOne` per sub-scanline - the span contributing to it is intersected with that pixel's
+ * own column before being added - and there are exactly `subScanlines` of them, so the
+ * accumulator is bounded above by `accumulatorMax` by construction. The final
+ * `acc * 255 / accumulatorMax` therefore lands in [0, 255] with 0 and 255 both reachable and
  * neither produced by saturation. `rasterise()` contains no `std::clamp` on a coverage value,
  * and a future change that makes one necessary has broken this invariant rather than found a
  * corner case.
  *
  * ## The sampling model
  *
- * Analytic in x, sampled in y. Each pixel row is cut into `kSubScanlines` horizontal sample
+ * Analytic in x, sampled in y. Each pixel row is cut into `subScanlines` horizontal sample
  * lines; on each, the outline's crossings are computed exactly in fixed point, sorted, and
  * filled by the nonzero winding rule. A span contributes its exact overlap with each pixel
- * column, so horizontal edges are resolved to `1/kFixedOne` of a pixel while vertical detail is
- * quantised to `1/kSubScanlines`.
+ * column, so horizontal edges are resolved to `1/fixedOne` of a pixel while vertical detail is
+ * quantised to `1/subScanlines`.
  *
  * The asymmetry is deliberate: exact area coverage in both axes needs a signed-area cell
  * accumulator whose correctness is much harder to see by reading it, and this is a *baker*.
@@ -91,47 +91,47 @@ enum class RasterError : std::uint8_t {
     EmptyOutline,          ///< no contours, or every contour empty - nothing to rasterise
     MalformedContours,     ///< contour end indices are not strictly increasing, or exceed the points
     UnsupportedUnitsPerEm, ///< unitsPerEm is zero, so the font-unit-to-pixel scale is undefined
-    UnsupportedPixelSize,  ///< pixelSize is zero, or larger than `kMaxPixelSize`
-    BitmapTooLarge,        ///< the outline's scaled bounding box exceeds `kMaxBitmapPixels`
+    UnsupportedPixelSize,  ///< pixelSize is zero, or larger than `maxPixelSize`
+    BitmapTooLarge,        ///< the outline's scaled bounding box exceeds `maxBitmapPixels`
     CoordinateOverflow,    ///< a scaled coordinate left the range the fixed-point format holds
-    OutlineTooComplex,     ///< the flattened outline exceeds `kMaxEdges` or `kMaxSweepWork`
+    OutlineTooComplex,     ///< the flattened outline exceeds `maxEdges` or `maxSweepWork`
     AllocationFailed,      ///< a buffer this call needed could not be allocated
 };
 
 [[nodiscard]] std::string_view describe(RasterError error) noexcept;
 
 /// Subpixel resolution of the fixed-point coordinate format, as a shift. One pixel is
-/// `kFixedOne` units, so an x coordinate is resolved to 1/256 of a pixel. Exposed because the
+/// `fixedOne` units, so an x coordinate is resolved to 1/256 of a pixel. Exposed because the
 /// bitmap's `origin` fields are in whole pixels and a caller reconstructing subpixel positioning
 /// needs to know the grid this module rounded coordinates against.
-inline constexpr std::int32_t kFixedShift = 8;
-inline constexpr std::int32_t kFixedOne   = 1 << kFixedShift;
+inline constexpr std::int32_t fixedShift = 8;
+inline constexpr std::int32_t fixedOne   = 1 << fixedShift;
 
 /// Horizontal sample lines per pixel row. 16 gives 17 distinct vertical coverage levels before
 /// the horizontal term refines them further, which is past the point where an 8-bit output can
 /// show the difference. It is a power of two so the sub-scanline centres land on exact integers.
-inline constexpr std::int32_t kSubScanlines = 16;
+inline constexpr std::int32_t subScanlines = 16;
 
-/// The largest value a pixel's coverage accumulator can hold: `kFixedOne` per sub-scanline.
-inline constexpr std::int32_t kAccumulatorMax = kFixedOne * kSubScanlines;
+/// The largest value a pixel's coverage accumulator can hold: `fixedOne` per sub-scanline.
+inline constexpr std::int32_t accumulatorMax = fixedOne * subScanlines;
 
 /// Bounds that turn a malformed or hostile outline into a diagnostic rather than an allocation.
 /// A baker feeding this a corrupt `loca` entry should get `BitmapTooLarge`, not a bad_alloc.
-inline constexpr std::uint32_t kMaxPixelSize    = 4096;
-inline constexpr std::uint64_t kMaxBitmapPixels = 64u * 1024u * 1024u;
+inline constexpr std::uint32_t maxPixelSize    = 4096;
+inline constexpr std::uint64_t maxBitmapPixels = 64u * 1024u * 1024u;
 
 /// Ceilings on the *work* a request can ask for, which the bitmap-area limit alone does not
 /// bound. `contourEnds` holds `std::uint16_t` indices, so an outline may carry ~65k points, and
-/// each off-curve point can flatten into `kMaxCurveSegments` edges; a tall narrow glyph can also
-/// reach a large height while staying well under `kMaxBitmapPixels`. Without these two limits the
+/// each off-curve point can flatten into `maxCurveSegments` edges; a tall narrow glyph can also
+/// reach a large height while staying well under `maxBitmapPixels`. Without these two limits the
 /// sweep below is quadratic in attacker-chosen quantities, which is a denial-of-service path
 /// through a baker rather than a memory-safety one - it never allocates enough to be refused.
 ///
-/// `kMaxSweepWork` counts edge-row visits: the sum, over every flattened edge, of the pixel rows
+/// `maxSweepWork` counts edge-row visits: the sum, over every flattened edge, of the pixel rows
 /// it spans. Real glyphs sit orders of magnitude below it - a 50-pixel-tall glyph with 200 edges
 /// visits a few thousand - so the bound rejects only outlines that were never going to be text.
-inline constexpr std::uint32_t kMaxEdges     = 1u << 16;
-inline constexpr std::uint64_t kMaxSweepWork = 1u << 22;
+inline constexpr std::uint32_t maxEdges     = 1u << 16;
+inline constexpr std::uint64_t maxSweepWork = 1u << 22;
 
 /// One outline point in font units. Mirrors TrueType's `glyf` representation, which is the only
 /// producer today - `onCurve == false` marks a quadratic Bézier control point.

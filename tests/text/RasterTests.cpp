@@ -33,7 +33,7 @@ namespace {
 namespace rr = mdux::text::raster;
 using rr::RasterError;
 
-constexpr std::uint16_t kUpem = 2048;
+constexpr std::uint16_t unitsPerEm = 2048;
 
 /// One closed contour of on-curve points, in font units.
 [[nodiscard]] std::vector<rr::OutlinePoint> box(std::int32_t x0, std::int32_t y0, std::int32_t x1, std::int32_t y1, bool clockwise = false) {
@@ -61,7 +61,7 @@ struct Built {
 
 [[nodiscard]] rr::RasterRequest requestFor(const Built& built, std::uint32_t pixelSize) {
     return rr::RasterRequest{.outline    = rr::Outline{.points = built.points, .contourEnds = built.ends},
-                             .unitsPerEm = kUpem,
+                             .unitsPerEm = unitsPerEm,
                              .pixelSize  = pixelSize};
 }
 
@@ -447,7 +447,7 @@ const mdux::spec::Register rasterRejections{
              }},
             {"a pixelSize past the supported maximum", RasterError::UnsupportedPixelSize,
              [] {
-                 return requestFor(square, rr::kMaxPixelSize + 1u);
+                 return requestFor(square, rr::maxPixelSize + 1u);
              }},
             {"an outline with no contours", RasterError::EmptyOutline,
              [] {
@@ -503,14 +503,20 @@ const mdux::spec::Register sweepWorkBoundIsEnforced{
     [] {
         // The denial-of-service path found in review. The bitmap-area limit does not bound the
         // sweep: `contourEnds` holds uint16 indices so an outline can carry ~65k points, each
-        // off-curve one flattening into up to kMaxCurveSegments edges, while a tall narrow glyph
-        // reaches a large height far under kMaxBitmapPixels. The old sweep was
-        // height * kSubScanlines * edgeCount and would have run for hours on the fixture below.
+        // off-curve one flattening into up to maxCurveSegments edges, while a tall narrow glyph
+        // reaches a large height far under maxBitmapPixels. The old sweep was
+        // height * subScanlines * edgeCount and would have run for hours on the fixture below.
         //
-        // The shape is a comb: full-height vertical strokes, each spanning every row. At 4096
-        // px/em over a 2048 em the glyph is 4096 pixels tall, so ~1200 strokes is ~4.9M edge-row
-        // visits against a kMaxSweepWork budget of 4194304 - over the line, while the bitmap
-        // itself is a harmless 4096 x ~1200 pixels, well inside kMaxBitmapPixels.
+        // The shape is a comb: one closed contour zigzagging between y=0 and y=2048 across 2400
+        // points, so every edge - including the return segment that closes each stroke - spans
+        // the full height. At 4096 px/em over a 2048 em the scale is 2 px per font unit, making
+        // the glyph 4096 pixels tall and about 2398 wide.
+        //
+        //   edge-row visits : 2400 edges * 4096 rows = 9,830,400   (budget 4,194,304 - exceeded)
+        //   bitmap          : 2398 * 4096            = 9,822,208   (limit 67,108,864 - inside)
+        //
+        // That combination is the point: the request is comfortably legal by area and is refused
+        // only because the sweep it asks for is not.
         struct State {
             Built built;
         };
@@ -531,7 +537,7 @@ const mdux::spec::Register sweepWorkBoundIsEnforced{
             .Then("it is refused with OutlineTooComplex, and a normal glyph at the same size still works",
                   [state] {
                       mdux::spec::Checks checks;
-                      auto              result = rr::rasterise(requestFor(state->built, rr::kMaxPixelSize));
+                      auto              result = rr::rasterise(requestFor(state->built, rr::maxPixelSize));
                       checks.expect(!result.has_value(), "the comb is refused");
                       if (!result.has_value()) {
                           checks.expect(result.error() == RasterError::OutlineTooComplex,
@@ -542,11 +548,55 @@ const mdux::spec::Register sweepWorkBoundIsEnforced{
                       // maximum pixel size is 4096x4096 - the largest legitimate request there is
                       // - and has to keep rasterising.
                       const Built square = contours({box(0, 0, 2048, 2048)});
-                      auto        ok     = rr::rasterise(requestFor(square, rr::kMaxPixelSize));
+                      auto        ok     = rr::rasterise(requestFor(square, rr::maxPixelSize));
                       checks.expect(ok.has_value(), "a full-size square is still accepted");
                       if (ok.has_value()) {
                           checks.expect(ok->width == 4096 && ok->height == 4096,
                                         std::format("4096x4096, got {}x{}", ok->width, ok->height));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register wideFillIsBoundedByBitmapArea{
+    "A very wide solid outline fills in time proportional to its area, not to its span width",
+    "evidence-unit",
+    [] {
+        // The companion to the sweep-work bound, and the second half of a review finding: the
+        // sweep budget counts edge-row visits, which a solid rectangle barely spends - four
+        // edges, two of them vertical. What it does spend is *fill*, and writing coverage pixel
+        // by pixel made that `height * subScanlines * spanWidth`, unbounded by anything above.
+        //
+        // This rectangle is 16384 x 512 pixels: 1024 edge-row visits, trivially inside the sweep
+        // budget, but 512 * 16 * 16384 = 134,217,728 per-pixel writes under the old scheme. Spans
+        // are now recorded as range-adds and resolved by one prefix pass per row, so the cost is
+        // O(bitmap area) - already bounded by maxBitmapPixels - and the scenario completes in
+        // well under a second. A regression to per-pixel writes would show up here as a timeout
+        // rather than a wrong answer, which is why the assertions below also check the coverage:
+        // a fast wrong answer would otherwise pass.
+        struct State {
+            Built              built;
+            rr::CoverageBitmap bitmap;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-raster-wide-fill-bounded")
+            .Given("a rectangle 16384 pixels wide and 512 tall",
+                   [state] { state->built = contours({box(0, 0, 65536, 2048)}); })
+            .When("it is rasterised at 512 pixels per em",
+                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 512), "a very wide rectangle"); })
+            .Then("it is the expected extent and solid throughout",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      const auto&        b = state->bitmap;
+                      checks.expect(b.width == 16384 && b.height == 512,
+                                    std::format("16384x512, got {}x{}", b.width, b.height));
+                      if (b.width == 16384 && b.height == 512) {
+                          checks.expect(at(b, 0, 0) == 255 && at(b, 16383, 511) == 255 && at(b, 8192, 256) == 255,
+                                        "corners and centre are solid");
+                          const bool allFull = std::ranges::all_of(b.coverage, [](std::uint8_t v) { return v == 255; });
+                          checks.expect(allFull, "every pixel of a pixel-aligned rectangle is fully covered");
                       }
                       checks.raise();
                   })
@@ -559,10 +609,10 @@ const mdux::spec::Register sweepWorkBoundIsEnforced{
 
 /// The digest the reference glyph must produce. See the scenario body for why this is never
 /// updated to match new output.
-constexpr std::string_view kFrozenDigest = "1b998a7518a981f22d0a917dad7a478cd3ff1ee242619f8d315db4f365081b24";
+constexpr std::string_view frozenDigest = "1b998a7518a981f22d0a917dad7a478cd3ff1ee242619f8d315db4f365081b24";
 
 /// Deliberately coprime with the em, so no coordinate lands on a pixel boundary by accident.
-constexpr std::uint32_t kDeterminismPixelSize = 37;
+constexpr std::uint32_t determinismPixelSize = 37;
 
 /// Builds the reference glyph the determinism scenario digests: a shape with a straight edge, a
 /// diagonal, a curve, and a counter, at a size where none of them land on pixel boundaries. The
@@ -617,7 +667,7 @@ const mdux::spec::Register rasterDeterminism{
             .Given("the reference glyph", [state] { state->built = referenceGlyph(); })
             .When("it is rasterised and its coverage digested",
                   [state] {
-                      state->bitmap = mustRasterise(requestFor(state->built, kDeterminismPixelSize), "the reference glyph");
+                      state->bitmap = mustRasterise(requestFor(state->built, determinismPixelSize), "the reference glyph");
                       const auto digest =
                           mdux::evidence::sha256(std::as_bytes(std::span<const std::uint8_t>{state->bitmap.coverage}));
                       state->hex = mdux::evidence::toHex(digest);
@@ -631,8 +681,8 @@ const mdux::spec::Register rasterDeterminism{
                       // the digest alone cannot tell them apart.
                       checks.expect(state->bitmap.width == 29 && state->bitmap.height == 32,
                                     std::format("bitmap is 29x32, got {}x{}", state->bitmap.width, state->bitmap.height));
-                      checks.expect(actual == kFrozenDigest,
-                                    std::format("coverage digest\n  expected {}\n  actual   {}", kFrozenDigest, actual));
+                      checks.expect(actual == frozenDigest,
+                                    std::format("coverage digest\n  expected {}\n  actual   {}", frozenDigest, actual));
                       checks.raise();
                   })
             .Execute();
