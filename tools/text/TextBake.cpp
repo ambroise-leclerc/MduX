@@ -48,7 +48,8 @@ constexpr std::string_view recipeEmptyId = "TXT009";
 constexpr std::string_view recipeSidecarPathHasSeparator = "TXT010";
 // The font pipeline (#160). Each parser, rasteriser and packer refusal keeps its own code rather
 // than collapsing into one "bake failed", because an author fixing a recipe needs to know whether
-// the font, the size or the charset is the problem.
+// the font, the size or the charset is the problem - which only holds if the size genuinely has
+// its own code, hence TXT018 rather than reusing the charset's.
 constexpr std::string_view recipeCharsetMalformed = "TXT011";
 constexpr std::string_view recipeFontUnreadable   = "TXT012";
 constexpr std::string_view fontUnparsed           = "TXT013";
@@ -56,6 +57,7 @@ constexpr std::string_view charsetNotInFont       = "TXT014";
 constexpr std::string_view glyphOutlineRejected   = "TXT015";
 constexpr std::string_view glyphRasterFailed      = "TXT016";
 constexpr std::string_view atlasPackingFailed     = "TXT017";
+constexpr std::string_view recipePixelSizeInvalid = "TXT018";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
@@ -158,10 +160,11 @@ namespace {
 /// silently truncating to the shortest array and baking a charset nobody asked for.
 [[nodiscard]] std::optional<FontSpec> parseFontSpec(const toml::Document& document, const toml::Table& package,
                                                     std::string_view recipePath, std::vector<cli::Diagnostic>& diagnostics) {
-    FontSpec spec;
+    FontSpec     spec;
+    std::int64_t declaredPixelSize = 0;
     try {
-        spec.source    = package.require("source").asString();
-        spec.pixelSize = static_cast<std::uint32_t>(package.require("pixelSize").asInteger());
+        spec.source       = package.require("source").asString();
+        declaredPixelSize = package.require("pixelSize").asInteger();
     } catch (const toml::TomlError& error) {
         report(diagnostics, std::string{recipePath}, error.line(), recipeMissingMember, error.what(),
                "A font recipe needs [package] 'source' and 'pixelSize'.");
@@ -171,11 +174,18 @@ namespace {
         report(diagnostics, std::string{recipePath}, 0, recipeMissingMember, "[package] source is empty");
         return std::nullopt;
     }
-    if (spec.pixelSize == 0 || spec.pixelSize > raster::maxPixelSize) {
-        report(diagnostics, std::string{recipePath}, 0, recipeCharsetMalformed,
-               std::format("[package] pixelSize {} is outside 1..{}", spec.pixelSize, raster::maxPixelSize));
+    // Range-check the value TOML actually parsed, in its own width, *before* narrowing. Casting
+    // the int64 to uint32 first would let -4294967280 and 4294967312 both arrive as 16 and bake
+    // successfully at a size nobody wrote, which is worse than a rejected recipe because the
+    // artifact would look deliberate.
+    if (declaredPixelSize <= 0 || declaredPixelSize > static_cast<std::int64_t>(raster::maxPixelSize)) {
+        // Its own code, not the charset's: an author who mistyped a size should not be sent to
+        // look at [charset]. That was the whole argument for having distinct TXT codes.
+        report(diagnostics, std::string{recipePath}, 0, recipePixelSizeInvalid,
+               std::format("[package] pixelSize {} is outside 1..{}", declaredPixelSize, raster::maxPixelSize));
         return std::nullopt;
     }
+    spec.pixelSize = static_cast<std::uint32_t>(declaredPixelSize);
 
     if (const toml::Table* locales = document.table("locales"); locales != nullptr) {
         try {

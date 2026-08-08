@@ -538,7 +538,7 @@ namespace {
 
 /// A minimal font recipe. `source` points at the committed DejaVu asset, which is the same file
 /// the real recipe uses - a fixture font would prove the pipeline works on a fixture.
-[[nodiscard]] std::string fontRecipeText(std::string_view charsetBody, std::uint32_t pixelSize = 16) {
+[[nodiscard]] std::string fontRecipeText(std::string_view charsetBody, std::int64_t pixelSize = 16) {
     return std::format(R"([package]
 id = "fixture-font"
 source = "recipes/font/dejavu-ui/DejaVuSans.ttf"
@@ -679,6 +679,17 @@ lastCodePoints  = [126])")},
              fontRecipeText(R"(names           = ["cjk"]
 firstCodePoints = [20013]
 lastCodePoints  = [20013])")},
+            {"a pixelSize that wraps to a valid value when narrowed", "TXT018",
+             // 4294967312 is 2^32 + 16. Cast to uint32 before checking, it becomes 16 and bakes
+             // happily at a size nobody wrote - an artifact that looks deliberate. Validating the
+             // int64 the parser actually produced is what refuses it.
+             fontRecipeText(R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])", 4294967312LL)},
+            {"a negative pixelSize", "TXT018",
+             fontRecipeText(R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])", -16)},
             {"a descending code point range", "TXT011",
              fontRecipeText(R"(names           = ["backwards"]
 firstCodePoints = [126]
