@@ -48,14 +48,22 @@
  * those bytes in the host's input file.
  *
  * The distinction matters because rejecting on presence would reject essentially every real
- * font. Measured on DejaVu 2.37: 8 of 8 stock faces carry both `GPOS` and `GSUB`, and 16% of
- * DejaVuSans' 6253 glyphs carry hinting bytecode - a presence rule accepts no shipping font
- * and 41% of the glyphs of the one font it did accept. Skipping instead of refusing keeps the
- * baker's input a font a designer actually shipped, while the runtime still has no shaping
- * code, because the atlas the baker commits carries coverage bitmaps and baked advances and
- * nothing else. Composites remain the one refusal that costs coverage (~42% of DejaVuSans'
- * glyphs, which is where the accented Latin, Cyrillic and Greek forms live), and S4 is where
- * that is paid down.
+ * font. The following is a local measurement, not a validated or certified result: the eight
+ * DejaVu 2.37 faces installed on one developer machine were fed to this parser, once with a
+ * presence rule and once without.
+ *
+ * - With a presence rule: **0 of 8** faces reach `parse()` at all, because all eight carry both
+ *   `GPOS` and `GSUB`. Feeding it a face with those tables stripped, so that per-glyph rules
+ *   become observable, **41%** of DejaVuSans' 6253 glyphs produce an outline - the rest are
+ *   refused as composites (42%), as carrying hinting bytecode (16%), or as zero-length records.
+ * - Skipping instead: **8 of 8** faces parse as shipped, and **58%** of DejaVuSans' glyphs
+ *   produce an outline.
+ *
+ * Skipping keeps the baker's input a font a designer actually shipped, while the runtime still
+ * has no shaping code, because the atlas the baker commits carries coverage bitmaps and baked
+ * advances and nothing else. Composites are then the one refusal that still costs coverage -
+ * 42% of DejaVuSans' glyphs, which is where the accented Latin, Cyrillic and Greek forms live -
+ * and S4 is where that is paid down by pre-baking them.
  *
  * RTL and complex scripts cannot be detected from the font binary alone - they are a property
  * of the string-to-glyph mapping, which is the `.medui` compiler's (#15) and the restricted

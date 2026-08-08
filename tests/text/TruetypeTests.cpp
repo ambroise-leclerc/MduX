@@ -184,6 +184,12 @@ public:
         }
         std::vector<std::byte> loca;
         if (!dropLoca_) {
+            // Both storage formats, selected by indexToLocFormat, because the parser decodes them
+            // differently and a corpus that only ever emits one leaves the other unpinned: short
+            // (format 0) stores half the byte offset in a uint16, long (format 1) stores the byte
+            // offset outright in a uint32. Real fonts switch to long as soon as `glyf` outgrows
+            // 128 KB, so the u32 path is the one a production font is most likely to take.
+            const bool        longForm   = (idxFmt_ == 1);
             const std::size_t entryCount = static_cast<std::size_t>(ng_) + 1u;
             std::uint32_t     cursor     = 0;
             for (std::size_t i = 0; i < entryCount; ++i) {
@@ -199,7 +205,13 @@ public:
                 } else {
                     stored = static_cast<std::uint16_t>(cursor / 2u);
                 }
-                appendU16(loca, stored);
+                if (longForm) {
+                    // The long form is not scaled, so the byte offset the short form encodes as
+                    // `stored` is `stored * 2` here - the same glyph layout, spelled the other way.
+                    appendU32(loca, static_cast<std::uint32_t>(stored) * 2u);
+                } else {
+                    appendU16(loca, stored);
+                }
                 if (i < rawGlyphs_.size()) {
                     cursor += static_cast<std::uint32_t>(roundUp2(rawGlyphs_[i].size()));
                 }
@@ -292,16 +304,12 @@ public:
             cursor += entries[i].bytes->size();
         }
 
-        // Trim or pad to the directory's claimed size if `declaredNumTables` lied. The parser walks
-        // `numTables` records starting at offset 12, so a smaller file is itself the malformed
-        // state the TruncatedTableDirectory fixture wants: leave the bytes ending at `cursor`,
-        // which is shorter than `directoryEnd` claims when `numTables` was larger than the
-        // physical record count.
-        if (cursor < directoryEnd) {
-            // The records past entries.size() are uninitialised in our vector; resize down to
-            // what we actually wrote so the parser sees a real "not enough bytes" gap there.
-            out.bytes.resize(cursor);
-        }
+        // No trimming happens here, deliberately. `cursor` starts at `directoryEnd` and only ever
+        // advances, so `declaredNumTables(n)` larger than the physical record count still leaves a
+        // file longer than the directory it claims - the record loop above appends every table's
+        // bytes past that point. A fixture that wants the parser to run off the end of a
+        // short directory has to truncate the buffer itself, which is what the
+        // `TruncatedTableDirectory` case does with its own `resize(30)`.
 
         // 3. Compute glyf record offsets for individual poke operations by re-scanning the
         // directory; rawGlyphs_ order is preserved in glyf layout.
@@ -341,6 +349,12 @@ private:
         v[off + 3] = static_cast<std::byte>(val & 0xffu);
     }
     static void appendU16(std::vector<std::byte>& v, std::uint16_t val) {
+        v.push_back(static_cast<std::byte>((val >> 8) & 0xffu));
+        v.push_back(static_cast<std::byte>(val & 0xffu));
+    }
+    static void appendU32(std::vector<std::byte>& v, std::uint32_t val) {
+        v.push_back(static_cast<std::byte>((val >> 24) & 0xffu));
+        v.push_back(static_cast<std::byte>((val >> 16) & 0xffu));
         v.push_back(static_cast<std::byte>((val >> 8) & 0xffu));
         v.push_back(static_cast<std::byte>(val & 0xffu));
     }
@@ -1034,6 +1048,72 @@ const mdux::spec::Register overLongLocaIsAccepted{
             .Execute();
     }};
 
+const mdux::spec::Register longLocaFormatParses{
+    "parse() decodes a long-format (indexToLocFormat == 1) loca table",
+    "evidence-unit",
+    [] {
+        // The two loca encodings are decoded by different branches of readLoca(): short stores
+        // half the byte offset in a uint16, long stores the byte offset outright in a uint32.
+        // Every other scenario here uses the short form, so without this one the u32 branch is
+        // never executed - and it is the branch a production font takes, because fonts switch to
+        // long format as soon as `glyf` outgrows 128 KB. The assertion is that both encodings of
+        // the *same* glyph layout produce the same offsets and the same outline.
+        struct State {
+            std::vector<std::byte>         shortBytes;
+            std::vector<std::byte>         longBytes;
+            std::optional<tt::Font>        shortFont;
+            std::optional<tt::Font>        longFont;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-long-loca-format")
+            .Given("the same two-glyph layout serialized with indexToLocFormat 0 and 1",
+                   [state] {
+                       state->shortBytes =
+                           Builder().indexToLocFormat(0).rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize().bytes;
+                       state->longBytes =
+                           Builder().indexToLocFormat(1).rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize().bytes;
+                   })
+            .When("both are parsed",
+                  [state] {
+                      auto s = tt::parse(state->shortBytes);
+                      auto l = tt::parse(state->longBytes);
+                      if (!s.has_value() || !l.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("short={}, long={}",
+                                          s.has_value() ? "ok" : std::string{tt::describe(s.error())},
+                                          l.has_value() ? "ok" : std::string{tt::describe(l.error())}),
+                              std::source_location::current());
+                      }
+                      state->shortFont = std::move(*s);
+                      state->longFont  = std::move(*l);
+                      auto g           = tt::parseGlyph(*state->longFont, 1);
+                      if (!g.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("square glyph failed out of a long-format font: {}", tt::describe(g.error())),
+                              std::source_location::current());
+                      }
+                      state->glyph = std::move(*g);
+                  })
+            .Then("the long form reports format 1, resolves the same offsets, and yields the same outline",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->longFont->indexToLocFormat == 1, "indexToLocFormat is 1");
+                      checks.expect(state->shortFont->indexToLocFormat == 0, "the short-form control is 0");
+                      checks.expect(state->longFont->loca == state->shortFont->loca,
+                                    "both encodings resolve to identical byte offsets");
+                      const auto& g = *state->glyph;
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          checks.expect(g.points[1].x == 100 && g.points[1].y == 0, "point 1 at (100,0)");
+                          checks.expect(g.points[3].x == 0 && g.points[3].y == 100, "point 3 at (0,100)");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 // ---------------------------------------------------------------------------
 // parse(): rejection corpus - one scenario per ParseError the directory walk emits.
 // ---------------------------------------------------------------------------
@@ -1281,7 +1361,27 @@ const mdux::spec::Register parseGlyphRejections{
         using GlyphResult = mdux::core::Result<tt::SimpleGlyph, tt::ParseError>;
 
         struct State {
+            std::vector<std::byte>  bytes;
             std::optional<tt::Font> font;
+
+            /// Parses bytes that this State then keeps alive. Every case below must go through
+            /// it rather than calling `tt::parse()` directly.
+            ///
+            /// `tt::Font` holds non-owning spans - `parse()` sets `head` and `glyf` to subspans
+            /// of the buffer it was handed. Parsing straight out of a temporary, as in
+            /// `tt::parse(Builder()...serialize().bytes)`, therefore leaves both spans dangling
+            /// the instant the full-expression ends, and the `parseGlyph()` call that follows
+            /// reads freed memory. That is worth a guard rather than a comment because the suite
+            /// would still report a pass nearly every time: a just-freed page usually stays
+            /// mapped and unmodified, so the green run would be evidence of nothing.
+            [[nodiscard]] FontResult parseOwning(std::vector<std::byte> input) {
+                bytes       = std::move(input);
+                auto result = tt::parse(bytes);
+                if (result.has_value()) {
+                    font = *result;
+                }
+                return result;
+            }
         };
 
         struct Case {
@@ -1295,10 +1395,7 @@ const mdux::spec::Register parseGlyphRejections{
             {                     "a glyph index past numGlyphs",
              ParseError::GlyphIndexOutOfRange,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, emptyGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, emptyGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 100);
  }},
@@ -1306,10 +1403,7 @@ const mdux::spec::Register parseGlyphRejections{
             {    "a glyf record shorter than the 10-byte header",
              ParseError::TruncatedGlyph,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, shortGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, shortGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1317,10 +1411,7 @@ const mdux::spec::Register parseGlyphRejections{
             {       "a composite glyph (numberOfContours == -1)",
              ParseError::CompositeGlyphRejected,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, compositeGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, compositeGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1328,10 +1419,7 @@ const mdux::spec::Register parseGlyphRejections{
             {  "instructionLength claiming more bytecode than exists",
              ParseError::TruncatedGlyphInstructions,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, instructionsTruncatedGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, instructionsTruncatedGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1339,10 +1427,7 @@ const mdux::spec::Register parseGlyphRejections{
             {  "endPtsOfContours extending past the glyf record",
              ParseError::TruncatedContourEndpoints,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, endPtsTruncatedGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, endPtsTruncatedGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1350,10 +1435,7 @@ const mdux::spec::Register parseGlyphRejections{
             {                   "non-monotonic endPtsOfContours",
              ParseError::NonMonotonicContours,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, nonMonotonicGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, nonMonotonicGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1361,10 +1443,7 @@ const mdux::spec::Register parseGlyphRejections{
             {             "flags extending past the glyf record",
              ParseError::TruncatedGlyphFlags,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, flagsTruncatedGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, flagsTruncatedGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1372,10 +1451,7 @@ const mdux::spec::Register parseGlyphRejections{
             {"x or y coordinates extending past the glyf record",
              ParseError::TruncatedGlyphCoords,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, coordsTruncatedGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, coordsTruncatedGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1383,10 +1459,7 @@ const mdux::spec::Register parseGlyphRejections{
             {                  "a flag with reserved bit 7 set",
              ParseError::UnsupportedGlyphFlag,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, reservedFlagGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, reservedFlagGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1394,10 +1467,7 @@ const mdux::spec::Register parseGlyphRejections{
             {  "a REPEAT_FLAG count claiming more points than exist",
              ParseError::GlyphFlagRepeatOverrun,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, repeatOverrunGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, repeatOverrunGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1405,10 +1475,7 @@ const mdux::spec::Register parseGlyphRejections{
             {      "coordinate deltas accumulating past int16",
              ParseError::CoordinateOverflow,
              [](State& s) {
-             auto r = tt::parse(Builder().rawGlyph(0, coordinateOverflowGlyph()).serialize().bytes);
-             if (r.has_value())
-             s.font = std::move(*r);
-             return r;
+             return s.parseOwning(Builder().rawGlyph(0, coordinateOverflowGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
  }},
@@ -1419,9 +1486,8 @@ const mdux::spec::Register parseGlyphRejections{
              // `Font` is an exported aggregate, so a caller can hand parseGlyph() one parse()
              // never produced. Indexing loca[glyphIndex + 1] on this would be UB rather than a
              // diagnostic, which is what the guard at the top of parseGlyph() prevents.
-             auto r = tt::parse(Builder().rawGlyph(0, squareGlyph()).serialize().bytes);
+             auto r = s.parseOwning(Builder().rawGlyph(0, squareGlyph()).serialize().bytes);
              if (r.has_value()) {
-             s.font = std::move(*r);
              s.font->numGlyphs = 5;  // loca still holds only 2 entries
              }
              return r;
