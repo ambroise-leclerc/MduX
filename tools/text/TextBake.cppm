@@ -59,6 +59,37 @@ export namespace mdux::tools::textbake {
 /// The tool name that appears in every diagnostic and in `report.json`.
 inline constexpr std::string_view toolName = "mdux-textbake";
 
+/// One code-point range from a font recipe's `[charset]` parallel arrays.
+struct CharsetRange {
+    std::string name;
+    char32_t    first{0};
+    char32_t    last{0};
+
+    [[nodiscard]] std::uint32_t count() const noexcept {
+        return static_cast<std::uint32_t>(last - first) + 1u;
+    }
+};
+
+/**
+ * @brief The font-baking half of a recipe, present when the recipe carries a `[charset]` table.
+ *
+ * A recipe is either a *text* package (S1: positioned runs against an existing atlas) or a *font*
+ * package (S4: an atlas baked from a TrueType file). They share `parseRecipe()` and `run()`
+ * because they share everything around the edges - the report, the digests, the write/verify
+ * pair - and differ only in what fills the sidecar. Dispatching on the presence of `[charset]`
+ * keeps `mdux-textbake` one tool with one CLI, which is what issue #160 asks for.
+ */
+struct FontSpec {
+    std::string               source;        ///< repository-relative path to the .ttf
+    std::uint32_t             pixelSize{0};  ///< em size in pixels
+    std::vector<std::string>  locales;       ///< locales this package is approved for
+    std::vector<CharsetRange> charset;       ///< the code points to bake, in recipe order
+
+    /// Total code points across every range, which is the glyph count before any are found
+    /// missing from the font.
+    [[nodiscard]] std::uint32_t codePointCount() const noexcept;
+};
+
 /// A parsed and resolved recipe. Every default is expanded here rather than at the point of use,
 /// so `report.json`'s `options` records what the bake actually did - ADR-007's rule that a
 /// silently changed default must not leave every report looking unchanged.
@@ -67,6 +98,10 @@ struct Recipe {
     std::string atlas;
     std::string locale;
     std::string sidecar{"runs.bin"};
+
+    /// Set when this recipe carries a `[charset]` table, which is what makes it a font recipe.
+    /// `run()` dispatches on it.
+    std::optional<FontSpec> font{};
 
     /// The fully resolved options, as they are recorded in the report.
     [[nodiscard]] evidence::json::Value toOptions() const;
@@ -91,6 +126,11 @@ struct BakeOutputs {
     std::string sidecarName;         ///< the sidecar's bare filename
     std::string packageId;           ///< for the summary line; the package itself is in the JSON
     std::size_t runCount{0};
+
+    /// Set for a font bake, for the summary line and the tests. Zero for a text bake.
+    std::uint32_t glyphCount{0};
+    std::uint32_t atlasWidth{0};
+    std::uint32_t atlasHeight{0};
 };
 
 /// Reads a file as bytes. Returns nullopt when it cannot be opened or read.

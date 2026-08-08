@@ -593,6 +593,7 @@ add_executable(text_tools_spec
 
 target_link_libraries(text_tools_spec PRIVATE MduX::TextBakeLib speclab::speclab)
 target_include_directories(text_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(text_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 set_target_properties(text_tools_spec
     PROPERTIES

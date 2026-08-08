@@ -108,3 +108,21 @@ risk_controls = [
     "Nine further test executables use the in-repository MduXTest framework instead, so a SpecLab regression cannot silence the whole suite.",
 ]
 known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry. Note this dependency is also why the project's GCC floor is 16: GCC 15 cannot build it."
+
+[[entries]]
+name = "DejaVu Sans"
+supplier = "DejaVu fonts project (from Bitstream Vera, Bitstream Inc.)"
+license = "Bitstream-Vera (with the Arev additions; DejaVu changes public domain)"
+kind = "build-time asset"
+version = "as shipped by Debian fonts-dejavu-core"
+pin = "recipes/font/dejavu-ui/DejaVuSans.ttf, digest recorded in generated/font/dejavu-ui/report.json"
+notes = """
+Redistributed unmodified as the source asset for the dejavu-ui font package. It is read at bake
+time by mdux-textbake and never linked into any target, so it is not SOUP in the linked-code
+sense - but it is third-party bytes this repository ships, which is why it is registered here
+rather than left implicit.
+
+The license's naming restriction binds modified versions. MduX does not modify the font, so it is
+not engaged; a future change that subsets or edits the .ttf before committing would engage it and
+would need the file renamed. License text: recipes/font/dejavu-ui/LICENSE-DejaVu.txt.
+"""

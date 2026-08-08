@@ -415,6 +415,23 @@ mdux_bake_artifact(
         weights.bin
 )
 
+# The first font package (#160, S4). Its source is a third-party font redistributed unmodified -
+# see recipes/font/dejavu-ui.toml for the provenance and license, and
+# docs/governance/soup-register.toml for its SOUP entry. Registered last of the four because it is
+# the only bake that reads a binary this repository did not produce.
+mdux_bake_artifact(
+    KIND font
+    ID dejavu-ui
+    TOOL mdux-textbake
+    RECIPE recipes/font/dejavu-ui.toml
+    SOURCES
+        recipes/font/dejavu-ui/DejaVuSans.ttf
+    OUTPUTS
+        package.json
+        report.json
+        atlas.bin
+)
+
 mdux_bake_artifact(
     KIND shader
     ID triangle
