@@ -86,9 +86,11 @@ See `software_development_file/regulatory/IEC_62304/SOUP.md`, derived from
 Every structural decision above is recorded as an `Accepted` ADR — see
 [`docs/adr/README.md`](../../../docs/adr/README.md) (7 ADRs at time of writing: ADR-001 through
 ADR-007). `mdux_verify_trust_zones()` also runs on every CI build
-(`.github/workflows/windows-build.yml`, `.github/workflows/linux-gcc16-build.yml`), which is
-every pull request and every push to `main` or `develop` — so the segregation described in §4 is
-checked before any change reaches an integration branch, not only at review time.
+(`.github/workflows/windows-build.yml`, `.github/workflows/linux-gcc16-build.yml`). Those
+workflows trigger on pushes to `main` and `develop`, and on pull requests whose **base branch**
+is `main`, `develop` or `feat/**` — so the segregation described in §4 is checked before a change
+reaches an integration branch, not only at review time. **State the limit precisely:** a pull
+request based on any other branch matches no trigger and is not covered by this check.
 
 ## Justification records
 

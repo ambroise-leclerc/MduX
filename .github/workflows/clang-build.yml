@@ -50,9 +50,23 @@ jobs:
 
     - name: Install LLVM/Clang 20
       run: |
+        set -euo pipefail
         sudo apt-get update
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main"
+        # apt-key is deprecated, and worse, it trusts the added key for *every* configured
+        # repository - a compromised LLVM key would then be trusted to sign Ubuntu's own
+        # packages. Scope it instead: fetch over HTTPS into /etc/apt/keyrings and reference it
+        # from the source line with signed-by, so this key can validate only the LLVM repo.
+        # The fingerprint below is the Debian LLVM archive key (Sylvestre Ledru); checking it
+        # before installing means a substituted key fails the step rather than being trusted.
+        LLVM_KEY_FPR="6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
+        sudo install -d -m 0755 /etc/apt/keyrings
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /tmp/llvm-snapshot.asc
+        gpg --show-keys --with-colons --fingerprint /tmp/llvm-snapshot.asc \
+          | awk -F: '/^fpr:/ {print $10}' | grep -qx "$LLVM_KEY_FPR"
+        gpg --dearmor < /tmp/llvm-snapshot.asc > /tmp/llvm.gpg
+        sudo install -m 0644 /tmp/llvm.gpg /etc/apt/keyrings/llvm.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-20.list
         sudo apt-get update
         sudo apt-get install -y \
           ninja-build \

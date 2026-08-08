@@ -63,11 +63,10 @@ jobs:
         # Avoid libssl1.1 dependency issues in Debian containers
         CMAKE_VERSION="4.1.1"
         # Pinned SHA-256 from Kitware's own cmake-4.1.1-SHA-256.txt manifest. The tarball is
-        # unpacked into /opt and put on PATH, so it builds and tests everything this job touches -
-        # verifying it is the same supply-chain discipline the SHA-pinned actions above apply, and
-        # the same one IEC 81001-5-1 expects of a SOUP component. `sha256sum -c` exits non-zero on
-        # a mismatch and `set -e` is on by default in a `run:` block, so extraction cannot proceed
-        # past a bad download.
+        # unpacked into /opt and put on PATH, so it builds everything this job touches; verifying
+        # it is the same supply-chain discipline the SHA-pinned actions above apply. `sha256sum -c`
+        # exits non-zero on a mismatch and `set -e` is on by default in a `run:` block, so
+        # extraction cannot proceed past a bad or substituted download.
         CMAKE_SHA256="5a6c61cb62b38e153148a2c8d4af7b3d387f0c8c32b6dbceb5eb4af113efd65a"
         wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
         echo "${CMAKE_SHA256}  cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" | sha256sum -c -

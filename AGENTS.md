@@ -179,27 +179,31 @@ scope, not a mechanically enforced restriction.
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note the Clang CI job in `.github/workflows/clang-build.yml` runs on manual
-  dispatch only and is not part of the automatic CI set, so it is disabled in practice
-  (every step commented out, and the file renamed off `.yml` so GitHub does not parse it), so
-  Clang support is unverified in CI even though the version floor is enforced.
+- Clang 20+ — note that `.github/workflows/clang-build.yml` carries only a `workflow_dispatch`
+  trigger. It is a live workflow that can be started from the Actions tab, but no push or pull
+  request runs it, so Clang is unverified by automatic CI even though the version floor is
+  enforced at configure time. Treat a Clang result as unverified unless you can point at a
+  specific manual run of that workflow.
 - CMake 4.0+
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`
-enforces this). On Windows, the `ninja-msvc` preset in `CMakePresets.json` is available:
+enforces this). Plain CMake, identical on Linux and Windows:
 
 ```bash
-cmake --preset ninja-msvc
-cmake --build --preset ninja-msvc
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
 ```
 
-On Linux (no preset exists — use the explicit form CI actually runs):
+`-G Ninja` is mandatory and checked at configure time: CMake implements C++ modules only for the
+Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A bare `cmake ..`
+takes the platform default and stops with a message naming the generator it found.
+`export CMAKE_GENERATOR=Ninja` removes the need for the flag.
 
-```bash
-cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-cmake --build build
-```
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang` and `-debug` variants.
+Those exist so each CI workflow invokes a configuration this repository owns instead of a
+look-alike command line; they are not needed to build by hand, and each uses its own binary dir.
 
 **Build options** (`option(...)` in root `CMakeLists.txt`):
 - `MDUX_BUILD_EXAMPLES` (default `ON`)

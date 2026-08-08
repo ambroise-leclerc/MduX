@@ -100,17 +100,29 @@ window. `examples/VulkanSCTriangleExample.cpp` is the device half.
 Build, test, and consumption instructions are in
 **[`docs/getting-started.md`](docs/getting-started.md)**, including the honest limitations.
 
-The short version, on Linux:
+The short version:
 
 ```bash
-cmake --preset ninja-gcc
-cmake --build --preset ninja-gcc
-ctest --preset ninja-gcc --output-on-failure
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
+ctest --output-on-failure
 ```
 
 Requires **GCC 16+**, **MSVC 17.14+** or **Clang 20+**, **CMake 4.0+**, **Ninja**, and the
-**Vulkan SDK 1.3+**. The Visual Studio generator does not support `import std` and is rejected
-deliberately.
+**Vulkan SDK 1.3+**.
+
+`-G Ninja` is the one flag you cannot drop. CMake implements C++ modules for the Ninja and
+Visual Studio generators only, and Visual Studio cannot do `import std` — so Ninja is the entire
+supported set, and configuring without it stops with a message saying exactly that. To stop
+typing it, `export CMAKE_GENERATOR=Ninja` once and plain `cmake ..` works from then on.
+
+If your default `g++` is older than 16, point at a newer one with the standard variables:
+`CXX=g++-16 CC=gcc-16 cmake .. -G Ninja`.
+
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc` and friends. Those exist so each CI
+leg can invoke a named configuration this repository owns rather than a command line that merely
+resembles one. They are not needed to build by hand, and nothing above uses them.
 
 ## Implementation status
 
