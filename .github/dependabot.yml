@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # No C++ package manifest ecosystem is supported by Dependabot (dependencies are fetched via
+  # CPM.cmake in tests/CMakeLists.txt and examples/CMakeLists.txt, which Dependabot cannot parse).
+  # This watches the supply chain that Dependabot *can* see: pinned GitHub Actions versions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

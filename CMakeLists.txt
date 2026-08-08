@@ -51,6 +51,31 @@ else()
     message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or Clang 20+ for C++23 modules support.")
 endif()
 
+# Generator validation.
+#
+# CMake implements C++ modules for the Ninja, Ninja Multi-Config and Visual Studio 17.4+
+# generators only, and this project rules Visual Studio out separately because it cannot do
+# `import std` (see the CXX_MODULE_STD block further down). That leaves the Ninja family.
+#
+# This check exists so that a plain `cmake ..` - which picks the platform default, "Unix
+# Makefiles" on Linux - fails here with an actionable message. Without it, the first thing to
+# notice is `find_package(Threads)` below, which fails inside a try_compile with a CMake-internal
+# backtrace that never mentions the generator.
+if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+    message(FATAL_ERROR
+        "MduX requires the Ninja generator, but CMake selected \"${CMAKE_GENERATOR}\".\n"
+        "C++23 modules and `import std` are not supported by that generator.\n"
+        "\n"
+        "Configure with:\n"
+        "    cmake .. -G Ninja\n"
+        "\n"
+        "Or set it once for the shell and omit the flag from then on:\n"
+        "    export CMAKE_GENERATOR=Ninja        # Windows: set CMAKE_GENERATOR=Ninja\n"
+        "\n"
+        "If Ninja is missing: `apt install ninja-build`, `dnf install ninja-build`,\n"
+        "or `winget install Ninja-build.Ninja`.")
+endif()
+
 # Platform validation
 if(NOT WIN32 AND NOT UNIX)
     message(FATAL_ERROR "MduX only supports Windows and Linux platforms.")
@@ -221,15 +246,11 @@ if(TARGET __CMAKE::CXX23)
     set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
     message(STATUS "CXX_MODULE_STD enabled for MduX target")
 else()
+    # Not fatal on its own: `import std` is opt-in per CMake version and toolchain, and the
+    # project still builds without it. The Visual Studio case that used to be caught here is
+    # now caught by the generator check near the top of this file, which rejects every
+    # non-Ninja generator rather than only that one.
     message(STATUS "CXX_MODULE_STD disabled - __CMAKE::CXX23 target not available")
-    if(CMAKE_GENERATOR MATCHES "Visual Studio")
-        message(FATAL_ERROR 
-            "Visual Studio generator does not support import std; with C++23 modules.\n"
-            "Please use Ninja generator instead:\n"
-            "  1. Install Ninja: winget install Ninja-build.Ninja\n"
-            "  2. Use: cmake .. -G Ninja\n"
-            "  3. Build with: cmake --build .")
-    endif()
 endif()
 
 target_include_directories(MduX PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)

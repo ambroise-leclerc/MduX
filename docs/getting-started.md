@@ -21,13 +21,16 @@ this high.
 | **GCC** | 16 | fatal check in `CMakeLists.txt` |
 | **Clang** | 20 | fatal check in `CMakeLists.txt` |
 | **CMake** | 4.0+ | `cmake_minimum_required` |
-| **Ninja** | any recent | — |
+| **Ninja** | any recent | fatal check in `CMakeLists.txt` |
 | **Vulkan SDK** | 1.3+ | `find_package(Vulkan REQUIRED)` |
 
 A version below the floor fails at configure with a message naming the version it found.
 
-**Ninja is not optional.** The Visual Studio generator does not support `import std`; configuring
-with it fails deliberately, with instructions.
+**Ninja is not optional.** CMake implements C++ modules for the Ninja, Ninja Multi-Config and
+Visual Studio 17.4+ generators only, and Visual Studio cannot do `import std` — so the Ninja
+family is the whole supported set. Configuring with anything else, including the platform default
+(`Unix Makefiles` on Linux), stops at a configure-time check that names the generator it found
+and the flag to pass. `export CMAKE_GENERATOR=Ninja` makes it the default for your shell.
 
 **GCC 16.0.x snapshots.** Ubuntu ships a pre-release GCC 16 snapshot that ICEs
 (`internal compiler error: in nonnull_arg_p`) building the Vulkan adapter. The released 16.1.0
@@ -35,30 +38,43 @@ builds the tree cleanly. If you hit that ICE, check `g++ --version` for `experim
 
 ## Build and test
 
-Through the presets, which is what CI runs:
+Ordinary out-of-source CMake, on either platform:
 
 ```bash
-# Linux
-cmake --preset ninja-gcc
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
+ctest --output-on-failure
+```
+
+That is the whole thing. `MDUX_BUILD_EXAMPLES` and `MDUX_BUILD_TESTS` default to `ON`, so the
+default configure already builds everything the test suite needs.
+
+If your default compiler is not the one you want — Ubuntu's `g++` may be an older release, or a
+GCC 16 pre-release snapshot — select it with the standard variables:
+
+```bash
+CC=gcc-16 CXX=g++-16 cmake .. -G Ninja
+```
+
+### Presets
+
+`CMakePresets.json` defines `ninja-gcc`, `ninja-gcc-debug`, `ninja-msvc`, `ninja-msvc-debug` and
+`ninja-clang`. They exist for CI, not for you: each workflow invokes a named configuration this
+repository owns, so a reviewer can read what CI built instead of trusting that a hand-written
+command line in a YAML file still matches the one in this document. Building by hand needs none
+of them.
+
+If you want one anyway — say, to reproduce a CI leg exactly:
+
+```bash
+cmake --preset ninja-gcc          # configures into build-gcc/
 cmake --build --preset ninja-gcc
 ctest --preset ninja-gcc --output-on-failure
-
-# Windows
-cmake --preset ninja-msvc
-cmake --build --preset ninja-msvc
-ctest --preset ninja-msvc
 ```
 
-Available presets: `ninja-gcc`, `ninja-gcc-debug`, `ninja-msvc`, `ninja-msvc-debug`, `ninja-clang`.
-The GCC presets use whatever `g++` is on `PATH`; if your default is older than 16, point at the
-right one explicitly:
-
-```bash
-cmake -B build -S . -G Ninja \
-  -DCMAKE_CXX_COMPILER=g++-16 \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-```
+Note that each preset uses its own binary directory (`build-gcc`, `build-clang`, …), so a preset
+build and a plain `build/` one do not collide.
 
 ### Options
 
