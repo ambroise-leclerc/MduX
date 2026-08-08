@@ -28,7 +28,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # No step here performs an authenticated Git operation, so the checkout token has no
       # reason to survive into .git/config where any later build or test step could read it
       # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
