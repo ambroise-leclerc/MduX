@@ -108,6 +108,244 @@ constexpr std::uint8_t flagReservedMask    = 0x80u;
     return std::string{chars, 4};
 }
 
+/// Decodes a format 4 subtable - the BMP workhorse every font carries - into ranges.
+///
+/// Four parallel arrays of `segCount` entries, then a trailing glyph array. For a segment with
+/// `idRangeOffset == 0` the mapping is affine: `glyph = code + idDelta`, so the whole segment is
+/// one range. Otherwise `idRangeOffset` is a *byte* offset measured from its own slot in the
+/// array - a self-relative pointer into the trailing glyph array - and each code point resolves
+/// individually, so those segments expand to one range per mapped code point.
+///
+/// The self-relative offset is the fiddliest arithmetic in the whole format, and it is walked
+/// exactly once here rather than at lookup time, so the bounds check lives in one place.
+[[nodiscard]] Result<std::vector<CmapRange>, ParseError> decodeCmapFormat4(std::span<const std::byte> table) noexcept {
+    const auto segCountX2 = beU16(table, 6);
+    if (!segCountX2) {
+        return err(ParseError::TruncatedCmap);
+    }
+    // segCountX2 is, as the name says, twice the segment count. An odd value is not a slightly
+    // wrong count - it means the four parallel arrays are not where the layout arithmetic below
+    // computes them to be, so every offset after this point would address the wrong field and the
+    // table would be *misread* rather than rejected. Checking parity is what turns that into a
+    // diagnostic. A legal table always has at least the mandatory 0xFFFF terminator segment.
+    if (*segCountX2 == 0 || (*segCountX2 % 2u) != 0) {
+        return err(ParseError::TruncatedCmap);
+    }
+    const std::size_t segCount = static_cast<std::size_t>(*segCountX2) / 2u;
+    // endCode[segCount], reservedPad, startCode[segCount], idDelta[segCount], idRangeOffset[segCount]
+    const std::size_t endCodeAt       = 14;
+    const std::size_t startCodeAt     = endCodeAt + segCount * 2u + 2u;
+    const std::size_t idDeltaAt       = startCodeAt + segCount * 2u;
+    const std::size_t idRangeOffsetAt = idDeltaAt + segCount * 2u;
+    if (idRangeOffsetAt + segCount * 2u > table.size()) {
+        return err(ParseError::TruncatedCmap);
+    }
+
+    std::vector<CmapRange> ranges;
+    for (std::size_t i = 0; i < segCount; ++i) {
+        const auto endCode       = beU16(table, endCodeAt + i * 2u);
+        const auto startCode     = beU16(table, startCodeAt + i * 2u);
+        const auto idDelta       = beU16(table, idDeltaAt + i * 2u);
+        const auto idRangeOffset = beU16(table, idRangeOffsetAt + i * 2u);
+        if (!endCode || !startCode || !idDelta || !idRangeOffset) {
+            return err(ParseError::TruncatedCmap);
+        }
+        if (*startCode > *endCode) {
+            return err(ParseError::TruncatedCmap);
+        }
+        // The final segment is the mandatory 0xFFFF terminator and maps nothing useful.
+        if (*startCode == 0xFFFFu) {
+            continue;
+        }
+        if (ranges.size() > maxCmapEntries) {
+            return err(ParseError::CharacterMapTooLarge);
+        }
+
+        if (*idRangeOffset == 0) {
+            // Affine: one range. Glyph 0 means unmapped, so a segment that maps its start to
+            // .notdef is skipped rather than recorded.
+            const std::uint16_t firstGlyph = static_cast<std::uint16_t>((*startCode + *idDelta) & 0xFFFFu);
+            if (firstGlyph == 0) {
+                continue;
+            }
+            ranges.push_back(CmapRange{.first      = static_cast<char32_t>(*startCode),
+                                       .last       = static_cast<char32_t>(*endCode),
+                                       .firstGlyph = firstGlyph});
+            continue;
+        }
+
+        for (std::uint32_t code = *startCode; code <= *endCode; ++code) {
+            // The spec's own expression, kept in its original shape so it can be checked against
+            // the specification rather than against a simplification of it:
+            //   glyphIndexAddress = idRangeOffset[i] + 2 * (code - startCode[i]) + &idRangeOffset[i]
+            const std::size_t slot    = idRangeOffsetAt + i * 2u;
+            const std::size_t address = slot + *idRangeOffset + 2u * (code - *startCode);
+            const auto        raw     = beU16(table, address);
+            if (!raw) {
+                return err(ParseError::TruncatedCmap);
+            }
+            if (*raw == 0) {
+                continue;  // explicitly unmapped
+            }
+            const std::uint16_t glyph = static_cast<std::uint16_t>((*raw + *idDelta) & 0xFFFFu);
+            if (glyph == 0) {
+                continue;
+            }
+            if (ranges.size() >= maxCmapEntries) {
+                return err(ParseError::CharacterMapTooLarge);
+            }
+            // Extend the previous range when this code point continues it, so an indirect
+            // segment whose glyphs happen to be consecutive still collapses.
+            if (!ranges.empty() && ranges.back().last + 1u == code
+                && ranges.back().firstGlyph + (ranges.back().last - ranges.back().first) + 1u == glyph) {
+                ranges.back().last = static_cast<char32_t>(code);
+                continue;
+            }
+            ranges.push_back(CmapRange{.first = static_cast<char32_t>(code), .last = static_cast<char32_t>(code), .firstGlyph = glyph});
+        }
+    }
+    return ranges;
+}
+
+/// Decodes a format 12 subtable: a flat list of (startCharCode, endCharCode, startGlyphID)
+/// groups, already the shape `CmapRange` wants. Preferred over format 4 when present, because it
+/// is the only one of the two that reaches beyond the BMP.
+[[nodiscard]] Result<std::vector<CmapRange>, ParseError> decodeCmapFormat12(std::span<const std::byte> table) noexcept {
+    const auto groupCount = beU32(table, 12);
+    if (!groupCount) {
+        return err(ParseError::TruncatedCmap);
+    }
+    if (*groupCount > maxCmapEntries) {
+        return err(ParseError::CharacterMapTooLarge);
+    }
+    const std::uint64_t end = 16u + static_cast<std::uint64_t>(*groupCount) * 12u;
+    if (end > table.size()) {
+        return err(ParseError::TruncatedCmap);
+    }
+    std::vector<CmapRange> ranges;
+    ranges.reserve(*groupCount);
+    for (std::uint32_t g = 0; g < *groupCount; ++g) {
+        const std::size_t at         = 16u + static_cast<std::size_t>(g) * 12u;
+        const auto        startCode  = beU32(table, at);
+        const auto        endCode    = beU32(table, at + 4);
+        const auto        startGlyph = beU32(table, at + 8);
+        if (!startCode || !endCode || !startGlyph) {
+            return err(ParseError::TruncatedCmap);
+        }
+        if (*startCode > *endCode || *startGlyph > 0xFFFFu) {
+            return err(ParseError::TruncatedCmap);
+        }
+        if (*startGlyph == 0) {
+            continue;
+        }
+        ranges.push_back(CmapRange{.first      = static_cast<char32_t>(*startCode),
+                                   .last       = static_cast<char32_t>(*endCode),
+                                   .firstGlyph = static_cast<std::uint16_t>(*startGlyph)});
+    }
+    return ranges;
+}
+
+/// Picks a subtable out of `cmap` and decodes it.
+///
+/// Preference order is (3,10) format 12, then (3,1) format 4, then (0,*) - Windows full-Unicode,
+/// Windows BMP, then Unicode-platform as a fallback. A font carrying only a Macintosh (1,0)
+/// byte-encoding table is refused with `UnsupportedCmapFormat` rather than decoded, because that
+/// table maps bytes through a legacy codepage rather than code points, and guessing the codepage
+/// is exactly the kind of inference this parser refuses to make.
+[[nodiscard]] Result<std::vector<CmapRange>, ParseError> decodeCmap(std::span<const std::byte> cmap) noexcept {
+    const auto numTables = beU16(cmap, 2);
+    if (!numTables) {
+        return err(ParseError::TruncatedCmap);
+    }
+    if (4u + static_cast<std::size_t>(*numTables) * 8u > cmap.size()) {
+        return err(ParseError::TruncatedCmap);
+    }
+
+    std::optional<std::size_t> best;
+    int                        bestRank = -1;
+    for (std::uint16_t i = 0; i < *numTables; ++i) {
+        const std::size_t at         = 4u + static_cast<std::size_t>(i) * 8u;
+        const auto        platformId = beU16(cmap, at);
+        const auto        encodingId = beU16(cmap, at + 2);
+        const auto        offset     = beU32(cmap, at + 4);
+        if (!platformId || !encodingId || !offset) {
+            return err(ParseError::TruncatedCmap);
+        }
+        // Widened deliberately: `*offset` is a uint32, so `*offset + 2u` is evaluated in 32-bit
+        // and wraps for an offset near 0xFFFFFFFF, letting the wrapped value pass this guard. The
+        // beU16() below would still refuse to read out of bounds, so nothing was reachable, but a
+        // bounds check that does not hold on its own terms is one nobody can rely on later.
+        if (static_cast<std::uint64_t>(*offset) + 2u > cmap.size()) {
+            return err(ParseError::TruncatedCmap);
+        }
+        const auto format = beU16(cmap, *offset);
+        if (!format) {
+            return err(ParseError::TruncatedCmap);
+        }
+        int rank = -1;
+        if (*platformId == 3 && *encodingId == 10 && *format == 12)
+            rank = 3;
+        else if (*platformId == 3 && *encodingId == 1 && *format == 4)
+            rank = 2;
+        else if (*platformId == 0 && (*format == 4 || *format == 12))
+            rank = 1;
+        if (rank > bestRank) {
+            bestRank = rank;
+            best     = *offset;
+        }
+    }
+    if (!best.has_value() || bestRank < 0) {
+        return err(ParseError::UnsupportedCmapFormat);
+    }
+
+    const auto whatFollows = cmap.subspan(*best);
+    const auto format      = beU16(whatFollows, 0);
+    if (!format) {
+        return err(ParseError::TruncatedCmap);
+    }
+
+    // Clip the subtable to its own declared length rather than letting it run to the end of the
+    // `cmap` table.
+    //
+    // This is not tidiness. Format 4's idRangeOffset is a self-relative pointer into a glyph array
+    // that the subtable's length is what terminates - so a subtable sliced too generously lets
+    // that indirection read into whatever subtable happens to follow it. A font with several cmap
+    // subtables, which is the normal case, would then produce *wrong mappings* rather than a
+    // diagnostic: the reads stay inside `cmap`, so no bounds check fires and the glyphs are simply
+    // someone else's. Silently drawing the wrong character is the worst failure this parser has.
+    //
+    // The two formats declare their length in different places and widths: format 4 as a uint16
+    // at offset 2, format 12 as a uint32 at offset 4.
+    std::uint64_t declaredLength = 0;
+    if (*format == 12) {
+        const auto length = beU32(whatFollows, 4);
+        if (!length) {
+            return err(ParseError::TruncatedCmap);
+        }
+        declaredLength = *length;
+    } else {
+        const auto length = beU16(whatFollows, 2);
+        if (!length) {
+            return err(ParseError::TruncatedCmap);
+        }
+        declaredLength = *length;
+    }
+    if (declaredLength == 0 || declaredLength > whatFollows.size()) {
+        return err(ParseError::TruncatedCmap);
+    }
+    const auto subtable = whatFollows.first(static_cast<std::size_t>(declaredLength));
+
+    auto ranges = (*format == 12) ? decodeCmapFormat12(subtable) : decodeCmapFormat4(subtable);
+    if (!ranges.has_value()) {
+        return err(ranges.error());
+    }
+    // Sorted so glyphForCodePoint() can binary-search. Format 12 groups and format 4 segments are
+    // both specified as ascending, but sorting rather than trusting that is one line and removes
+    // a silent-wrong-answer path for a font that violates it.
+    std::sort(ranges->begin(), ranges->end(), [](const CmapRange& a, const CmapRange& b) noexcept { return a.first < b.first; });
+    return ranges;
+}
+
 }  // namespace
 
 std::string_view describe(ParseError error) noexcept {
@@ -164,6 +402,22 @@ std::string_view describe(ParseError error) noexcept {
             return "an accumulated coordinate left the int16 range the specification allows";
         case ParseError::NonMonotonicContours:
             return "endPtsOfContours is not strictly increasing";
+        case ParseError::MissingCharacterMap:
+            return "'cmap' is absent; no code point can be resolved to a glyph";
+        case ParseError::TruncatedCmap:
+            return "a 'cmap' header, encoding record or subtable extends past the table";
+        case ParseError::UnsupportedCmapFormat:
+            return "'cmap' carries no subtable in a supported format (4 or 12, Unicode-encoded)";
+        case ParseError::CharacterMapTooLarge:
+            return "'cmap' declares more mappings than the supported maximum";
+        case ParseError::MissingHorizontalMetrics:
+            return "'hhea' or 'hmtx' is absent; no glyph has a known advance width";
+        case ParseError::TruncatedHhea:
+            return "'hhea' table is shorter than 36 bytes";
+        case ParseError::TruncatedHmtx:
+            return "'hmtx' is shorter than hhea.numberOfHMetrics requires";
+        case ParseError::UnsupportedMetricCount:
+            return "hhea.numberOfHMetrics is zero or exceeds maxp.numGlyphs";
     }
     return "unknown TrueType parse error";
 }
@@ -178,6 +432,9 @@ struct Directory {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> maxp;
     std::optional<std::pair<std::uint32_t, std::uint32_t>> loca;
     std::optional<std::pair<std::uint32_t, std::uint32_t>> glyf;
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> cmap;
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> hhea;
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> hmtx;
 };
 
 [[nodiscard]] Result<Directory, ParseError> walkDirectory(std::span<const std::byte> bytes, std::uint16_t numTables) noexcept {
@@ -227,6 +484,12 @@ struct Directory {
             out.loca = record;
         else if (tagStr == "glyf")
             out.glyf = record;
+        else if (tagStr == "cmap")
+            out.cmap = record;
+        else if (tagStr == "hhea")
+            out.hhea = record;
+        else if (tagStr == "hmtx")
+            out.hmtx = record;
     }
     return out;
 }
@@ -307,11 +570,25 @@ Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept {
     if (!directory->head.has_value() || !directory->maxp.has_value() || !directory->loca.has_value() || !directory->glyf.has_value()) {
         return err(ParseError::MissingRequiredTable);
     }
+    // `cmap` and `hhea`/`hmtx` are required rather than optional, and the codes are distinct from
+    // MissingRequiredTable so an author learns which capability is missing. Without `cmap` a
+    // recipe cannot name a character; without `hmtx` a baked glyph has no advance, and ADR-010
+    // defines the baked unit as a glyph at a known slot *with a known advance*. A font missing
+    // either is not one this pipeline can bake, whatever its outlines look like.
+    if (!directory->cmap.has_value()) {
+        return err(ParseError::MissingCharacterMap);
+    }
+    if (!directory->hhea.has_value() || !directory->hmtx.has_value()) {
+        return err(ParseError::MissingHorizontalMetrics);
+    }
 
     const auto [headOffset, headLength] = *directory->head;
     const auto [maxpOffset, maxpLength] = *directory->maxp;
     const auto [locaOffset, locaLength] = *directory->loca;
     const auto [glyfOffset, glyfLength] = *directory->glyf;
+    const auto [cmapOffset, cmapLength] = *directory->cmap;
+    const auto [hheaOffset, hheaLength] = *directory->hhea;
+    const auto [hmtxOffset, hmtxLength] = *directory->hmtx;
 
     auto head = bytes.subspan(headOffset, headLength);
     auto maxp = bytes.subspan(maxpOffset, maxpLength);
@@ -365,6 +642,35 @@ Result<Font, ParseError> parse(std::span<const std::byte> bytes) noexcept {
     font.head             = head;
     font.glyf             = glyf;
     font.loca             = std::move(*locaOffsets);
+
+    // hhea's numberOfHMetrics sits at offset 34, the last field of a 36-byte table.
+    auto hhea = bytes.subspan(hheaOffset, hheaLength);
+    if (hhea.size() < 36u) {
+        return err(ParseError::TruncatedHhea);
+    }
+    const auto numberOfHMetrics = beU16(hhea, 34);
+    if (!numberOfHMetrics) {
+        return err(ParseError::TruncatedHhea);
+    }
+    if (*numberOfHMetrics == 0 || *numberOfHMetrics > *numGlyphs) {
+        return err(ParseError::UnsupportedMetricCount);
+    }
+    auto hmtx = bytes.subspan(hmtxOffset, hmtxLength);
+    // numberOfHMetrics full pairs, then one int16 bearing for each remaining glyph.
+    const std::uint64_t hmtxNeeded = static_cast<std::uint64_t>(*numberOfHMetrics) * 4u
+                                     + (static_cast<std::uint64_t>(*numGlyphs) - *numberOfHMetrics) * 2u;
+    if (hmtx.size() < hmtxNeeded) {
+        return err(ParseError::TruncatedHmtx);
+    }
+    font.numberOfHMetrics = *numberOfHMetrics;
+    font.hmtx             = hmtx;
+
+    auto ranges = decodeCmap(bytes.subspan(cmapOffset, cmapLength));
+    if (!ranges.has_value()) {
+        return err(ranges.error());
+    }
+    font.characterMap = std::move(*ranges);
+
     return font;
 }
 
@@ -583,6 +889,53 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
         glyph.points.push_back(GlyphPoint{.x = xCoords[i], .y = yCoords[i], .onCurve = (flags[i] & flagOnCurve) != 0u});
     }
     return glyph;
+}
+
+std::optional<std::uint16_t> glyphForCodePoint(const Font& font, char32_t codePoint) noexcept {
+    // Ranges are sorted and non-overlapping, so the last one starting at or below the code point
+    // is the only candidate.
+    const auto it = std::upper_bound(font.characterMap.begin(), font.characterMap.end(), codePoint,
+                                     [](char32_t value, const CmapRange& range) noexcept { return value < range.first; });
+    if (it == font.characterMap.begin()) {
+        return std::nullopt;
+    }
+    const CmapRange& range = *std::prev(it);
+    if (codePoint > range.last) {
+        return std::nullopt;
+    }
+    const std::uint32_t glyph = static_cast<std::uint32_t>(range.firstGlyph) + (codePoint - range.first);
+    if (glyph >= font.numGlyphs) {
+        // A cmap that names a glyph the font does not have. Refusing beats returning an index
+        // parseGlyph() would then reject with a less specific code.
+        return std::nullopt;
+    }
+    return static_cast<std::uint16_t>(glyph);
+}
+
+Result<GlyphMetrics, ParseError> metricsFor(const Font& font, std::uint16_t glyphIndex) noexcept {
+    if (glyphIndex >= font.numGlyphs) {
+        return err(ParseError::GlyphIndexOutOfRange);
+    }
+    if (font.numberOfHMetrics == 0) {
+        return err(ParseError::UnsupportedMetricCount);
+    }
+    // Past the last full pair, the advance is the last one stored and only the bearing is
+    // per-glyph - the format's compression for a trailing run of equal-width glyphs.
+    const bool          hasOwnAdvance = glyphIndex < font.numberOfHMetrics;
+    const std::uint16_t advanceSlot   = hasOwnAdvance ? glyphIndex : static_cast<std::uint16_t>(font.numberOfHMetrics - 1u);
+    const auto          advance       = beU16(font.hmtx, static_cast<std::size_t>(advanceSlot) * 4u);
+    if (!advance) {
+        return err(ParseError::TruncatedHmtx);
+    }
+    const std::size_t bearingAt = hasOwnAdvance
+                                      ? static_cast<std::size_t>(glyphIndex) * 4u + 2u
+                                      : static_cast<std::size_t>(font.numberOfHMetrics) * 4u
+                                            + (static_cast<std::size_t>(glyphIndex) - font.numberOfHMetrics) * 2u;
+    const auto bearing = beI16(font.hmtx, bearingAt);
+    if (!bearing) {
+        return err(ParseError::TruncatedHmtx);
+    }
+    return GlyphMetrics{.advanceWidth = *advance, .leftSideBearing = *bearing};
 }
 
 }  // namespace mdux::tools::truetype
