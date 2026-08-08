@@ -228,9 +228,11 @@ target_sources(MduXTextBakeLib
         FILES
             text/TextBake.cppm
             text/Truetype.cppm
+            text/AtlasPacker.cppm
     PRIVATE
         text/TextBake.cpp
         text/Truetype.cpp
+        text/AtlasPacker.cpp
 )
 
 target_compile_features(MduXTextBakeLib PUBLIC cxx_std_23)

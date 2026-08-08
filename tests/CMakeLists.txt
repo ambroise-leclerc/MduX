@@ -588,6 +588,7 @@ add_executable(text_tools_spec
     text/TextToolsSpecMain.cpp
     text/TextBakeTests.cpp
     text/TruetypeTests.cpp
+    text/AtlasPackerTests.cpp
 )
 
 target_link_libraries(text_tools_spec PRIVATE MduX::TextBakeLib speclab::speclab)
