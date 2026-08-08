@@ -115,6 +115,9 @@ enum class SchemaError : std::uint8_t {
     TabularFigureMismatch,   ///< the decimal digits do not share one advance width
     KerningGlyphMissing,     ///< a kerning pair names a code point the package has no glyph for
     DuplicateKerningPair,    ///< the same ordered pair appears twice
+    IntegerOutOfRange,       ///< a JSON integer does not fit the field it was read into
+    CodePointOutOfRange,     ///< a code point exceeds U+10FFFF, so it is not a Unicode scalar value
+    InvalidAtlasDigest,      ///< the atlas sha256 is not 64 lowercase hexadecimal characters
 };
 
 [[nodiscard]] std::string_view describe(SchemaError error) noexcept;

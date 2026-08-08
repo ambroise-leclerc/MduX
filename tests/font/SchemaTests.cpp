@@ -48,8 +48,9 @@ using fp::SchemaError;
     package.atlas.sha256           = std::string(64, 'a');
     package.atlas.occupancyPercent = 25;
 
-    // '0'..'9' then 'A', so the tabular-figure rule has something to check and the charset has a
-    // contiguous run to cover.
+    // The ten decimal digits, so the tabular-figure rule has something to check and the charset
+    // has a contiguous run to cover. Deliberately no letters: a case that needs one adds it, and
+    // the absence is what makes the "charset names a code point with no glyph" case meaningful.
     std::uint32_t x = 0;
     for (char32_t point = U'0'; point <= U'9'; ++point) {
         package.glyphs.push_back(fp::GlyphRecord{.codePoint       = point,
@@ -115,8 +116,9 @@ const mdux::spec::Register packageSurvivesARoundTrip{
                       checks.expect(a.locales == b.locales, "locales survive");
                       checks.expect(a.atlas.path == b.atlas.path && a.atlas.width == b.atlas.width
                                         && a.atlas.height == b.atlas.height && a.atlas.byteLength == b.atlas.byteLength
-                                        && a.atlas.sha256 == b.atlas.sha256,
-                                    "atlas metrics survive");
+                                        && a.atlas.sha256 == b.atlas.sha256
+                                        && a.atlas.occupancyPercent == b.atlas.occupancyPercent,
+                                    "atlas metrics survive, occupancy included");
                       checks.expect(a.glyphs.size() == b.glyphs.size(), "every glyph survives");
                       if (a.glyphs.size() == b.glyphs.size()) {
                           bool same = true;
@@ -197,6 +199,26 @@ const mdux::spec::Register schemaRejections{
             {"an atlas path with a separator", SchemaError::AtlasPathHasSeparator,
              // A package must not be able to name a sidecar outside its own directory.
              [](fp::FontPackage& p) { p.atlas.path = "../atlas.bin"; }},
+            {"an atlas path of \"..\"", SchemaError::AtlasPathHasSeparator,
+             // Banning only separators let "." and ".." through, and both resolve to a directory.
+             [](fp::FontPackage& p) { p.atlas.path = ".."; }},
+            {"a Windows drive-relative atlas path", SchemaError::AtlasPathHasSeparator,
+             // "C:atlas.bin" is relative to the drive's current directory, not to this package.
+             [](fp::FontPackage& p) { p.atlas.path = "C:atlas.bin"; }},
+            {"an empty atlas digest", SchemaError::InvalidAtlasDigest,
+             // The field exists so a runtime can check the sidecar belongs to the package; an
+             // empty one is not an integrity value.
+             [](fp::FontPackage& p) { p.atlas.sha256.clear(); }},
+            {"an atlas digest of the wrong length", SchemaError::InvalidAtlasDigest,
+             [](fp::FontPackage& p) { p.atlas.sha256 = std::string(63, 'a'); }},
+            {"an uppercase atlas digest", SchemaError::InvalidAtlasDigest,
+             // Case matters: two spellings of one digest would compare unequal as strings.
+             [](fp::FontPackage& p) { p.atlas.sha256 = std::string(64, 'A'); }},
+            {"a non-hexadecimal atlas digest", SchemaError::InvalidAtlasDigest,
+             [](fp::FontPackage& p) { p.atlas.sha256 = std::string(64, 'z'); }},
+            {"a code point above U+10FFFF", SchemaError::CodePointOutOfRange,
+             // char32_t admits four billion values; only 0x110000 are characters.
+             [](fp::FontPackage& p) { p.glyphs.back().codePoint = 0x110000; }},
             {"no glyphs", SchemaError::NoGlyphs, [](fp::FontPackage& p) { p.glyphs.clear(); }},
             {"glyphs out of order", SchemaError::GlyphsNotSorted,
              [](fp::FontPackage& p) { std::swap(p.glyphs[0], p.glyphs[1]); }},
@@ -258,6 +280,70 @@ const mdux::spec::Register schemaRejections{
             .Execute();
     }};
 
+const mdux::spec::Register parserRejectsOutOfRangeIntegers{
+    "parse() refuses a JSON integer that does not fit its field, rather than narrowing it",
+    "evidence-unit",
+    [] {
+        // The finding this scenario exists for: `parse()` used to `static_cast` every value it
+        // read, so `unitsPerEm: 65537` narrowed to 1 and `pixelSize: -1` wrapped to 4294967295 -
+        // and both then satisfied validate(). The package parsed successfully as *different data
+        // than the JSON contained*, which is exactly the guarantee this module is supposed to
+        // make. Range-checking before the cast is what makes "it parsed" mean something.
+        //
+        // Each case edits one member of an otherwise valid document, so a failure names the field.
+        struct Case {
+            std::string_view what;
+            SchemaError      expected;
+            std::string_view member;
+            std::string_view value;
+        };
+
+        const std::vector<Case> cases{
+            {"unitsPerEm above uint16", SchemaError::IntegerOutOfRange, "\"unitsPerEm\"", "65537"},
+            {"a negative unitsPerEm", SchemaError::IntegerOutOfRange, "\"unitsPerEm\"", "-1"},
+            {"pixelSize above uint32", SchemaError::IntegerOutOfRange, "\"pixelSize\"", "4294967312"},
+            {"a negative pixelSize", SchemaError::IntegerOutOfRange, "\"pixelSize\"", "-1"},
+        };
+
+        return speclab::Test("font-schema-integer-range")
+            .Given("a valid package document, one field at a time replaced with an out-of-range value", [] {})
+            .When("each is parsed", [] {})
+            .Then("each is refused rather than narrowed",
+                  [&cases] {
+                      mdux::spec::Checks checks;
+                      auto               baseText = validPackage().write();
+                      checks.expect(baseText.has_value(), "the fixture writes");
+                      if (!baseText.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      for (const Case& entry : cases) {
+                          // Canonical JSON writes `"key":value` with no spaces, so the member can
+                          // be located and its value replaced without a JSON editor.
+                          const std::string key{entry.member};
+                          const auto        at = baseText->find(key + ":");
+                          checks.expect(at != std::string::npos, std::format("{}: found {} in the document", entry.what, key));
+                          if (at == std::string::npos) {
+                              continue;
+                          }
+                          const auto valueStart = at + key.size() + 1;
+                          const auto valueEnd   = baseText->find_first_of(",}", valueStart);
+                          std::string edited    = *baseText;
+                          edited.replace(valueStart, valueEnd - valueStart, entry.value);
+
+                          auto parsed = fp::FontPackage::parse(edited);
+                          checks.expect(!parsed.has_value(), std::format("{}: parsing succeeded unexpectedly", entry.what));
+                          if (!parsed.has_value()) {
+                              checks.expect(parsed.error() == entry.expected,
+                                            std::format("{}: got '{}', expected '{}'", entry.what, fp::describe(parsed.error()),
+                                                        fp::describe(entry.expected)));
+                          }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register committedPackageParses{
     "The committed dejavu-ui package parses and permits exactly its charset",
     "evidence-unit",
@@ -299,7 +385,20 @@ const mdux::spec::Register committedPackageParses{
                       const auto&        package = *state->package;
                       checks.expect(package.id == "dejavu-ui", "id");
                       checks.expect(package.glyphs.size() == 95, std::format("95 glyphs, got {}", package.glyphs.size()));
-                      checks.expect(package.permits(U' ') && package.permits(U'~'), "both ends of the range are permitted");
+                      // Every code point, not just the ends: a package missing an interior one
+                      // could still have 95 glyphs and pass an endpoint check.
+                      bool everyPointPresent = true;
+                      char32_t firstMissing  = 0;
+                      for (char32_t point = U' '; point <= U'~'; ++point) {
+                          if (!package.permits(point) || package.find(point) == nullptr) {
+                              everyPointPresent = false;
+                              firstMissing      = point;
+                              break;
+                          }
+                      }
+                      checks.expect(everyPointPresent,
+                                    everyPointPresent ? "every printable-ASCII point is permitted and baked"
+                                                      : std::format("U+{:04X} is missing", static_cast<std::uint32_t>(firstMissing)));
                       checks.expect(!package.permits(U'é'), "an accented letter outside the charset is refused");
                       // The tabular rule already passed inside validate(); this pins the value so a
                       // future font swap that quietly broke it is visible in the diff.

@@ -35,6 +35,10 @@ constexpr char32_t surrogateLast  = 0xDFFF;
     return value != 0 && (value & (value - 1)) == 0;
 }
 
+/// The largest Unicode scalar value. Above this is not a character at all, so a package naming
+/// one is describing a glyph for something no text can contain.
+constexpr char32_t maxCodePoint = 0x10FFFF;
+
 /// Reads a required integer member, or fails with the error the caller names.
 [[nodiscard]] Result<std::int64_t, SchemaError> requireInt(const json::Value& object, std::string_view key) noexcept {
     const json::Value* member = object.find(key);
@@ -60,10 +64,62 @@ constexpr char32_t surrogateLast  = 0xDFFF;
     return std::string{*value};
 }
 
-[[nodiscard]] const json::Value* requireArray(const json::Value& object, std::string_view key) noexcept {
+/// Reads an integer member and checks it fits `T` *before* narrowing.
+///
+/// Every field below goes through this rather than `static_cast`-ing a parsed `std::int64_t`.
+/// Casting first is not a rounding problem, it is a correctness one: `unitsPerEm: 65537` narrows
+/// to 1 and `pixelSize: -1` wraps to 4294967295, and both then satisfy `validate()`. The package
+/// would parse successfully as *different data than the JSON contains*, which is precisely the
+/// guarantee this module exists to make.
+///
+/// The unsigned branch is separate because a `T` whose maximum exceeds `int64_t`'s cannot be
+/// compared against it directly.
+template <typename T>
+[[nodiscard]] Result<T, SchemaError> requireIntIn(const json::Value& object, std::string_view key) noexcept {
+    auto raw = requireInt(object, key);
+    if (!raw.has_value()) {
+        return err(raw.error());
+    }
+    if constexpr (std::is_unsigned_v<T>) {
+        if (*raw < 0 || static_cast<std::uint64_t>(*raw) > static_cast<std::uint64_t>(std::numeric_limits<T>::max())) {
+            return err(SchemaError::IntegerOutOfRange);
+        }
+    } else {
+        if (*raw < static_cast<std::int64_t>(std::numeric_limits<T>::min())
+            || *raw > static_cast<std::int64_t>(std::numeric_limits<T>::max())) {
+            return err(SchemaError::IntegerOutOfRange);
+        }
+    }
+    return static_cast<T>(*raw);
+}
+
+/// Reads a code point, refusing anything that is not a Unicode scalar value.
+///
+/// `char32_t` is 32 bits, so the type alone permits four billion values of which only 0x110000
+/// are characters. The ceiling is enforced here rather than only in `validate()` so that no
+/// intermediate `FontPackage` ever holds one - and so the charset loop in `validate()` cannot be
+/// handed a range whose end is near the type's maximum.
+[[nodiscard]] Result<char32_t, SchemaError> requireCodePoint(const json::Value& object, std::string_view key) noexcept {
+    auto raw = requireInt(object, key);
+    if (!raw.has_value()) {
+        return err(raw.error());
+    }
+    if (*raw < 0 || *raw > static_cast<std::int64_t>(maxCodePoint)) {
+        return err(SchemaError::CodePointOutOfRange);
+    }
+    return static_cast<char32_t>(*raw);
+}
+
+/// A member that must be an array. Distinguishes absent from present-but-wrong-type, because
+/// reporting `"glyphs": {}` as a missing member sends an author looking for something that is
+/// right there.
+[[nodiscard]] Result<const json::Value*, SchemaError> requireArray(const json::Value& object, std::string_view key) noexcept {
     const json::Value* member = object.find(key);
-    if (member == nullptr || member->kind() != json::Value::Kind::Array) {
-        return nullptr;
+    if (member == nullptr) {
+        return err(SchemaError::MissingMember);
+    }
+    if (member->kind() != json::Value::Kind::Array) {
+        return err(SchemaError::WrongType);
     }
     return member;
 }
@@ -126,6 +182,12 @@ std::string_view describe(SchemaError error) noexcept {
             return "a kerning pair names a code point the package has no glyph for";
         case SchemaError::DuplicateKerningPair:
             return "the same ordered kerning pair appears more than once";
+        case SchemaError::IntegerOutOfRange:
+            return "a JSON integer does not fit the field it was read into";
+        case SchemaError::CodePointOutOfRange:
+            return "a code point exceeds U+10FFFF and is therefore not a Unicode scalar value";
+        case SchemaError::InvalidAtlasDigest:
+            return "the atlas sha256 is not 64 lowercase hexadecimal characters";
     }
     return "unknown font schema error";
 }
@@ -161,8 +223,22 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
     // A bare filename, resolved beside package.json. A path with a separator would let a package
     // point at a sidecar outside its own directory, which is a package describing something other
     // than itself.
-    if (atlas.path.find('/') != std::string::npos || atlas.path.find('\\') != std::string::npos) {
+    // One ordinary filename component, checked positively rather than by banning separators.
+    // Rejecting only '/' and '\\' let through ".", "..", and Windows drive-relative forms like
+    // "C:atlas.bin" - each of which resolves somewhere other than beside package.json on at least
+    // one supported platform.
+    if (atlas.path == "." || atlas.path == ".."
+        || atlas.path.find_first_of("/\\:") != std::string::npos) {
         return err(SchemaError::AtlasPathHasSeparator);
+    }
+    // Exactly 64 lowercase hex characters. The field's whole purpose is letting a runtime check
+    // the sidecar it was handed belongs to this package; a malformed digest is one it cannot use,
+    // and accepting one would mean write() could emit a package with no usable integrity value.
+    if (atlas.sha256.size() != 64
+        || !std::ranges::all_of(atlas.sha256, [](char c) noexcept {
+               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+           })) {
+        return err(SchemaError::InvalidAtlasDigest);
     }
     if (!isPowerOfTwo(atlas.width) || !isPowerOfTwo(atlas.height)) {
         return err(SchemaError::AtlasNotPowerOfTwo);
@@ -176,6 +252,9 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
     }
     for (std::size_t i = 0; i < glyphs.size(); ++i) {
         const GlyphRecord& glyph = glyphs[i];
+        if (glyph.codePoint > maxCodePoint) {
+            return err(SchemaError::CodePointOutOfRange);
+        }
         if (glyph.codePoint >= surrogateFirst && glyph.codePoint <= surrogateLast) {
             return err(SchemaError::SurrogateCodePoint);
         }
@@ -221,6 +300,12 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
         if (range.last < range.first) {
             return err(SchemaError::CharsetRangeDescending);
         }
+        // Checked before the membership walk below, which increments a char32_t: a range ending at
+        // the type's maximum would wrap `point` to 0 and loop forever. Bounding to a scalar value
+        // makes that unreachable, and the loop is written so it would terminate regardless.
+        if (range.last > maxCodePoint) {
+            return err(SchemaError::CodePointOutOfRange);
+        }
         if (range.first <= surrogateLast && range.last >= surrogateFirst) {
             return err(SchemaError::SurrogateCodePoint);
         }
@@ -230,15 +315,21 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
         // Every code point the charset permits must be one the package can actually draw.
         // Without this, `permits()` would promise a glyph the runtime would then fail to find -
         // and the runtime has no fallback, because having one would mean shaping on device.
-        for (char32_t point = range.first; point <= range.last; ++point) {
+        for (char32_t point = range.first;; ++point) {
             if (find(point) == nullptr) {
                 return err(SchemaError::CharsetGlyphMissing);
+            }
+            if (point == range.last) {
+                break;  // tested here, not in the condition, so `++point` can never wrap past it
             }
         }
     }
 
     for (std::size_t i = 0; i < kerning.size(); ++i) {
         const KerningPair& pair = kerning[i];
+        if (pair.left > maxCodePoint || pair.right > maxCodePoint) {
+            return err(SchemaError::CodePointOutOfRange);
+        }
         if (find(pair.left) == nullptr || find(pair.right) == nullptr) {
             return err(SchemaError::KerningGlyphMissing);
         }
@@ -367,22 +458,25 @@ Result<FontPackage, SchemaError> FontPackage::parse(std::string_view text) noexc
     }
     package.id = std::move(*packageId);
 
-    auto upem = requireInt(*document, "unitsPerEm");
+    // Every numeric field goes through requireIntIn<T>, which range-checks before narrowing.
+    // See its comment: casting a parsed int64 first is not a rounding problem but a correctness
+    // one, because the result validates as different data than the JSON contains.
+    auto upem = requireIntIn<std::uint16_t>(*document, "unitsPerEm");
     if (!upem.has_value()) {
         return err(upem.error());
     }
-    package.unitsPerEm = static_cast<std::uint16_t>(*upem);
-    auto pixels        = requireInt(*document, "pixelSize");
+    package.unitsPerEm = *upem;
+    auto pixels        = requireIntIn<std::uint32_t>(*document, "pixelSize");
     if (!pixels.has_value()) {
         return err(pixels.error());
     }
-    package.pixelSize = static_cast<std::uint32_t>(*pixels);
+    package.pixelSize = *pixels;
 
-    const json::Value* locales = requireArray(*document, "locales");
-    if (locales == nullptr) {
-        return err(SchemaError::MissingMember);
+    auto locales = requireArray(*document, "locales");
+    if (!locales.has_value()) {
+        return err(locales.error());
     }
-    for (const json::Value& entry : locales->elements()) {
+    for (const json::Value& entry : (*locales)->elements()) {
         auto tag = entry.asString();
         if (!tag.has_value()) {
             return err(SchemaError::WrongType);
@@ -391,8 +485,11 @@ Result<FontPackage, SchemaError> FontPackage::parse(std::string_view text) noexc
     }
 
     const json::Value* atlasValue = document->find("atlas");
-    if (atlasValue == nullptr || atlasValue->kind() != json::Value::Kind::Object) {
+    if (atlasValue == nullptr) {
         return err(SchemaError::MissingMember);
+    }
+    if (atlasValue->kind() != json::Value::Kind::Object) {
+        return err(SchemaError::WrongType);
     }
     auto atlasPath = requireString(*atlasValue, "path");
     if (!atlasPath.has_value()) {
@@ -405,83 +502,132 @@ Result<FontPackage, SchemaError> FontPackage::parse(std::string_view text) noexc
     }
     package.atlas.sha256 = std::move(*atlasSha);
     {
-        auto width = requireInt(*atlasValue, "width");
-        auto height = requireInt(*atlasValue, "height");
-        auto length = requireInt(*atlasValue, "byteLength");
-        auto occupancy = requireInt(*atlasValue, "occupancyPercent");
-        if (!width.has_value() || !height.has_value() || !length.has_value() || !occupancy.has_value()) {
-            return err(SchemaError::MissingMember);
+        auto width     = requireIntIn<std::uint32_t>(*atlasValue, "width");
+        auto height    = requireIntIn<std::uint32_t>(*atlasValue, "height");
+        auto length    = requireIntIn<std::uint64_t>(*atlasValue, "byteLength");
+        auto occupancy = requireIntIn<std::uint32_t>(*atlasValue, "occupancyPercent");
+        // Reported individually rather than collapsed, so a diagnostic distinguishes an absent
+        // member from one that is present but the wrong type or out of range.
+        if (!width.has_value()) {
+            return err(width.error());
         }
-        package.atlas.width            = static_cast<std::uint32_t>(*width);
-        package.atlas.height           = static_cast<std::uint32_t>(*height);
-        package.atlas.byteLength       = static_cast<std::uint64_t>(*length);
-        package.atlas.occupancyPercent = static_cast<std::uint32_t>(*occupancy);
+        if (!height.has_value()) {
+            return err(height.error());
+        }
+        if (!length.has_value()) {
+            return err(length.error());
+        }
+        if (!occupancy.has_value()) {
+            return err(occupancy.error());
+        }
+        package.atlas.width            = *width;
+        package.atlas.height           = *height;
+        package.atlas.byteLength       = *length;
+        package.atlas.occupancyPercent = *occupancy;
     }
 
-    const json::Value* glyphs = requireArray(*document, "glyphs");
-    if (glyphs == nullptr) {
-        return err(SchemaError::MissingMember);
+    auto glyphs = requireArray(*document, "glyphs");
+    if (!glyphs.has_value()) {
+        return err(glyphs.error());
     }
-    for (const json::Value& entry : glyphs->elements()) {
+    for (const json::Value& entry : (*glyphs)->elements()) {
         if (entry.kind() != json::Value::Kind::Object) {
             return err(SchemaError::WrongType);
         }
         GlyphRecord glyph;
-        auto        point    = requireInt(entry, "codePoint");
-        auto        index    = requireInt(entry, "glyphIndex");
-        auto        advance  = requireInt(entry, "advanceWidth");
-        auto        bearing  = requireInt(entry, "leftSideBearing");
-        auto        x        = requireInt(entry, "x");
-        auto        y        = requireInt(entry, "y");
-        auto        width    = requireInt(entry, "width");
-        auto        height   = requireInt(entry, "height");
-        auto        originX  = requireInt(entry, "bitmapOriginX");
-        auto        originY  = requireInt(entry, "bitmapOriginY");
-        if (!point.has_value() || !index.has_value() || !advance.has_value() || !bearing.has_value() || !x.has_value()
-            || !y.has_value() || !width.has_value() || !height.has_value() || !originX.has_value() || !originY.has_value()) {
-            return err(SchemaError::MissingMember);
+        auto        point   = requireCodePoint(entry, "codePoint");
+        if (!point.has_value()) {
+            return err(point.error());
         }
-        glyph.codePoint       = static_cast<char32_t>(*point);
-        glyph.glyphIndex      = static_cast<std::uint16_t>(*index);
-        glyph.advanceWidth    = static_cast<std::uint16_t>(*advance);
-        glyph.leftSideBearing = static_cast<std::int16_t>(*bearing);
-        glyph.x               = static_cast<std::uint32_t>(*x);
-        glyph.y               = static_cast<std::uint32_t>(*y);
-        glyph.width           = static_cast<std::uint32_t>(*width);
-        glyph.height          = static_cast<std::uint32_t>(*height);
-        glyph.bitmapOriginX   = static_cast<std::int32_t>(*originX);
-        glyph.bitmapOriginY   = static_cast<std::int32_t>(*originY);
+        auto index = requireIntIn<std::uint16_t>(entry, "glyphIndex");
+        if (!index.has_value()) {
+            return err(index.error());
+        }
+        auto advance = requireIntIn<std::uint16_t>(entry, "advanceWidth");
+        if (!advance.has_value()) {
+            return err(advance.error());
+        }
+        auto bearing = requireIntIn<std::int16_t>(entry, "leftSideBearing");
+        if (!bearing.has_value()) {
+            return err(bearing.error());
+        }
+        auto x = requireIntIn<std::uint32_t>(entry, "x");
+        if (!x.has_value()) {
+            return err(x.error());
+        }
+        auto y = requireIntIn<std::uint32_t>(entry, "y");
+        if (!y.has_value()) {
+            return err(y.error());
+        }
+        auto width = requireIntIn<std::uint32_t>(entry, "width");
+        if (!width.has_value()) {
+            return err(width.error());
+        }
+        auto height = requireIntIn<std::uint32_t>(entry, "height");
+        if (!height.has_value()) {
+            return err(height.error());
+        }
+        auto originX = requireIntIn<std::int32_t>(entry, "bitmapOriginX");
+        if (!originX.has_value()) {
+            return err(originX.error());
+        }
+        auto originY = requireIntIn<std::int32_t>(entry, "bitmapOriginY");
+        if (!originY.has_value()) {
+            return err(originY.error());
+        }
+        glyph.codePoint       = *point;
+        glyph.glyphIndex      = *index;
+        glyph.advanceWidth    = *advance;
+        glyph.leftSideBearing = *bearing;
+        glyph.x               = *x;
+        glyph.y               = *y;
+        glyph.width           = *width;
+        glyph.height          = *height;
+        glyph.bitmapOriginX   = *originX;
+        glyph.bitmapOriginY   = *originY;
         package.glyphs.push_back(glyph);
     }
 
-    const json::Value* kerning = requireArray(*document, "kerning");
-    if (kerning == nullptr) {
-        return err(SchemaError::MissingMember);
+    auto kerning = requireArray(*document, "kerning");
+    if (!kerning.has_value()) {
+        return err(kerning.error());
     }
-    for (const json::Value& entry : kerning->elements()) {
-        auto left       = requireInt(entry, "left");
-        auto right      = requireInt(entry, "right");
-        auto adjustment = requireInt(entry, "adjustment");
-        if (!left.has_value() || !right.has_value() || !adjustment.has_value()) {
-            return err(SchemaError::MissingMember);
+    for (const json::Value& entry : (*kerning)->elements()) {
+        if (entry.kind() != json::Value::Kind::Object) {
+            return err(SchemaError::WrongType);
         }
-        package.kerning.push_back(KerningPair{.left       = static_cast<char32_t>(*left),
-                                              .right      = static_cast<char32_t>(*right),
-                                              .adjustment = static_cast<std::int16_t>(*adjustment)});
+        auto left = requireCodePoint(entry, "left");
+        if (!left.has_value()) {
+            return err(left.error());
+        }
+        auto right = requireCodePoint(entry, "right");
+        if (!right.has_value()) {
+            return err(right.error());
+        }
+        auto adjustment = requireIntIn<std::int16_t>(entry, "adjustment");
+        if (!adjustment.has_value()) {
+            return err(adjustment.error());
+        }
+        package.kerning.push_back(KerningPair{.left = *left, .right = *right, .adjustment = *adjustment});
     }
 
-    const json::Value* charset = requireArray(*document, "restrictedCharset");
-    if (charset == nullptr) {
-        return err(SchemaError::MissingMember);
+    auto charset = requireArray(*document, "restrictedCharset");
+    if (!charset.has_value()) {
+        return err(charset.error());
     }
-    for (const json::Value& entry : charset->elements()) {
-        auto first = requireInt(entry, "first");
-        auto last  = requireInt(entry, "last");
-        if (!first.has_value() || !last.has_value()) {
-            return err(SchemaError::MissingMember);
+    for (const json::Value& entry : (*charset)->elements()) {
+        if (entry.kind() != json::Value::Kind::Object) {
+            return err(SchemaError::WrongType);
         }
-        package.restrictedCharset.push_back(
-            CharsetRange{.first = static_cast<char32_t>(*first), .last = static_cast<char32_t>(*last)});
+        auto first = requireCodePoint(entry, "first");
+        if (!first.has_value()) {
+            return err(first.error());
+        }
+        auto last = requireCodePoint(entry, "last");
+        if (!last.has_value()) {
+            return err(last.error());
+        }
+        package.restrictedCharset.push_back(CharsetRange{.first = *first, .last = *last});
     }
 
     // Validated on the way out, so nobody can hold an unchecked FontPackage.
