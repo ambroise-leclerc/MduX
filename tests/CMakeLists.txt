@@ -550,6 +550,39 @@ mdux_discover_tests(ml_spec)
 # the same standing evidence shader_spec, draw_spec and ml_spec give. S1 ships the schema and a
 # no-run baker skeleton; the TrueType parser (#158), rasteriser (#159), atlas font baker (#160),
 # font schema (#161) and coverage draw path (#162) follow as their blockers close.
+# Font schema suite (issue #161)
+#
+# Its own executable rather than cases inside text_spec, because a font package and a text package
+# are different shapes with different rules, and a failure should name which schema rejected the
+# input. Links MduX::Core only - see FontSpecMain.cpp on why that link line is evidence.
+add_executable(font_spec
+    font/FontSpecMain.cpp
+    font/SchemaTests.cpp
+)
+
+target_link_libraries(font_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(font_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# The committed-package scenario reads generated/font/dejavu-ui/package.json, so the suite has to
+# know where the repository is - the same way shader_spec locates its own artifacts.
+target_compile_definitions(font_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+set_target_properties(font_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(font_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(font_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(font_spec)
+
 add_executable(text_spec
     text/TextSpecMain.cpp
     text/SchemaTests.cpp

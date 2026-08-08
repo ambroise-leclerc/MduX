@@ -26,7 +26,7 @@
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "61c719a6572d6474148943f57f9588312f08f3302fb5d9e5ed6409c4f6506051"
+      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
     },
     {
       "path": "atlas.bin",

@@ -1150,11 +1150,18 @@
     }
   ],
   "id": "dejavu-ui",
+  "kerning": [],
   "kind": "font",
   "locales": [
     "en-US"
   ],
   "pixelSize": 16,
+  "restrictedCharset": [
+    {
+      "first": 32,
+      "last": 126
+    }
+  ],
   "schemaVersion": 1,
   "unitsPerEm": 2048
 }
