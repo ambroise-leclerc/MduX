@@ -86,7 +86,7 @@ performs no checking and confers no compliance.
 | `MduXToolsCommon` | `tools/common/` | TOML subset reader, CLI parser, shared diagnostic envelope |
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
-| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake` |
+| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser, #158) |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
@@ -209,7 +209,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | S1 (`mdux.text.schema` + `mdux-textbake` skeleton) landed; S2–S6 open |
+| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | S1 (`mdux.text.schema` + `mdux-textbake` skeleton) landed. S2 (`mdux.tools.truetype` glyf parser, #158) landed; S3–S6 open |
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | the replacement for the retired HTML/CSS path |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
