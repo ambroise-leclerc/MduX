@@ -1,24 +1,3 @@
-This is the canonical DejaVu fonts LICENSE, verbatim from the upstream project, covering
-`DejaVuSans.ttf` in this directory. It is redistributed unmodified.
-
-Source:   https://github.com/dejavu-fonts/dejavu-fonts (LICENSE)
-Upstream: https://dejavu-fonts.github.io/
-Recorded: docs/governance/soup-register.toml
-
-It is reproduced whole and unedited on purpose. An earlier version of this file carried only the
-Bitstream Vera stanza extracted from Debian's machine-readable copyright file, which does not
-contain the Arev notice at all - so it claimed "with the Arev additions" while omitting the
-Tavmjong Bah copyright and the Arev terms that DejaVu actually incorporates. Both the Bitstream
-and Arev licenses require their own notice to accompany redistributed copies, so an extraction
-that drops one is a licensing defect however tidy it looks. Shipping the upstream file whole
-removes the judgement call.
-
-The naming restrictions below bind *modified* versions. MduX does not modify the font - it reads
-it at bake time - so they are not engaged. A future change that subsets or edits the .ttf before
-committing would engage them and would need the file renamed.
-
-================================================================================
-
 Fonts are (c) Bitstream (see below). DejaVu changes are in public domain.
 Glyphs imported from Arev fonts are (c) Tavmjong Bah (see below)
 

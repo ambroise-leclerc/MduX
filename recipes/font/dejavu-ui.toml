@@ -6,8 +6,10 @@
 # ## Provenance and license, stated plainly
 #
 # `dejavu-ui/DejaVuSans.ttf` is DejaVu Sans, redistributed here **unmodified**. Its terms are in
-# `dejavu-ui/LICENSE-DejaVu.txt`: the Bitstream Vera license, with the Arev additions, and the
-# DejaVu changes in the public domain. It is recorded in docs/governance/soup-register.toml.
+# `dejavu-ui/LICENSE-DejaVu.txt`, which is the upstream license file byte for byte - the Bitstream
+# Vera terms, the Arev additions with the Tavmjong Bah notice, and the DejaVu changes in the public
+# domain. Provenance and the reasoning behind that file are in `dejavu-ui/README.md`; the SOUP
+# entry is in docs/governance/soup-register.toml.
 #
 # Two consequences worth being explicit about, because both are easy to get wrong later:
 #

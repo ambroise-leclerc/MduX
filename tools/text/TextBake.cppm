@@ -6,16 +6,22 @@
  * @compliance ADR-007 Evidence pipeline doctrine
  * @compliance ADR-010 No on-device text shaping (the baker is one of the host-side enforcement points)
  *
- * ## What S1 (#157) ships, and what it does not
+ * ## Two recipe kinds, one tool
  *
- * The skeleton lands the schema, the baker library, and the host-tools wiring so the trust-zone
- * check continues to pass and `ctest -L evidence` continues to travel clean. The baker's `run()`
- * is wired through the evidenced-shared code path: it parses a recipe, validates it against
- * `mdux.text.schema`, and produces a no-run package whose sidecar is zero bytes. The first real
- * artifact is committed by S4 (#160), once the TrueType parser (S2 / #158) and rasteriser (S3 /
- * #159) are available; until then a recipe with no `[runs]` table is the only shape `run()`
- * produces, and that is by design - baking an artifact the parser pipeline cannot yet provide
- * would be premature.
+ * A recipe carrying a `[charset]` table is a **font** recipe: it bakes an R8 coverage atlas out
+ * of a TrueType file, producing `package.json`, `report.json` and `atlas.bin` under
+ * `generated/font/<id>/`. One without it is a **text** recipe: positioned glyph runs against an
+ * atlas some font package already baked.
+ *
+ * They share `parseRecipe()`, `run()`, `write()` and `verify()` because they share everything
+ * around the edges - the report, the digests, the write/verify pair - and differ only in what
+ * fills the sidecar. `run()` dispatches on `Recipe::font`, so `mdux-textbake` stays one tool with
+ * one CLI rather than growing a second entry point that would have to be kept in step.
+ *
+ * S1 (#157) landed the schema, the library and the host-tools wiring with the text path only,
+ * producing a no-run package whose sidecar was zero bytes. S4 (#160) added the font path and the
+ * first committed artifact, built on the TrueType parser (S2 / #158) and the rasteriser
+ * (S3 / #159).
  *
  * ## One code path for bake and verify
  *
@@ -144,16 +150,21 @@ struct BakeOutputs {
 /**
  * @brief Produces every output byte for `recipe`.
  *
- * At S1: produces a no-run package whose sidecar is zero bytes. The first real baked artifact
- * lands in S4 (#160).
+ * Dispatches on `Recipe::font`. A font recipe rasterises its charset, packs the glyphs and fills
+ * the sidecar with the atlas sheet; a text recipe produces a run package, which at S1 is still a
+ * no-run one whose sidecar is zero bytes until the run pipeline lands.
  *
  * @param recipe      the resolved recipe
  * @param recipePath  repository-relative, for `report.json`'s recipe record and for diagnostics
  * @param recipeBytes the recipe's own bytes, for its digest
- * @param root        the directory any future source paths resolve against - the repository root
+ * @param root        the directory a font recipe's `source` resolves against - the repository
+ *                    root. The path is confined to it: absolute paths and `..` escapes are
+ *                    refused rather than followed.
  * @param diagnostics appended to on any problem
  *
- * Returns nullopt when the recipe fails to build a package that passes its own `validate()`.
+ * Returns nullopt when the recipe fails to build a valid package - which for a font recipe
+ * includes a character the font cannot draw, an outline it refuses, or a glyph set the atlas
+ * budget cannot hold. Every such refusal appends its own `TXT` diagnostic.
  */
 [[nodiscard]] std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath,
                                               std::span<const std::byte> recipeBytes,

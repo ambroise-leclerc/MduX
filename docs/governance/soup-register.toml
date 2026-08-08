@@ -124,5 +124,6 @@ rather than left implicit.
 
 The license's naming restriction binds modified versions. MduX does not modify the font, so it is
 not engaged; a future change that subsets or edits the .ttf before committing would engage it and
-would need the file renamed. License text: recipes/font/dejavu-ui/LICENSE-DejaVu.txt.
+would need the file renamed. License text: recipes/font/dejavu-ui/LICENSE-DejaVu.txt, which
+is the upstream file byte for byte; provenance is in recipes/font/dejavu-ui/README.md.
 """
