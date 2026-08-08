@@ -156,8 +156,10 @@ in `include/` or `src/`.
   `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
   superseded by the clause corpus above or by an ADR. Read that file before concluding content was
   lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
-- `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
-  CI.
+- `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
+  `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
+  `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
+  gets built/tested in CI.
 - `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
   `ninja-clang` (issue #45).
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
@@ -177,25 +179,31 @@ scope, not a mechanically enforced restriction.
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note the Clang CI job in `.github/workflows/ci.yml` is currently commented out
-  (disabled), so Clang support is unverified in CI even though the version floor is enforced.
+- Clang 20+ — note that `.github/workflows/clang-build.yml` carries only a `workflow_dispatch`
+  trigger. It is a live workflow that can be started from the Actions tab, but no push or pull
+  request runs it, so Clang is unverified by automatic CI even though the version floor is
+  enforced at configure time. Treat a Clang result as unverified unless you can point at a
+  specific manual run of that workflow.
 - CMake 4.0+
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`
-enforces this). On Windows, the `ninja-msvc` preset in `CMakePresets.json` is available:
+enforces this). Plain CMake, identical on Linux and Windows:
 
 ```bash
-cmake --preset ninja-msvc
-cmake --build --preset ninja-msvc
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
 ```
 
-On Linux (no preset exists — use the explicit form CI actually runs):
+`-G Ninja` is mandatory and checked at configure time: CMake implements C++ modules only for the
+Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A bare `cmake ..`
+takes the platform default and stops with a message naming the generator it found.
+`export CMAKE_GENERATOR=Ninja` removes the need for the flag.
 
-```bash
-cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-cmake --build build
-```
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang` and `-debug` variants.
+Those exist so each CI workflow invokes a configuration this repository owns instead of a
+look-alike command line; they are not needed to build by hand, and each uses its own binary dir.
 
 **Build options** (`option(...)` in root `CMakeLists.txt`):
 - `MDUX_BUILD_EXAMPLES` (default `ON`)
@@ -235,6 +243,36 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 [`.agents/skills/mdux-build-and-test/SKILL.md`](.agents/skills/mdux-build-and-test/SKILL.md).
 
 ## 6. Repository-wide working rules
+
+### Branch naming
+
+Work branches use the scheme GitHub's **"Create a branch for this issue"** button generates: the
+issue number, a dash, then the slugified issue title.
+
+```
+158-hand-parsed-truetype-glyf-only
+14-text-schema
+```
+
+This is not cosmetic. Every workflow filters `pull_request` on the pattern `[0-9]+-*`, and
+**those filters match a pull request's base branch, not its head**. A PR whose base matches no
+listed pattern reports no checks at all — not failures, *nothing* — which is the failure mode
+easiest to miss on review. So:
+
+- Create branches from the issue, with that button or by writing the same name by hand.
+- A stacked PR (one targeting its predecessor rather than `develop`, so a reviewer sees one
+  issue's diff instead of the cumulative one) is covered automatically, because its base is
+  itself an issue branch.
+- `main`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
+  convention and is kept only for branches already in flight.
+- A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
+  it**. If you need one, add its pattern to the `branches:` list of every workflow under
+  `.github/workflows/` that has a `pull_request:` trigger.
+
+`push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
+own branch, and adding work branches there would run every workflow twice per commit.
+
+### Conventions
 
 - Follow the naming, formatting, and documentation conventions in
   [`CONTRIBUTING.md`](CONTRIBUTING.md): `UpperCamelCase` classes/structs, `lowerCamelCase`

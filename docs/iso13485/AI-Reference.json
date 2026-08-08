@@ -164,7 +164,7 @@
       "title": "Monitoring and measurement",
       "file": "06-measurement-analysis-improvement.md",
       "anchor": "82-monitoring-and-measurement",
-      "pointer": "The evidence-kernel and host-tools test suites (91 cases as of the epic that introduced them) run on every pull request across three independent toolchains, giving continuous, reproducible monitoring of whether the codebase still meets its own specified behaviour - not a periodic audit sample.",
+      "pointer": "The evidence-kernel and host-tools test suites (91 cases as of the epic that introduced them) run on every push to main or develop and on every pull request whose base branch matches main, develop, the issue-derived work-branch scheme [0-9]+-*, or the legacy feat/**, across the two toolchains automatic CI exercises - MSVC and GCC 16; a Clang workflow exists but is manual-dispatch only, so it contributes no automatic coverage - giving continuous, reproducible monitoring of whether the codebase still meets its own specified behaviour, not a periodic audit sample.",
       "justifications": [
         "JUS-010"
       ]

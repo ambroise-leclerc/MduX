@@ -12,6 +12,19 @@ An experimental C++23-modules UI library for medical-device software, built on V
 > compliance. Nothing in it has been assessed by a notified body.** The regulatory material under
 > `docs/` records how such work would be organised. It is not evidence that it has been done.
 
+![Status](https://img.shields.io/badge/status-experimental-orange)
+[![Version](https://img.shields.io/github/v/tag/ambroise-leclerc/MduX?label=version)](https://github.com/ambroise-leclerc/MduX/tags)
+[![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
+[![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
+[![Docs Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml)
+[![Evidence Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml)
+[![Compliance Docs](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml)
+
+[![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
+[![OSV-Scanner](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ambroise-leclerc/MduX/badge)](https://scorecard.dev/viewer/?uri=github.com/ambroise-leclerc/MduX)
+[![License: EPL-2.0](https://img.shields.io/badge/License-EPL--2.0-blue)](LICENSE)
+
 ## What this actually is
 
 A library with three zones, checked at configure time rather than by review
@@ -87,17 +100,29 @@ window. `examples/VulkanSCTriangleExample.cpp` is the device half.
 Build, test, and consumption instructions are in
 **[`docs/getting-started.md`](docs/getting-started.md)**, including the honest limitations.
 
-The short version, on Linux:
+The short version:
 
 ```bash
-cmake --preset ninja-gcc
-cmake --build --preset ninja-gcc
-ctest --preset ninja-gcc --output-on-failure
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
+ctest --output-on-failure
 ```
 
 Requires **GCC 16+**, **MSVC 17.14+** or **Clang 20+**, **CMake 4.0+**, **Ninja**, and the
-**Vulkan SDK 1.3+**. The Visual Studio generator does not support `import std` and is rejected
-deliberately.
+**Vulkan SDK 1.3+**.
+
+`-G Ninja` is the one flag you cannot drop. CMake implements C++ modules for the Ninja and
+Visual Studio generators only, and Visual Studio cannot do `import std` — so Ninja is the entire
+supported set, and configuring without it stops with a message saying exactly that. To stop
+typing it, `export CMAKE_GENERATOR=Ninja` once and plain `cmake ..` works from then on.
+
+If your default `g++` is older than 16, point at a newer one with the standard variables:
+`CXX=g++-16 CC=gcc-16 cmake .. -G Ninja`.
+
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc` and friends. Those exist so each CI
+leg can invoke a named configuration this repository owns rather than a command line that merely
+resembles one. They are not needed to build by hand, and nothing above uses them.
 
 ## Implementation status
 
@@ -173,7 +198,7 @@ certification or compliance claim.
 
 ## License
 
-To be determined based on regulatory requirements and intended distribution.
+Eclipse Public License 2.0 ([EPL-2.0](LICENSE)).
 
 ## Contact
 
