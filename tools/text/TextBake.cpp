@@ -204,6 +204,25 @@ namespace {
                "a font approved for a locale.");
         return std::nullopt;
     }
+    // Every entry, not just the list. A text recipe's single locale must be non-empty, and a font
+    // recipe's list had no equivalent check - so `ids = [""]` passed and emitted `"locales": [""]`,
+    // which reads downstream as a locale rather than as the mistake it is. Duplicates are refused
+    // for the same reason: a second identical approval records nothing and only invites a reader
+    // to wonder what distinguishes them.
+    for (std::size_t i = 0; i < spec.locales.size(); ++i) {
+        if (spec.locales[i].empty()) {
+            report(diagnostics, std::string{recipePath}, 0, recipeEmptyLocale,
+                   std::format("[locales] entry {} is empty", i),
+                   "Use a BCP 47 tag such as 'en-US'.");
+            return std::nullopt;
+        }
+        if (std::ranges::find(spec.locales.begin(), spec.locales.begin() + static_cast<std::ptrdiff_t>(i), spec.locales[i])
+            != spec.locales.begin() + static_cast<std::ptrdiff_t>(i)) {
+            report(diagnostics, std::string{recipePath}, 0, recipeEmptyLocale,
+                   std::format("[locales] lists '{}' more than once", spec.locales[i]));
+            return std::nullopt;
+        }
+    }
 
     const toml::Table* charset = document.table("charset");
     if (charset == nullptr) {
@@ -235,15 +254,55 @@ namespace {
         report(diagnostics, std::string{recipePath}, 0, recipeCharsetMalformed, "[charset] declares no ranges");
         return std::nullopt;
     }
+    constexpr std::int64_t surrogateFirst = 0xD800;
+    constexpr std::int64_t surrogateLast   = 0xDFFF;
     for (std::size_t i = 0; i < names.size(); ++i) {
         if (firsts[i] < 0 || lasts[i] < 0 || firsts[i] > lasts[i] || lasts[i] > 0x10FFFF) {
             report(diagnostics, std::string{recipePath}, 0, recipeCharsetMalformed,
                    std::format("[charset] range '{}' is not an ascending pair inside Unicode: {}..{}", names[i], firsts[i], lasts[i]));
             return std::nullopt;
         }
+        // U+D800..U+DFFF are UTF-16 surrogate code *points*, not scalar values: they exist only to
+        // encode astral characters as pairs and can never be a character in their own right. A
+        // package listing one would be describing a glyph for something that cannot appear in
+        // text, so the range is refused rather than silently split.
+        if (firsts[i] <= surrogateLast && lasts[i] >= surrogateFirst) {
+            report(diagnostics, std::string{recipePath}, 0, recipeCharsetMalformed,
+                   std::format("[charset] range '{}' ({}..{}) intersects the UTF-16 surrogate block U+D800..U+DFFF", names[i],
+                               firsts[i], lasts[i]),
+                   "Surrogates are not Unicode scalar values. Split the range around them.");
+            return std::nullopt;
+        }
         spec.charset.push_back(CharsetRange{.name  = names[i],
                                             .first = static_cast<char32_t>(firsts[i]),
                                             .last  = static_cast<char32_t>(lasts[i])});
+    }
+
+    // Ranges must not overlap each other. A code point covered twice is rasterised twice, takes
+    // two atlas slots, and appears twice in `package.json`'s glyph list - so a consumer indexing
+    // by code point gets an ambiguous package and the atlas grows for nothing. That is the same
+    // reasoning that makes a missing glyph fatal: the package must describe the charset that was
+    // asked for, and a duplicate makes it describe something else.
+    //
+    // Checked on a sorted copy so the diagnostic can name both ranges, while `spec.charset` keeps
+    // the recipe's order - which is what package.json's glyph list is emitted in.
+    std::vector<const CharsetRange*> sorted;
+    sorted.reserve(spec.charset.size());
+    for (const CharsetRange& range : spec.charset) {
+        sorted.push_back(&range);
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](const CharsetRange* a, const CharsetRange* b) noexcept { return a->first < b->first; });
+    for (std::size_t i = 1; i < sorted.size(); ++i) {
+        if (sorted[i]->first <= sorted[i - 1]->last) {
+            report(diagnostics, std::string{recipePath}, 0, recipeCharsetMalformed,
+                   std::format("[charset] ranges '{}' ({}..{}) and '{}' ({}..{}) overlap", sorted[i - 1]->name,
+                               static_cast<std::uint32_t>(sorted[i - 1]->first), static_cast<std::uint32_t>(sorted[i - 1]->last),
+                               sorted[i]->name, static_cast<std::uint32_t>(sorted[i]->first),
+                               static_cast<std::uint32_t>(sorted[i]->last)),
+                   "Each code point must be named by exactly one range.");
+            return std::nullopt;
+        }
     }
     return spec;
 }
@@ -462,24 +521,71 @@ struct BakedGlyph {
     return baked;
 }
 
+/// The slot for each glyph, indexed by the id the packer was given - which is the glyph's index
+/// in `glyphs`. Built once and validated once, then shared.
+///
+/// It used to be rebuilt independently by the blit and by the JSON writer, and the two disagreed
+/// about a missing id: one skipped it, the other called `.at()` and threw out of a baker whose
+/// contract is to return diagnostics. Building it here gives both call sites the same guarantee -
+/// every glyph has exactly one slot, that slot is at least as large as its bitmap, and it lies
+/// inside the sheet - so neither has to decide what a violation means.
+using SlotIndex = std::vector<const atlas::GlyphSlot*>;
+
+[[nodiscard]] std::optional<SlotIndex> indexSlots(const atlas::AtlasLayout& layout, const std::vector<BakedGlyph>& glyphs,
+                                                  std::string_view recipePath, std::vector<cli::Diagnostic>& diagnostics) {
+    SlotIndex index(glyphs.size(), nullptr);
+    for (const atlas::GlyphSlot& slot : layout.slots) {
+        if (slot.id >= glyphs.size()) {
+            report(diagnostics, std::string{recipePath}, 0, atlasPackingFailed,
+                   std::format("the packer returned a slot for id {}, which is not a baked glyph", slot.id));
+            return std::nullopt;
+        }
+        if (index[slot.id] != nullptr) {
+            report(diagnostics, std::string{recipePath}, 0, atlasPackingFailed,
+                   std::format("the packer returned two slots for glyph {}", slot.id));
+            return std::nullopt;
+        }
+        index[slot.id] = &slot;
+    }
+    for (std::uint32_t id = 0; id < glyphs.size(); ++id) {
+        if (index[id] == nullptr) {
+            report(diagnostics, std::string{recipePath}, 0, atlasPackingFailed,
+                   std::format("the packer returned no slot for glyph {}", id));
+            return std::nullopt;
+        }
+        const atlas::GlyphSlot& slot   = *index[id];
+        const auto&             bitmap = glyphs[id].bitmap;
+        if (slot.width != bitmap.width || slot.height != bitmap.height) {
+            report(diagnostics, std::string{recipePath}, 0, atlasPackingFailed,
+                   std::format("glyph {}'s slot is {}x{} but its bitmap is {}x{}", id, slot.width, slot.height, bitmap.width,
+                               bitmap.height));
+            return std::nullopt;
+        }
+        if (static_cast<std::uint64_t>(slot.x) + slot.width > layout.width
+            || static_cast<std::uint64_t>(slot.y) + slot.height > layout.height) {
+            report(diagnostics, std::string{recipePath}, 0, atlasPackingFailed,
+                   std::format("glyph {}'s slot at ({},{}) {}x{} leaves the {}x{} sheet", id, slot.x, slot.y, slot.width,
+                               slot.height, layout.width, layout.height));
+            return std::nullopt;
+        }
+    }
+    return index;
+}
+
 /// Blits each glyph's coverage into the packed sheet. The sheet starts at zero - fully
 /// transparent - so the padding between slots stays empty rather than carrying whatever the
 /// allocator left there.
-[[nodiscard]] std::vector<std::byte> composeAtlas(const atlas::AtlasLayout& layout, const std::vector<BakedGlyph>& glyphs) {
+[[nodiscard]] std::vector<std::byte> composeAtlas(const atlas::AtlasLayout& layout, const std::vector<BakedGlyph>& glyphs,
+                                                  const SlotIndex& slots) {
     std::vector<std::byte> sheet(static_cast<std::size_t>(layout.width) * layout.height, std::byte{0});
-    std::map<std::uint32_t, const atlas::GlyphSlot*> byId;
-    for (const atlas::GlyphSlot& slot : layout.slots) {
-        byId.emplace(slot.id, &slot);
-    }
     for (std::uint32_t index = 0; index < glyphs.size(); ++index) {
-        const auto it = byId.find(index);
-        if (it == byId.end() || it->second->width == 0 || it->second->height == 0) {
-            continue;
-        }
-        const atlas::GlyphSlot& slot   = *it->second;
+        const atlas::GlyphSlot& slot   = *slots[index];
         const auto&             bitmap = glyphs[index].bitmap;
-        for (std::uint32_t y = 0; y < slot.height; ++y) {
-            for (std::uint32_t x = 0; x < slot.width; ++x) {
+        // Driven by the bitmap's own extent, not the slot's. indexSlots() has already established
+        // that they agree, so this is belt and braces - but it is the loop that indexes
+        // `bitmap.coverage`, and a source read should be bounded by the source.
+        for (std::uint32_t y = 0; y < bitmap.height; ++y) {
+            for (std::uint32_t x = 0; x < bitmap.width; ++x) {
                 const std::size_t src = static_cast<std::size_t>(y) * bitmap.width + x;
                 const std::size_t dst = static_cast<std::size_t>(slot.y + y) * layout.width + (slot.x + x);
                 sheet[dst]            = static_cast<std::byte>(bitmap.coverage[src]);
@@ -496,8 +602,8 @@ struct BakedGlyph {
 /// now means the committed artifact does not have to change when the schema module arrives, only
 /// gain a reader.
 [[nodiscard]] json::Value fontPackageJson(const Recipe& recipe, const truetype::Font& font, const atlas::AtlasLayout& layout,
-                                          const std::vector<BakedGlyph>& glyphs, std::string_view sidecarName,
-                                          std::span<const std::byte> sheet) {
+                                          const std::vector<BakedGlyph>& glyphs, const SlotIndex& slots,
+                                          std::string_view sidecarName, std::span<const std::byte> sheet) {
     const FontSpec& spec = *recipe.font;
 
     json::Value package = json::Value::emptyObject();
@@ -524,15 +630,11 @@ struct BakedGlyph {
     static_cast<void>(atlasValue.set("occupancyPercent", json::Value::integer(layout.occupancyPercent())));
     static_cast<void>(package.set("atlas", std::move(atlasValue)));
 
-    std::map<std::uint32_t, const atlas::GlyphSlot*> byId;
-    for (const atlas::GlyphSlot& slot : layout.slots) {
-        byId.emplace(slot.id, &slot);
-    }
     std::vector<json::Value> glyphValues;
     glyphValues.reserve(glyphs.size());
     for (std::uint32_t index = 0; index < glyphs.size(); ++index) {
         const BakedGlyph&       glyph = glyphs[index];
-        const atlas::GlyphSlot& slot  = *byId.at(index);
+        const atlas::GlyphSlot& slot  = *slots[index];
         json::Value             entry = json::Value::emptyObject();
         static_cast<void>(entry.set("codePoint", json::Value::integer(glyph.codePoint)));
         static_cast<void>(entry.set("glyphIndex", json::Value::integer(glyph.glyphIndex)));
@@ -556,7 +658,32 @@ struct BakedGlyph {
                                                      std::vector<cli::Diagnostic>& diagnostics) {
     const FontSpec& spec = *recipe.font;
 
-    auto fontBytes = readFile(root / spec.source);
+    // Confine the source path to the repository before opening it.
+    //
+    // `root / spec.source` is not the containment it looks like: std::filesystem's operator/
+    // *replaces* the left operand when the right is absolute, so `source = "/etc/shadow"` reads
+    // that file and ignores `root` entirely. A relative path with `..` components escapes the
+    // same way by a different route. The recipe is repository content rather than network input,
+    // so this is not a live attack surface today - but a baker that will one day run over a
+    // recipe somebody else wrote should not have "the recipe is trusted" as its only defence.
+    if (spec.source.empty() || std::filesystem::path{spec.source}.is_absolute()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
+               std::format("font path '{}' must be relative to the repository root", spec.source));
+        return std::nullopt;
+    }
+    const std::filesystem::path sourcePath = (root / spec.source).lexically_normal();
+    const std::filesystem::path normalRoot = root.lexically_normal();
+    // lexically_relative() gives the path from root to source; a result that starts with ".."
+    // means source is outside root. Comparing the normalised forms is what makes `a/../../b`
+    // fail rather than pass on a string prefix check.
+    const auto relative = sourcePath.lexically_relative(normalRoot);
+    if (relative.empty() || *relative.begin() == "..") {
+        report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
+               std::format("font path '{}' resolves outside the repository root", spec.source));
+        return std::nullopt;
+    }
+
+    auto fontBytes = readFile(sourcePath);
     if (!fontBytes.has_value()) {
         report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
                std::format("cannot read font '{}'", spec.source),
@@ -589,15 +716,20 @@ struct BakedGlyph {
         return std::nullopt;
     }
 
+    auto slots = indexSlots(*layout, *glyphs, recipePath, diagnostics);
+    if (!slots.has_value()) {
+        return std::nullopt;
+    }
+
     BakeOutputs outputs;
     outputs.sidecarName = recipe.sidecar;
-    outputs.sidecar     = composeAtlas(*layout, *glyphs);
+    outputs.sidecar     = composeAtlas(*layout, *glyphs, *slots);
     outputs.packageId   = recipe.id;
     outputs.glyphCount  = static_cast<std::uint32_t>(glyphs->size());
     outputs.atlasWidth  = layout->width;
     outputs.atlasHeight = layout->height;
 
-    auto packageValue = fontPackageJson(recipe, *font, *layout, *glyphs, outputs.sidecarName, outputs.sidecar);
+    auto packageValue = fontPackageJson(recipe, *font, *layout, *glyphs, *slots, outputs.sidecarName, outputs.sidecar);
     auto packageText  = json::write(packageValue);
     if (!packageText.has_value()) {
         // The writer's error carries a code plus context; only the code has a stable description.

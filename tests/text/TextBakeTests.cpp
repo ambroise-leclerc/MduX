@@ -538,21 +538,28 @@ namespace {
 
 /// A minimal font recipe. `source` points at the committed DejaVu asset, which is the same file
 /// the real recipe uses - a fixture font would prove the pipeline works on a fixture.
-[[nodiscard]] std::string fontRecipeText(std::string_view charsetBody, std::int64_t pixelSize = 16) {
+[[nodiscard]] std::string fontRecipeText(std::string_view charsetBody, std::int64_t pixelSize = 16,
+                                         std::string_view localeIds = R"("en-US")",
+                                         std::string_view sourcePath = "recipes/font/dejavu-ui/DejaVuSans.ttf") {
     return std::format(R"([package]
 id = "fixture-font"
-source = "recipes/font/dejavu-ui/DejaVuSans.ttf"
+source = "{}"
 sidecar = "atlas.bin"
 pixelSize = {}
 
 [locales]
-ids = ["en-US"]
+ids = [{}]
 
 [charset]
 {}
 )",
-                       pixelSize, charsetBody);
+                       sourcePath, pixelSize, localeIds, charsetBody);
 }
+
+/// The printable-ASCII charset body, for cases whose defect is elsewhere in the recipe.
+constexpr std::string_view asciiCharset = R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])";
 
 }  // namespace
 
@@ -690,6 +697,30 @@ lastCodePoints  = [126])", 4294967312LL)},
              fontRecipeText(R"(names           = ["ascii"]
 firstCodePoints = [32]
 lastCodePoints  = [126])", -16)},
+            {"two charset ranges that overlap", "TXT011",
+             // A code point covered twice is rasterised twice, takes two atlas slots and appears
+             // twice in the glyph list, so a consumer indexing by code point gets an ambiguous
+             // package. Same reasoning as a missing glyph being fatal: the package must describe
+             // the charset that was asked for.
+             fontRecipeText(R"(names           = ["upper", "hex"]
+firstCodePoints = [65, 65]
+lastCodePoints  = [90, 70])")},
+            {"a charset range covering the UTF-16 surrogates", "TXT011",
+             // U+D800..U+DFFF are surrogate code points, not scalar values - they exist only to
+             // encode astral characters in pairs and can never be a character themselves.
+             fontRecipeText(R"(names           = ["surrogates"]
+firstCodePoints = [55296]
+lastCodePoints  = [56320])")},
+            {"an empty locale id", "TXT004",
+             fontRecipeText(asciiCharset, 16, R"("")")},
+            {"a duplicated locale id", "TXT004",
+             fontRecipeText(asciiCharset, 16, R"("en-US", "en-US")")},
+            {"a font path escaping the repository root", "TXT012",
+             // std::filesystem's operator/ replaces the left operand when the right is absolute,
+             // so an unchecked join would have read this path and ignored the root entirely.
+             fontRecipeText(asciiCharset, 16, R"("en-US")", "/etc/shadow")},
+            {"a font path climbing out with ..", "TXT012",
+             fontRecipeText(asciiCharset, 16, R"("en-US")", "../../etc/shadow")},
             {"a descending code point range", "TXT011",
              fontRecipeText(R"(names           = ["backwards"]
 firstCodePoints = [126]
