@@ -34,7 +34,7 @@ this table was first written; the two that remain are the documentation rebuild 
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time. | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Corpus closed (#8); README not. Five standards on real clause structure with per-clause indexes and JSON Schemas. The documentation architecture — README honesty, ADR re-baselining — is #10 and has not started. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. 360 tests on `develop`, on SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`). | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Tests | Closed. 434 tests on `develop`, on SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`). | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 ## Dependency order
@@ -198,20 +198,20 @@ pipeline, four modes; buffers sized once from a compiler-computed budget and nev
 
 _Blocks #14, #16_
 
-#### #14 — Font & text pipeline · **Ready · opens Wave 4**
+#### #14 — Font & text pipeline · **Closed**
 
 Static text bakes to positioned glyph runs per locale. Dynamic text gets a restricted
 charset table — and the compiler rejects any format that could escape it, which turns
 "no shaping on device" from a slogan into a compile error.
 
-- S1 Text schema and baker
-- S2 Hand-parsed TrueType (`glyf` only)
-- S3 Rasteriser with coverage AA
-- S4 Atlas packer and font baker
-- S5 Metrics and the tabular-figure assertion
-- S6 Coverage draw path and text pixel tests
+- S1 Text schema and baker — `mdux.text.schema`, `mdux-textbake`
+- S2 Hand-parsed TrueType (`glyf` only) — `mdux.tools.truetype`, host-only
+- S3 Rasteriser with coverage AA — `mdux.text.raster`, integer-only
+- S4 Atlas packer and font baker — the first committed font package
+- S5 Metrics and the tabular-figure assertion — `mdux.font.schema`
+- S6 Coverage draw path and text pixel tests — `mdux.text.draw`, rendered under lavapipe
 
-_Blocks #15_
+_Unblocks #15_
 
 #### #15 — `.medui` compiler & build integration · **Blocked #12, #14**
 

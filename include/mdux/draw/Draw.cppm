@@ -59,6 +59,23 @@ enum class DrawMode : std::uint32_t {
  * Positions are in pixels with a top-left origin; the vertex shader converts them once from a
  * push constant, so nothing here depends on the surface the frame will be drawn to.
  */
+/**
+ * @brief Normalised texture coordinates, in [0, 1].
+ *
+ * Distinct from `core::Rect` because that is integer pixels and the shader samples with
+ * normalised floats - an integer rectangle can express only 0 and 1, so a glyph's atlas slot
+ * cannot be written as one. Keeping the two types apart means a caller who reaches for the wrong
+ * one gets a compile error rather than a quad sampling far outside the sheet.
+ */
+struct UvRect {
+    float u0{0.0F};
+    float v0{0.0F};
+    float u1{0.0F};
+    float v1{0.0F};
+
+    constexpr bool operator==(const UvRect&) const = default;
+};
+
 struct UiVertex {
     float x{0.0F};              ///< offset 0
     float y{0.0F};              ///< offset 4
@@ -161,6 +178,20 @@ public:
         const DrawBudget& budget) noexcept;
 
     /// Records an axis-aligned rectangle in `mode`, sampling `uv` when the mode uses the atlas.
+    ///
+    /// `uv` is in **normalised** texture coordinates, because the fragment shader samples with
+    /// `texture(uAtlas, fragUv)` on a `sampler2D`. See `UvRect` for why this overload exists
+    /// alongside the `core::Rect` one.
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> addRect(const mdux::core::Rect& rect,
+                                                            mdux::core::ColorRgba8 color,
+                                                            DrawMode mode,
+                                                            const UvRect& uv) noexcept;
+
+    /// Records an axis-aligned rectangle in `mode`, sampling `uv` when the mode uses the atlas.
+    ///
+    /// Retained for callers whose uv is already whole - a full-sheet quad, or the unit rect. It
+    /// converts to `UvRect` unchanged, so it cannot express a fractional coordinate: a glyph's
+    /// slot has to go through `mdux.text.draw`, which normalises it against the atlas extent.
     [[nodiscard]] mdux::core::ResultVoid<DrawError> addRect(const mdux::core::Rect& rect,
                                                             mdux::core::ColorRgba8 color,
                                                             DrawMode mode,

@@ -96,6 +96,17 @@ ResultVoid<DrawError> DrawList::addSolidRect(const mdux::core::Rect& rect,
 
 ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core::ColorRgba8 color,
                                         DrawMode mode, const mdux::core::Rect& uv) noexcept {
+    // Widening only - the integer overload cannot express a fractional coordinate, which is
+    // exactly why glyphs go through mdux.text.draw instead.
+    return addRect(rect, color, mode,
+                   UvRect{.u0 = static_cast<float>(uv.x),
+                          .v0 = static_cast<float>(uv.y),
+                          .u1 = static_cast<float>(uv.right()),
+                          .v1 = static_cast<float>(uv.bottom())});
+}
+
+ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core::ColorRgba8 color,
+                                        DrawMode mode, const UvRect& uv) noexcept {
     if (rect.width <= 0 || rect.height <= 0) {
         return err(DrawError::DegenerateRect);
     }
@@ -123,10 +134,10 @@ ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core
     const auto top = static_cast<float>(rect.y);
     const auto right = static_cast<float>(rect.right());
     const auto bottom = static_cast<float>(rect.bottom());
-    const auto u0 = static_cast<float>(uv.x);
-    const auto v0 = static_cast<float>(uv.y);
-    const auto u1 = static_cast<float>(uv.right());
-    const auto v1 = static_cast<float>(uv.bottom());
+    const auto u0 = uv.u0;
+    const auto v0 = uv.v0;
+    const auto u1 = uv.u1;
+    const auto v1 = uv.v1;
     const std::uint32_t packed = packColor(color);
     const auto modeValue = static_cast<std::uint32_t>(mode);
 
