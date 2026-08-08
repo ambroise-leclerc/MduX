@@ -126,6 +126,14 @@ enum class ParseError : std::uint8_t {
     UnsupportedGlyphFlag,       ///< a flag value has reserved bit 7 set
     CoordinateOverflow,         ///< an accumulated coordinate left the int16 range the spec allows
     NonMonotonicContours,       ///< endPtsOfContours[i] <= endPtsOfContours[i-1]
+    MissingCharacterMap,        ///< 'cmap' is absent, so no code point can be resolved to a glyph
+    TruncatedCmap,              ///< a 'cmap' header, encoding record or subtable runs past the table
+    UnsupportedCmapFormat,      ///< 'cmap' carries no subtable in a format this parser reads
+    CharacterMapTooLarge,       ///< 'cmap' declares more mappings than `maxCmapEntries` allows
+    MissingHorizontalMetrics,   ///< 'hhea' or 'hmtx' is absent, so no glyph has a known advance
+    TruncatedHhea,              ///< 'hhea' is shorter than 36 bytes
+    TruncatedHmtx,              ///< 'hmtx' is shorter than numberOfHMetrics requires
+    UnsupportedMetricCount,     ///< hhea.numberOfHMetrics is zero, or exceeds maxp.numGlyphs
 };
 
 [[nodiscard]] std::string_view describe(ParseError error) noexcept;
@@ -156,6 +164,43 @@ struct SimpleGlyph {
     std::vector<GlyphPoint>    points;
 };
 
+/// The largest number of `cmap` ranges `parse()` will build. A font mapping more than this is
+/// either enormous or hostile; the cap turns the second case into `CharacterMapTooLarge` rather
+/// than an allocation sized by a malformed table.
+inline constexpr std::size_t maxCmapEntries = 1u << 16;
+
+/**
+ * @brief One run of consecutive code points mapping to consecutive glyph indices.
+ *
+ * `cmap` is decoded into a sorted list of these rather than kept in its on-disk shape, because
+ * the two formats this parser reads store the same information very differently: format 4 uses
+ * four parallel arrays plus an `idRangeOffset` indirection into a trailing glyph array, and
+ * format 12 uses a flat group list. Normalising both at parse time means `glyphForCodePoint()`
+ * is one binary search with no format switch, and the format-4 indirection - the fiddliest part
+ * of the table - is walked exactly once, where it can be bounds-checked in one place.
+ *
+ * A segment whose glyphs are not consecutive (format 4's indirect case) decodes into one range
+ * per code point, so `first == last` there. That costs entries but keeps the lookup uniform.
+ */
+struct CmapRange {
+    char32_t      first{0};       ///< first code point in the run
+    char32_t      last{0};        ///< last code point, inclusive
+    std::uint16_t firstGlyph{0};  ///< glyph index for `first`; the run is consecutive from there
+};
+
+/**
+ * @brief One glyph's horizontal metrics, in font units.
+ *
+ * `advanceWidth` is the quantity ADR-010 requires a baked glyph to carry: the runtime advances a
+ * pen by a value the baker computed, never by one it derives at runtime. `leftSideBearing` is the
+ * gap from the pen position to the glyph's left edge, which the atlas packer needs to place a
+ * coverage bitmap against the origin the advance is measured from.
+ */
+struct GlyphMetrics {
+    std::uint16_t advanceWidth{0};
+    std::int16_t  leftSideBearing{0};
+};
+
 /**
  * @brief Everything `parseGlyph()` needs that `parse()` already walked.
  *
@@ -180,6 +225,21 @@ struct Font {
     /// Byte offsets into `glyf`. `numGlyphs + 1` entries; the last is the past-the-end offset
     /// of the last glyph, i.e. the byte length of `glyf` the directory asserts.
     std::vector<std::uint32_t> loca{};
+
+    /// How many leading glyphs `hmtx` gives a full (advance, bearing) pair for. Glyphs past this
+    /// carry only a bearing and reuse the last advance - the format's compression for the run of
+    /// equal-width glyphs a monospace or CJK font ends with.
+    std::uint16_t numberOfHMetrics{0};
+
+    /// The `hmtx` table, sliced but not decoded. `metricsFor()` reads one glyph's pair from it,
+    /// the same way `parseGlyph()` reads one record from `glyf` - a font with 6000 glyphs should
+    /// not pay for 6000 metric structs when a baker asks for ninety-five of them.
+    std::span<const std::byte> hmtx{};
+
+    /// Code-point ranges resolved out of `cmap`, sorted by `first` and non-overlapping.
+    /// `glyphForCodePoint()` binary-searches this; see `CmapRange` for why the decoded form is a
+    /// range list rather than the format-4 segment arrays it usually comes from.
+    std::vector<CmapRange> characterMap{};
 };
 
 /// Walks the offset table, head, maxp, loca and the implicit "is this a TrueType outline font"
@@ -206,5 +266,26 @@ struct Font {
 /// therefore re-checked here rather than assumed, and a `Font` that fails it is refused with
 /// `LocaSizeMismatch` instead of indexing a `std::vector` out of range.
 [[nodiscard]] mdux::core::Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyphIndex) noexcept;
+
+/**
+ * @brief Resolves a code point to a glyph index, or nullopt when the font does not map it.
+ *
+ * Binary search over `font.characterMap`. Returns nullopt rather than glyph 0 for an unmapped
+ * code point, deliberately: glyph 0 is `.notdef`, a real glyph with a real outline, and a baker
+ * that silently baked it for every missing character would produce an atlas full of tofu boxes
+ * that looked like a successful bake. The caller decides whether a miss is fatal - for the font
+ * baker (#160) it is, because the recipe named a character the font cannot draw.
+ */
+[[nodiscard]] std::optional<std::uint16_t> glyphForCodePoint(const Font& font, char32_t codePoint) noexcept;
+
+/**
+ * @brief Reads one glyph's horizontal metrics out of `hmtx`.
+ *
+ * Glyphs at or past `numberOfHMetrics` have no advance of their own and inherit the last one the
+ * table stores, which is how the format compresses the trailing run of equal-width glyphs. That
+ * is not an error and this function resolves it silently; `TruncatedHmtx` means the table is
+ * genuinely too short for the metrics it promised.
+ */
+[[nodiscard]] mdux::core::Result<GlyphMetrics, ParseError> metricsFor(const Font& font, std::uint16_t glyphIndex) noexcept;
 
 }  // namespace mdux::tools::truetype
