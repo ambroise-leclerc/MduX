@@ -553,6 +553,7 @@ mdux_discover_tests(ml_spec)
 add_executable(text_spec
     text/TextSpecMain.cpp
     text/SchemaTests.cpp
+    text/RasterTests.cpp
 )
 
 target_link_libraries(text_spec PRIVATE MduX::Core speclab::speclab)
