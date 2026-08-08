@@ -94,6 +94,8 @@ enum class RasterError : std::uint8_t {
     UnsupportedPixelSize,  ///< pixelSize is zero, or larger than `kMaxPixelSize`
     BitmapTooLarge,        ///< the outline's scaled bounding box exceeds `kMaxBitmapPixels`
     CoordinateOverflow,    ///< a scaled coordinate left the range the fixed-point format holds
+    OutlineTooComplex,     ///< the flattened outline exceeds `kMaxEdges` or `kMaxSweepWork`
+    AllocationFailed,      ///< a buffer this call needed could not be allocated
 };
 
 [[nodiscard]] std::string_view describe(RasterError error) noexcept;
@@ -101,7 +103,7 @@ enum class RasterError : std::uint8_t {
 /// Subpixel resolution of the fixed-point coordinate format, as a shift. One pixel is
 /// `kFixedOne` units, so an x coordinate is resolved to 1/256 of a pixel. Exposed because the
 /// bitmap's `origin` fields are in whole pixels and a caller reconstructing subpixel positioning
-/// needs to know what the parser rounded against.
+/// needs to know the grid this module rounded coordinates against.
 inline constexpr std::int32_t kFixedShift = 8;
 inline constexpr std::int32_t kFixedOne   = 1 << kFixedShift;
 
@@ -115,8 +117,21 @@ inline constexpr std::int32_t kAccumulatorMax = kFixedOne * kSubScanlines;
 
 /// Bounds that turn a malformed or hostile outline into a diagnostic rather than an allocation.
 /// A baker feeding this a corrupt `loca` entry should get `BitmapTooLarge`, not a bad_alloc.
-inline constexpr std::uint32_t kMaxPixelSize   = 4096;
+inline constexpr std::uint32_t kMaxPixelSize    = 4096;
 inline constexpr std::uint64_t kMaxBitmapPixels = 64u * 1024u * 1024u;
+
+/// Ceilings on the *work* a request can ask for, which the bitmap-area limit alone does not
+/// bound. `contourEnds` holds `std::uint16_t` indices, so an outline may carry ~65k points, and
+/// each off-curve point can flatten into `kMaxCurveSegments` edges; a tall narrow glyph can also
+/// reach a large height while staying well under `kMaxBitmapPixels`. Without these two limits the
+/// sweep below is quadratic in attacker-chosen quantities, which is a denial-of-service path
+/// through a baker rather than a memory-safety one - it never allocates enough to be refused.
+///
+/// `kMaxSweepWork` counts edge-row visits: the sum, over every flattened edge, of the pixel rows
+/// it spans. Real glyphs sit orders of magnitude below it - a 50-pixel-tall glyph with 200 edges
+/// visits a few thousand - so the bound rejects only outlines that were never going to be text.
+inline constexpr std::uint32_t kMaxEdges     = 1u << 16;
+inline constexpr std::uint64_t kMaxSweepWork = 1u << 22;
 
 /// One outline point in font units. Mirrors TrueType's `glyf` representation, which is the only
 /// producer today - `onCurve == false` marks a quadratic Bézier control point.
@@ -175,7 +190,7 @@ struct RasterRequest {
  * @brief Rasterises one outline to a coverage bitmap.
  *
  * Byte-identical across toolchains for identical input, which is the property issue #159 exists
- * to establish and `text.determinism.crossToolchain` pins with a frozen digest.
+ * to establish and `text-raster-determinism-crossToolchain` pins with a frozen digest.
  *
  * Reads only the spans in `request.outline`, and only for the duration of the call.
  */

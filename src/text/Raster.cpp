@@ -89,10 +89,12 @@ struct Edge {
     std::int32_t y1{0};
 };
 
-/// A crossing of one sub-scanline by one edge: where, and which way the edge was going. The
-/// direction is what makes the fill rule *nonzero* rather than even-odd, so a glyph whose
-/// counter runs the same way as its outer contour - which happens in real fonts - still gets a
-/// hole rather than a solid blob.
+/// A crossing of one sub-scanline by one edge: where, and which way the edge was going.
+///
+/// The direction is what makes the fill rule *nonzero* rather than even-odd. A counter wound
+/// against its outer contour subtracts from the winding and leaves a hole - which is how an 'o'
+/// works - while one wound the same way adds to it and stays filled. Even-odd cannot tell those
+/// two apart and would punch a hole through both.
 struct Crossing {
     std::int32_t x{0};
     std::int32_t direction{0};
@@ -254,10 +256,19 @@ struct Crossing {
             const ResolvedPoint& next  = at((i + 1u) % ring.size());
             const std::int32_t   endX  = next.x;
             const std::int32_t   endY  = next.y;
-            const std::int32_t   count2 = segmentsForCurve(penX, penY, point.x, point.y, endX, endY);
-            for (std::int32_t step = 1; step <= count2; ++step) {
-                const std::int32_t nx = evaluateQuadratic(penX, point.x, endX, step, count2);
-                const std::int32_t ny = evaluateQuadratic(penY, point.y, endY, step, count2);
+            // The curve's start is captured before the loop and never moves. `penX`/`penY` walk
+            // forward to carry each emitted segment's previous endpoint, so evaluating against
+            // them instead would feed the previous *sample* to the evaluator as p0 from step 2
+            // onward - a different curve, and one whose endpoints still land correctly because
+            // the final sample's `u` term is zero. That makes the error invisible to any test
+            // that only checks where a curve starts and ends; measured on a 5-segment curve it
+            // reaches 266 fixed units, just over one pixel.
+            const std::int32_t   startX  = penX;
+            const std::int32_t   startY  = penY;
+            const std::int32_t   samples = segmentsForCurve(startX, startY, point.x, point.y, endX, endY);
+            for (std::int32_t step = 1; step <= samples; ++step) {
+                const std::int32_t nx = evaluateQuadratic(startX, point.x, endX, step, samples);
+                const std::int32_t ny = evaluateQuadratic(startY, point.y, endY, step, samples);
                 emit(penX, penY, nx, ny);
                 penX = nx;
                 penY = ny;
@@ -287,11 +298,19 @@ std::string_view describe(RasterError error) noexcept {
             return "the scaled outline's bounding box exceeds the supported bitmap area";
         case RasterError::CoordinateOverflow:
             return "a scaled coordinate left the range the fixed-point format represents";
+        case RasterError::OutlineTooComplex:
+            return "the flattened outline exceeds the supported edge count or sweep-work budget";
+        case RasterError::AllocationFailed:
+            return "a buffer this rasterisation needed could not be allocated";
     }
     return "unknown rasteriser error";
 }
 
-Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noexcept {
+namespace {
+
+/// The body of `rasterise()`. Allowed to throw, because it allocates: the public entry point
+/// below is the `noexcept` boundary that turns an allocation failure into a diagnostic.
+[[nodiscard]] Result<CoverageBitmap, RasterError> rasteriseImpl(const RasterRequest& request) {
     if (request.unitsPerEm == 0) {
         return err(RasterError::UnsupportedUnitsPerEm);
     }
@@ -315,6 +334,12 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
     auto edges = buildEdges(request.outline, request.pixelSize, request.unitsPerEm);
     if (!edges.has_value()) {
         return err(edges.error());
+    }
+    if (edges->size() > kMaxEdges) {
+        // The second half of the work bound. An outline can reach this without any single
+        // contour looking unusual, because every off-curve point may flatten into
+        // kMaxCurveSegments edges - so the check belongs on the flattened count, not the input's.
+        return err(RasterError::OutlineTooComplex);
     }
     if (edges->empty()) {
         // Every contour was degenerate or horizontal: a real outline with no enclosed area, such
@@ -349,15 +374,76 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
         return err(RasterError::BitmapTooLarge);
     }
 
+    // Bucket the edges by the pixel rows they span, so the sweep visits an edge only on rows it
+    // can actually cross.
+    //
+    // Without this the sweep is `height * kSubScanlines * edgeCount`, and none of those three is
+    // bounded by the bitmap-area check: `contourEnds` holds uint16 indices, so an outline can
+    // carry ~65k points, each off-curve one flattening into up to kMaxCurveSegments edges, while
+    // a tall narrow glyph reaches a large height well under kMaxBitmapPixels. The product is
+    // quadratic in attacker-chosen quantities - a denial-of-service path through a baker that
+    // never allocates enough to be refused. Bucketing makes the cost proportional to the geometry
+    // instead: the total is the sum, over edges, of the rows each one spans.
+    //
+    // Stored as CSR (offsets plus a flat index array) rather than a vector-of-vectors, because
+    // `height` allocations of a few elements each is the shape that turns a tall glyph slow for
+    // reasons unrelated to its outline.
+    // The row span each edge occupies, computed once and reused by both passes below. The
+    // half-open convention matches the sweep's: an edge covers [top, bottom), so its last row is
+    // the one containing `bottom - 1`.
+    const auto rowSpanOf = [pixelMinY, height](const Edge& edge) noexcept -> std::pair<std::int64_t, std::int64_t> {
+        const std::int64_t topY    = std::min(edge.y0, edge.y1);
+        const std::int64_t bottomY = std::max(edge.y0, edge.y1);
+        return {std::max<std::int64_t>(floorDiv(topY, kFixedOne) - pixelMinY, 0),
+                std::min<std::int64_t>(floorDiv(bottomY - 1, kFixedOne) - pixelMinY, height - 1)};
+    };
+
+    // Pass one: total the work and count each row's edges. Both come from the same spans, so the
+    // budget is checked before anything proportional to it is allocated.
+    std::vector<std::uint32_t> rowOffset(static_cast<std::size_t>(height) + 1u, 0u);
+    std::uint64_t              sweepWork = 0;
+    for (const Edge& edge : *edges) {
+        const auto [firstRow, lastRow] = rowSpanOf(edge);
+        if (lastRow < firstRow) {
+            continue;
+        }
+        sweepWork += static_cast<std::uint64_t>(lastRow - firstRow + 1);
+        if (sweepWork > kMaxSweepWork) {
+            return err(RasterError::OutlineTooComplex);
+        }
+        for (std::int64_t r = firstRow; r <= lastRow; ++r) {
+            rowOffset[static_cast<std::size_t>(r) + 1u] += 1u;
+        }
+    }
+    for (std::size_t r = 1; r < rowOffset.size(); ++r) {
+        rowOffset[r] += rowOffset[r - 1u];
+    }
+
+    // Pass two: fill the flat index array, walking a cursor per row.
+    std::vector<std::uint32_t> rowEdges(rowOffset.back(), 0u);
+    {
+        std::vector<std::uint32_t> cursor(rowOffset.begin(), rowOffset.end() - 1);
+        for (std::uint32_t index = 0; index < edges->size(); ++index) {
+            const auto [firstRow, lastRow] = rowSpanOf((*edges)[index]);
+            for (std::int64_t r = firstRow; r <= lastRow; ++r) {
+                rowEdges[cursor[static_cast<std::size_t>(r)]++] = index;
+            }
+        }
+    }
+
     // Accumulators, one per pixel, in subpixel-width units. `kAccumulatorMax` is the ceiling by
     // construction: each sub-scanline contributes at most kFixedOne to any one pixel, because
     // the span added is intersected with that pixel's own column first.
     std::vector<std::int32_t> accumulator(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), 0);
 
     std::vector<Crossing> crossings;
-    crossings.reserve(edges->size());
 
     for (std::int64_t row = 0; row < height; ++row) {
+        const std::uint32_t rowBegin = rowOffset[static_cast<std::size_t>(row)];
+        const std::uint32_t rowEnd   = rowOffset[static_cast<std::size_t>(row) + 1u];
+        if (rowBegin == rowEnd) {
+            continue;  // no edge reaches this row
+        }
         for (std::int32_t sub = 0; sub < kSubScanlines; ++sub) {
             // The sub-scanline's y, sampled at the centre of its band. kSubScanlines is a power
             // of two and divides 2 * kFixedOne exactly, so this is an integer with no rounding.
@@ -365,7 +451,8 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
                 (pixelMinY + row) * kFixedOne + (2 * static_cast<std::int64_t>(sub) + 1) * kFixedOne / (2 * kSubScanlines);
 
             crossings.clear();
-            for (const Edge& edge : *edges) {
+            for (std::uint32_t slot = rowBegin; slot < rowEnd; ++slot) {
+                const Edge&        edge    = (*edges)[rowEdges[slot]];
                 const std::int32_t topY    = std::min(edge.y0, edge.y1);
                 const std::int32_t bottomY = std::max(edge.y0, edge.y1);
                 // Half-open in y: an edge covers [top, bottom). Without this, a vertex shared by
@@ -440,6 +527,32 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
         bitmap.coverage[target] = static_cast<std::uint8_t>(accumulator[i] * 255 / kAccumulatorMax);
     }
     return bitmap;
+}
+
+}  // namespace
+
+Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noexcept {
+    // The `noexcept` boundary, and the reason `rasteriseImpl()` is allowed to throw.
+    //
+    // The header promises a diagnostic rather than a `bad_alloc` for a hostile outline, and the
+    // size limits exist to make that promise keepable - but the accumulator alone can ask for
+    // 256 MiB at kMaxBitmapPixels, and `std::vector` reports failure by throwing. Declaring the
+    // entry point `noexcept` without catching that would turn an ordinary out-of-memory condition
+    // into `std::terminate`, taking down the baker instead of failing one glyph.
+    //
+    // `std::length_error` is caught alongside `bad_alloc` because `resize()` raises it when a
+    // request exceeds `max_size()`, which is the same condition arriving by a different name.
+    // The final `catch (...)` is defensive: nothing in the governed zone throws anything else,
+    // and if that ever stops being true this still returns rather than terminating.
+    try {
+        return rasteriseImpl(request);
+    } catch (const std::bad_alloc&) {
+        return err(RasterError::AllocationFailed);
+    } catch (const std::length_error&) {
+        return err(RasterError::AllocationFailed);
+    } catch (...) {
+        return err(RasterError::AllocationFailed);
+    }
 }
 
 }  // namespace mdux::text::raster

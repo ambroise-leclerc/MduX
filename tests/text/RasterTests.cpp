@@ -282,48 +282,68 @@ const mdux::spec::Register triangleCornerIsPartial{
             .Execute();
     }};
 
-const mdux::spec::Register quadraticCurveIsFlattenedAndFilled{
-    "A quadratic curve is flattened and filled, including TrueType's implied midpoints",
+const mdux::spec::Register quadraticCurveApexIsExact{
+    "A quadratic curve reaches exactly its computed apex, and implied midpoints do too",
     "evidence-unit",
     [] {
-        // A contour of on-curve corners plus a single off-curve control point bulging outward,
-        // and a second whose two adjacent off-curve points exercise the implied-midpoint
-        // reconstruction. Both must produce a filled shape whose bulge extends past the chord.
+        // The regression test for the subdivision bug found in review: `buildEdges()` used to
+        // advance the pen before evaluating the next sample, so from step 2 onward the evaluator
+        // received the previous *sample* as the curve start rather than the curve's own. The
+        // endpoints still landed correctly - the final sample's `u` term is zero - so only an
+        // assertion about the middle of a curve can see it. Measured deviation on a 5-segment
+        // curve was 266 fixed units, just over one pixel.
+        //
+        // The apex here is derivable. For a quadratic, B(1/2) = (p0 + 2c + p1) / 4; with
+        // p0.x = 1024, c.x = 2048 and p1.x = 1024 that is 1536 font units, which at 8 px/em over
+        // a 2048 em is exactly 6.0 pixels. So a correct rasteriser produces a bitmap exactly 6
+        // pixels wide. The buggy one pushed the curve outward and produced 7.
+        //
+        // The curve needs 6 segments at this size, so it is well past the >= 3 threshold where
+        // the defect appears at all.
         struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
+            Built              single;
             Built              implied;
+            rr::CoverageBitmap singleBitmap;
             rr::CoverageBitmap impliedBitmap;
         };
         auto state = std::make_shared<State>();
 
-        return speclab::Test("text-raster-quadratic-curve")
+        return speclab::Test("text-raster-quadratic-apex")
             .Given("a box whose right side bulges out on one quadratic, and one built from two adjacent off-curve points",
                    [state] {
-                       state->built = contours({std::vector<rr::OutlinePoint>{
+                       state->single = contours({std::vector<rr::OutlinePoint>{
                            {0, 0, true}, {1024, 0, true}, {2048, 1024, false}, {1024, 2048, true}, {0, 2048, true}}});
                        state->implied = contours({std::vector<rr::OutlinePoint>{
                            {0, 0, true}, {1024, 0, true}, {2048, 512, false}, {2048, 1536, false}, {1024, 2048, true}, {0, 2048, true}}});
                    })
             .When("both are rasterised at 8 pixels per em",
                   [state] {
-                      state->bitmap        = mustRasterise(requestFor(state->built, 8), "a bulging box");
+                      state->singleBitmap  = mustRasterise(requestFor(state->single, 8), "a bulging box");
                       state->impliedBitmap = mustRasterise(requestFor(state->implied, 8), "an implied-midpoint box");
                   })
-            .Then("both fill, and both extend past the chord the control point pulls away from",
+            .Then("the single-control curve stops exactly at its apex, and the implied one fills too",
                   [state] {
                       mdux::spec::Checks checks;
-                      for (const auto& [name, b] : {std::pair{"single control", std::cref(state->bitmap)},
-                                                    std::pair{"implied midpoint", std::cref(state->impliedBitmap)}}) {
-                          const auto& bitmap = b.get();
-                          checks.expect(bitmap.width >= 7 && bitmap.height >= 7,
-                                        std::format("{}: the curve reaches past the 4-pixel chord{}", name, render(bitmap)));
-                          checks.expect(at(bitmap, 1, 4) == 255, std::format("{}: the interior is filled{}", name, render(bitmap)));
-                          bool anyPartial = false;
-                          for (std::uint8_t value : bitmap.coverage) {
-                              anyPartial = anyPartial || (value > 0 && value < 255);
-                          }
-                          checks.expect(anyPartial, std::format("{}: the curve produces antialiased edges{}", name, render(bitmap)));
+                      const auto&        single = state->singleBitmap;
+                      // The derived assertion. 7 here means the subdivision regressed.
+                      checks.expect(single.width == 6 && single.height == 8,
+                                    std::format("apex at exactly 6 px wide, 8 tall{}", render(single)));
+                      if (single.width == 6 && single.height == 8) {
+                          // Guarded: expect() is non-fatal, so indexing outside this branch would
+                          // read past `coverage` and bury the geometry failure under a crash.
+                          checks.expect(at(single, 0, 4) == 255, std::format("the interior is filled{}", render(single)));
+                          checks.expect(at(single, 5, 0) < 255 && at(single, 5, 4) > 0,
+                                        std::format("the curved edge is antialiased{}", render(single)));
+                      }
+
+                      const auto& implied = state->impliedBitmap;
+                      checks.expect(implied.width >= 6 && implied.height == 8,
+                                    std::format("the implied-midpoint curve fills a comparable box{}", render(implied)));
+                      if (implied.width >= 6 && implied.height == 8) {
+                          checks.expect(at(implied, 0, 4) == 255, std::format("its interior is filled{}", render(implied)));
+                          const bool anyPartial =
+                              std::ranges::any_of(implied.coverage, [](std::uint8_t v) { return v > 0 && v < 255; });
+                          checks.expect(anyPartial, std::format("its edges are antialiased{}", render(implied)));
                       }
                       checks.raise();
                   })
@@ -477,13 +497,69 @@ const mdux::spec::Register rasterRejections{
             .Execute();
     }};
 
+const mdux::spec::Register sweepWorkBoundIsEnforced{
+    "An outline whose sweep cost explodes is refused before the sweep, not merely before allocation",
+    "evidence-unit",
+    [] {
+        // The denial-of-service path found in review. The bitmap-area limit does not bound the
+        // sweep: `contourEnds` holds uint16 indices so an outline can carry ~65k points, each
+        // off-curve one flattening into up to kMaxCurveSegments edges, while a tall narrow glyph
+        // reaches a large height far under kMaxBitmapPixels. The old sweep was
+        // height * kSubScanlines * edgeCount and would have run for hours on the fixture below.
+        //
+        // The shape is a comb: full-height vertical strokes, each spanning every row. At 4096
+        // px/em over a 2048 em the glyph is 4096 pixels tall, so ~1200 strokes is ~4.9M edge-row
+        // visits against a kMaxSweepWork budget of 4194304 - over the line, while the bitmap
+        // itself is a harmless 4096 x ~1200 pixels, well inside kMaxBitmapPixels.
+        struct State {
+            Built built;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-raster-sweep-work-bound")
+            .Given("a comb of ~1200 full-height strokes at the maximum pixel size",
+                   [state] {
+                       std::vector<rr::OutlinePoint> points;
+                       points.reserve(2400);
+                       for (std::int32_t i = 0; i < 1200; ++i) {
+                           points.push_back({i, 0, true});
+                           points.push_back({i, 2048, true});
+                       }
+                       state->built = contours({points});
+                   })
+            .When("nothing", [] {})
+            .Then("it is refused with OutlineTooComplex, and a normal glyph at the same size still works",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      auto              result = rr::rasterise(requestFor(state->built, rr::kMaxPixelSize));
+                      checks.expect(!result.has_value(), "the comb is refused");
+                      if (!result.has_value()) {
+                          checks.expect(result.error() == RasterError::OutlineTooComplex,
+                                        std::format("got '{}', expected '{}'", rr::describe(result.error()),
+                                                    rr::describe(RasterError::OutlineTooComplex)));
+                      }
+                      // The bound must not reject ordinary work. A plain square at the same
+                      // maximum pixel size is 4096x4096 - the largest legitimate request there is
+                      // - and has to keep rasterising.
+                      const Built square = contours({box(0, 0, 2048, 2048)});
+                      auto        ok     = rr::rasterise(requestFor(square, rr::kMaxPixelSize));
+                      checks.expect(ok.has_value(), "a full-size square is still accepted");
+                      if (ok.has_value()) {
+                          checks.expect(ok->width == 4096 && ok->height == 4096,
+                                        std::format("4096x4096, got {}x{}", ok->width, ok->height));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 // ---------------------------------------------------------------------------
 // Cross-toolchain determinism.
 // ---------------------------------------------------------------------------
 
 /// The digest the reference glyph must produce. See the scenario body for why this is never
 /// updated to match new output.
-constexpr std::string_view kFrozenDigest = "c4313aa620fa990603c20fd110cdc16e0113632f61f2d01e6973b113e411714d";
+constexpr std::string_view kFrozenDigest = "1b998a7518a981f22d0a917dad7a478cd3ff1ee242619f8d315db4f365081b24";
 
 /// Deliberately coprime with the em, so no coordinate lands on a pixel boundary by accident.
 constexpr std::uint32_t kDeterminismPixelSize = 37;
@@ -553,8 +629,8 @@ const mdux::spec::Register rasterDeterminism{
                       // Geometry is asserted alongside the digest so a failure says which of the
                       // two moved: a size change is a different bug from a coverage change, and
                       // the digest alone cannot tell them apart.
-                      checks.expect(state->bitmap.width == 30 && state->bitmap.height == 32,
-                                    std::format("bitmap is 30x32, got {}x{}", state->bitmap.width, state->bitmap.height));
+                      checks.expect(state->bitmap.width == 29 && state->bitmap.height == 32,
+                                    std::format("bitmap is 29x32, got {}x{}", state->bitmap.width, state->bitmap.height));
                       checks.expect(actual == kFrozenDigest,
                                     std::format("coverage digest\n  expected {}\n  actual   {}", kFrozenDigest, actual));
                       checks.raise();
