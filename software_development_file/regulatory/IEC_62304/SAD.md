@@ -88,9 +88,11 @@ Every structural decision above is recorded as an `Accepted` ADR — see
 ADR-007). `mdux_verify_trust_zones()` also runs on every CI build
 (`.github/workflows/windows-build.yml`, `.github/workflows/linux-gcc16-build.yml`). Those
 workflows trigger on pushes to `main` and `develop`, and on pull requests whose **base branch**
-is `main`, `develop` or `feat/**` — so the segregation described in §4 is checked before a change
-reaches an integration branch, not only at review time. **State the limit precisely:** a pull
-request based on any other branch matches no trigger and is not covered by this check.
+matches `main`, `develop`, `[0-9]+-*` (the issue-derived work-branch scheme described in
+`AGENTS.md` § 6) or the legacy `feat/**` — so the segregation described in §4 is checked before a
+change reaches an integration branch, not only at review time. **State the limit precisely:** the
+filters match a pull request's base, so a pull request based on a branch outside those patterns
+matches no trigger and is not covered by this check.
 
 ## Justification records
 

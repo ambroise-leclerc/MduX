@@ -4,11 +4,14 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    # `feat/**` is here because these filters match the PR's *base*, not its head. Wave 3 is
-    # delivered as a stack in which each PR targets its predecessor rather than develop, so that
-    # a reviewer sees one issue's diff instead of the cumulative one - and without this pattern
-    # every PR after the first would report no checks at all rather than reporting failures.
-    branches: [ main, develop, 'feat/**' ]
+    # Matches the PR's *base*, not its head: a base branch missing from this list means that PR
+    # reports no checks at all, silently - which is worse than reporting failures. `[0-9]+-*` is
+    # the scheme GitHub's "create a branch for this issue" button generates (issue number, dash,
+    # slugified title) and this project's standard - see AGENTS.md "Branch naming". It is also
+    # what gets a stacked PR checked, i.e. one targeting its predecessor rather than develop so a
+    # reviewer sees one issue's diff instead of the cumulative one. `feat/**` predates the
+    # convention and is kept for branches already in flight.
+    branches: [ main, develop, '[0-9]+-*', 'feat/**' ]
 
 permissions:
   contents: read

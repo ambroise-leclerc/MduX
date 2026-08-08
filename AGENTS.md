@@ -244,6 +244,36 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 
 ## 6. Repository-wide working rules
 
+### Branch naming
+
+Work branches use the scheme GitHub's **"Create a branch for this issue"** button generates: the
+issue number, a dash, then the slugified issue title.
+
+```
+158-hand-parsed-truetype-glyf-only
+14-text-schema
+```
+
+This is not cosmetic. Every workflow filters `pull_request` on the pattern `[0-9]+-*`, and
+**those filters match a pull request's base branch, not its head**. A PR whose base matches no
+listed pattern reports no checks at all — not failures, *nothing* — which is the failure mode
+easiest to miss on review. So:
+
+- Create branches from the issue, with that button or by writing the same name by hand.
+- A stacked PR (one targeting its predecessor rather than `develop`, so a reviewer sees one
+  issue's diff instead of the cumulative one) is covered automatically, because its base is
+  itself an issue branch.
+- `main`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
+  convention and is kept only for branches already in flight.
+- A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
+  it**. If you need one, add its pattern to the `branches:` list of every workflow under
+  `.github/workflows/` that has a `pull_request:` trigger.
+
+`push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
+own branch, and adding work branches there would run every workflow twice per commit.
+
+### Conventions
+
 - Follow the naming, formatting, and documentation conventions in
   [`CONTRIBUTING.md`](CONTRIBUTING.md): `UpperCamelCase` classes/structs, `lowerCamelCase`
   functions/methods/variables, lowercase namespaces, no macros, 4-space indentation, Doxygen
