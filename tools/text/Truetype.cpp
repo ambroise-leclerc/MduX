@@ -123,10 +123,15 @@ constexpr std::uint8_t flagReservedMask    = 0x80u;
     if (!segCountX2) {
         return err(ParseError::TruncatedCmap);
     }
-    const std::size_t segCount = static_cast<std::size_t>(*segCountX2) / 2u;
-    if (segCount == 0) {
+    // segCountX2 is, as the name says, twice the segment count. An odd value is not a slightly
+    // wrong count - it means the four parallel arrays are not where the layout arithmetic below
+    // computes them to be, so every offset after this point would address the wrong field and the
+    // table would be *misread* rather than rejected. Checking parity is what turns that into a
+    // diagnostic. A legal table always has at least the mandatory 0xFFFF terminator segment.
+    if (*segCountX2 == 0 || (*segCountX2 % 2u) != 0) {
         return err(ParseError::TruncatedCmap);
     }
+    const std::size_t segCount = static_cast<std::size_t>(*segCountX2) / 2u;
     // endCode[segCount], reservedPad, startCode[segCount], idDelta[segCount], idRangeOffset[segCount]
     const std::size_t endCodeAt       = 14;
     const std::size_t startCodeAt     = endCodeAt + segCount * 2u + 2u;
@@ -266,7 +271,11 @@ constexpr std::uint8_t flagReservedMask    = 0x80u;
         if (!platformId || !encodingId || !offset) {
             return err(ParseError::TruncatedCmap);
         }
-        if (*offset + 2u > cmap.size()) {
+        // Widened deliberately: `*offset` is a uint32, so `*offset + 2u` is evaluated in 32-bit
+        // and wraps for an offset near 0xFFFFFFFF, letting the wrapped value pass this guard. The
+        // beU16() below would still refuse to read out of bounds, so nothing was reachable, but a
+        // bounds check that does not hold on its own terms is one nobody can rely on later.
+        if (static_cast<std::uint64_t>(*offset) + 2u > cmap.size()) {
             return err(ParseError::TruncatedCmap);
         }
         const auto format = beU16(cmap, *offset);
@@ -289,11 +298,43 @@ constexpr std::uint8_t flagReservedMask    = 0x80u;
         return err(ParseError::UnsupportedCmapFormat);
     }
 
-    const auto subtable = cmap.subspan(*best);
-    const auto format   = beU16(subtable, 0);
+    const auto whatFollows = cmap.subspan(*best);
+    const auto format      = beU16(whatFollows, 0);
     if (!format) {
         return err(ParseError::TruncatedCmap);
     }
+
+    // Clip the subtable to its own declared length rather than letting it run to the end of the
+    // `cmap` table.
+    //
+    // This is not tidiness. Format 4's idRangeOffset is a self-relative pointer into a glyph array
+    // that the subtable's length is what terminates - so a subtable sliced too generously lets
+    // that indirection read into whatever subtable happens to follow it. A font with several cmap
+    // subtables, which is the normal case, would then produce *wrong mappings* rather than a
+    // diagnostic: the reads stay inside `cmap`, so no bounds check fires and the glyphs are simply
+    // someone else's. Silently drawing the wrong character is the worst failure this parser has.
+    //
+    // The two formats declare their length in different places and widths: format 4 as a uint16
+    // at offset 2, format 12 as a uint32 at offset 4.
+    std::uint64_t declaredLength = 0;
+    if (*format == 12) {
+        const auto length = beU32(whatFollows, 4);
+        if (!length) {
+            return err(ParseError::TruncatedCmap);
+        }
+        declaredLength = *length;
+    } else {
+        const auto length = beU16(whatFollows, 2);
+        if (!length) {
+            return err(ParseError::TruncatedCmap);
+        }
+        declaredLength = *length;
+    }
+    if (declaredLength == 0 || declaredLength > whatFollows.size()) {
+        return err(ParseError::TruncatedCmap);
+    }
+    const auto subtable = whatFollows.first(static_cast<std::size_t>(declaredLength));
+
     auto ranges = (*format == 12) ? decodeCmapFormat12(subtable) : decodeCmapFormat4(subtable);
     if (!ranges.has_value()) {
         return err(ranges.error());
