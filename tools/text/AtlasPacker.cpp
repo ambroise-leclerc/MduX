@@ -138,12 +138,19 @@ Result<AtlasLayout, PackError> pack(std::span<const GlyphExtent> extents) noexce
 
         for (std::uint32_t width = minimumAtlasEdge; width <= maximumAtlasEdge; width *= 2u) {
             for (std::uint32_t height = minimumAtlasEdge; height <= width; height *= 2u) {
-                // Width first, then height up to width. The `height <= width` bound is the point:
-                // sheets taller than they are wide are never considered, so this finds the
-                // smallest area *among wide-or-square candidates*, not the smallest possible. A
-                // glyph set wanting 64x128 gets 128x128 instead. That is a deliberate trade for a
-                // texture atlas, and stating it here rather than claiming a minimum the search
-                // does not deliver.
+                // First fit in width-major order. Not the smallest sheet by area, and not the
+                // smallest among these candidates either - area is not monotonic in this
+                // enumeration, so 256x256 (65536 px) is reached before 512x64 (32768 px) and a
+                // set fitting both takes the larger one.
+                //
+                // Kept anyway, because "squarish" is the property worth having in a texture
+                // atlas and "minimal area" is not: a 512x64 strip wastes no pixels but is a worse
+                // shape to sample from and to fit under a device's texture limits. What matters
+                // for ADR-007 is that the choice is a pure function of the glyph set, which
+                // first-fit in a fixed order is.
+                //
+                // Stated this way after two rounds of getting it wrong: the earlier comments
+                // claimed a minimum, then a qualified minimum, and neither was true.
                 auto slots = placeAt(sorted, width, height);
                 if (!slots.has_value()) {
                     continue;
@@ -162,10 +169,11 @@ Result<AtlasLayout, PackError> pack(std::span<const GlyphExtent> extents) noexce
         }
         return err(PackError::AtlasBudgetExceeded);
     } catch (...) {
-        // `pack()` is not noexcept - unlike `raster::rasterise()`, nothing here allocates on a
-        // scale where failure is a realistic outcome, and a host tool may throw (ADR-005). The
-        // catch exists so an allocation failure still becomes the budget diagnostic rather than
-        // unwinding through the baker's diagnostic collection.
+        // `pack()` *is* noexcept, which is exactly why this catch exists: the vectors above can
+        // throw `std::bad_alloc`, and an exception escaping a noexcept function calls
+        // `std::terminate`. Turning it into the budget diagnostic keeps a host tool that ran out
+        // of memory on one font from taking down the whole bake, the same reasoning
+        // `raster::rasterise()` applies at its own noexcept boundary.
         return err(PackError::AtlasBudgetExceeded);
     }
 }
