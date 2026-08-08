@@ -245,6 +245,18 @@ const mdux::spec::Register packRejections{
                  // author needs to be told the glyph is the problem, not the budget.
                  return std::vector<ap::GlyphExtent>{{0, ap::maximumAtlasEdge + 1, 10}};
              }},
+            {"a glyph whose width is near UINT32_MAX", PackError::GlyphTooLarge,
+             [] {
+                 // The guard used to read `extent.width + glyphPadding > maximumAtlasEdge`, which
+                 // is uint32 arithmetic: at 0xFFFFFFFF the addition wraps to 0 and the very
+                 // largest input slips past the check that exists to catch it. A width one below
+                 // the wrap point is the case that distinguishes the two forms.
+                 return std::vector<ap::GlyphExtent>{{0, 0xFFFFFFFFu, 10}};
+             }},
+            {"a glyph whose height is near UINT32_MAX", PackError::GlyphTooLarge,
+             [] {
+                 return std::vector<ap::GlyphExtent>{{0, 10, 0xFFFFFFFFu}};
+             }},
             {"a set that cannot fit the maximum sheet", PackError::AtlasBudgetExceeded,
              [] {
                  // Each glyph fits alone; together they cannot. 8192x8192 is 67.1M pixels, and
