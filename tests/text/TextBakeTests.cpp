@@ -523,3 +523,230 @@ const mdux::spec::Register verifyAcceptsIdenticalCommitted{
                    })
             .Execute();
     }};
+
+// ---------------------------------------------------------------------------
+// The font pipeline (#160, S4).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The repository root, so a recipe's `source` path resolves the way the CLI resolves it.
+/// `MDUX_REPO_ROOT` is set by tests/CMakeLists.txt, the same way shader_spec gets it.
+[[nodiscard]] std::filesystem::path repositoryRoot() {
+    return std::filesystem::path{MDUX_REPO_ROOT};
+}
+
+/// A minimal font recipe. `source` points at the committed DejaVu asset, which is the same file
+/// the real recipe uses - a fixture font would prove the pipeline works on a fixture.
+[[nodiscard]] std::string fontRecipeText(std::string_view charsetBody, std::int64_t pixelSize = 16,
+                                         std::string_view localeIds = R"("en-US")",
+                                         std::string_view sourcePath = "recipes/font/dejavu-ui/DejaVuSans.ttf") {
+    return std::format(R"([package]
+id = "fixture-font"
+source = "{}"
+sidecar = "atlas.bin"
+pixelSize = {}
+
+[locales]
+ids = [{}]
+
+[charset]
+{}
+)",
+                       sourcePath, pixelSize, localeIds, charsetBody);
+}
+
+/// The printable-ASCII charset body, for cases whose defect is elsewhere in the recipe.
+constexpr std::string_view asciiCharset = R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])";
+
+}  // namespace
+
+const mdux::spec::Register fontRecipeBakesAnAtlas{
+    "A font recipe bakes an atlas whose glyphs carry slots, advances and blanks",
+    "evidence-unit",
+    [] {
+        // The end-to-end assertion for S4: parse a TrueType file, resolve a charset through cmap,
+        // rasterise each outline, pack the results, and emit a package that describes all of it.
+        // The committed artifact's byte-identity is checked separately by `evidence.font.dejavu-ui`;
+        // what this scenario adds is the *shape* of the result, which a digest cannot describe.
+        struct State {
+            std::string                              text;
+            std::optional<bake::Recipe>              recipe;
+            std::optional<bake::BakeOutputs>         outputs;
+            std::vector<mdux::tools::cli::Diagnostic> diagnostics;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-bake-font-atlas")
+            .Given("a recipe naming the printable ASCII range",
+                   [state] {
+                       state->text = fontRecipeText(R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])");
+                   })
+            .When("it is parsed and baked",
+                  [state] {
+                      state->recipe = bake::parseRecipe(state->text, "fixture.toml", state->diagnostics);
+                      if (!state->recipe.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("recipe did not parse: {}", state->diagnostics.empty()
+                                                                          ? std::string{"(no diagnostic)"}
+                                                                          : state->diagnostics.front().message),
+                              std::source_location::current());
+                      }
+                      const auto bytes = std::as_bytes(std::span{state->text.data(), state->text.size()});
+                      state->outputs   = bake::run(*state->recipe, "fixture.toml", bytes, repositoryRoot(), state->diagnostics);
+                      if (!state->outputs.has_value()) {
+                          throw speclab::core::AssertionFailure(
+                              std::format("bake failed: {}", state->diagnostics.empty() ? std::string{"(no diagnostic)"}
+                                                                                        : state->diagnostics.back().message),
+                              std::source_location::current());
+                      }
+                  })
+            .Then("95 glyphs land on a power-of-two sheet, and the space is blank but advances",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      const auto&        out = *state->outputs;
+                      checks.expect(out.glyphCount == 95, std::format("95 glyphs, got {}", out.glyphCount));
+                      const auto isPow2 = [](std::uint32_t v) { return v != 0 && (v & (v - 1)) == 0; };
+                      checks.expect(isPow2(out.atlasWidth) && isPow2(out.atlasHeight),
+                                    std::format("power-of-two sheet, got {}x{}", out.atlasWidth, out.atlasHeight));
+                      checks.expect(out.sidecar.size() == static_cast<std::size_t>(out.atlasWidth) * out.atlasHeight,
+                                    "the sidecar is exactly one byte per texel");
+
+                      auto package = mdux::evidence::json::parse(out.packageJson);
+                      checks.expect(package.has_value(), "the package is valid canonical JSON");
+                      if (!package.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      const auto* glyphs = package->find("glyphs");
+                      checks.expect(glyphs != nullptr && glyphs->kind() == mdux::evidence::json::Value::Kind::Array,
+                                    "it carries a glyph array");
+                      if (glyphs == nullptr || glyphs->kind() != mdux::evidence::json::Value::Kind::Array) {
+                          checks.raise();
+                          return;
+                      }
+                      // The space is the case the pipeline nearly got wrong: parseGlyph returns a
+                      // blank outline and rasterise() rightly refuses an empty request, so a baker
+                      // that forwarded it would fail on the most common character in any string.
+                      bool sawSpace = false;
+                      bool sawSolid = false;
+                      for (const auto& entry : glyphs->elements()) {
+                          const auto* point = entry.find("codePoint");
+                          const auto* width = entry.find("width");
+                          const auto* adv   = entry.find("advanceWidth");
+                          if (point == nullptr || width == nullptr || adv == nullptr) {
+                              continue;
+                          }
+                          const auto pointValue = point->asInt();
+                          const auto widthValue = width->asInt();
+                          const auto advValue   = adv->asInt();
+                          if (!pointValue.has_value() || !widthValue.has_value() || !advValue.has_value()) {
+                              continue;
+                          }
+                          if (*pointValue == 32) {
+                              sawSpace = true;
+                              checks.expect(*widthValue == 0, "the space has no coverage");
+                              checks.expect(*advValue > 0, "the space still advances the pen");
+                          }
+                          if (*widthValue > 0) {
+                              sawSolid = true;
+                          }
+                      }
+                      checks.expect(sawSpace, "the space is present in the package, not omitted");
+                      checks.expect(sawSolid, "at least one glyph carries coverage");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register fontRecipeRejections{
+    "A font recipe's failures are reported with their own TXT codes",
+    "evidence-unit",
+    [] {
+        // Each refusal keeps a distinct code rather than collapsing into "bake failed", because an
+        // author needs to know whether the charset, the font or the size is the problem.
+        struct Case {
+            std::string_view what;
+            std::string_view code;
+            std::string      recipe;
+        };
+
+        const std::vector<Case> cases{
+            {"charset arrays of different lengths", "TXT011",
+             fontRecipeText(R"(names           = ["a", "b"]
+firstCodePoints = [32]
+lastCodePoints  = [126])")},
+            {"a code point the font has no glyph for", "TXT014",
+             // U+4E2D is CJK; DejaVu Sans does not cover it. Fatal rather than skipped: silently
+             // omitting it would produce a package whose charset is not what the recipe asked for.
+             fontRecipeText(R"(names           = ["cjk"]
+firstCodePoints = [20013]
+lastCodePoints  = [20013])")},
+            {"a pixelSize that wraps to a valid value when narrowed", "TXT018",
+             // 4294967312 is 2^32 + 16. Cast to uint32 before checking, it becomes 16 and bakes
+             // happily at a size nobody wrote - an artifact that looks deliberate. Validating the
+             // int64 the parser actually produced is what refuses it.
+             fontRecipeText(R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])", 4294967312LL)},
+            {"a negative pixelSize", "TXT018",
+             fontRecipeText(R"(names           = ["ascii"]
+firstCodePoints = [32]
+lastCodePoints  = [126])", -16)},
+            {"two charset ranges that overlap", "TXT011",
+             // A code point covered twice is rasterised twice, takes two atlas slots and appears
+             // twice in the glyph list, so a consumer indexing by code point gets an ambiguous
+             // package. Same reasoning as a missing glyph being fatal: the package must describe
+             // the charset that was asked for.
+             fontRecipeText(R"(names           = ["upper", "hex"]
+firstCodePoints = [65, 65]
+lastCodePoints  = [90, 70])")},
+            {"a charset range covering the UTF-16 surrogates", "TXT011",
+             // U+D800..U+DFFF are surrogate code points, not scalar values - they exist only to
+             // encode astral characters in pairs and can never be a character themselves.
+             fontRecipeText(R"(names           = ["surrogates"]
+firstCodePoints = [55296]
+lastCodePoints  = [56320])")},
+            {"an empty locale id", "TXT004",
+             fontRecipeText(asciiCharset, 16, R"("")")},
+            {"a duplicated locale id", "TXT004",
+             fontRecipeText(asciiCharset, 16, R"("en-US", "en-US")")},
+            {"a font path escaping the repository root", "TXT012",
+             // std::filesystem's operator/ replaces the left operand when the right is absolute,
+             // so an unchecked join would have read this path and ignored the root entirely.
+             fontRecipeText(asciiCharset, 16, R"("en-US")", "/etc/shadow")},
+            {"a font path climbing out with ..", "TXT012",
+             fontRecipeText(asciiCharset, 16, R"("en-US")", "../../etc/shadow")},
+            {"a descending code point range", "TXT011",
+             fontRecipeText(R"(names           = ["backwards"]
+firstCodePoints = [126]
+lastCodePoints  = [32])")},
+        };
+
+        return speclab::Test("text-bake-font-rejections")
+            .Given("a corpus of broken font recipes", [] {})
+            .When("each is parsed and baked", [] {})
+            .Then("each reports its own code",
+                  [&cases] {
+                      mdux::spec::Checks checks;
+                      for (const Case& entry : cases) {
+                          std::vector<mdux::tools::cli::Diagnostic> diagnostics;
+                          auto recipe = bake::parseRecipe(entry.recipe, "fixture.toml", diagnostics);
+                          if (recipe.has_value()) {
+                              const auto bytes = std::as_bytes(std::span{entry.recipe.data(), entry.recipe.size()});
+                              auto       out   = bake::run(*recipe, "fixture.toml", bytes, repositoryRoot(), diagnostics);
+                              checks.expect(!out.has_value(), std::format("{}: the bake succeeded unexpectedly", entry.what));
+                          }
+                          const bool sawCode = std::ranges::any_of(
+                              diagnostics, [&entry](const mdux::tools::cli::Diagnostic& d) { return d.code == entry.code; });
+                          checks.expect(sawCode, std::format("{}: expected {}, got [{}]", entry.what, entry.code,
+                                                             diagnostics.empty() ? std::string{"none"} : diagnostics.front().code));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};

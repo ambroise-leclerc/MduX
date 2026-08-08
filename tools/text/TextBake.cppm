@@ -6,16 +6,22 @@
  * @compliance ADR-007 Evidence pipeline doctrine
  * @compliance ADR-010 No on-device text shaping (the baker is one of the host-side enforcement points)
  *
- * ## What S1 (#157) ships, and what it does not
+ * ## Two recipe kinds, one tool
  *
- * The skeleton lands the schema, the baker library, and the host-tools wiring so the trust-zone
- * check continues to pass and `ctest -L evidence` continues to travel clean. The baker's `run()`
- * is wired through the evidenced-shared code path: it parses a recipe, validates it against
- * `mdux.text.schema`, and produces a no-run package whose sidecar is zero bytes. The first real
- * artifact is committed by S4 (#160), once the TrueType parser (S2 / #158) and rasteriser (S3 /
- * #159) are available; until then a recipe with no `[runs]` table is the only shape `run()`
- * produces, and that is by design - baking an artifact the parser pipeline cannot yet provide
- * would be premature.
+ * A recipe carrying a `[charset]` table is a **font** recipe: it bakes an R8 coverage atlas out
+ * of a TrueType file, producing `package.json`, `report.json` and `atlas.bin` under
+ * `generated/font/<id>/`. One without it is a **text** recipe: positioned glyph runs against an
+ * atlas some font package already baked.
+ *
+ * They share `parseRecipe()`, `run()`, `write()` and `verify()` because they share everything
+ * around the edges - the report, the digests, the write/verify pair - and differ only in what
+ * fills the sidecar. `run()` dispatches on `Recipe::font`, so `mdux-textbake` stays one tool with
+ * one CLI rather than growing a second entry point that would have to be kept in step.
+ *
+ * S1 (#157) landed the schema, the library and the host-tools wiring with the text path only,
+ * producing a no-run package whose sidecar was zero bytes. S4 (#160) added the font path and the
+ * first committed artifact, built on the TrueType parser (S2 / #158) and the rasteriser
+ * (S3 / #159).
  *
  * ## One code path for bake and verify
  *
@@ -59,6 +65,37 @@ export namespace mdux::tools::textbake {
 /// The tool name that appears in every diagnostic and in `report.json`.
 inline constexpr std::string_view toolName = "mdux-textbake";
 
+/// One code-point range from a font recipe's `[charset]` parallel arrays.
+struct CharsetRange {
+    std::string name;
+    char32_t    first{0};
+    char32_t    last{0};
+
+    [[nodiscard]] std::uint32_t count() const noexcept {
+        return static_cast<std::uint32_t>(last - first) + 1u;
+    }
+};
+
+/**
+ * @brief The font-baking half of a recipe, present when the recipe carries a `[charset]` table.
+ *
+ * A recipe is either a *text* package (S1: positioned runs against an existing atlas) or a *font*
+ * package (S4: an atlas baked from a TrueType file). They share `parseRecipe()` and `run()`
+ * because they share everything around the edges - the report, the digests, the write/verify
+ * pair - and differ only in what fills the sidecar. Dispatching on the presence of `[charset]`
+ * keeps `mdux-textbake` one tool with one CLI, which is what issue #160 asks for.
+ */
+struct FontSpec {
+    std::string               source;        ///< repository-relative path to the .ttf
+    std::uint32_t             pixelSize{0};  ///< em size in pixels
+    std::vector<std::string>  locales;       ///< locales this package is approved for
+    std::vector<CharsetRange> charset;       ///< the code points to bake, in recipe order
+
+    /// Total code points across every range, which is the glyph count before any are found
+    /// missing from the font.
+    [[nodiscard]] std::uint32_t codePointCount() const noexcept;
+};
+
 /// A parsed and resolved recipe. Every default is expanded here rather than at the point of use,
 /// so `report.json`'s `options` records what the bake actually did - ADR-007's rule that a
 /// silently changed default must not leave every report looking unchanged.
@@ -67,6 +104,10 @@ struct Recipe {
     std::string atlas;
     std::string locale;
     std::string sidecar{"runs.bin"};
+
+    /// Set when this recipe carries a `[charset]` table, which is what makes it a font recipe.
+    /// `run()` dispatches on it.
+    std::optional<FontSpec> font{};
 
     /// The fully resolved options, as they are recorded in the report.
     [[nodiscard]] evidence::json::Value toOptions() const;
@@ -91,6 +132,11 @@ struct BakeOutputs {
     std::string sidecarName;         ///< the sidecar's bare filename
     std::string packageId;           ///< for the summary line; the package itself is in the JSON
     std::size_t runCount{0};
+
+    /// Set for a font bake, for the summary line and the tests. Zero for a text bake.
+    std::uint32_t glyphCount{0};
+    std::uint32_t atlasWidth{0};
+    std::uint32_t atlasHeight{0};
 };
 
 /// Reads a file as bytes. Returns nullopt when it cannot be opened or read.
@@ -104,16 +150,21 @@ struct BakeOutputs {
 /**
  * @brief Produces every output byte for `recipe`.
  *
- * At S1: produces a no-run package whose sidecar is zero bytes. The first real baked artifact
- * lands in S4 (#160).
+ * Dispatches on `Recipe::font`. A font recipe rasterises its charset, packs the glyphs and fills
+ * the sidecar with the atlas sheet; a text recipe produces a run package, which at S1 is still a
+ * no-run one whose sidecar is zero bytes until the run pipeline lands.
  *
  * @param recipe      the resolved recipe
  * @param recipePath  repository-relative, for `report.json`'s recipe record and for diagnostics
  * @param recipeBytes the recipe's own bytes, for its digest
- * @param root        the directory any future source paths resolve against - the repository root
+ * @param root        the directory a font recipe's `source` resolves against - the repository
+ *                    root. The path is confined to it: absolute paths and `..` escapes are
+ *                    refused rather than followed.
  * @param diagnostics appended to on any problem
  *
- * Returns nullopt when the recipe fails to build a package that passes its own `validate()`.
+ * Returns nullopt when the recipe fails to build a valid package - which for a font recipe
+ * includes a character the font cannot draw, an outline it refuses, or a glyph set the atlas
+ * budget cannot hold. Every such refusal appends its own `TXT` diagnostic.
  */
 [[nodiscard]] std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath,
                                               std::span<const std::byte> recipeBytes,
