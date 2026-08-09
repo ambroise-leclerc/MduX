@@ -62,16 +62,17 @@ Three decisions from that programme apply repository-wide:
    closed) — see `regulatory-citations` in § 7 and [ADR-006](docs/adr/ADR-006-no-reproduction-of-normative-standard-text.md).
    Do not add new material that reproduces or closely paraphrases a standard's wording.
    `mdux-docs-lint` enforces this in CI.
-4. **Evidence is baked and committed** (issue `#12`, closed). Four artifacts live under
-   `generated/`: two shader packages and two ML model packages. A normal build never writes into
+4. **Evidence is baked and committed** (issue `#12`, closed). Five artifacts live under
+   `generated/`: two shader packages, two ML model packages and one font package. A normal build never writes into
    the source tree — `mdux-bake-update` is the only path that does, run deliberately by an author
    who commits the diff. CI asserts byte-identity on both toolchain legs.
 5. **Zero-SOUP ML inference has landed** (issue `#18`, closed). `mdux.ml.kernels` is imported by
    both the device runtime and the host baker, and `Classifier1D::create()` fails closed on a
    digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
 
-Waves 1, 2 and 3 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0). Wave 4 is the font and
-text pipeline (`#14`), now unblocked.
+Waves 1 to 4 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0, v0.5.0). Wave 4 was the font
+and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#15`), now
+unblocked.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.

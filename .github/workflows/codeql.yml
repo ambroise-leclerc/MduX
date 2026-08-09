@@ -16,6 +16,12 @@ on:
     # Catch newly-disclosed CWE patterns in unchanged code, not just new commits.
     - cron: '0 6 * * 1'
 
+# The default for anything not named below. The job grants itself the three it needs; without a
+# top-level block the workflow inherits whatever the repository default is, which is what Scorecard's
+# Token-Permissions check flags. Every other workflow here already declares one.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (C++)

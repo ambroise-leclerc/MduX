@@ -48,8 +48,8 @@ trail.
 
 **Evidence is baked, committed, and re-derived.** A host tool turns a recipe into
 `generated/<kind>/<id>/` — `package.json`, `report.json`, a payload — and those files are committed.
-CI re-runs the baker and asserts byte-identity. Four artifacts live there today: two shader packages
-and two ML model packages. A normal build never writes into the source tree
+CI re-runs the baker and asserts byte-identity. Five artifacts live there today: two shader packages,
+two ML model packages and one font package. A normal build never writes into the source tree
 ([ADR-007](docs/adr/ADR-007-evidence-pipeline-doctrine.md)).
 
 **Embedded ML with no foreign inference stack.** `mdux.ml.kernels` is imported by both the device

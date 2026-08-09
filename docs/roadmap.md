@@ -22,18 +22,18 @@ generates the screens it draws.
 
 ### Where the two diverge
 
-Re-verified against `develop` on 3 August 2026. Seven of the nine rows have closed since
-this table was first written; the two that remain are the documentation rebuild and the
-`.medui` authoring story, which is the whole of Track C.
+Re-verified against `develop` on 9 August 2026. Eight of the nine rows have closed since
+this table was first written; the one that remains is the `.medui` authoring story, which is
+the whole of Track C.
 
 | Area | MduX today | TrustSC today |
 |---|---|---|
 | UI authoring | Partly closed. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The `.medui` compiler that generates it is still ahead — this is Track C, Wave 5. | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Four artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
+| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Five artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time. | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
-| Docs | Corpus closed (#8); README not. Five standards on real clause structure with per-clause indexes and JSON Schemas. The documentation architecture — README honesty, ADR re-baselining — is #10 and has not started. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
+| Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
 | Tests | Closed. 436 tests on `develop`, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
@@ -42,7 +42,7 @@ this table was first written; the two that remain are the documentation rebuild 
 
 ### Six waves
 
-An epic opens when every epic it depends on has closed. Three waves have shipped
+An epic opens when every epic it depends on has closed. Four waves have shipped
 (v0.2.0, v0.3.0, v0.4.0, v0.5.0), one epic per wave closing the dependency it held.
 Wave 5 is open now: #15's blockers were #12 and #14, both closed. #19 spans waves by design; its S3–S6 follow #15.
 
@@ -336,6 +336,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Verified against `develop @ d1329da` · 4 August 2026_
+_Verified against `develop @ 54212ba` · 9 August 2026_
 _13 epics · 8 delivered · Waves 1–4 shipped · Wave 5 open · #11 enforcement open_
 _All epics on GitHub_

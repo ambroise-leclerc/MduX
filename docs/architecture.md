@@ -120,7 +120,7 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
-Four artifacts are committed today:
+Five artifacts are committed today:
 
 | Artifact | Baker | Payload |
 |---|---|---|
@@ -128,6 +128,7 @@ Four artifacts are committed today:
 | `generated/shader/triangle/` | `mdux-shaderbake` | `shaders.spv` |
 | `generated/model/ecg-demo/` | `mdux-mlbake` | `weights.bin` |
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
+| `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an

@@ -9,7 +9,7 @@
 - **Product / software item:** MduX — an experimental, proof-of-concept C++23-modules Vulkan/Vulkan
   SC UI/rendering library. Not a finished product (see `AGENTS.md` § 1).
 - **Version:** the project version reported by `mdux::Version::getString()` (`CMakeLists.txt`'s
-  `project(... VERSION ...)`, currently `0.4.0`); see `CMakeLists.txt` for the exact build.
+  `project(... VERSION ...)`, currently `0.5.0`); see `CMakeLists.txt` for the exact build.
 - **Safety classification:** Class A, B, or C, chosen per-application. Unlike its sibling project
   TrustSC (Class B/C only), MduX keeps Class A explicitly in scope (`docs/governance/citation-convention.md`).
   **Note the gap:** `mdux::ComplianceMetadata.deviceClass` (`include/mdux/mdux.cppm`) is a free-form
