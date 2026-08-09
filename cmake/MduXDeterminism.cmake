@@ -85,7 +85,15 @@ function(mdux_enforce_fp_determinism TGT)
             # "No heap" must not quietly become "enormous stack", which on a device is the same bug
             # wearing a different hat. Re-checked by issue #63; the flag belongs with the other
             # determinism flags.
-            -Wframe-larger-than=4096
+            #
+            # Suspended under AddressSanitizer, which surrounds every stack object with redzones
+            # and so inflates frames far past this limit for reasons that have nothing to do with
+            # the source. Measured: src/font/Schema.cpp goes from within budget to 7648 bytes,
+            # src/governance/Compliance.cpp to 5040. Leaving the flag on would mean the sanitizer
+            # build could never compile, and raising the number for everyone would retire a real
+            # guard to accommodate a build that is not the one shipped. The limit still applies to
+            # every ordinary build, which is where a genuine stack regression would appear.
+            $<$<NOT:$<BOOL:${ENABLE_SANITIZER_ADDRESS}>>:-Wframe-larger-than=4096>
         )
 
         # x87 excess precision, hazard 3. Only 32-bit x86 has the 80-bit-register problem; on

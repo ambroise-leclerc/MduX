@@ -1,0 +1,149 @@
+name: Sanitizers
+
+# AddressSanitizer and UndefinedBehaviorSanitizer over the test suite (issue #179).
+#
+# This exists because a green ordinary build proves less than it looks like it does here. ASan
+# found a heap-use-after-free in TruetypeTests.cpp during #171 - a test parsing from a temporary
+# while `tt::Font` held non-owning spans - and found a second one of exactly the same shape in
+# SchemaTests.cpp the first time this workflow was written. Both suites had been passing for
+# months. The tree is full of hand-rolled binary parsing over spans, which is the code where that
+# bug lives, so the instrumented run is not a formality.
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    # Matches the PR's *base*, not its head - see linux-gcc16-build.yml for why the list reads
+    # this way and what `[0-9]+-*` is.
+    branches: [ main, develop, '[0-9]+-*', 'feat/**' ]
+  schedule:
+    # Catches a regression that lands through a path with no PR, and keeps the job from rotting
+    # unnoticed between changes that happen to touch it.
+    - cron: '0 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitize:
+    name: ASan + UBSan (GCC 16)
+    runs-on: ubuntu-latest
+    container: gcc:16
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libvulkan-dev \
+          vulkan-tools \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          mesa-vulkan-drivers \
+          vulkan-validationlayers \
+          libglfw3-dev \
+          libwayland-dev \
+          wayland-protocols \
+          wayland-utils \
+          libwayland-egl1 \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          xvfb \
+          wget \
+          gnupg
+
+    - name: Install latest CMake
+      run: |
+        # Download to RUNNER_TEMP, not the checkout root, matching linux-gcc16-build.yml.
+        CMAKE_VERSION="4.1.1"
+        CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        # Pinned SHA-256 from Kitware's own cmake-4.1.1-SHA-256.txt manifest. `sha256sum -c` exits
+        # non-zero on a mismatch and `set -e` is on by default in a `run:` block, so extraction
+        # cannot proceed past a substituted download.
+        CMAKE_SHA256="5a6c61cb62b38e153148a2c8d4af7b3d387f0c8c32b6dbceb5eb4af113efd65a"
+        wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        echo "${CMAKE_SHA256}  ${CMAKE_ARCHIVE}" | sha256sum -c -
+        tar -xzf "$CMAKE_ARCHIVE" -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+        cmake --version
+
+    # Not through a preset: the sanitizer build is deliberately not one of the configurations
+    # CMakePresets.json describes, because it is not a configuration anything ships. Debug, since
+    # ASan's reports are unreadable without frame pointers and line numbers, and examples off
+    # because nothing here runs them.
+    #
+    # `enable_sanitizers()` in cmake/Sanitizers.cmake already carries these options; this job is
+    # the first thing to switch them on. It also adds -fno-sanitize-recover=all, so a UBSan
+    # violation aborts instead of printing into a passing log.
+    - name: Configure with ASan and UBSan
+      run: |
+        cmake -S . -B build-asan -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DMDUX_BUILD_TESTS=ON \
+          -DMDUX_BUILD_EXAMPLES=OFF \
+          -DENABLE_SANITIZER_ADDRESS=ON \
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
+
+    - name: Build
+      run: cmake --build build-asan
+
+    # Everything except the one suite that talks to a GPU driver. Leak detection is on here, which
+    # is the half that catches an owner dropped on the floor.
+    - name: Run tests under ASan and UBSan
+      env:
+        ASAN_OPTIONS: detect_leaks=1
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
+        # point of this job is that it ran.
+        ctest --test-dir build-asan -E offscreen_tests --output-on-failure --no-tests=error
+
+    # offscreen_tests runs against lavapipe, and the Vulkan ICD leaks 512 bytes once, on a thread
+    # it starts itself, through pthread_once - a stack with no MduX frame in it at all. That is the
+    # driver's allocation to free, not this project's, and it is not suppressible by name because
+    # the frames resolve to `<unknown module>`.
+    #
+    # So leak detection is off for this suite only. Every other ASan check - use-after-free,
+    # buffer overflow, use-after-scope - stays on, and those are the ones that matter for code
+    # that renders through spans into mapped memory. A suite skipped entirely would be the worse
+    # trade.
+    - name: Run rendered-truth tests under ASan, without leak detection
+      env:
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # offscreen_tests exits 77 with no loader, no ICD or no device, and tests/CMakeLists.txt
+        # sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does not fail a run.
+        # Without the check below, a runner that lost its ICD would turn the sanitized half of the
+        # render path into a silent no-op and this job would stay green, which is the same shape as
+        # the CodeQL database that analysed two files. linux-gcc16-build.yml guards its pixel step
+        # the same way and for the same reason.
+        # A `run:` block gets `bash -e`, which is not `bash -eo pipefail`: without this line the
+        # pipeline below reports tee's status, so a failing ctest would pass the step. Demonstrated
+        # rather than assumed - `false | tee /dev/null` exits 0 under `bash -e` and 1 with pipefail.
+        set -o pipefail
+        LOG="$RUNNER_TEMP/asan-pixel.log"
+        ctest --test-dir build-asan -R offscreen_tests --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+        if grep -q "Skipped" "$LOG"; then
+          echo "::error::offscreen_tests was skipped - no Vulkan device, so nothing in the render path was sanitized"
+          exit 1
+        fi
