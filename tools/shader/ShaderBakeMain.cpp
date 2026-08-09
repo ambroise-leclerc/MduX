@@ -1,4 +1,5 @@
 /**
+ * @file ShaderBakeMain.cpp
  * @brief `mdux-shaderbake` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

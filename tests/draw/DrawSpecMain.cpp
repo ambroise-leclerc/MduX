@@ -1,4 +1,5 @@
 /**
+ * @file DrawSpecMain.cpp
  * @brief Entry point for the mdux.draw SpecLab BDD executable.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone)

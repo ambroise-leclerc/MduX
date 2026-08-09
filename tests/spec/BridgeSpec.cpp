@@ -1,4 +1,5 @@
 /**
+ * @file BridgeSpec.cpp
  * @brief Proves the SpecLab integration itself, before any suite is written against it.
  *
  * This file exists because the bridge has more moving parts than the tests it will carry: a

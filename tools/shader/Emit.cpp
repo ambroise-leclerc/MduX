@@ -1,4 +1,5 @@
 /**
+ * @file Emit.cpp
  * @brief Implementation of the shader package C++ emitter.
  *
  * @compliance ADR-004 Trust zones in C++

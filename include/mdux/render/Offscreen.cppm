@@ -1,4 +1,5 @@
 /**
+ * @file Offscreen.cppm
  * @brief Adapter-zone headless render target: a fixed-size colour image, no window, no swapchain.
  *
  * @compliance ADR-004 Trust zones in C++ (adapter zone: may name Vulkan, never named by MduXCore)

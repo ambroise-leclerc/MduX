@@ -1,4 +1,5 @@
 /**
+ * @file TextBake.cppm
  * @brief The text baker's recipe model and bake/verify core, separated from `main()`.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

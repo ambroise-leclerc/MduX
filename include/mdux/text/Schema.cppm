@@ -1,4 +1,5 @@
 /**
+ * @file Schema.cppm
  * @brief Governed-zone text package types: the canonical shape of every baked `package.json`
  *        produced by the text pipeline, and the runtime view generated code exposes.
  *

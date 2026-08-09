@@ -1,4 +1,5 @@
 /**
+ * @file Truetype.cppm
  * @brief Host-only TrueType parser, glyf only: walks the offset table, head/maxp/loca and one
  *        glyf record at a time, deliberately not linking freetype or any other font SOUP.
  *

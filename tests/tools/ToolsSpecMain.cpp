@@ -1,4 +1,5 @@
 /**
+ * @file ToolsSpecMain.cpp
  * @brief Entry point for the host-tools SpecLab BDD executable.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

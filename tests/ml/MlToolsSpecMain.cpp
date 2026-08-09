@@ -1,4 +1,5 @@
 /**
+ * @file MlToolsSpecMain.cpp
  * @brief Entry point for the ML host-tools SpecLab executable (issue #60).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)

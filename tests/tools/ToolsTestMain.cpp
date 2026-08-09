@@ -1,4 +1,5 @@
 /**
+ * @file ToolsTestMain.cpp
  * @brief Entry point for the host-tools test executable (MduXTest framework).
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

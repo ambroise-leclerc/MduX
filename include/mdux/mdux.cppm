@@ -1,4 +1,5 @@
 /**
+ * @file mdux.cppm
  * @brief MduX facade: version, compliance metadata and Vulkan capability reporting.
  *
  * What is left here after issue #127 retired the HTML/CSS runtime path. `MedicalUiRenderer`,

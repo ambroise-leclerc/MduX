@@ -1,4 +1,5 @@
 /**
+ * @file SimpleMedicalUiExample.cpp
  * @brief What MduX builds a frame out of, with no Vulkan device and no window.
  *
  * @compliance IEC 62304 Class B - Medical Device Example

@@ -1,4 +1,5 @@
 /**
+ * @file GeneratedModuleConsumer.cpp
  * @brief Reaches the generated shader package through its module interface.
  *
  * This translation unit existing and compiling *is* half of #121's acceptance: the generated

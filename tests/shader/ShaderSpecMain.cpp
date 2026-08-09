@@ -1,4 +1,5 @@
 /**
+ * @file ShaderSpecMain.cpp
  * @brief Entry point for the shader schema and baker SpecLab BDD executable.
  *
  * @compliance ADR-004 Trust zones in C++ (governed + host-tools zones)

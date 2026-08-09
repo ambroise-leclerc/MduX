@@ -1,4 +1,5 @@
 /**
+ * @file PixelExpectation.hpp
  * @brief Compares a rendered frame against an expectation, and says exactly where it differs.
  *
  * ## The expectation is code, not a committed image

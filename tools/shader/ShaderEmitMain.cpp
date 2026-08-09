@@ -1,4 +1,5 @@
 /**
+ * @file ShaderEmitMain.cpp
  * @brief `mdux-shaderemit` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

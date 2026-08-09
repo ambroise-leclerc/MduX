@@ -1,4 +1,5 @@
 /**
+ * @file Emit.cppm
  * @brief Turns a committed shader package into C++ the renderer can hold as `constexpr` data.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

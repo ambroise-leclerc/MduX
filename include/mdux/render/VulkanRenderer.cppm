@@ -1,4 +1,5 @@
 /**
+ * @file VulkanRenderer.cppm
  * @brief Adapter-zone fixed-budget Vulkan renderer: where a governed DrawList becomes commands.
  *
  * @compliance ADR-004 Trust zones in C++ (adapter zone: may name Vulkan, never named by MduXCore)

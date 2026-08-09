@@ -1,4 +1,5 @@
 /**
+ * @file VulkanSCTriangleExample.cpp
  * @brief Vulkan SC Pattern Demo - Triangle with Static Memory Management
  *
  * IMPORTANT: This is NOT true Vulkan SC. It demonstrates Vulkan SC patterns

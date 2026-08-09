@@ -1,4 +1,5 @@
 /**
+ * @file TextBake.cpp
  * @brief Implementation of the text baker's recipe model and bake/verify core.
  *
  * @compliance ADR-004 Trust zones in C++

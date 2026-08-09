@@ -1,4 +1,5 @@
 /**
+ * @file SpecLabBridge.hpp
  * @brief Runs SpecLab scenarios under the test-discovery contract the rest of this suite uses.
  *
  * ## Why a bridge exists at all

@@ -1,4 +1,5 @@
 /**
+ * @file VulkanRenderer.cpp
  * @brief Implementation of the adapter-zone fixed-budget renderer.
  *
  * @compliance ADR-004 Trust zones in C++

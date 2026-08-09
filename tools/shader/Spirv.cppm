@@ -1,4 +1,5 @@
 /**
+ * @file Spirv.cppm
  * @brief Host-only SPIR-V reflection: enough of the binary format to state a shader's contract.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone: never linked into MduXCore or MduX)

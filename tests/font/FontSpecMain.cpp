@@ -1,4 +1,5 @@
 /**
+ * @file FontSpecMain.cpp
  * @brief Entry point for the mdux.font.schema SpecLab BDD executable.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone)
