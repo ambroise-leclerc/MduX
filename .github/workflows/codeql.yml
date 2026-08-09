@@ -82,6 +82,13 @@ jobs:
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
         cmake --version
 
+    # The container runs as root while the checkout is owned by the runner user, so every git
+    # command the CodeQL action issues fails with "detected dubious ownership" and it falls back to
+    # the commit SHA from the environment. On a pull_request event that is the merge commit rather
+    # than the head, so alerts would be attributed to a commit that exists in no branch.
+    - name: Trust the workspace checkout
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
@@ -96,8 +103,31 @@ jobs:
     # options change.
     - name: Configure and build
       run: |
+        # CodeQL sets LD_PRELOAD to the `${LIB}_${PLATFORM}_trace.so` form, whose ld.so tokens this
+        # container's dynamic linker does not expand: it reports "cannot be preloaded ... ignored"
+        # and then every compiler invocation runs untraced. The job still passed, because an empty
+        # database analyses cleanly - 397 compiled translation units were producing a 7.76 KiB
+        # source archive and 20 KiB of relations. Pointing LD_PRELOAD at the concrete 64-bit tracer
+        # the same environment already exports is what makes the extraction real.
+        export LD_PRELOAD="${SEMMLE_PRELOAD_libtrace64:-$LD_PRELOAD}"
         cmake --preset ninja-gcc
         cmake --build --preset ninja-gcc
+
+    # A CodeQL run that extracted nothing reports success, which is the worst of both worlds: a
+    # green check and no analysis. Nothing upstream fails on it, so the check has to be here, and
+    # it has to be a count rather than a warning scan - the tracer's own failure was already
+    # printed as an ERROR line in a passing job for months.
+    - name: Verify the tracer actually saw the code
+      run: |
+        archive="${RUNNER_TEMP}/codeql_databases/cpp/src"
+        extracted=$(find "$archive" \( -name '*.cpp' -o -name '*.cppm' -o -name '*.hpp' \) 2>/dev/null | wc -l)
+        echo "CodeQL extracted ${extracted} C++ source files"
+        # The tree holds over a thousand; a working extraction reaches the hundreds, and a broken
+        # one lands in single digits. 200 separates those without tracking the exact figure.
+        if [ "${extracted}" -lt 200 ]; then
+          echo "::error::CodeQL extracted only ${extracted} source files - the build tracer is not attached, so the analysis below would be vacuous"
+          exit 1
+        fi
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6

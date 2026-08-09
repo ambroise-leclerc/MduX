@@ -46,6 +46,8 @@ std::string_view describe(DrawError error) noexcept {
         return "command budget exceeded";
     case DrawError::DegenerateRect:
         return "rectangle has zero or negative width or height";
+    case DrawError::WrongList:
+        return "a rollback marker names a position in a different list, or in none";
     }
     return "unknown draw error";
 }
@@ -81,17 +83,34 @@ void DrawList::reset() noexcept {
 }
 
 DrawList::Marker DrawList::mark() const noexcept {
-    return Marker{.vertexCount = vertexCount_,
-                  .indexCount = indexCount_,
-                  .commandCount = commandCount_,
-                  // The last command's index count, because addRect() extends it in place when the
-                  // clip has not changed. Restoring commandCount_ alone would leave that command
-                  // claiming indices the rollback took away.
-                  .lastCommandIndexCount = commandCount_ == 0 ? 0U : commands_[commandCount_ - 1].indexCount,
-                  .clip = clip_};
+    Marker marker;
+    marker.owner = this;
+    marker.vertexCount = vertexCount_;
+    marker.indexCount = indexCount_;
+    marker.commandCount = commandCount_;
+    // The last command's index count, because addRect() extends it in place when the clip has not
+    // changed. Restoring commandCount_ alone would leave that command claiming indices the
+    // rollback took away.
+    marker.lastCommandIndexCount = commandCount_ == 0 ? 0U : commands_[commandCount_ - 1].indexCount;
+    marker.clip = clip_;
+    return marker;
 }
 
-void DrawList::rollback(const Marker& marker) noexcept {
+ResultVoid<DrawError> DrawList::rollback(const Marker& marker) noexcept {
+    // Compared, never dereferenced: a marker that outlived its list is a mismatch here rather than
+    // a read through a dangling pointer.
+    if (marker.owner != this) {
+        return err(DrawError::WrongList);
+    }
+    // Backwards only. Every counter this restores indexes storage the list validated at create(),
+    // so a marker naming a larger position could put commandCount_ past the span and make the
+    // write below out of bounds. Refusing is cheap; the alternative is trusting a number that came
+    // from outside this call.
+    if (marker.vertexCount > vertexCount_ || marker.indexCount > indexCount_ ||
+        marker.commandCount > commandCount_) {
+        return err(DrawError::WrongList);
+    }
+
     vertexCount_ = marker.vertexCount;
     indexCount_ = marker.indexCount;
     commandCount_ = marker.commandCount;
@@ -102,6 +121,7 @@ void DrawList::rollback(const Marker& marker) noexcept {
     // The storage is not cleared. Nothing reads past the counters - vertices(), indices() and
     // commands() all subspan by them - so zeroing would be work no observer can tell apart from
     // not doing it, on the failure path of a frame that is about to be discarded anyway.
+    return {};
 }
 
 void DrawList::setClip(const mdux::core::Rect& clip) noexcept {

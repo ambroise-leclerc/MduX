@@ -121,7 +121,11 @@ ResultVoid<DrawTextError> recordRun(mdux::draw::DrawList& list, const mdux::font
     // makes "does not reach a frame" true of the list itself rather than a caller obligation.
     const auto start = list.mark();
     const auto abort = [&list, start](DrawTextError error) {
-        list.rollback(start);
+        // The marker came from this list one statement ago, so the only way this refuses is a bug
+        // in `rollback()` itself. Discarded rather than reported, because the caller is already
+        // being told the run failed and `DrawTextError` has no truthful code for "and the undo
+        // also failed" that would not read as a second, unrelated fault.
+        static_cast<void>(list.rollback(start));
         return err(error);
     };
 

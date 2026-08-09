@@ -47,7 +47,7 @@ An epic opens when every epic it depends on has closed. Three waves have shipped
 closed with #14 and has not been tagged yet. Wave 5 is open now: #15's blockers were
 #12 and #14, both closed. #19 spans waves by design; its S3–S6 follow #15.
 
-```
+```text
 Wave 1 · shipped v0.2.0     #7 (done)   #11 (open · #116, #117)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)

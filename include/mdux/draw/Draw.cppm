@@ -136,6 +136,7 @@ enum class DrawError : std::uint8_t {
     IndexBudgetExceeded,
     CommandBudgetExceeded,
     DegenerateRect,          ///< zero or negative width or height
+    WrongList,               ///< a rollback marker names a position in a different list, or none
 };
 
 [[nodiscard]] std::string_view describe(DrawError error) noexcept;
@@ -210,11 +211,23 @@ public:
     /**
      * @brief A position in the list, for undoing a composite record that fails partway.
      *
-     * Opaque on purpose: it is the counters, but a caller reading them would be reading state the
-     * list does not otherwise expose. Cheap to copy and holds no reference to the list, so taking
-     * one costs nothing and a stale one is a programming error rather than a dangling pointer.
+     * Opaque, and only its own list can read it. The counters were public in the first version of
+     * this, which meant a caller could assemble one by hand or hand back a marker from a different
+     * list - and `rollback()` writes through `commandCount`, so a marker claiming more commands
+     * than the storage holds is an out-of-bounds write rather than a wrong picture. Carrying the
+     * owning list and keeping the fields private makes both mistakes unspellable.
+     *
+     * Copyable and cheap. The owner is compared, never dereferenced, so a marker outliving its
+     * list is a mismatch rather than a dangling read.
      */
-    struct Marker {
+    class Marker {
+    public:
+        Marker() noexcept = default;
+
+    private:
+        friend class DrawList;
+
+        const DrawList* owner{nullptr};
         std::uint32_t vertexCount{0};
         std::uint32_t indexCount{0};
         std::uint32_t commandCount{0};
@@ -238,12 +251,13 @@ public:
      * rather than starting a new command, so a rolled-back list would otherwise keep a command
      * claiming indices that are no longer there.
      *
-     * Passing a marker from a different list, or one taken after the position it names was already
-     * rolled back past, is a programming error. The counters only ever move backwards here, so the
-     * worst case is a list shorter than the caller expected rather than one reading past its
-     * storage.
+     * A marker from another list, or a default-constructed one, is refused - it names a position
+     * in something else. So is one whose counters exceed this list's, which can only mean the list
+     * was already rolled back past it. Both return `WrongList`; neither can move a counter forward
+     * or write outside the storage, which is the property that matters, since `rollback()` writes
+     * through the command count.
      */
-    void rollback(const Marker& marker) noexcept;
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> rollback(const Marker& marker) noexcept;
 
     [[nodiscard]] std::span<const UiVertex> vertices() const noexcept {
         return vertices_.subspan(0, vertexCount_);

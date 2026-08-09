@@ -360,8 +360,12 @@ TEST_CASE("A coverage renderer refuses a frame that samples RGBA", "pixel") {
     // Through the real recording path rather than a synthesised command buffer, so what is being
     // checked is the call a frame actually makes. The refusal happens before any vkCmd, so the
     // pass still completes - it just draws nothing.
-    Outcome outcome{.renderer = &*renderer, .list = &*list, .result = {}};
-    static_cast<void>(target->renderAndRead(gpu.queue(), background, captureRecord, &outcome));
+    Outcome    outcome{.renderer = &*renderer, .list = &*list, .result = {}};
+    const auto rejected = target->renderAndRead(gpu.queue(), background, captureRecord, &outcome);
+    // The pass itself must still succeed - record() refusing means the frame draws nothing, not
+    // that submission failed. Checking it is what stops a readback failure from passing this test
+    // for the wrong reason.
+    REQUIRE_MESSAGE(rejected.has_value(), rejected.has_value() ? std::string{} : std::string{describe(rejected.error())});
     REQUIRE(!outcome.result.has_value());
     CHECK(outcome.result.error() == RenderError::SampledRgbaWithCoverageAtlas);
 
@@ -370,7 +374,8 @@ TEST_CASE("A coverage renderer refuses a frame that samples RGBA", "pixel") {
     const auto package = syntheticPackage();
     list->reset();
     REQUIRE(textdraw::recordRun(*list, package, runRecords(), originX, baselineY, white).has_value());
-    static_cast<void>(target->renderAndRead(gpu.queue(), background, captureRecord, &outcome));
+    const auto accepted = target->renderAndRead(gpu.queue(), background, captureRecord, &outcome);
+    REQUIRE_MESSAGE(accepted.has_value(), accepted.has_value() ? std::string{} : std::string{describe(accepted.error())});
     CHECK_MESSAGE(outcome.result.has_value(),
                   outcome.result.has_value() ? std::string{} : std::string{describe(outcome.result.error())});
 }

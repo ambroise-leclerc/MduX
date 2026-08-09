@@ -260,3 +260,64 @@ const mdux::spec::Register aFailedRunLeavesNothingBehind{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register aMarkerBelongsToOneList{
+    "A rollback marker is refused by any list but its own",
+    "evidence-unit",
+    [] {
+        // rollback() writes through the marker's command count, so a marker naming more commands
+        // than the storage holds is an out-of-bounds write rather than a wrong picture. The type
+        // makes a forged marker unspellable - the fields are private - and this covers the two
+        // that are still spellable: one from another list, and a default-constructed one.
+        return speclab::Test("draw-marker-ownership")
+            .Given("two lists over separate storage", [] {})
+            .When("each is handed the other's marker", [] {})
+            .Then("both refuse, and neither moves",
+                  [] {
+                      mdux::spec::Checks         checks;
+                      constexpr core::ColorRgba8 white{.r = 255, .g = 255, .b = 255, .a = 255};
+                      constexpr core::Rect       rect{.x = 0, .y = 0, .width = 2, .height = 2};
+
+                      Buffers storageA;
+                      Buffers storageB;
+                      auto    listA = draw::DrawList::create(storageA.vertices, storageA.indices,
+                                                             storageA.commands, Buffers::budget());
+                      auto    listB = draw::DrawList::create(storageB.vertices, storageB.indices,
+                                                             storageB.commands, Buffers::budget());
+                      checks.expect(listA.has_value() && listB.has_value(), "both lists are created");
+                      if (!listA.has_value() || !listB.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      // A is empty when marked; B then records more than A ever will, so a marker
+                      // accepted across lists would be visible as a changed count.
+                      const auto markerA = listA->mark();
+                      checks.expect(listB->addSolidRect(rect, white).has_value(), "B records a rect");
+                      const auto beforeB = listB->vertices().size();
+
+                      auto foreign = listB->rollback(markerA);
+                      checks.expect(!foreign.has_value() && foreign.error() == draw::DrawError::WrongList,
+                                    "B refuses A's marker");
+                      checks.expect(listB->vertices().size() == beforeB,
+                                    std::format("and B is unmoved: {} vertices, was {}",
+                                                listB->vertices().size(), beforeB));
+
+                      // A default-constructed marker names no list at all.
+                      auto orphan = listB->rollback(draw::DrawList::Marker{});
+                      checks.expect(!orphan.has_value() && orphan.error() == draw::DrawError::WrongList,
+                                    "a marker that was never taken is refused");
+
+                      // And a marker from the right list, naming a position the list has already
+                      // gone back past, cannot drag a counter forward.
+                      const auto afterB = listB->mark();
+                      checks.expect(listB->rollback(afterB).has_value(), "its own current marker is accepted");
+                      listB->reset();
+                      auto stale = listB->rollback(afterB);
+                      checks.expect(!stale.has_value() && stale.error() == draw::DrawError::WrongList,
+                                    "a marker past the list's current position is refused");
+                      checks.expect(listB->vertices().empty(), "the reset list stays empty");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
