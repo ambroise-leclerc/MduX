@@ -20,7 +20,6 @@ jobs:
   analyze:
     name: Analyze (C++)
     runs-on: ubuntu-latest
-    container: gcc:16
     permissions:
       security-events: write
       actions: read
@@ -30,106 +29,53 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # No step here performs an authenticated Git operation, so the checkout token has no
-      # reason to survive into .git/config where any later build or test step could read it
-      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      # reason to survive into .git/config where any later step could read it (OpenSSF
+      # Scorecard's Token-Permissions check, zizmor's `artipacked`).
       with:
         persist-credentials: false
 
-    # Matches the build-time subset of linux-gcc16-build.yml's dependency list (the ninja-gcc
-    # preset below builds the same MDUX_BUILD_EXAMPLES/MDUX_BUILD_TESTS=ON surface, including
-    # glfw-linked examples). Purely runtime packages that leg needs only to run tests
-    # (xvfb, mesa-vulkan-drivers, vulkan-validationlayers, wayland-utils) are omitted here since
-    # this job compiles but never executes anything.
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y \
-          cmake \
-          ninja-build \
-          pkg-config \
-          libvulkan-dev \
-          vulkan-tools \
-          vulkan-utility-libraries-dev \
-          spirv-tools \
-          libglfw3-dev \
-          libwayland-dev \
-          wayland-protocols \
-          libwayland-egl1 \
-          libxkbcommon-dev \
-          libx11-dev \
-          libxrandr-dev \
-          libxinerama-dev \
-          libxcursor-dev \
-          libxi-dev \
-          wget \
-          gnupg
-
-    - name: Install latest CMake
-      run: |
-        # Install CMake 4.x for C++23 import std support via direct download
-        # Avoid libssl1.1 dependency issues in Debian containers
-        CMAKE_VERSION="4.1.1"
-        # Pinned SHA-256 from Kitware's own cmake-4.1.1-SHA-256.txt manifest. The tarball is
-        # unpacked into /opt and put on PATH, so it builds everything this job touches; verifying
-        # it is the same supply-chain discipline the SHA-pinned actions above apply. `sha256sum -c`
-        # exits non-zero on a mismatch and `set -e` is on by default in a `run:` block, so
-        # extraction cannot proceed past a bad or substituted download.
-        CMAKE_SHA256="5a6c61cb62b38e153148a2c8d4af7b3d387f0c8c32b6dbceb5eb4af113efd65a"
-        wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
-        echo "${CMAKE_SHA256}  cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" | sha256sum -c -
-        tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /opt/
-        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
-        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
-        cmake --version
-
-    # The container runs as root while the checkout is owned by the runner user, so every git
-    # command the CodeQL action issues fails with "detected dubious ownership" and it falls back to
-    # the commit SHA from the environment. On a pull_request event that is the merge commit rather
-    # than the head, so alerts would be attributed to a commit that exists in no branch.
-    - name: Trust the workspace checkout
-      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
+    # `build-mode: none`, not `manual`. This job used to run in a gcc:16 container and build the
+    # whole project so CodeQL's tracer could watch the compiler - and the tracer never attached.
+    # Its LD_PRELOAD entry uses the `${LIB}_${PLATFORM}` ld.so tokens, the container's linker
+    # reported "cannot be preloaded ... ignored", and every compile then ran untraced. The job
+    # passed anyway, because an empty database analyses cleanly: 397 translation units compiled
+    # into a 7.76 KiB source archive holding two files. Pointing LD_PRELOAD at the concrete
+    # lib64trace.so the same environment exports made the error go away without extracting any
+    # more code, so the tracer is not the thing to keep fixing.
+    #
+    # Buildless extraction reads the sources directly. It resolves fewer includes than a traced
+    # build would, which is a real cost - but the comparison is against two files, not against a
+    # working traced build. The compile itself is not lost either: linux-gcc16-build.yml and
+    # windows-build.yml both build this tree on every PR, so nothing here was the only thing
+    # proving it compiles.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
         languages: cpp
-        build-mode: manual
+        build-mode: none
         config-file: ./.github/codeql/codeql-config.yml
-
-    # Manual build, not autobuild: the C++23 `import std` experimental support and CPM.cmake
-    # dependency fetching are not reliable under CodeQL's generic autobuild heuristics. Uses the
-    # same ninja-gcc preset as linux-gcc16-build.yml, rather than a hand-written configure line
-    # that resembles it, so CodeQL's compiled surface cannot drift from the rest of CI as CMake
-    # options change.
-    - name: Configure and build
-      run: |
-        # CodeQL sets LD_PRELOAD to the `${LIB}_${PLATFORM}_trace.so` form, whose ld.so tokens this
-        # container's dynamic linker does not expand: it reports "cannot be preloaded ... ignored"
-        # and then every compiler invocation runs untraced. The job still passed, because an empty
-        # database analyses cleanly - 397 compiled translation units were producing a 7.76 KiB
-        # source archive and 20 KiB of relations. Pointing LD_PRELOAD at the concrete 64-bit tracer
-        # the same environment already exports is what makes the extraction real.
-        export LD_PRELOAD="${SEMMLE_PRELOAD_libtrace64:-$LD_PRELOAD}"
-        cmake --preset ninja-gcc
-        cmake --build --preset ninja-gcc
-
-    # A CodeQL run that extracted nothing reports success, which is the worst of both worlds: a
-    # green check and no analysis. Nothing upstream fails on it, so the check has to be here, and
-    # it has to be a count rather than a warning scan - the tracer's own failure was already
-    # printed as an ERROR line in a passing job for months.
-    - name: Verify the tracer actually saw the code
-      run: |
-        archive="${RUNNER_TEMP}/codeql_databases/cpp/src"
-        extracted=$(find "$archive" \( -name '*.cpp' -o -name '*.cppm' -o -name '*.hpp' \) 2>/dev/null | wc -l)
-        echo "CodeQL extracted ${extracted} C++ source files"
-        # The tree holds over a thousand; a working extraction reaches the hundreds, and a broken
-        # one lands in single digits. 200 separates those without tracking the exact figure.
-        if [ "${extracted}" -lt 200 ]; then
-          echo "::error::CodeQL extracted only ${extracted} source files - the build tracer is not attached, so the analysis below would be vacuous"
-          exit 1
-        fi
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
       with:
         category: "/language:cpp"
+
+    # A CodeQL run that extracted nothing reports success, which is the worst of both worlds: a
+    # green check and no analysis. Nothing upstream fails on it - that is exactly how the empty
+    # database went unnoticed - so the check has to be here, and it has to be a count. The
+    # tracer's own failure was already printed as an ERROR line in a passing job.
+    - name: Verify the database is not empty
+      run: |
+        db="${RUNNER_TEMP}/codeql_databases/cpp"
+        if [ -f "${db}/src.zip" ]; then
+          extracted=$(unzip -l "${db}/src.zip" | grep -cE '\.(cpp|cppm|hpp|h)$' || true)
+        else
+          extracted=$(find "${db}/src" \( -name '*.cpp' -o -name '*.cppm' -o -name '*.hpp' \) 2>/dev/null | wc -l)
+        fi
+        echo "CodeQL extracted ${extracted} C++ source files"
+        # The tree holds over a thousand; a working extraction reaches the hundreds, and the
+        # broken one landed on two. 200 separates those without pinning the exact figure.
+        if [ "${extracted}" -lt 200 ]; then
+          echo "::error::CodeQL extracted only ${extracted} source files - the analysis above was vacuous"
+          exit 1
+        fi
