@@ -111,7 +111,9 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --test-dir build-asan -E offscreen_tests --output-on-failure
+        # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
+        # point of this job is that it ran.
+        ctest --test-dir build-asan -E offscreen_tests --output-on-failure --no-tests=error
 
     # offscreen_tests runs against lavapipe, and the Vulkan ICD leaks 512 bytes once, on a thread
     # it starts itself, through pthread_once - a stack with no MduX frame in it at all. That is the
@@ -129,4 +131,15 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --test-dir build-asan -R offscreen_tests --output-on-failure
+        # offscreen_tests exits 77 with no loader, no ICD or no device, and tests/CMakeLists.txt
+        # sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does not fail a run.
+        # Without the check below, a runner that lost its ICD would turn the sanitized half of the
+        # render path into a silent no-op and this job would stay green, which is the same shape as
+        # the CodeQL database that analysed two files. linux-gcc16-build.yml guards its pixel step
+        # the same way and for the same reason.
+        LOG="$RUNNER_TEMP/asan-pixel.log"
+        ctest --test-dir build-asan -R offscreen_tests --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+        if grep -q "Skipped" "$LOG"; then
+          echo "::error::offscreen_tests was skipped - no Vulkan device, so nothing in the render path was sanitized"
+          exit 1
+        fi
