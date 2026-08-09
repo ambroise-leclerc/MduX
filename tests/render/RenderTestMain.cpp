@@ -1,4 +1,5 @@
 /**
+ * @file RenderTestMain.cpp
  * @brief Entry point for the adapter-zone renderer test executable (MduXTest framework).
  *
  * @compliance ADR-004 Trust zones in C++ (adapter zone)

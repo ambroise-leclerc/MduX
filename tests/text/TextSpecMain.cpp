@@ -1,4 +1,5 @@
 /**
+ * @file TextSpecMain.cpp
  * @brief Entry point for the mdux.text.schema SpecLab BDD executable.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone)

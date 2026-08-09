@@ -1,4 +1,5 @@
 /**
+ * @file TestRegulatoryCompliance.cpp
  * @brief Regulatory compliance tests for MduX library
  */
 

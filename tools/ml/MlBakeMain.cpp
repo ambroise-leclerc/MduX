@@ -1,4 +1,5 @@
 /**
+ * @file MlBakeMain.cpp
  * @brief `mdux-mlbake` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

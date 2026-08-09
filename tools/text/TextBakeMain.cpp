@@ -1,4 +1,5 @@
 /**
+ * @file TextBakeMain.cpp
  * @brief `mdux-textbake` entry point.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)

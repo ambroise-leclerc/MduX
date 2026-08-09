@@ -1,4 +1,5 @@
 /**
+ * @file EvidenceTestMain.cpp
  * @brief Entry point for the evidence-kernel test executable (MduXTest framework).
  *
  * @compliance ADR-007 Evidence pipeline doctrine

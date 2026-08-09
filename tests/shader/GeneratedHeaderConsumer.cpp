@@ -1,4 +1,5 @@
 /**
+ * @file GeneratedHeaderConsumer.cpp
  * @brief Reaches the generated shader package through its header form.
  *
  * The other half of #121's acceptance. The header exists for a translation unit that cannot

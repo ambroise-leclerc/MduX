@@ -1,4 +1,5 @@
 /**
+ * @file OffscreenTestMain.cpp
  * @brief Entry point for the offscreen rendering suite, which needs a real Vulkan device.
  *
  * @compliance ADR-004 Trust zones in C++ (adapter zone)

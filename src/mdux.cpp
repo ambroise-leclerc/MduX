@@ -1,4 +1,5 @@
 /**
+ * @file mdux.cpp
  * @brief MduX C++23 Module Implementation - Medical Device User eXperience Library
  * 
  * Pure Vulkan complement library implementation for medical device UI.

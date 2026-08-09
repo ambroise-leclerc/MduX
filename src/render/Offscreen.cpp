@@ -1,4 +1,5 @@
 /**
+ * @file Offscreen.cpp
  * @brief Implementation of the adapter-zone headless render target.
  *
  * @compliance ADR-004 Trust zones in C++

@@ -1,4 +1,5 @@
 /**
+ * @file NoHeapSpecMain.cpp
  * @brief Entry point for the no-heap SpecLab executable (issue #63).
  *
  * @compliance ADR-008 Zero-SOUP ML inference

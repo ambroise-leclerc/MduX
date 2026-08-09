@@ -1,4 +1,5 @@
 /**
+ * @file PixelTests.cpp
  * @brief The project's first pixel test: a rendered frame compared against an expectation,
  *        every pixel, with actionable output when it differs.
  *

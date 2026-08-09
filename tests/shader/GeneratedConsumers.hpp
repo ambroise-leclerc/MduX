@@ -1,4 +1,5 @@
 /**
+ * @file GeneratedConsumers.hpp
  * @brief Declares the two ways of reaching the same generated shader package.
  *
  * The point of #121's two outputs is that they describe identical bytes and an identical contract.

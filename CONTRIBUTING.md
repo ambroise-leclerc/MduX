@@ -35,7 +35,19 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 
 We use **Doxygen** syntax for code documentation. Follow these guidelines:
 
-- **File-level documentation:** Use `@brief` only, no `@file` or `@author` tags.
+- **File-level documentation:** open the block with `@file <basename>`, then `@brief`. Still no
+  `@author` tags.
+
+  `@file` is what makes Doxygen attach the block to the *file*. Without it the block is not
+  ignored — it silently becomes the documentation of whatever comes next. Measured on
+  `tests/framework/RunRecords.hpp` with Doxygen 1.15: with the tag, the file page carries "The v1
+  glyph-run record encoder, shared by…"; without it, the file page's brief is empty and that
+  sentence turns up as the documentation for `namespace mdux::spec`. Wrong documentation, with no
+  warning, rather than missing documentation.
+
+  This rule previously said the opposite. It was never what the tree did — 82 files used `@file`
+  against 56 that did not — and review bots cite this document, so the contradiction kept
+  resurfacing on unrelated pull requests. #180 settled it in favour of the half that works.
 - **Class documentation:** Include `@brief` with detailed description and usage examples.
 - **Method documentation:**
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.

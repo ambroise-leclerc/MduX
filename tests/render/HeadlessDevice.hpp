@@ -1,4 +1,5 @@
 /**
+ * @file HeadlessDevice.hpp
  * @brief A Vulkan instance, device and queue created with no surface and no window.
  *
  * Test scaffolding, not library code: MduX never creates a device, because the application owns

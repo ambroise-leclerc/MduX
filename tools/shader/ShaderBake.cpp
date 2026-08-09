@@ -1,4 +1,5 @@
 /**
+ * @file ShaderBake.cpp
  * @brief Implementation of the shader baker's recipe model and bake/verify core.
  *
  * @compliance ADR-004 Trust zones in C++

@@ -1,4 +1,5 @@
 /**
+ * @file OffscreenTests.cpp
  * @brief Tests for the headless offscreen target: creation, clearing, rendering, readback.
  *
  * This is the first suite in the repository that puts anything on a GPU. What it proves is

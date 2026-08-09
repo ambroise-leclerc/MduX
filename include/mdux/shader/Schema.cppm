@@ -1,4 +1,5 @@
 /**
+ * @file Schema.cppm
  * @brief Governed-zone shader package types: the canonical shape of every shader `package.json`.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)

@@ -1,4 +1,5 @@
 /**
+ * @file SpirvFixtures.hpp
  * @brief A SPIR-V assembler for tests, shared by the reflector and baker suites.
  *
  * Modules are built word by word rather than loaded from committed `.spv` files. That costs this

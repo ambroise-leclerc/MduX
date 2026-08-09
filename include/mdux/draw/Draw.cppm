@@ -1,4 +1,5 @@
 /**
+ * @file Draw.cppm
  * @brief Governed-zone fixed-budget draw types: what a frame is, before Vulkan sees it.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
