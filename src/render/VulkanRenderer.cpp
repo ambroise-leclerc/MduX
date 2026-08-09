@@ -389,7 +389,10 @@ std::string_view describe(RenderError error) noexcept {
     case RenderError::CommandBufferAllocationFailed:
         return "vkAllocateCommandBuffers failed for the atlas upload";
     case RenderError::AtlasUploadFailed:      return "uploading the atlas failed";
-    case RenderError::AtlasExtentMismatch:   return "the coverage atlas' byte count does not match its extent";
+    case RenderError::AtlasExtentMismatch:
+        return "the coverage atlas has a zero extent, or its byte count is not width * height";
+    case RenderError::SampledRgbaWithCoverageAtlas:
+        return "the frame samples an RGBA atlas, but this renderer holds an R8 coverage sheet";
     case RenderError::NullCommandBuffer:      return "command buffer is null";
     case RenderError::FrameExceedsBudget:
         return "draw list is larger than the renderer's budget";
@@ -456,6 +459,11 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     pushStages_ = std::exchange(other.pushStages_, 0);
     pushOffset_ = std::exchange(other.pushOffset_, 0);
     pushSize_ = std::exchange(other.pushSize_, 0);
+    // Left out of this list on the first attempt, and the guard then silently never fired: create()
+    // returns by value, so the flag was set on a renderer that was immediately moved from. Exactly
+    // what the note above describes, which is why the test that exercises the guard is what caught
+    // it rather than review.
+    atlasIsCoverageOnly_ = std::exchange(other.atlasIsCoverageOnly_, false);
     return *this;
 }
 
@@ -667,6 +675,9 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
     renderer.device_ = context.device;
     renderer.budget_ = budget;
     renderer.viewport_ = context.viewport;
+    // Derived from the format rather than passed as a flag, so the two cannot disagree: whatever
+    // image this renderer ends up holding is what record() judges a frame against.
+    renderer.atlasIsCoverageOnly_ = (atlasFormat == VK_FORMAT_R8_UNORM);
     renderer.atlasBinding_ = atlasBinding;
     renderer.pushStages_ = pushStages;
     renderer.pushOffset_ = pushOffset;
@@ -997,6 +1008,21 @@ ResultVoid<RenderError> UiRenderer::record(VkCommandBuffer commandBuffer,
         list.indices().size() > budget_.maxIndices ||
         list.commands().size() > budget_.maxCommands) {
         return err(RenderError::FrameExceedsBudget);
+    }
+    if (atlasIsCoverageOnly_) {
+        // An R8 image sampled as RGBA returns (coverage, 0, 0, 1): a picture in the wrong colours
+        // rather than a black frame or a crash, so it survives review. Refused here instead.
+        //
+        // The scan is per frame because the mode is per vertex, and there is nowhere earlier to
+        // put it - the list is rebuilt every frame. It is a pass over the same vertices the memcpy
+        // below already touches, so it costs the frame nothing measurable, and it buys a refusal
+        // in place of a screenshot nobody questions.
+        const auto samplesRgba = [](const draw::UiVertex& vertex) noexcept {
+            return vertex.mode == static_cast<std::uint32_t>(draw::DrawMode::SampledRgba);
+        };
+        if (std::ranges::any_of(list.vertices(), samplesRgba)) {
+            return err(RenderError::SampledRgbaWithCoverageAtlas);
+        }
     }
 
     if (!list.empty()) {

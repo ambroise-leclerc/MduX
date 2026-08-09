@@ -212,7 +212,6 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| Font and text pipeline | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) | Complete. S1–S4 landed (`mdux.text.schema`, `mdux.tools.truetype`, `mdux.text.raster`, atlas packer + font baker with the first committed font package), S5 the package type and restricted charset (`mdux.font.schema`, #161), S6 the coverage draw path and pixel tests (`mdux.text.draw`, #162) |
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | the replacement for the retired HTML/CSS path |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |

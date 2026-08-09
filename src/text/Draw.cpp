@@ -29,6 +29,8 @@ std::string_view describe(DrawTextError error) noexcept {
     switch (error) {
         case DrawTextError::PartialRecord:
             return "the run's byte length is not a whole number of records";
+        case DrawTextError::RecordSizeWrong:
+            return "a single-record span is not exactly recordSize bytes";
         case DrawTextError::GlyphIndexOutOfRange:
             return "a record names a glyph index the font package does not contain";
         case DrawTextError::EmptyAtlas:
@@ -40,8 +42,12 @@ std::string_view describe(DrawTextError error) noexcept {
 }
 
 Result<GlyphPlacement, DrawTextError> decodeRecord(std::span<const std::byte> record) noexcept {
-    if (record.size() < recordSize) {
-        return err(DrawTextError::PartialRecord);
+    if (record.size() != recordSize) {
+        // Exactly one record, not "at least one". Accepting a longer span would silently decode
+        // the first record of a whole run and discard the rest, which is a plausible-looking
+        // wrong answer rather than a failure - and passing the run instead of a record is the
+        // most likely way to misuse this.
+        return err(DrawTextError::RecordSizeWrong);
     }
     // Little-endian, spelled out rather than memcpy'd over the struct: the sidecar is committed
     // bytes compared across toolchains, so the decode must not inherit the host's byte order or
@@ -52,7 +58,7 @@ Result<GlyphPlacement, DrawTextError> decodeRecord(std::span<const std::byte> re
     const auto glyphIndex = static_cast<std::uint16_t>(byteAt(0) | (byteAt(1) << 8));
     const auto rawX       = static_cast<std::uint16_t>(byteAt(2) | (byteAt(3) << 8));
     const auto rawY       = static_cast<std::uint16_t>(byteAt(4) | (byteAt(5) << 8));
-    return GlyphPlacement{.glyphIndex = glyphIndex,
+    return GlyphPlacement{.packageIndex = glyphIndex,
                           // bit_cast rather than a cast chain: x and y are signed, and a glyph
                           // left of the run's origin is ordinary rather than exceptional.
                           .x = static_cast<mdux::core::Px>(std::bit_cast<std::int16_t>(rawX)),
@@ -108,21 +114,32 @@ ResultVoid<DrawTextError> recordRun(mdux::draw::DrawList& list, const mdux::font
         return err(DrawTextError::PartialRecord);
     }
 
+    // The run is all-or-nothing. The length check above catches a truncated sidecar before any
+    // rectangle exists, but `GlyphIndexOutOfRange`, `EmptyAtlas` and `ListRejected` can all fire
+    // on the fourth record of four - and a run that drew three glyphs and then failed would put a
+    // fragment of a word on screen if the caller kept the list. Marking here and rolling back
+    // makes "does not reach a frame" true of the list itself rather than a caller obligation.
+    const auto start = list.mark();
+    const auto abort = [&list, start](DrawTextError error) {
+        list.rollback(start);
+        return err(error);
+    };
+
     for (std::size_t offset = 0; offset < records.size(); offset += recordSize) {
         auto placement = decodeRecord(records.subspan(offset, recordSize));
         if (!placement.has_value()) {
-            return err(placement.error());
+            return abort(placement.error());
         }
-        if (placement->glyphIndex >= package.glyphs.size()) {
+        if (placement->packageIndex >= package.glyphs.size()) {
             // An index into the *package's* table, not the font's. The two differ - the package
             // holds only the baked charset - and a record built against a different package would
             // otherwise draw a plausible wrong character rather than failing.
-            return err(DrawTextError::GlyphIndexOutOfRange);
+            return abort(DrawTextError::GlyphIndexOutOfRange);
         }
-        const mdux::font::GlyphRecord& glyph = package.glyphs[placement->glyphIndex];
+        const mdux::font::GlyphRecord& glyph = package.glyphs[placement->packageIndex];
         if (auto added = addGlyphRect(list, package, glyph, originX + placement->x, originY + placement->y, color);
             !added.has_value()) {
-            return err(added.error());
+            return abort(added.error());
         }
     }
     return {};

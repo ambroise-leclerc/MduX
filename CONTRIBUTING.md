@@ -41,6 +41,11 @@ We use **Doxygen** syntax for code documentation. Follow these guidelines:
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.
   - Use full format with `@param`, `@return`, `@note` for complex methods.
   - Include usage examples with `@code` blocks when helpful.
+- **`///` line comments carry no `@brief`.** The tag belongs to `/** */` blocks. A `///` comment
+  *is* the brief — Doxygen already treats it as one, and prefixing it adds a word that says only
+  "this is a comment". The tree is consistent on this: 485 `///` comments, none with `@brief`.
+  Reviewers and review bots ask for it regularly; the answer is no, and this line is here so the
+  question has somewhere to be answered once.
 - **Template parameters:** Document with `@tparam` when non-obvious.
 - **Private members:** Generally no documentation needed unless complex.
 

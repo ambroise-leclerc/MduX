@@ -73,6 +73,7 @@ inline constexpr std::size_t recordSize = 6;
 
 enum class DrawTextError : std::uint8_t {
     PartialRecord,        ///< the run's byte length is not a multiple of `recordSize`
+    RecordSizeWrong,      ///< a span handed to `decodeRecord()` is not exactly one record
     GlyphIndexOutOfRange, ///< a record names a glyph the package does not contain
     EmptyAtlas,           ///< the package's atlas has zero extent, so no uv can be normalised
     ListRejected,         ///< `DrawList` refused a rectangle - budget, clip or degenerate extent
@@ -82,7 +83,14 @@ enum class DrawTextError : std::uint8_t {
 
 /// One decoded record: which glyph, and where the baker put it.
 struct GlyphPlacement {
-    std::uint16_t glyphIndex{0};
+    /// Index into `FontPackage::glyphs`.
+    ///
+    /// Deliberately *not* called `glyphIndex`, because `font::GlyphRecord::glyphIndex` already
+    /// means something else - the font's own glyph ID, from the `glyf` table. The two are
+    /// different numbers for the same glyph, since a package holds only the baked charset, and
+    /// code handling both types would otherwise have two fields with one name and no hint that
+    /// swapping them draws the wrong character.
+    std::uint16_t packageIndex{0};
     mdux::core::Px x{0};
     mdux::core::Px y{0};  ///< the baseline, not the bitmap's top edge
 };
@@ -93,6 +101,10 @@ struct GlyphPlacement {
  * Exposed separately from `recordRun()` so the byte-order contract can be tested directly rather
  * than only through a rendered frame - a decode that silently swapped its int16 fields would
  * otherwise show up as a glyph in the wrong place, which is a much harder failure to read.
+ *
+ * `record` must be exactly `recordSize` bytes. A longer span is refused rather than decoded and
+ * truncated: handing this the whole run instead of one record is the obvious misuse, and it would
+ * otherwise return the first glyph and look like it worked.
  */
 [[nodiscard]] mdux::core::Result<GlyphPlacement, DrawTextError> decodeRecord(std::span<const std::byte> record) noexcept;
 
@@ -102,7 +114,8 @@ struct GlyphPlacement {
  * @param list    the destination; rectangles are appended in record order
  * @param package the font package the run was baked against
  * @param records the run's bytes, a whole number of `recordSize` records
- * @param origin  added to every record's position, so a run can be placed without re-baking it
+ * @param originX added to every record's x, so a run can be placed without re-baking it
+ * @param originY added to every record's y, likewise
  * @param color   the text colour; coverage modulates its alpha, never its rgb
  *
  * Blank glyphs - the space, and anything else with no coverage - are skipped rather than recorded
@@ -110,8 +123,9 @@ struct GlyphPlacement {
  * error. The advance it carries has already been applied by the baker, so skipping it changes
  * nothing about where the following glyphs land.
  *
- * Fails without recording anything further on the first bad record, so a partially decoded run
- * does not reach a frame.
+ * All-or-nothing. On the first bad record the list is rolled back to where it was on entry, so a
+ * run that fails halfway leaves no rectangles behind and a fragment of a word cannot reach a
+ * frame. Anything the caller recorded *before* calling this is untouched.
  */
 [[nodiscard]] mdux::core::ResultVoid<DrawTextError> recordRun(mdux::draw::DrawList& list,
                                                               const mdux::font::FontPackage& package,

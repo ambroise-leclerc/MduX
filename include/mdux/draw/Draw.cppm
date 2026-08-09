@@ -207,6 +207,44 @@ public:
     /// Empties the list without touching the storage or the budget.
     void reset() noexcept;
 
+    /**
+     * @brief A position in the list, for undoing a composite record that fails partway.
+     *
+     * Opaque on purpose: it is the counters, but a caller reading them would be reading state the
+     * list does not otherwise expose. Cheap to copy and holds no reference to the list, so taking
+     * one costs nothing and a stale one is a programming error rather than a dangling pointer.
+     */
+    struct Marker {
+        std::uint32_t vertexCount{0};
+        std::uint32_t indexCount{0};
+        std::uint32_t commandCount{0};
+        std::uint32_t lastCommandIndexCount{0};
+        mdux::core::Rect clip{};
+    };
+
+    /// The list's current position, for a later `rollback()`.
+    [[nodiscard]] Marker mark() const noexcept;
+
+    /**
+     * @brief Discards everything recorded since `marker`, restoring the clip that was in force.
+     *
+     * For the caller that records several primitives as one unit and must not leave half of it in
+     * the frame - a glyph run whose fourth record names a glyph the package does not have should
+     * draw no glyphs, not three. `reset()` cannot do this: it empties the whole list, including
+     * whatever was recorded before the unit began.
+     *
+     * Restoring `commandCount` alone is not enough, which is why the marker carries a fourth
+     * number: `addRect()` extends the last command's `indexCount` when the clip has not changed
+     * rather than starting a new command, so a rolled-back list would otherwise keep a command
+     * claiming indices that are no longer there.
+     *
+     * Passing a marker from a different list, or one taken after the position it names was already
+     * rolled back past, is a programming error. The counters only ever move backwards here, so the
+     * worst case is a list shorter than the caller expected rather than one reading past its
+     * storage.
+     */
+    void rollback(const Marker& marker) noexcept;
+
     [[nodiscard]] std::span<const UiVertex> vertices() const noexcept {
         return vertices_.subspan(0, vertexCount_);
     }

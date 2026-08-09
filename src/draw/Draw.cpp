@@ -80,6 +80,30 @@ void DrawList::reset() noexcept {
     clip_ = {};
 }
 
+DrawList::Marker DrawList::mark() const noexcept {
+    return Marker{.vertexCount = vertexCount_,
+                  .indexCount = indexCount_,
+                  .commandCount = commandCount_,
+                  // The last command's index count, because addRect() extends it in place when the
+                  // clip has not changed. Restoring commandCount_ alone would leave that command
+                  // claiming indices the rollback took away.
+                  .lastCommandIndexCount = commandCount_ == 0 ? 0U : commands_[commandCount_ - 1].indexCount,
+                  .clip = clip_};
+}
+
+void DrawList::rollback(const Marker& marker) noexcept {
+    vertexCount_ = marker.vertexCount;
+    indexCount_ = marker.indexCount;
+    commandCount_ = marker.commandCount;
+    if (commandCount_ > 0) {
+        commands_[commandCount_ - 1].indexCount = marker.lastCommandIndexCount;
+    }
+    clip_ = marker.clip;
+    // The storage is not cleared. Nothing reads past the counters - vertices(), indices() and
+    // commands() all subspan by them - so zeroing would be work no observer can tell apart from
+    // not doing it, on the failure path of a frame that is about to be discarded anyway.
+}
+
 void DrawList::setClip(const mdux::core::Rect& clip) noexcept {
     // Recorded rather than applied: the next primitive notices the change and starts a command.
     // Doing it here would emit an empty command for a clip nothing was drawn under.

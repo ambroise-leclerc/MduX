@@ -19,6 +19,7 @@ import mdux.draw;
 import mdux.font.schema;
 import mdux.text.draw;
 
+#include "../framework/RunRecords.hpp"
 #include "../framework/SpecLabBridge.hpp"
 
 namespace {
@@ -65,13 +66,7 @@ struct Buffers {
     }
 };
 
-[[nodiscard]] std::vector<std::byte> record(std::uint16_t glyphIndex, std::int16_t x, std::int16_t y) {
-    const auto ux = std::bit_cast<std::uint16_t>(x);
-    const auto uy = std::bit_cast<std::uint16_t>(y);
-    return {static_cast<std::byte>(glyphIndex & 0xFFu), static_cast<std::byte>((glyphIndex >> 8) & 0xFFu),
-            static_cast<std::byte>(ux & 0xFFu),         static_cast<std::byte>((ux >> 8) & 0xFFu),
-            static_cast<std::byte>(uy & 0xFFu),         static_cast<std::byte>((uy >> 8) & 0xFFu)};
-}
+using mdux::spec::runRecord;
 
 }  // namespace
 
@@ -89,11 +84,11 @@ const mdux::spec::Register recordsDecodeLittleEndian{
             .Then("each field is read from its own two bytes, with sign preserved",
                   [] {
                       mdux::spec::Checks checks;
-                      const auto         positive = record(0x0102, 300, -40);
+                      const auto         positive = runRecord(0x0102, 300, -40);
                       auto               decoded  = td::decodeRecord(positive);
                       checks.expect(decoded.has_value(), "a whole record decodes");
                       if (decoded.has_value()) {
-                          checks.expect(decoded->glyphIndex == 0x0102, "glyphIndex reads bytes 0-1");
+                          checks.expect(decoded->packageIndex == 0x0102, "packageIndex reads bytes 0-1");
                           checks.expect(decoded->x == 300, "x reads bytes 2-3");
                           checks.expect(decoded->y == -40,
                                         std::format("y is sign-extended, got {}", decoded->y));
@@ -103,8 +98,16 @@ const mdux::spec::Register recordsDecodeLittleEndian{
                       // between two struct layouts.
                       const std::array<std::byte, 5> truncated{};
                       auto                           short_ = td::decodeRecord(truncated);
-                      checks.expect(!short_.has_value() && short_.error() == td::DrawTextError::PartialRecord,
+                      checks.expect(!short_.has_value() && short_.error() == td::DrawTextError::RecordSizeWrong,
                                     "a five-byte record is refused");
+                      // And a whole run handed to the single-record decoder, which would otherwise
+                      // return the first glyph and look like it had worked.
+                      std::vector<std::byte> two = runRecord(1, 0, 0);
+                      const auto             second = runRecord(2, 0, 0);
+                      two.insert(two.end(), second.begin(), second.end());
+                      auto oversize = td::decodeRecord(two);
+                      checks.expect(!oversize.has_value() && oversize.error() == td::DrawTextError::RecordSizeWrong,
+                                    "a two-record span is refused rather than truncated");
                       checks.raise();
                   })
             .Execute();
@@ -184,7 +187,7 @@ const mdux::spec::Register runRejections{
                       // Seven bytes: one whole record and one byte of another. Refused before
                       // anything is recorded, so a truncated run cannot draw its first glyph and
                       // look merely short.
-                      std::vector<std::byte> partial = record(0, 0, 0);
+                      std::vector<std::byte> partial = runRecord(0, 0, 0);
                       partial.push_back(std::byte{0});
                       auto partialResult = td::recordRun(*list, package, partial, 0, 0, white);
                       checks.expect(!partialResult.has_value()
@@ -194,9 +197,65 @@ const mdux::spec::Register runRejections{
 
                       // An index into the package's table, not the font's - a record built against
                       // a different package would otherwise draw a plausible wrong character.
-                      auto stray = td::recordRun(*list, package, record(7, 0, 0), 0, 0, white);
+                      auto stray = td::recordRun(*list, package, runRecord(7, 0, 0), 0, 0, white);
                       checks.expect(!stray.has_value() && stray.error() == td::DrawTextError::GlyphIndexOutOfRange,
                                     "a glyph index past the package's table is refused");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aFailedRunLeavesNothingBehind{
+    "A run that fails on its second glyph records neither glyph",
+    "evidence-unit",
+    [] {
+        // The rejections above all fail before anything is recorded, so they would pass even if
+        // recordRun() left half a run in the list. This is the case that does not: a good record
+        // followed by a bad one. Without the rollback the list keeps one rectangle, and a fragment
+        // of a word reaches the frame - which the header promises it cannot.
+        return speclab::Test("text-draw-run-rollback")
+            .Given("a list with a rectangle already recorded by someone else", [] {})
+            .When("a two-glyph run fails on its second record", [] {})
+            .Then("the run leaves nothing, and the earlier rectangle survives",
+                  [] {
+                      mdux::spec::Checks         checks;
+                      const auto                 package = packageWithOneGlyph();
+                      constexpr core::ColorRgba8 white{.r = 255, .g = 255, .b = 255, .a = 255};
+
+                      Buffers buffers;
+                      auto    list = draw::DrawList::create(buffers.vertices, buffers.indices, buffers.commands,
+                                                            Buffers::budget());
+                      checks.expect(list.has_value(), "the list is created");
+                      if (!list.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      // Someone else's rectangle. Rolling back the run must not take this with it,
+                      // which is the difference between rollback() and reset().
+                      constexpr core::Rect earlier{.x = 0, .y = 0, .width = 2, .height = 2};
+                      checks.expect(list->addSolidRect(earlier, white).has_value(), "the earlier rect is recorded");
+                      const auto verticesBefore = list->vertices().size();
+                      const auto indicesBefore  = list->indices().size();
+                      const auto commandsBefore = list->commands().size();
+
+                      // Glyph 0 exists; glyph 9 does not. The first is recorded, then the run fails.
+                      std::vector<std::byte> run = runRecord(0, 0, 0);
+                      const auto             bad = runRecord(9, 8, 0);
+                      run.insert(run.end(), bad.begin(), bad.end());
+
+                      auto result = td::recordRun(*list, package, run, 0, 0, white);
+                      checks.expect(!result.has_value()
+                                        && result.error() == td::DrawTextError::GlyphIndexOutOfRange,
+                                    "the run is refused");
+                      checks.expect(list->vertices().size() == verticesBefore,
+                                    std::format("no vertices left behind: {} before, {} after", verticesBefore,
+                                                list->vertices().size()));
+                      checks.expect(list->indices().size() == indicesBefore, "no indices left behind");
+                      checks.expect(list->commands().size() == commandsBefore, "no commands left behind");
+                      // And the rollback stopped where it was told to, rather than emptying the list.
+                      checks.expect(verticesBefore == 4 && !list->empty(),
+                                    "the earlier rectangle is still there");
                       checks.raise();
                   })
             .Execute();
