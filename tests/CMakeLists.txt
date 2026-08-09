@@ -261,6 +261,7 @@ add_executable(offscreen_tests
     render/OffscreenTestMain.cpp
     render/OffscreenTests.cpp
     render/PixelTests.cpp
+    render/TextPixelTests.cpp
 )
 
 target_sources(offscreen_tests
@@ -587,6 +588,7 @@ add_executable(text_spec
     text/TextSpecMain.cpp
     text/SchemaTests.cpp
     text/RasterTests.cpp
+    text/DrawTests.cpp
 )
 
 target_link_libraries(text_spec PRIVATE MduX::Core speclab::speclab)

@@ -7,8 +7,9 @@ MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-d
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
 backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draws its first
 pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
-what the build actually produces. Track C's authoring story is what remains: #14 opens
-Wave 4 with the font and text pipeline.
+what the build actually produces. Track C's authoring story is what remains: #14 closed
+Wave 4 with the font and text pipeline, and #15 opens Wave 5 with the compiler that
+generates the screens it draws.
 
 | Metric | Count |
 |---|---|
@@ -34,7 +35,7 @@ this table was first written; the two that remain are the documentation rebuild 
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time. | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Corpus closed (#8); README not. Five standards on real clause structure with per-clause indexes and JSON Schemas. The documentation architecture — README honesty, ADR re-baselining — is #10 and has not started. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. 360 tests on `develop`, on SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`). | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Tests | Closed. 434 tests on `develop`, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`). | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 ## Dependency order
@@ -42,16 +43,16 @@ this table was first written; the two that remain are the documentation rebuild 
 ### Six waves
 
 An epic opens when every epic it depends on has closed. Three waves have shipped
-(v0.2.0, v0.3.0, v0.4.0), one epic per wave closing the dependency it held. Wave 4 is
-open now: #14's blockers were #12 and #13, both closed. #19 spans waves by design; its
-S3–S6 follow #15.
+(v0.2.0, v0.3.0, v0.4.0), one epic per wave closing the dependency it held. Wave 4
+closed with #14 and has not been tagged yet. Wave 5 is open now: #15's blockers were
+#12 and #14, both closed. #19 spans waves by design; its S3–S6 follow #15.
 
-```
+```text
 Wave 1 · shipped v0.2.0     #7 (done)   #11 (open · #116, #117)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
-Wave 4 · open now           #14
-Wave 5                      #15
+Wave 4 · closed, untagged   #14 (done)
+Wave 5 · open now           #15
 Wave 6                      #16  #17
 ```
 
@@ -198,22 +199,22 @@ pipeline, four modes; buffers sized once from a compiler-computed budget and nev
 
 _Blocks #14, #16_
 
-#### #14 — Font & text pipeline · **Ready · opens Wave 4**
+#### #14 — Font & text pipeline · **Closed**
 
 Static text bakes to positioned glyph runs per locale. Dynamic text gets a restricted
 charset table — and the compiler rejects any format that could escape it, which turns
 "no shaping on device" from a slogan into a compile error.
 
-- S1 Text schema and baker
-- S2 Hand-parsed TrueType (`glyf` only)
-- S3 Rasteriser with coverage AA
-- S4 Atlas packer and font baker
-- S5 Metrics and the tabular-figure assertion
-- S6 Coverage draw path and text pixel tests
+- S1 Text schema and baker — `mdux.text.schema`, `mdux-textbake`
+- S2 Hand-parsed TrueType (`glyf` only) — `mdux.tools.truetype`, host-only
+- S3 Rasteriser with coverage AA — `mdux.text.raster`, integer-only
+- S4 Atlas packer and font baker — the first committed font package
+- S5 Metrics and the tabular-figure assertion — `mdux.font.schema`
+- S6 Coverage draw path and text pixel tests — `mdux.text.draw`, rendered under lavapipe
 
-_Blocks #15_
+_Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **Blocked #12, #14**
+#### #15 — `.medui` compiler & build integration · **Ready · opens Wave 5**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
@@ -337,5 +338,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 ---
 
 _Verified against `develop @ d1329da` · 4 August 2026_
-_13 epics · 7 delivered · Waves 1–3 shipped · Wave 4 open · #11 enforcement open_
+_13 epics · 8 delivered · Waves 1–3 shipped · Wave 4 closed, untagged · Wave 5 open · #11 enforcement open_
 _All epics on GitHub_

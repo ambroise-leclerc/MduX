@@ -59,6 +59,23 @@ enum class DrawMode : std::uint32_t {
  * Positions are in pixels with a top-left origin; the vertex shader converts them once from a
  * push constant, so nothing here depends on the surface the frame will be drawn to.
  */
+/**
+ * @brief Normalised texture coordinates, in [0, 1].
+ *
+ * Distinct from `core::Rect` because that is integer pixels and the shader samples with
+ * normalised floats - an integer rectangle can express only 0 and 1, so a glyph's atlas slot
+ * cannot be written as one. Keeping the two types apart means a caller who reaches for the wrong
+ * one gets a compile error rather than a quad sampling far outside the sheet.
+ */
+struct UvRect {
+    float u0{0.0F};
+    float v0{0.0F};
+    float u1{0.0F};
+    float v1{0.0F};
+
+    constexpr bool operator==(const UvRect&) const = default;
+};
+
 struct UiVertex {
     float x{0.0F};              ///< offset 0
     float y{0.0F};              ///< offset 4
@@ -119,6 +136,7 @@ enum class DrawError : std::uint8_t {
     IndexBudgetExceeded,
     CommandBudgetExceeded,
     DegenerateRect,          ///< zero or negative width or height
+    WrongList,               ///< a rollback marker names a position in a different list, or none
 };
 
 [[nodiscard]] std::string_view describe(DrawError error) noexcept;
@@ -161,6 +179,20 @@ public:
         const DrawBudget& budget) noexcept;
 
     /// Records an axis-aligned rectangle in `mode`, sampling `uv` when the mode uses the atlas.
+    ///
+    /// `uv` is in **normalised** texture coordinates, because the fragment shader samples with
+    /// `texture(uAtlas, fragUv)` on a `sampler2D`. See `UvRect` for why this overload exists
+    /// alongside the `core::Rect` one.
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> addRect(const mdux::core::Rect& rect,
+                                                            mdux::core::ColorRgba8 color,
+                                                            DrawMode mode,
+                                                            const UvRect& uv) noexcept;
+
+    /// Records an axis-aligned rectangle in `mode`, sampling `uv` when the mode uses the atlas.
+    ///
+    /// Retained for callers whose uv is already whole - a full-sheet quad, or the unit rect. It
+    /// converts to `UvRect` unchanged, so it cannot express a fractional coordinate: a glyph's
+    /// slot has to go through `mdux.text.draw`, which normalises it against the atlas extent.
     [[nodiscard]] mdux::core::ResultVoid<DrawError> addRect(const mdux::core::Rect& rect,
                                                             mdux::core::ColorRgba8 color,
                                                             DrawMode mode,
@@ -175,6 +207,57 @@ public:
 
     /// Empties the list without touching the storage or the budget.
     void reset() noexcept;
+
+    /**
+     * @brief A position in the list, for undoing a composite record that fails partway.
+     *
+     * Opaque, and only its own list can read it. The counters were public in the first version of
+     * this, which meant a caller could assemble one by hand or hand back a marker from a different
+     * list - and `rollback()` writes through `commandCount`, so a marker claiming more commands
+     * than the storage holds is an out-of-bounds write rather than a wrong picture. Carrying the
+     * owning list and keeping the fields private makes both mistakes unspellable.
+     *
+     * Copyable and cheap. The owner is compared, never dereferenced, so a marker outliving its
+     * list is a mismatch rather than a dangling read.
+     */
+    class Marker {
+    public:
+        Marker() noexcept = default;
+
+    private:
+        friend class DrawList;
+
+        const DrawList* owner{nullptr};
+        std::uint32_t vertexCount{0};
+        std::uint32_t indexCount{0};
+        std::uint32_t commandCount{0};
+        std::uint32_t lastCommandIndexCount{0};
+        mdux::core::Rect clip{};
+    };
+
+    /// The list's current position, for a later `rollback()`.
+    [[nodiscard]] Marker mark() const noexcept;
+
+    /**
+     * @brief Discards everything recorded since `marker`, restoring the clip that was in force.
+     *
+     * For the caller that records several primitives as one unit and must not leave half of it in
+     * the frame - a glyph run whose fourth record names a glyph the package does not have should
+     * draw no glyphs, not three. `reset()` cannot do this: it empties the whole list, including
+     * whatever was recorded before the unit began.
+     *
+     * Restoring `commandCount` alone is not enough, which is why the marker carries a fourth
+     * number: `addRect()` extends the last command's `indexCount` when the clip has not changed
+     * rather than starting a new command, so a rolled-back list would otherwise keep a command
+     * claiming indices that are no longer there.
+     *
+     * A marker from another list, or a default-constructed one, is refused - it names a position
+     * in something else. So is one whose counters exceed this list's, which can only mean the list
+     * was already rolled back past it. Both return `WrongList`; neither can move a counter forward
+     * or write outside the storage, which is the property that matters, since `rollback()` writes
+     * through the command count.
+     */
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> rollback(const Marker& marker) noexcept;
 
     [[nodiscard]] std::span<const UiVertex> vertices() const noexcept {
         return vertices_.subspan(0, vertexCount_);

@@ -1,7 +1,9 @@
 name: "MduX CodeQL config"
 
-# ninja-gcc (binaryDir build-gcc) sets MDUX_BUILD_TESTS/MDUX_BUILD_EXAMPLES=ON, so CPM.cmake
-# fetches Catch2 and glfw into build-gcc/_deps/ and CodeQL would otherwise extract and alert on
-# that third-party source too - longer runs, noise that is not this repository's code to fix.
+# This job extracts without building (see codeql.yml), so there is no build-gcc/_deps/ tree of
+# fetched Catch2 and glfw sources to exclude - CPM.cmake never runs. The entry is kept, scoped to
+# any build directory, so a future traced build cannot silently start reporting alerts against
+# third-party source that is not this repository's to fix.
 paths-ignore:
-  - build-gcc/_deps/**
+  - '**/_deps/**'
+  - 'build*/**'

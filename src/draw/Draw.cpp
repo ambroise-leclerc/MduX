@@ -46,6 +46,8 @@ std::string_view describe(DrawError error) noexcept {
         return "command budget exceeded";
     case DrawError::DegenerateRect:
         return "rectangle has zero or negative width or height";
+    case DrawError::WrongList:
+        return "a rollback marker names a position in a different list, or in none";
     }
     return "unknown draw error";
 }
@@ -80,6 +82,48 @@ void DrawList::reset() noexcept {
     clip_ = {};
 }
 
+DrawList::Marker DrawList::mark() const noexcept {
+    Marker marker;
+    marker.owner = this;
+    marker.vertexCount = vertexCount_;
+    marker.indexCount = indexCount_;
+    marker.commandCount = commandCount_;
+    // The last command's index count, because addRect() extends it in place when the clip has not
+    // changed. Restoring commandCount_ alone would leave that command claiming indices the
+    // rollback took away.
+    marker.lastCommandIndexCount = commandCount_ == 0 ? 0U : commands_[commandCount_ - 1].indexCount;
+    marker.clip = clip_;
+    return marker;
+}
+
+ResultVoid<DrawError> DrawList::rollback(const Marker& marker) noexcept {
+    // Compared, never dereferenced: a marker that outlived its list is a mismatch here rather than
+    // a read through a dangling pointer.
+    if (marker.owner != this) {
+        return err(DrawError::WrongList);
+    }
+    // Backwards only. Every counter this restores indexes storage the list validated at create(),
+    // so a marker naming a larger position could put commandCount_ past the span and make the
+    // write below out of bounds. Refusing is cheap; the alternative is trusting a number that came
+    // from outside this call.
+    if (marker.vertexCount > vertexCount_ || marker.indexCount > indexCount_ ||
+        marker.commandCount > commandCount_) {
+        return err(DrawError::WrongList);
+    }
+
+    vertexCount_ = marker.vertexCount;
+    indexCount_ = marker.indexCount;
+    commandCount_ = marker.commandCount;
+    if (commandCount_ > 0) {
+        commands_[commandCount_ - 1].indexCount = marker.lastCommandIndexCount;
+    }
+    clip_ = marker.clip;
+    // The storage is not cleared. Nothing reads past the counters - vertices(), indices() and
+    // commands() all subspan by them - so zeroing would be work no observer can tell apart from
+    // not doing it, on the failure path of a frame that is about to be discarded anyway.
+    return {};
+}
+
 void DrawList::setClip(const mdux::core::Rect& clip) noexcept {
     // Recorded rather than applied: the next primitive notices the change and starts a command.
     // Doing it here would emit an empty command for a clip nothing was drawn under.
@@ -96,6 +140,17 @@ ResultVoid<DrawError> DrawList::addSolidRect(const mdux::core::Rect& rect,
 
 ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core::ColorRgba8 color,
                                         DrawMode mode, const mdux::core::Rect& uv) noexcept {
+    // Widening only - the integer overload cannot express a fractional coordinate, which is
+    // exactly why glyphs go through mdux.text.draw instead.
+    return addRect(rect, color, mode,
+                   UvRect{.u0 = static_cast<float>(uv.x),
+                          .v0 = static_cast<float>(uv.y),
+                          .u1 = static_cast<float>(uv.right()),
+                          .v1 = static_cast<float>(uv.bottom())});
+}
+
+ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core::ColorRgba8 color,
+                                        DrawMode mode, const UvRect& uv) noexcept {
     if (rect.width <= 0 || rect.height <= 0) {
         return err(DrawError::DegenerateRect);
     }
@@ -123,10 +178,10 @@ ResultVoid<DrawError> DrawList::addRect(const mdux::core::Rect& rect, mdux::core
     const auto top = static_cast<float>(rect.y);
     const auto right = static_cast<float>(rect.right());
     const auto bottom = static_cast<float>(rect.bottom());
-    const auto u0 = static_cast<float>(uv.x);
-    const auto v0 = static_cast<float>(uv.y);
-    const auto u1 = static_cast<float>(uv.right());
-    const auto v1 = static_cast<float>(uv.bottom());
+    const auto u0 = uv.u0;
+    const auto v0 = uv.v0;
+    const auto u1 = uv.u1;
+    const auto v1 = uv.v1;
     const std::uint32_t packed = packColor(color);
     const auto modeValue = static_cast<std::uint32_t>(mode);
 

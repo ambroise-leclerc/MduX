@@ -147,8 +147,15 @@ struct DefaultAtlas {
     VkImageView view{VK_NULL_HANDLE};
 };
 
-[[nodiscard]] Result<DefaultAtlas, RenderError> createDefaultAtlas(
-    const VulkanRenderContext& context) noexcept {
+/// Builds the sampled image, in whichever format and extent the caller needs.
+///
+/// One function for both the 1x1 white default and a baked R8 coverage sheet, because they differ
+/// only in format, extent and the bytes staged into them - the image, memory, view, staging
+/// buffer, layout transitions and one-shot command buffer are identical. Two copies of that
+/// sequence would be two places for a barrier to go wrong.
+[[nodiscard]] Result<DefaultAtlas, RenderError> createAtlasImage(const VulkanRenderContext& context, VkFormat format,
+                                                                 std::uint32_t width, std::uint32_t height,
+                                                                 std::span<const std::byte> pixels) noexcept {
     DefaultAtlas atlas;
 
     const VkImageCreateInfo imageInfo{
@@ -156,8 +163,8 @@ struct DefaultAtlas {
         .pNext = nullptr,
         .flags = 0,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
-        .extent = {1, 1, 1},
+        .format = format,
+        .extent = {width, height, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -190,16 +197,15 @@ struct DefaultAtlas {
         return err(RenderError::MemoryAllocationFailed);
     }
 
-    // Four bytes through a staging buffer and a one-shot command buffer. Everything created here
+    // The pixels through a staging buffer and a one-shot command buffer. Everything created here
     // is destroyed before returning: the atlas outlives this function, the machinery does not.
-    auto staging = createMappedBuffer(context, 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    auto staging = createMappedBuffer(context, pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     if (!staging.has_value()) {
         vkFreeMemory(context.device, atlas.memory, nullptr);
         vkDestroyImage(context.device, atlas.image, nullptr);
         return err(staging.error());
     }
-    constexpr std::array<std::uint8_t, 4> white{255, 255, 255, 255};
-    std::memcpy(staging->mapped, white.data(), white.size());
+    std::memcpy(staging->mapped, pixels.data(), pixels.size());
 
     const VkCommandPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                            .pNext = nullptr,
@@ -256,7 +262,7 @@ struct DefaultAtlas {
                                      .bufferImageHeight = 0,
                                      .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                                      .imageOffset = {0, 0, 0},
-                                     .imageExtent = {1, 1, 1}};
+                                     .imageExtent = {width, height, 1}};
         vkCmdCopyBufferToImage(commands, staging->buffer, atlas.image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
@@ -311,7 +317,7 @@ struct DefaultAtlas {
         .flags = 0,
         .image = atlas.image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .format = format,
         .components = {},
         .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
     if (vkCreateImageView(context.device, &viewInfo, nullptr, &atlas.view) != VK_SUCCESS) {
@@ -382,7 +388,11 @@ std::string_view describe(RenderError error) noexcept {
         return "vkCreateCommandPool failed for the atlas upload";
     case RenderError::CommandBufferAllocationFailed:
         return "vkAllocateCommandBuffers failed for the atlas upload";
-    case RenderError::AtlasUploadFailed:      return "uploading the default atlas failed";
+    case RenderError::AtlasUploadFailed:      return "uploading the atlas failed";
+    case RenderError::AtlasExtentMismatch:
+        return "the coverage atlas has a zero extent, or its byte count is not width * height";
+    case RenderError::SampledRgbaWithCoverageAtlas:
+        return "the frame samples an RGBA atlas, but this renderer holds an R8 coverage sheet";
     case RenderError::NullCommandBuffer:      return "command buffer is null";
     case RenderError::FrameExceedsBudget:
         return "draw list is larger than the renderer's budget";
@@ -449,6 +459,11 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     pushStages_ = std::exchange(other.pushStages_, 0);
     pushOffset_ = std::exchange(other.pushOffset_, 0);
     pushSize_ = std::exchange(other.pushSize_, 0);
+    // Left out of this list on the first attempt, and the guard then silently never fired: create()
+    // returns by value, so the flag was set on a renderer that was immediately moved from. Exactly
+    // what the note above describes, which is why the test that exercises the guard is what caught
+    // it rather than review.
+    atlasIsCoverageOnly_ = std::exchange(other.atlasIsCoverageOnly_, false);
     return *this;
 }
 
@@ -535,6 +550,34 @@ void UiRenderer::destroy() noexcept {
 Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& context,
                                                    const shader::PackageView& package,
                                                    const draw::DrawBudget& budget) noexcept {
+    // The 1x1 white default. White is the neutral value: it is the identity for the sampled-RGBA
+    // path and full coverage for the R8 one, so a renderer with no atlas yet behaves correctly
+    // rather than approximately.
+    static constexpr std::array<std::byte, 4> white{std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}};
+    return createInternal(context, package, budget, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, white);
+}
+
+Result<UiRenderer, RenderError> UiRenderer::createWithCoverageAtlas(const VulkanRenderContext& context,
+                                                                    const shader::PackageView& package,
+                                                                    const draw::DrawBudget& budget,
+                                                                    std::span<const std::byte> atlas,
+                                                                    std::uint32_t width,
+                                                                    std::uint32_t height) noexcept {
+    // Checked here rather than trusted: a sheet whose byte count disagrees with its extent would
+    // stage the wrong number of bytes and read uninitialised memory into a texture, which renders
+    // as plausible noise rather than failing.
+    if (width == 0 || height == 0
+        || atlas.size() != static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
+        return err(RenderError::AtlasExtentMismatch);
+    }
+    return createInternal(context, package, budget, VK_FORMAT_R8_UNORM, width, height, atlas);
+}
+
+Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderContext& context,
+                                                           const shader::PackageView& package,
+                                                           const draw::DrawBudget& budget, VkFormat atlasFormat,
+                                                           std::uint32_t atlasWidth, std::uint32_t atlasHeight,
+                                                           std::span<const std::byte> atlasPixels) noexcept {
     // Context and budget first: both are cheap to check and neither needs a device call, so a
     // caller's mistake is reported before anything is created.
     if (context.device == VK_NULL_HANDLE) {
@@ -632,6 +675,9 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
     renderer.device_ = context.device;
     renderer.budget_ = budget;
     renderer.viewport_ = context.viewport;
+    // Derived from the format rather than passed as a flag, so the two cannot disagree: whatever
+    // image this renderer ends up holding is what record() judges a frame against.
+    renderer.atlasIsCoverageOnly_ = (atlasFormat == VK_FORMAT_R8_UNORM);
     renderer.atlasBinding_ = atlasBinding;
     renderer.pushStages_ = pushStages;
     renderer.pushOffset_ = pushOffset;
@@ -861,7 +907,7 @@ Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& co
 
     // The default atlas, and the descriptor set that binds it. Without these a draw is undefined
     // behaviour whatever mode its vertices carry, because the pipeline layout declares a sampler.
-    auto atlas = createDefaultAtlas(context);
+    auto atlas = createAtlasImage(context, atlasFormat, atlasWidth, atlasHeight, atlasPixels);
     if (!atlas.has_value()) {
         return err(atlas.error());
     }
@@ -962,6 +1008,21 @@ ResultVoid<RenderError> UiRenderer::record(VkCommandBuffer commandBuffer,
         list.indices().size() > budget_.maxIndices ||
         list.commands().size() > budget_.maxCommands) {
         return err(RenderError::FrameExceedsBudget);
+    }
+    if (atlasIsCoverageOnly_) {
+        // An R8 image sampled as RGBA returns (coverage, 0, 0, 1): a picture in the wrong colours
+        // rather than a black frame or a crash, so it survives review. Refused here instead.
+        //
+        // The scan is per frame because the mode is per vertex, and there is nowhere earlier to
+        // put it - the list is rebuilt every frame. It is a pass over the same vertices the memcpy
+        // below already touches, so it costs the frame nothing measurable, and it buys a refusal
+        // in place of a screenshot nobody questions.
+        const auto samplesRgba = [](const draw::UiVertex& vertex) noexcept {
+            return vertex.mode == static_cast<std::uint32_t>(draw::DrawMode::SampledRgba);
+        };
+        if (std::ranges::any_of(list.vertices(), samplesRgba)) {
+            return err(RenderError::SampledRgbaWithCoverageAtlas);
+        }
     }
 
     if (!list.empty()) {

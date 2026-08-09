@@ -118,6 +118,8 @@ enum class RenderError : std::uint8_t {
     CommandPoolCreationFailed,    ///< the one-shot pool used to upload the default atlas
     CommandBufferAllocationFailed,
     AtlasUploadFailed,
+    AtlasExtentMismatch,      ///< the coverage byte count is not width * height, or an extent is zero
+    SampledRgbaWithCoverageAtlas,  ///< the frame samples RGBA from a renderer holding an R8 sheet
     NullCommandBuffer,
     FrameExceedsBudget,       ///< the DrawList is larger than the renderer was built for
 
@@ -155,7 +157,51 @@ public:
         const VulkanRenderContext& context, const mdux::shader::PackageView& package,
         const mdux::draw::DrawBudget& budget) noexcept;
 
+    /**
+     * @brief Creates a renderer whose atlas is a baked R8 coverage sheet rather than the default.
+     *
+     * Replaces the atlas' *contents*, not the mechanism: #13 already created the image, sampler
+     * and descriptor, and this overload uploads different bytes into the same arrangement. There
+     * is no second binding, no second pipeline and no branch at record time - the shader's
+     * `CoverageR8` mode was always reading whatever this image held.
+     *
+     * Taken at construction rather than as a later `setAtlas()` because the descriptor is written
+     * once during `create()`. A renderer that could swap atlases mid-life would need either a
+     * descriptor rewrite between frames or a second set, and neither is worth carrying for a font
+     * that is chosen at build time.
+     *
+     * @param atlas   `width * height` bytes of coverage, row-major, top row first - exactly the
+     *                sidecar `mdux-textbake` commits
+     * @param width   sheet width in pixels; must be non-zero and match `atlas.size()`
+     * @param height  sheet height in pixels
+     *
+     * ## This renderer can then draw text and solids, but not images
+     *
+     * The atlas is `VK_FORMAT_R8_UNORM`, and there is one of them. `DrawMode::SampledRgba` reads
+     * the same image expecting four channels, so it would sample red-only and return
+     * `(coverage, 0, 0, 1)` - a plausible picture in the wrong colours, which is the kind of
+     * failure nobody notices in review.
+     *
+     * So `record()` refuses a list containing any `SampledRgba` vertex on a coverage renderer,
+     * with `SampledRgbaWithCoverageAtlas`. Mixing baked text and images in one frame needs two
+     * atlas bindings, which is #17's problem rather than something to leave as a trap here.
+     */
+    [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createWithCoverageAtlas(
+        const VulkanRenderContext& context, const mdux::shader::PackageView& package,
+        const mdux::draw::DrawBudget& budget, std::span<const std::byte> atlas,
+        std::uint32_t width, std::uint32_t height) noexcept;
+
     ~UiRenderer();
+
+private:
+    /// The shared body of both create() overloads. They differ only in the atlas they upload, so
+    /// the pipeline, buffers, sampler and descriptor arrangement are built once here.
+    [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createInternal(
+        const VulkanRenderContext& context, const mdux::shader::PackageView& package,
+        const mdux::draw::DrawBudget& budget, VkFormat atlasFormat, std::uint32_t atlasWidth,
+        std::uint32_t atlasHeight, std::span<const std::byte> atlasPixels) noexcept;
+
+public:
 
     UiRenderer(const UiRenderer&) = delete;
     UiRenderer& operator=(const UiRenderer&) = delete;
@@ -205,6 +251,9 @@ private:
     VkDeviceMemory atlasMemory_{VK_NULL_HANDLE};
     VkImageView atlasView_{VK_NULL_HANDLE};
     VkSampler atlasSampler_{VK_NULL_HANDLE};
+    /// True when the atlas is an R8 coverage sheet, so `record()` can refuse a frame that samples
+    /// it as RGBA. Cheaper to carry than to query, and the answer never changes after create().
+    bool atlasIsCoverageOnly_{false};
     VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
     VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
     void* vertexMapped_{nullptr};
