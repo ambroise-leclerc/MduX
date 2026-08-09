@@ -23,7 +23,7 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
 [![OSV-Scanner](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ambroise-leclerc/MduX/badge)](https://scorecard.dev/viewer/?uri=github.com/ambroise-leclerc/MduX)
-[![License: EPL-2.0](https://img.shields.io/badge/License-EPL--2.0-blue)](LICENSE)
+[![License: EUPL-1.2](https://img.shields.io/badge/License-EUPL--1.2-blue)](LICENSE)
 
 ## What this actually is
 
@@ -198,7 +198,8 @@ certification or compliance claim.
 
 ## License
 
-Eclipse Public License 2.0 ([EPL-2.0](LICENSE)).
+Available under the [European Union Public Licence 1.2](LICENSE), or under separate commercial
+terms. See [LICENSING.md](LICENSING.md).
 
 ## Contact
 

@@ -1,5 +1,16 @@
 # Contributing Guidelines
 
+## Invitation-only contributions
+
+This project accepts code and documentation contributions only from collaborators explicitly
+invited by a maintainer. Opening an issue or pull request does not constitute an invitation, and
+unsolicited pull requests may be closed without review.
+
+Before contributing, an invited collaborator must accept the [Contributor Licence
+Agreement](CLA.md) in the GitHub issue designated by the maintainer. Only collaborators with
+repository access may submit changes for review. Every change remains subject to maintainer review;
+an invitation does not guarantee merge.
+
 ## Coding Style
 
 We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 generic programming. Please refer to the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for detailed rules. Key points are summarized below:
@@ -119,4 +130,3 @@ Please run these tools on your code before submitting a pull request.
 - Write clear, descriptive commit messages.
 - Add or update documentation as needed.
 - Run all tests locally before submitting your PR.
-
