@@ -11,11 +11,11 @@ name: Sanitizers
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
     # Matches the PR's *base*, not its head - see linux-gcc16-build.yml for why the list reads
     # this way and what `[0-9]+-*` is.
-    branches: [ main, develop, '[0-9]+-*', 'feat/**' ]
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
   schedule:
     # Catches a regression that lands through a path with no PR, and keeps the job from rotting
     # unnoticed between changes that happen to touch it.

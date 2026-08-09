@@ -9,7 +9,7 @@ name: OSV-Scanner
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
     # Matches the PR's *base*, not its head: a base branch missing from this list means that PR
     # reports no checks at all, silently - which is worse than reporting failures. `[0-9]+-*` is
@@ -18,20 +18,26 @@ on:
     # what gets a stacked PR checked, i.e. one targeting its predecessor rather than develop so a
     # reviewer sees one issue's diff instead of the cumulative one. `feat/**` predates the
     # convention and is kept for branches already in flight.
-    branches: [ main, develop, '[0-9]+-*', 'feat/**' ]
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
   schedule:
     - cron: '30 6 * * 1'
 
+# Restrictive by default. A called workflow's own permissions block can only narrow what the
+# caller grants, never add to it, so the SARIF upload's scopes must come from the caller - but from
+# the *job* that makes the call, not from here. Granting `security-events: write` workflow-wide
+# hands it to every job whether it uploads anything or not, which is what Scorecard's
+# Token-Permissions check flags.
 permissions:
-  # actions: read is required by the called reusable workflow to upload SARIF (see
-  # https://github.com/github/codeql-action/issues/2117) - a called workflow's permissions
-  # block can only narrow what the caller grants, never add to it, so it must be listed here too.
-  actions: read
-  security-events: write
   contents: read
 
 jobs:
   scan-scheduled:
+    permissions:
+      # actions: read is required by the upload step inside the reusable workflow
+      # (https://github.com/github/codeql-action/issues/2117).
+      actions: read
+      security-events: write
+      contents: read
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
     with:
@@ -41,6 +47,10 @@ jobs:
         ./
 
   scan-pr:
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
     if: ${{ github.event_name == 'pull_request' }}
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
     with:
