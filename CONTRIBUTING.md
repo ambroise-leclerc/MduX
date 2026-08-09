@@ -35,8 +35,18 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 
 We use **Doxygen** syntax for code documentation. Follow these guidelines:
 
-- **File-level documentation:** open the block with `@file <basename>`, then `@brief`. Still no
-  `@author` tags.
+- **File-level documentation:** open the block with `@file`, naming the file **with its
+  extension and no path**, then `@brief`. Still no `@author` tags.
+
+  ```cpp
+  /**
+   * @file VulkanRenderer.cppm
+   * @brief One sentence on what this file is.
+   */
+  ```
+
+  The extension matters: `Draw.cppm` and `Draw.cpp` are different files with the same stem, and
+  this tree has several such pairs.
 
   `@file` is what makes Doxygen attach the block to the *file*. Without it the block is not
   ignored — it silently becomes the documentation of whatever comes next. Measured on
