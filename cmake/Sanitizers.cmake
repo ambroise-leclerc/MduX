@@ -59,7 +59,11 @@ function(enable_sanitizers project_name)
        "${LIST_OF_SANITIZERS}"
        STREQUAL
        "")
-      target_compile_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
+      # -fno-sanitize-recover: UndefinedBehaviorSanitizer's default is to print and carry on, which
+      # in CI means a job that reports the violation and then passes. Nobody reads a green log, so
+      # a recoverable sanitizer finding is a finding nobody sees. Aborting turns it into a failure.
+      target_compile_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS}
+                                                       -fno-sanitize-recover=all)
       target_link_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
     endif()
   endif()

@@ -917,6 +917,12 @@ const mdux::spec::Register parseRunsValidate{
 const mdux::spec::Register findLocatesModule{
     "find() locates a module by id and reports a miss", "evidence-unit", [] {
         struct State {
+            // The package is *owned* here, not rebuilt in each step. `find()` returns a pointer
+            // into `package.modules`, so a package that lived only for the Given step would leave
+            // both members dangling and the Then step reading freed memory - which is precisely
+            // what it did until AddressSanitizer was pointed at this suite (#179). The test passed
+            // throughout, because the freed bytes still happened to hold the right stage.
+            ShaderPackage       package{};
             const ShaderModule* found{nullptr};
             const ShaderModule* miss{nullptr};
         };
@@ -924,9 +930,9 @@ const mdux::spec::Register findLocatesModule{
 
         return speclab::Test("shader-find-locates-module")
             .Given("the reference package", [state] {
-                const ShaderPackage package = validPackage();
-                state->found = package.find("ui.vert");
-                state->miss = package.find("ui.frag");
+                state->package = validPackage();
+                state->found = state->package.find("ui.vert");
+                state->miss = state->package.find("ui.frag");
             })
             .When("a known and an unknown id are looked up", [] {})
             .Then("the known id is found and the unknown is a miss",
