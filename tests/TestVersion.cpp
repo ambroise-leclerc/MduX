@@ -11,9 +11,9 @@ import mdux.test;
 
 TEST_CASE("Version Test") {
     CHECK(mdux::Version::major == 0);
-    CHECK(mdux::Version::minor == 4);
+    CHECK(mdux::Version::minor == 5);
     CHECK(mdux::Version::patch == 0);
-    CHECK(mdux::Version::getString() == "0.4.0");
+    CHECK(mdux::Version::getString() == "0.5.0");
 }
 
 TEST_CASE("Version Test Sections") {
@@ -25,13 +25,13 @@ TEST_CASE("Version Test Sections") {
     SECTION("major and minor") {
         sectionsRun += 1;
         CHECK(mdux::Version::major == 0);
-        CHECK(mdux::Version::minor == 4);
+        CHECK(mdux::Version::minor == 5);
     }
 
     SECTION("patch and string") {
         sectionsRun += 1;
         CHECK(mdux::Version::patch == 0);
-        CHECK(mdux::Version::getString() == "0.4.0");
+        CHECK(mdux::Version::getString() == "0.5.0");
     }
 
     CHECK(sectionsRun == 2);
