@@ -72,10 +72,17 @@ jobs:
         else
           extracted=$(find "${db}/src" \( -name '*.cpp' -o -name '*.cppm' -o -name '*.hpp' \) 2>/dev/null | wc -l)
         fi
-        echo "CodeQL extracted ${extracted} C++ source files"
-        # The tree holds over a thousand; a working extraction reaches the hundreds, and the
-        # broken one landed on two. 200 separates those without pinning the exact figure.
-        if [ "${extracted}" -lt 200 ]; then
-          echo "::error::CodeQL extracted only ${extracted} source files - the analysis above was vacuous"
+        # Measured against what the repository actually holds rather than a number written down
+        # here, which would need editing every time the tree grows and would rot silently in the
+        # meantime. The first version of this guard hard-coded 200 and failed a *working* run that
+        # extracted 153 of 139 tracked files.
+        tracked=$(git ls-files | grep -cE '\.(cpp|cppm|hpp|h)$')
+        floor=$(( tracked * 80 / 100 ))
+        echo "CodeQL extracted ${extracted} C++ source files; the tree tracks ${tracked}"
+        # Whole files missing is the failure this catches - a tracer that attached to nothing left
+        # two. Some slack, because generated and excluded sources make the two counts differ
+        # legitimately in both directions.
+        if [ "${extracted}" -lt "${floor}" ]; then
+          echo "::error::CodeQL extracted ${extracted} source files against ${tracked} tracked - the analysis above was vacuous"
           exit 1
         fi
