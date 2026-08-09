@@ -124,6 +124,10 @@ jobs:
         # covered by .gitignore's `*.log` - so the "Verify no source-tree writes" step below could
         # not see it, and, more to the point, could not see any other .log a build step wrote
         # either. Keeping this file outside the tree keeps that check honest.
+        # Same reason as the sanitizer leg: `run:` gets `bash -e`, not `bash -eo pipefail`, so the
+        # `| tee` below would otherwise report tee's status and let a failing pixel run pass. This
+        # predates #179 and was found while reviewing the copy of this step made for it.
+        set -o pipefail
         PIXEL_LOG="$RUNNER_TEMP/pixel.log"
         # -V rather than --output-on-failure: a passing run must still print, because two of the
         # things this step verifies are only visible in the output of tests that succeeded.

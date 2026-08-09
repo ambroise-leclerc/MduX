@@ -137,6 +137,10 @@ jobs:
         # render path into a silent no-op and this job would stay green, which is the same shape as
         # the CodeQL database that analysed two files. linux-gcc16-build.yml guards its pixel step
         # the same way and for the same reason.
+        # A `run:` block gets `bash -e`, which is not `bash -eo pipefail`: without this line the
+        # pipeline below reports tee's status, so a failing ctest would pass the step. Demonstrated
+        # rather than assumed - `false | tee /dev/null` exits 0 under `bash -e` and 1 with pipefail.
+        set -o pipefail
         LOG="$RUNNER_TEMP/asan-pixel.log"
         ctest --test-dir build-asan -R offscreen_tests --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
         if grep -q "Skipped" "$LOG"; then
