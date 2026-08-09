@@ -18,7 +18,7 @@ Before making the change, classify it as one of:
   that don't touch rendering correctness, compliance metadata, or resource lifetime.
 - **Potentially safety-relevant** — touches code adjacent to safety behavior but the change itself
   doesn't alter behavior (e.g. adding a test, adding logging that doesn't change control flow).
-- **Safety-relevant** — changes behavior in `MedicalUiRenderer` rendering/validation paths, the
+- **Safety-relevant** — changes behavior in `mdux.draw` / `mdux.render.vulkan` rendering paths, the
   Vulkan SC device-lifetime object/memory managers (`mdux.vulkansc.*`), compliance-metadata
   handling (`ComplianceMetadata`, `Compliance`, validation logic), or anything that changes what
   the software does at runtime in a way a user or reviewer would need to know about.
@@ -32,8 +32,9 @@ For potentially- or safety-relevant changes, identify:
 - Affected requirements or design statements (check `docs/adr/` for the relevant ADR, and
   `README.md`'s stated capabilities — remembering that some of README's claims are aspirational,
   not implemented; see § 2 of `AGENTS.md`).
-- Affected hazards/risk controls, if any (`risk-assessment-templates.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`).
+- Affected hazards/risk controls, if any (`software_development_file/templates/ISO_14971/Risk_Management_File.md`,
+  `docs/iso14971/`, and the `Hazard`/`Requirement` records a
+  `mdux::governance::ComplianceProgram` tracks, issue #34).
 - Affected software items and interfaces (which module(s) from the table in `AGENTS.md` § 3).
 - Verification evidence that will need to change (which tests in `tests/` cover this behavior
   today, and what new/updated test proves the change is correct).
@@ -43,11 +44,12 @@ For potentially- or safety-relevant changes, identify:
 Match the scope of the documentation update to the scope of the code change — don't rewrite whole
 regulatory frameworks for a small fix, and don't skip documentation for a real behavior change.
 Relevant locations, by standard:
-- ISO 14971 (risk management): `risk-assessment-templates.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`.
-- ISO 13485 (quality management): `docs/iso13485/`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`.
-- IEC 62304 (software lifecycle / safety classification): `docs/iec62304/`,
-  `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md`.
+- ISO 14971 (risk management): `software_development_file/templates/ISO_14971/Risk_Management_File.md`,
+  `docs/iso14971/`.
+- ISO 13485 (quality management): `docs/iso13485/`.
+- IEC 62304 (software lifecycle / safety classification): `docs/iec62304/`.
+- IEC 62366-1 (usability): `docs/iec62366/`.
+- IEC 81001-5-1 (health software security): `docs/iec81001/`.
 - Architecture-level rationale: the relevant file in `docs/adr/` (create a new ADR if the change
   represents a new architectural decision; update an existing one if it revises a prior decision —
   see `docs/adr/README.md` for format and index maintenance).

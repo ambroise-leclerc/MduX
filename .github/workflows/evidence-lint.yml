@@ -1,0 +1,48 @@
+name: Evidence Pipeline Lint
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    # Matches the PR's *base*, not its head: a base branch missing from this list means that PR
+    # reports no checks at all, silently - which is worse than reporting failures. `[0-9]+-*` is
+    # the scheme GitHub's "create a branch for this issue" button generates (issue number, dash,
+    # slugified title) and this project's standard - see AGENTS.md "Branch naming". It is also
+    # what gets a stacked PR checked, i.e. one targeting its predecessor rather than develop so a
+    # reviewer sees one issue's diff instead of the cumulative one. `feat/**` predates the
+    # convention and is kept for branches already in flight.
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-lint:
+    name: Evidence Pipeline Lint
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
+
+    # Bans decimal float formatting anywhere in the evidence pipeline (ADR-007). Needs no build,
+    # so it runs as its own fast job rather than inside a toolchain leg.
+    - name: Run mdux-evidence-lint
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: |
+        python3 -m unittest discover -s tools/evidence-lint -p "test_*.py"
+        python3 tools/evidence-lint/mdux_evidence_lint.py
+
+    # There used to be a second step here checking that every committed report.json's
+    # toolGitSha wasn't "unknown". That field no longer exists: BakeReport dropped it entirely
+    # after review found it structurally unsound for a byte-compared, committed artifact - the
+    # SHA of the commit containing report.json can't be known while that file is being written,
+    # so an embedded "current commit" value could never survive being committed and re-baked.
+    # See ADR-007, decision 5, and issue #52. toolVersion is the report's only tooling identity
+    # now, and it needs no CI check beyond validate()'s existing EmptyToolVersion rejection.

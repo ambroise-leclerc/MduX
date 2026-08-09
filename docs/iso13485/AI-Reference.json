@@ -1,0 +1,197 @@
+{
+  "standard": "ISO 13485:2016",
+  "corpus": "docs/iso13485",
+  "rows": [
+    {
+      "clause": "§1",
+      "title": "Scope",
+      "file": "01-scope-and-terms.md",
+      "anchor": "1-scope",
+      "pointer": "MduX is a software library, not the organization operating a device's QMS.",
+      "justifications": []
+    },
+    {
+      "clause": "§2",
+      "title": "Normative references",
+      "file": "01-scope-and-terms.md",
+      "anchor": "2-normative-references",
+      "pointer": "MduX's own regulatory corpus covers IEC 62304 ([`../iec62304/`](../iec62304/)) directly; [`../iso14971/`](../iso14971/) is where risk management gets the same clause-accurate treatment.",
+      "justifications": []
+    },
+    {
+      "clause": "§3",
+      "title": "Terms and definitions",
+      "file": "01-scope-and-terms.md",
+      "anchor": "3-terms-and-definitions",
+      "pointer": "The terms below recur across this directory; each points at where MduX makes the concept concrete rather than defining it in prose.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1",
+      "title": "General requirements",
+      "file": "02-quality-management-system.md",
+      "anchor": "41-general-requirements",
+      "pointer": "A manufacturer integrating MduX does not control MduX's internal build process directly, but ADR-007's evidence pipeline gives them a re-derivable, byte-verified record of exactly what produced any given MduX artifact - the concrete control an outsourced-process requirement asks for.",
+      "justifications": [
+        "JUS-007"
+      ]
+    },
+    {
+      "clause": "§4.2",
+      "title": "Documentation requirements",
+      "file": "02-quality-management-system.md",
+      "anchor": "42-documentation-requirements",
+      "pointer": "MduX's documented-information control is git itself: every file's history, the branch-protection rule that changes to `master` go through a reviewed pull request (not a direct push), and the ADR set's own \"Status\" field (Proposed / Accepted / Superseded) marking which decisions are current.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.1–§5.3",
+      "title": "Management commitment, customer focus, quality policy",
+      "file": "03-management-responsibility.md",
+      "anchor": "5153-management-commitment-customer-focus-quality-policy",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.4",
+      "title": "Planning",
+      "file": "03-management-responsibility.md",
+      "anchor": "54-planning",
+      "pointer": "No MduX mechanism: the GitHub epic and issue structure is project planning, not the quality-objective planning this clause asks a certified organization for.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.5",
+      "title": "Responsibility, authority and communication",
+      "file": "03-management-responsibility.md",
+      "anchor": "55-responsibility-authority-and-communication",
+      "pointer": "MduX's closest concrete instance is the branch protection requiring pull requests before `master` changes — an authority boundary enforced by GitHub, not only stated in a policy document.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.6",
+      "title": "Management review",
+      "file": "03-management-responsibility.md",
+      "anchor": "56-management-review",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§6.1–§6.2",
+      "title": "Provision of resources, human resources",
+      "file": "04-resource-management.md",
+      "anchor": "6162-provision-of-resources-human-resources",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§6.3",
+      "title": "Infrastructure",
+      "file": "04-resource-management.md",
+      "anchor": "63-infrastructure",
+      "pointer": "MduX version-controls and reviews its build infrastructure as source, which is infrastructure control of the build only, not of the facilities and equipment this clause covers.",
+      "justifications": []
+    },
+    {
+      "clause": "§6.4",
+      "title": "Work environment and contamination control",
+      "file": "04-resource-management.md",
+      "anchor": "64-work-environment-and-contamination-control",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.1",
+      "title": "Planning of product realization",
+      "file": "05-product-realization.md",
+      "anchor": "71-planning-of-product-realization",
+      "pointer": "MduX's ADRs play this role for the decisions they cover: each one states the decision, the alternatives considered, and what verification the decision implies, ahead of the implementation that follows it.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.2",
+      "title": "Customer-related processes",
+      "file": "05-product-realization.md",
+      "anchor": "72-customer-related-processes",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.3",
+      "title": "Design and development",
+      "file": "05-product-realization.md",
+      "anchor": "73-design-and-development",
+      "pointer": "MduXTrustZones.cmake is a design output verified mechanically at every build (a governed target's link graph cannot reach Vulkan or a windowing library), and ADR-004 is the design record explaining why - together they give a design-and-development control that runs on every change, not only at a scheduled review.",
+      "justifications": [
+        "JUS-008",
+        "JUS-009"
+      ]
+    },
+    {
+      "clause": "§7.4",
+      "title": "Purchasing",
+      "file": "05-product-realization.md",
+      "anchor": "74-purchasing",
+      "pointer": "No MduX-specific mechanism in the standard's sense (evaluating and controlling suppliers).",
+      "justifications": []
+    },
+    {
+      "clause": "§7.5",
+      "title": "Production and service provision",
+      "file": "05-product-realization.md",
+      "anchor": "75-production-and-service-provision",
+      "pointer": "For MduX, \"production\" is the baking process that turns a recipe and its inputs into a committed artifact.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.6",
+      "title": "Control of monitoring and measuring equipment",
+      "file": "05-product-realization.md",
+      "anchor": "76-control-of-monitoring-and-measuring-equipment",
+      "pointer": "No MduX-specific mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§8.1",
+      "title": "General",
+      "file": "06-measurement-analysis-improvement.md",
+      "anchor": "81-general",
+      "pointer": "MduX's CI matrix (three toolchains, the evidence byte-identity checks, `mdux-docs-lint`, `mdux-evidence-lint`) is the concrete form this takes here: a fixed, versioned set of checks that run on every change, not a process reconstructed ad hoc per review.",
+      "justifications": []
+    },
+    {
+      "clause": "§8.2",
+      "title": "Monitoring and measurement",
+      "file": "06-measurement-analysis-improvement.md",
+      "anchor": "82-monitoring-and-measurement",
+      "pointer": "The evidence-kernel and host-tools test suites (91 cases as of the epic that introduced them) run on every push to main or develop and on every pull request whose base branch matches main, develop, the issue-derived work-branch scheme [0-9]+-*, or the legacy feat/**, across the two toolchains automatic CI exercises - MSVC and GCC 16; a Clang workflow exists but is manual-dispatch only, so it contributes no automatic coverage - giving continuous, reproducible monitoring of whether the codebase still meets its own specified behaviour, not a periodic audit sample.",
+      "justifications": [
+        "JUS-010"
+      ]
+    },
+    {
+      "clause": "§8.3",
+      "title": "Control of nonconforming product",
+      "file": "06-measurement-analysis-improvement.md",
+      "anchor": "83-control-of-nonconforming-product",
+      "pointer": "A failed CI check is MduX's nonconforming-product control: a pull request whose evidence byte-comparison, trust-zone check, or lint fails cannot merge, which is nonconformity contained at the point of detection rather than shipped and corrected later.",
+      "justifications": []
+    },
+    {
+      "clause": "§8.4",
+      "title": "Analysis of data",
+      "file": "06-measurement-analysis-improvement.md",
+      "anchor": "84-analysis-of-data",
+      "pointer": "No dedicated MduX mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§8.5",
+      "title": "Improvement",
+      "file": "06-measurement-analysis-improvement.md",
+      "anchor": "85-improvement",
+      "pointer": "GitHub issues and pull requests are MduX's CAPA analog, with no effectiveness verification; mdux.governance (issue #34) is where a purpose-built mechanism would land.",
+      "justifications": []
+    }
+  ]
+}

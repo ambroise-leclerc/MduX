@@ -1,0 +1,42 @@
+# The MduX UI shader package.
+#
+# Baked by mdux-shaderbake into generated/shader/mdux-ui/, which is committed and byte-verified
+# by `ctest -L evidence` on every active toolchain (ADR-007).
+#
+# ## The .spv files are committed source assets, not build outputs
+#
+# `sources` points at SPIR-V that is checked into this directory, compiled once by hand rather
+# than by the build. That is deliberate, and it is the difference between an artifact that is
+# byte-identical across CI legs and one that is not: glslangValidator's output varies between its
+# own versions, so compiling GLSL during the build would make the committed package depend on
+# whichever shader compiler the CI image happened to ship. It would also make a shader compiler a
+# build requirement for everyone, which ADR-007 is explicit about avoiding.
+#
+# To change a shader, edit the .glsl source beside its .spv and regenerate both:
+#
+#   glslangValidator -V --target-env vulkan1.3 recipes/shader/mdux-ui/ui.vert \
+#                       -o recipes/shader/mdux-ui/ui.vert.spv
+#   glslangValidator -V --target-env vulkan1.3 recipes/shader/mdux-ui/ui.frag \
+#                       -o recipes/shader/mdux-ui/ui.frag.spv
+#   cmake --build <build-dir> --target mdux-bake-update
+#
+# then review the diff to generated/shader/mdux-ui/. The .spv is what a reviewer checks the
+# digests of; the .glsl beside it is what a reviewer reads.
+
+[package]
+id = "mdux-ui"
+sidecar = "shaders.spv"
+
+# Two parallel arrays rather than an array of tables: mdux.tools.toml implements a deliberate
+# subset with no [[table]] support, and widening the shared recipe parser to suit one baker would
+# be the wrong trade. Entry N of `ids` names entry N of `sources`; the baker rejects a length
+# mismatch by name.
+#
+# Order is load-bearing. The sidecar concatenates modules in this order, so reordering these two
+# arrays changes every byte offset in the package.
+[modules]
+ids = ["ui.vert", "ui.frag"]
+sources = [
+    "recipes/shader/mdux-ui/ui.vert.spv",
+    "recipes/shader/mdux-ui/ui.frag.spv",
+]

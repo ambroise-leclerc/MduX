@@ -1,0 +1,128 @@
+{
+  "standard": "IEC 81001-5-1:2021",
+  "corpus": "docs/iec81001",
+  "rows": [
+    {
+      "clause": "§1",
+      "title": "Scope",
+      "file": "01-scope-and-relationship-to-iec62304.md",
+      "anchor": "1-scope",
+      "pointer": "MduX contributes to a device's security posture without running the standard's process itself — it is a dependency a manufacturer's secure development life cycle would need to account for, not the life cycle.",
+      "justifications": []
+    },
+    {
+      "clause": "—",
+      "title": "Relationship to IEC 62304",
+      "file": "01-scope-and-relationship-to-iec62304.md",
+      "anchor": "relationship-to-iec-62304",
+      "pointer": "Maps each IEC 62304 lifecycle activity to its security counterpart, so a manufacturer using MduX runs one process rather than two.",
+      "justifications": []
+    },
+    {
+      "clause": "§2",
+      "title": "Normative references",
+      "file": "01-scope-and-relationship-to-iec62304.md",
+      "anchor": "2-normative-references",
+      "pointer": "Read alongside docs/iso14971/, which covers the risk-management framework a security risk assessment sits inside.",
+      "justifications": []
+    },
+    {
+      "clause": "§3",
+      "title": "Terms and definitions",
+      "file": "01-scope-and-relationship-to-iec62304.md",
+      "anchor": "3-terms-and-definitions",
+      "pointer": "Names the security concepts that recur here and where MduX makes each concrete: trust zones, provenance, defect tracking, and build tamper-evidence.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.2",
+      "title": "Security risk management",
+      "file": "02-security-risk-management.md",
+      "anchor": "42-security-risk-management",
+      "pointer": "MduX's security records use the ISO 14971 risk-record shape, so a security hazard cannot escape the review every safety hazard gets.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.1–§7.3",
+      "title": "Risk management context, identification and estimation",
+      "file": "02-security-risk-management.md",
+      "anchor": "7173-risk-management-context-identification-and-estimation",
+      "pointer": "MduX performs no device-level security risk assessment, for the same reason it performs no device-level safety risk assessment: it has no device.",
+      "justifications": []
+    },
+    {
+      "clause": "§7.4",
+      "title": "Controlling security risks",
+      "file": "02-security-risk-management.md",
+      "anchor": "74-controlling-security-risks",
+      "pointer": "The governed/adapter/tools trust-zone split constrains a governed target's dependency surface at the architecture level - mechanically enforced by MduXTrustZones.cmake at configure time - rather than relying on a runtime security control layered on afterward.",
+      "justifications": [
+        "JUS-013"
+      ]
+    },
+    {
+      "clause": "§7.5",
+      "title": "Monitoring the effectiveness of risk controls",
+      "file": "02-security-risk-management.md",
+      "anchor": "75-monitoring-the-effectiveness-of-risk-controls",
+      "pointer": "None of MduX's three mechanisms was designed against this standard; they are inputs to a manufacturer's assessment, not evidence of a completed one.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.3–§5.4",
+      "title": "Software architectural design and software design",
+      "file": "03-secure-design-and-implementation.md",
+      "anchor": "5354-software-architectural-design-and-software-design",
+      "pointer": "MduX's trust-zone architecture is the clearest instance of a design-time security property in this repository.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.5",
+      "title": "Software unit implementation and verification",
+      "file": "03-secure-design-and-implementation.md",
+      "anchor": "55-software-unit-implementation-and-verification",
+      "pointer": "Where MduX ships a derived artifact rather than only source, the consumer verifies it before use.",
+      "justifications": []
+    },
+    {
+      "clause": "—",
+      "title": "What no MduX mechanism covers",
+      "file": "03-secure-design-and-implementation.md",
+      "anchor": "what-no-mdux-mechanism-covers",
+      "pointer": "MduX runs `clang-tidy` and compiles warnings-as-errors, which is general code hygiene rather than a security programme, and has no secrets to handle.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.7",
+      "title": "Software system testing",
+      "file": "04-security-verification-and-update-management.md",
+      "anchor": "57-software-system-testing",
+      "pointer": "MduX verifies two properties this practice cares about - the trust-zone dependency boundary and cross-toolchain byte identity - and fuzzes none of its parsing surfaces, which is a gap rather than a scope exclusion.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.8",
+      "title": "Software release",
+      "file": "04-security-verification-and-update-management.md",
+      "anchor": "58-software-release",
+      "pointer": "The caveat stated throughout this directory applies with full force here: none of them was written against IEC 81001-5-1's documentation requirements, so they should be read as material a manufacturer can use, not as a deliverable this standard asks for and MduX has produced.",
+      "justifications": []
+    },
+    {
+      "clause": "§6",
+      "title": "Software maintenance process",
+      "file": "04-security-verification-and-update-management.md",
+      "anchor": "6-software-maintenance-process",
+      "pointer": "MduX has no deployed product, so it has no update mechanism to describe — the same honest gap already recorded for maintenance in [`../iec62304/04-maintenance-process.md`](../iec62304/04-maintenance-process.md).",
+      "justifications": []
+    },
+    {
+      "clause": "§9",
+      "title": "Software problem resolution process",
+      "file": "04-security-verification-and-update-management.md",
+      "anchor": "9-software-problem-resolution-process",
+      "pointer": "MduX tracks defects in GitHub Issues, with the general-purpose-tracking limits already set out in [`../iec62304/07-problem-resolution-process.md`](../iec62304/07-problem-resolution-process.md).",
+      "justifications": []
+    }
+  ]
+}

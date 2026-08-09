@@ -1,0 +1,94 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    # Matches the PR's *base*, not its head: a base branch missing from this list means that PR
+    # reports no checks at all, silently - which is worse than reporting failures. `[0-9]+-*` is
+    # the scheme GitHub's "create a branch for this issue" button generates (issue number, dash,
+    # slugified title) and this project's standard - see AGENTS.md "Branch naming". It is also
+    # what gets a stacked PR checked, i.e. one targeting its predecessor rather than develop so a
+    # reviewer sees one issue's diff instead of the cumulative one. `feat/**` predates the
+    # convention and is kept for branches already in flight.
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+  schedule:
+    # Catch newly-disclosed CWE patterns in unchanged code, not just new commits.
+    - cron: '0 6 * * 1'
+
+# The default for anything not named below. The job grants itself the three it needs; without a
+# top-level block the workflow inherits whatever the repository default is, which is what Scorecard's
+# Token-Permissions check flags. Every other workflow here already declares one.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (C++)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later step could read it (OpenSSF
+      # Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
+
+    # `build-mode: none`, not `manual`. This job used to run in a gcc:16 container and build the
+    # whole project so CodeQL's tracer could watch the compiler - and the tracer never attached.
+    # Its LD_PRELOAD entry uses the `${LIB}_${PLATFORM}` ld.so tokens, the container's linker
+    # reported "cannot be preloaded ... ignored", and every compile then ran untraced. The job
+    # passed anyway, because an empty database analyses cleanly: 397 translation units compiled
+    # into a 7.76 KiB source archive holding two files. Pointing LD_PRELOAD at the concrete
+    # lib64trace.so the same environment exports made the error go away without extracting any
+    # more code, so the tracer is not the thing to keep fixing.
+    #
+    # Buildless extraction reads the sources directly. It resolves fewer includes than a traced
+    # build would, which is a real cost - but the comparison is against two files, not against a
+    # working traced build. The compile itself is not lost either: linux-gcc16-build.yml and
+    # windows-build.yml both build this tree on every PR, so nothing here was the only thing
+    # proving it compiles.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+      with:
+        languages: cpp
+        build-mode: none
+        config-file: ./.github/codeql/codeql-config.yml
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+      with:
+        category: "/language:cpp"
+
+    # A CodeQL run that extracted nothing reports success, which is the worst of both worlds: a
+    # green check and no analysis. Nothing upstream fails on it - that is exactly how the empty
+    # database went unnoticed - so the check has to be here, and it has to be a count. The
+    # tracer's own failure was already printed as an ERROR line in a passing job.
+    - name: Verify the database is not empty
+      run: |
+        db="${RUNNER_TEMP}/codeql_databases/cpp"
+        if [ -f "${db}/src.zip" ]; then
+          extracted=$(unzip -l "${db}/src.zip" | grep -cE '\.(cpp|cppm|hpp|h)$' || true)
+        else
+          extracted=$(find "${db}/src" \( -name '*.cpp' -o -name '*.cppm' -o -name '*.hpp' \) 2>/dev/null | wc -l)
+        fi
+        # Measured against what the repository actually holds rather than a number written down
+        # here, which would need editing every time the tree grows and would rot silently in the
+        # meantime. The first version of this guard hard-coded 200 and failed a *working* run that
+        # extracted 153 of 139 tracked files.
+        tracked=$(git ls-files | grep -cE '\.(cpp|cppm|hpp|h)$')
+        floor=$(( tracked * 80 / 100 ))
+        echo "CodeQL extracted ${extracted} C++ source files; the tree tracks ${tracked}"
+        # Whole files missing is the failure this catches - a tracer that attached to nothing left
+        # two. Some slack, because generated and excluded sources make the two counts differ
+        # legitimately in both directions.
+        if [ "${extracted}" -lt "${floor}" ]; then
+          echo "::error::CodeQL extracted ${extracted} source files against ${tracked} tracked - the analysis above was vacuous"
+          exit 1
+        fi

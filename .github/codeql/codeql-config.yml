@@ -1,0 +1,9 @@
+name: "MduX CodeQL config"
+
+# This job extracts without building (see codeql.yml), so there is no build-gcc/_deps/ tree of
+# fetched Catch2 and glfw sources to exclude - CPM.cmake never runs. The entry is kept, scoped to
+# any build directory, so a future traced build cannot silently start reporting alerts against
+# third-party source that is not this repository's to fix.
+paths-ignore:
+  - '**/_deps/**'
+  - 'build*/**'

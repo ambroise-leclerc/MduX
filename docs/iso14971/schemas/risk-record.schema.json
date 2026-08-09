@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iso14971/risk-record.schema.json",
+  "title": "ISO 14971 risk record",
+  "description": "One hazard, its evaluation, and the requirements that control it. The first three members - id, description, controlled_by - are the same fields, with the same names and the same constraints, as mdux::governance::Hazard in include/mdux/governance/Governance.cppm. That alignment is the point of this schema rather than a convenience: it is what lets a risk record written by hand and a Hazard built in C++ be the same object, and tools/docs-lint/check_schema_type_drift.py fails the build if the two stop agreeing. The remaining members are the ISO 14971 evaluation the C++ type does not carry, because a risk evaluation is a device-level judgement and MduX has no device. Note what this schema deliberately does not do: it does not define severity or probability scales. ISO 14971 §4.4 requires the manufacturer to define its own criteria for risk acceptability in its risk management plan, so a fixed five-level enum here would be this project inventing a criterion it has no standing to set. severity, probability and acceptability are therefore free strings, and scale_ref names the manufacturer document that gives them meaning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "controlled_by", "hazardous_situation", "harm", "owner"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Field-aligned with mdux::governance::Hazard::id.",
+      "pattern": "^HAZ-[A-Z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Field-aligned with mdux::governance::Hazard::description. The hazard itself - the potential source of harm - not the situation or the harm, both of which have their own members below.",
+      "minLength": 1
+    },
+    "controlled_by": {
+      "type": "array",
+      "description": "Field-aligned with mdux::governance::Hazard::controlledBy. Non-empty, and every entry names a requirement: this is the machine-checked ISO 14971 §7 / IEC 62304 §4.2 join. A hazard recorded with no risk control is either an unfinished analysis or an accepted risk nobody wrote down; ComplianceProgram::validate() additionally checks that each id resolves to a requirement that exists, which no single record can check for itself.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9-]+$"
+      }
+    },
+    "hazardous_situation": {
+      "type": "string",
+      "description": "The circumstance in which people, property or the environment are exposed to the hazard (ISO 14971 §5.4). Kept separate from the hazard because one hazard reaches harm through several situations, and the risk of each is estimated separately.",
+      "minLength": 1
+    },
+    "harm": {
+      "type": "string",
+      "description": "The injury or damage that results if the hazardous situation leads to it.",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "description": "Who this record belongs to. 'device_manufacturer' is the normal case and the default assumption of the whole corpus: identifying hazards for an intended use, estimating risk, and judging acceptability are device-level activities MduX cannot perform. 'mdux' is reserved for the handful of hazards whose control is enforced by this library's own architecture regardless of the device it ends up in.",
+      "enum": ["device_manufacturer", "mdux"]
+    },
+    "control_option": {
+      "type": "string",
+      "description": "Which of ISO 14971 §7.1's three risk control options this record's controls use. This one is a closed set because the standard itself fixes it, and fixes its priority order: inherently safe design first, then protective measures, then information for safety. Unlike the severity and probability scales below, it is not the manufacturer's to define.",
+      "enum": ["inherently_safe_design", "protective_measures", "information_for_safety"]
+    },
+    "severity": {
+      "type": "string",
+      "description": "A level from the manufacturer's own severity scale. Free text, not an enum - see the schema description.",
+      "minLength": 1
+    },
+    "probability": {
+      "type": "string",
+      "description": "A level from the manufacturer's own probability scale. Free text, not an enum - see the schema description.",
+      "minLength": 1
+    },
+    "acceptability": {
+      "type": "string",
+      "description": "The manufacturer's judgement against its own acceptability criteria, after the controls in controlled_by are applied.",
+      "minLength": 1
+    },
+    "scale_ref": {
+      "type": "string",
+      "description": "Where the severity, probability and acceptability scales used by this record are defined - normally a section of the device's risk management plan. Required whenever any of those three is present, because a level with no scale behind it is not an estimate.",
+      "minLength": 1
+    },
+    "residual_risk_note": {
+      "type": "string",
+      "description": "The §7.4 residual-risk evaluation, or the §7.6 note on risks introduced by the controls themselves.",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Repository-relative paths supporting this record - a verification case, an ADR, a test.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "dependentRequired": {
+    "severity": ["scale_ref"],
+    "probability": ["scale_ref"],
+    "acceptability": ["scale_ref"]
+  },
+  "examples": [
+    {
+      "id": "HAZ-TRUSTZONE-001",
+      "description": "A governed MduX module acquires a dependency on a driver-provided library, so its behaviour is no longer determined by the audited source alone.",
+      "controlled_by": ["REQ-TRUSTZONE-001"],
+      "hazardous_situation": "A device ships a build in which governed code links Vulkan transitively, and a driver update changes behaviour that was verified against the previous driver.",
+      "harm": "A clinical display renders differently from the state that was verified, and a user acts on it.",
+      "owner": "mdux",
+      "control_option": "inherently_safe_design",
+      "evidence_refs": ["cmake/MduXTrustZones.cmake", "docs/adr/ADR-004-trust-zones-in-cpp.md"]
+    },
+    {
+      "id": "HAZ-DEVICE-014",
+      "description": "A physiological value is displayed with a unit the clinician does not expect.",
+      "controlled_by": ["REQ-DISPLAY-UNITS-001"],
+      "hazardous_situation": "A dose is read from a screen configured for a locale whose unit convention differs from the one the clinician trained on.",
+      "harm": "Incorrect dose administered.",
+      "owner": "device_manufacturer",
+      "control_option": "protective_measures",
+      "severity": "serious",
+      "probability": "occasional",
+      "acceptability": "acceptable_with_controls",
+      "scale_ref": "Device risk management plan §4.2, severity and probability scales",
+      "residual_risk_note": "Residual risk accepted after unit annotation was made non-suppressible; re-evaluate if locale set is extended."
+    }
+  ]
+}

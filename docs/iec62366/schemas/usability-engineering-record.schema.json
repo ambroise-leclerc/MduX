@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/iec62366/usability-engineering-record.schema.json",
+  "title": "IEC 62366-1 usability engineering record",
+  "description": "One use-related risk, the user interface characteristic it arises from, and the control that addresses it. Two design choices are worth reading before using this schema. First, process_step is a set of named steps rather than clause numbers: this corpus asserts IEC 62366-1:2015 clause numbers at the top level only, and inventing sub-clause numbers here would put unverified citations into machine-readable form, which is worse than leaving them out of prose (see docs/iec62366/README.md). Second, control_status is required and has no default. A usability engineering file that cites a control which is not implemented is the precise failure this standard's evaluation steps exist to catch, so a record cannot be written without stating whether its control exists today - and 'planned' records carry the issue that would implement them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_id",
+    "process_step",
+    "use_error",
+    "harm",
+    "ui_characteristic",
+    "control",
+    "control_status",
+    "owner"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "description": "Unique within docs/iec62366/.",
+      "pattern": "^UER-[0-9]{3,}$"
+    },
+    "process_step": {
+      "type": "string",
+      "description": "Which step of the §5 usability engineering process this record belongs to - one value per sub-clause §5.1 to §5.10, in the order the standard runs them. Verified against IEC 62366-1:2015 Edition 1.0 under issue #113. The earlier vocabulary used 'application_specification', which is the superseded IEC 62366:2007 term, and omitted the hazard-identification steps entirely.",
+      "enum": [
+        "use_specification",
+        "ui_characteristics_and_use_errors",
+        "hazards_and_hazardous_situations",
+        "hazard_related_use_scenarios",
+        "scenario_selection_for_summative",
+        "ui_specification",
+        "evaluation_plan",
+        "design_implementation_and_formative_evaluation",
+        "summative_evaluation",
+        "user_interface_of_unknown_provenance"
+      ]
+    },
+    "use_error": {
+      "type": "string",
+      "description": "What the user does, or fails to do, that this record is about. Stated as an action rather than as a defect: 'reads a dose value truncated to two digits', not 'text overflows'.",
+      "minLength": 1
+    },
+    "harm": {
+      "type": "string",
+      "description": "The injury or damage that can follow from the use error.",
+      "minLength": 1
+    },
+    "ui_characteristic": {
+      "type": "string",
+      "description": "The user interface characteristic the use error arises from - the thing a manufacturer would change to remove it.",
+      "minLength": 1
+    },
+    "control": {
+      "type": "string",
+      "description": "The measure that addresses the use error. Where MduX supplies it, name the mechanism concretely (an annotation, a compile-time check, a verification pass) rather than describing an intent.",
+      "minLength": 1
+    },
+    "control_status": {
+      "type": "string",
+      "description": "Whether the control exists. 'implemented' requires evidence_refs to be present and non-empty; 'planned' requires planned_by_issue. There is no default: a record that did not have to say would let an unimplemented control read as an implemented one.",
+      "enum": [
+        "implemented",
+        "planned",
+        "not_applicable"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "description": "Who the control belongs to. 'device_manufacturer' is the normal case - identifying use errors for an intended use and evaluating them with real users are device-level activities. 'mdux' is for controls this library enforces regardless of the integrating device.",
+      "enum": [
+        "device_manufacturer",
+        "mdux"
+      ]
+    },
+    "requirement_id": {
+      "type": "string",
+      "description": "The requirement this control satisfies, if one is bound. Same shape as mdux::governance::Requirement::id, so a usability control and a verification case can be joined on it.",
+      "pattern": "^REQ-[A-Z0-9-]+$"
+    },
+    "hazard_id": {
+      "type": "string",
+      "description": "The ISO 14971 hazard record this use-related risk feeds, if one exists. Same shape as mdux::governance::Hazard::id - use-related risk is risk, and IEC 62366-1's output belongs in the same risk management file.",
+      "pattern": "^HAZ-[A-Z0-9-]+$"
+    },
+    "planned_by_issue": {
+      "type": "integer",
+      "description": "The issue that would implement a planned control. Required when control_status is 'planned', so a planned control is traceable to work rather than to an intention.",
+      "minimum": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Repository-relative paths showing the control exists. Required and non-empty when control_status is 'implemented'.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "notes": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "control_status": {
+            "const": "implemented"
+          }
+        },
+        "required": [
+          "control_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "evidence_refs"
+        ],
+        "properties": {
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "control_status": {
+            "const": "planned"
+          }
+        },
+        "required": [
+          "control_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "planned_by_issue"
+        ]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "record_id": "UER-001",
+      "process_step": "ui_characteristics_related_to_safety",
+      "use_error": "A clinician reads a dose value that has been truncated by the field it is rendered in, and administers the truncated value.",
+      "harm": "Incorrect dose administered.",
+      "ui_characteristic": "A safety-critical numeric field whose width was validated in one locale but not in every locale the device ships.",
+      "control": "Text-budget validation over every approved locale, run by the .medui compiler at build time on every element carrying @safety_critical, so a build that could truncate does not link.",
+      "control_status": "planned",
+      "owner": "mdux",
+      "planned_by_issue": 15,
+      "requirement_id": "REQ-TEXT-BUDGET-001",
+      "hazard_id": "HAZ-DEVICE-014",
+      "notes": "The control removes one mechanism of this use error by construction. It says nothing about legibility or comprehension, which stay with the device's summative evaluation."
+    },
+    {
+      "record_id": "UER-002",
+      "process_step": "summative_evaluation",
+      "use_error": "A clinician misreads a waveform whose rendering differs from the state the device intended to display.",
+      "harm": "A clinical decision taken on a display that does not reflect the patient.",
+      "ui_characteristic": "The rendering path between the device's model state and the pixels on screen.",
+      "control": "Rendered-truth verification confirms a compiled screen renders the state it was given. This is a control on the software, not on the reading of it - the device's summative evaluation with real users is what covers the latter, and this record does not claim otherwise.",
+      "control_status": "planned",
+      "owner": "mdux",
+      "planned_by_issue": 16
+    }
+  ]
+}

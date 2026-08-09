@@ -1,103 +1,112 @@
 /**
  * @file SimpleMedicalUiExample.cpp
- * @brief Simple Medical UI Example using committed MduX module interface
+ * @brief What MduX builds a frame out of, with no Vulkan device and no window.
  *
- * This example demonstrates basic usage of the MduX Medical Device UI Library
- * using only the committed and exported module interface.
+ * @compliance IEC 62304 Class B - Medical Device Example
+ *
+ * This example used to construct a `MedicalUiConfig`, a `MedicalUiContent` holding an HTML string,
+ * and a `UiFileWatcher` - none of which did anything. `MedicalUiRenderer::render()` recorded no
+ * Vulkan commands at all, and nothing ever parsed the HTML. Issue #127 deleted that path.
+ *
+ * What replaces it is worth showing precisely because it is unglamorous: a `DrawList` is a plain
+ * description of a frame, built over storage the caller owns, with no Vulkan anywhere in it. That
+ * is the property everything else rests on - it is why a frame can be built here with no device,
+ * checked in a test with no GPU, and rendered offscreen in CI with no display server.
+ *
+ * For the rendering half see examples/VulkanSCTriangleExample.cpp, which owns a device and a
+ * window, and tests/render/ for a frame going all the way to pixels.
  */
 
-// Include headers before module imports to avoid GCC 15 ICE
-#include <GLFW/glfw3.h>  // GLFW for windowing (user's responsibility)
-#include <vulkan/vulkan.h>  // Vulkan constants like VK_NULL_HANDLE
-
-import mdux;
 import std;
+import mdux;
+import mdux.core.units;
+import mdux.draw;
+
+namespace {
+
+namespace core = mdux::core;
+namespace draw = mdux::draw;
+
+/// Storage for one screen's frame. On a device this is sized from a budget the `.medui` compiler
+/// computed (issue #15) and lives in static storage; here it is a local, which is the same thing
+/// with a shorter lifetime. Either way `DrawList` never allocates.
+struct ScreenStorage {
+    std::array<draw::UiVertex, 64> vertices{};
+    std::array<draw::Index, 96> indices{};
+    std::array<draw::DrawCommand, 8> commands{};
+
+    [[nodiscard]] static constexpr draw::DrawBudget budget() noexcept {
+        return draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 8};
+    }
+};
+
+struct Element {
+    core::Rect bounds;
+    core::ColorRgba8 color;
+    std::string_view name;
+};
+
+void describe(const draw::DrawList& list) {
+    std::println("  vertices: {:>3} / {}", list.vertices().size(), list.budget().maxVertices);
+    std::println("  indices:  {:>3} / {}", list.indices().size(), list.budget().maxIndices);
+    std::println("  commands: {:>3} / {}", list.commands().size(), list.budget().maxCommands);
+}
+
+}  // namespace
 
 int main() {
-    // Initialize MduX library
+    std::println("MduX {} - {}", mdux::Version::getString(), mdux::Compliance::standards);
+    std::println("Safety class: {}", mdux::Compliance::safetyClass);
+    std::println("");
+
     if (!mdux::initialize()) {
-        std::cerr << "Failed to initialize MduX library" << std::endl;
-        return -1;
+        std::println(std::cerr, "mdux::initialize() failed");
+        return 1;
     }
 
-    // Display version and compliance information
-    std::cout << "MduX Version: " << mdux::Version::getString() << std::endl;
-    std::cout << "Vulkan Support: " << mdux::VulkanSupport::getApiVersion() << std::endl;
-    std::cout << "Compliance: " << mdux::Compliance::standards << std::endl;
-    std::cout << "Safety Class: " << mdux::Compliance::safetyClass << std::endl;
-
-    // Setup medical device compliance metadata
-    mdux::ComplianceMetadata compliance;
-    compliance.deviceClass = "Class B";
-    compliance.standardsCompliance = "IEC 62304, IEC 62366";
-    compliance.version = "1.0.0";
-    compliance.buildId = "Example-Build-001";
-    compliance.auditTrailEnabled = true;
-
-    if (!compliance.isComplete()) {
-        std::cerr << "Compliance metadata is incomplete" << std::endl;
-        return -1;
+    ScreenStorage storage;
+    auto list = draw::DrawList::create(storage.vertices, storage.indices, storage.commands,
+                                       ScreenStorage::budget());
+    if (!list.has_value()) {
+        std::println(std::cerr, "could not build a draw list: {}", draw::describe(list.error()));
+        mdux::shutdown();
+        return 1;
     }
 
-    // Setup medical UI configuration
-    mdux::MedicalUiConfig uiConfig;
-    // This smoke test does not load an external UI definition.
-    uiConfig.compliance = compliance;
-    uiConfig.enableHotReload = false;  // Disabled for CI/production
-    uiConfig.enableValidation = true;
-    uiConfig.rendererId = "SimpleMedicalExample";
+    // A panel, a header bar and a status block: three rectangles, in pixels, top-left origin.
+    constexpr core::ColorRgba8 panel{.r = 32, .g = 38, .b = 45, .a = 255};
+    constexpr core::ColorRgba8 header{.r = 11, .g = 110, .b = 119, .a = 255};
+    constexpr core::ColorRgba8 ok{.r = 60, .g = 107, .b = 44, .a = 255};
 
-    if (!uiConfig.isValid()) {
-        std::cout << "Note: UI config validation failed (expected - no UI file in CI)" << std::endl;
-        // Continue anyway for demonstration
+    const std::array<Element, 3> screen{
+        Element{.bounds = {.x = 0, .y = 0, .width = 800, .height = 600},
+                .color = panel,
+                .name = "panel"},
+        Element{.bounds = {.x = 0, .y = 0, .width = 800, .height = 48},
+                .color = header,
+                .name = "header"},
+        Element{.bounds = {.x = 16, .y = 64, .width = 120, .height = 24},
+                .color = ok,
+                .name = "status"}};
+
+    for (const Element& element : screen) {
+        if (auto added = list->addSolidRect(element.bounds, element.color); !added.has_value()) {
+            // A frame that does not fit its budget is refused, not truncated. On a device that
+            // refusal is the point: a UI which silently grew its buffers would have a per-frame
+            // cost nobody bounded, and the first symptom is a missed deadline.
+            std::println(std::cerr, "'{}' did not fit: {}", element.name,
+                         draw::describe(added.error()));
+            mdux::shutdown();
+            return 1;
+        }
     }
 
-    // Create minimal Vulkan context (normally provided by user application)
-    mdux::VulkanContext vulkanContext;
-    vulkanContext.device = VK_NULL_HANDLE;           // Would be user's device
-    vulkanContext.physicalDevice = VK_NULL_HANDLE;   // Would be user's physical device
-    vulkanContext.commandBuffer = VK_NULL_HANDLE;    // Would be user's command buffer
-    vulkanContext.renderPass = VK_NULL_HANDLE;       // Would be user's render pass
-    vulkanContext.renderExtent = {800, 600};
-    vulkanContext.currentFrame = 0;
-    vulkanContext.deltaTime = 0.016f;  // 60 FPS
+    std::println("Built a frame with no Vulkan device and no window:");
+    describe(*list);
+    std::println("");
+    std::println("The same list is what mdux::render::UiRenderer records into a command buffer.");
+    std::println("See examples/VulkanSCTriangleExample.cpp for the device half.");
 
-    std::cout << "Vulkan context valid: " << (vulkanContext.isValid() ? "Yes" : "No (expected in CI)") << std::endl;
-
-    // Demonstrate UI content creation
-    mdux::MedicalUiContent uiContent;
-    uiContent.identifier = "medical-ui-001";
-    uiContent.htmlContent = "<div>Sample Medical UI</div>";
-    uiContent.cssContent = ".medical-ui { background: #f0f0f0; }";
-    uiContent.version = "1.0.0";
-
-    std::cout << "UI content valid: " << (uiContent.isValid() ? "Yes" : "No") << std::endl;
-    std::cout << "UI has content: " << (uiContent.hasContent() ? "Yes" : "No") << std::endl;
-
-    // Demonstrate file watcher (without actual file operations for CI)
-    mdux::UiFileWatcher watcher;
-    std::cout << "File watcher created successfully" << std::endl;
-    std::cout << "Currently watching: " << (watcher.isWatching() ? "Yes" : "No") << std::endl;
-
-    try {
-        // Note: In a real application, you would create MedicalUiRenderer here
-        // For this CI example, we skip actual Vulkan operations since no real device is available
-        std::cout << "MedicalUiRenderer would be created here with valid Vulkan context" << std::endl;
-        
-        // Demonstrate render statistics
-        mdux::RenderStatistics stats;
-        stats.updateFrame(16.67f);  // Simulate 60 FPS frame
-        std::cout << "Frame count: " << stats.frameCount << std::endl;
-        std::cout << "Average frame time: " << stats.averageFrameTime << " ms" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cout << "Note: Exception expected in CI environment: " << e.what() << std::endl;
-    }
-
-    std::cout << "Simple Medical UI Example completed successfully!" << std::endl;
-
-    // Shutdown MduX library
     mdux::shutdown();
-    
     return 0;
 }

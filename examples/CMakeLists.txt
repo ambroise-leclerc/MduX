@@ -1,99 +1,81 @@
 # Examples for MduX Medical Device UI Library
 
-# Simple Medical UI integration example using committed module interface
-add_executable(MedicalUiExample 
+# Building a frame with no device and no window (issue #127).
+#
+# Deliberately does not link GLFW. It used to, back when it constructed a MedicalUiConfig and a
+# UiFileWatcher without ever opening a window; now that it demonstrates mdux.draw, the absence of
+# a windowing dependency is part of what it demonstrates.
+add_executable(MedicalUiExample
     SimpleMedicalUiExample.cpp
 )
 
 target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
 
-# Find GLFW for the example (user's windowing solution)
+# No shader compilation here any more. SPIR-V is committed under recipes/shader/triangle/ and
+# baked into generated/shader/triangle/ (issue #122), which removes both the build-time dependency
+# on glslangValidator and the runtime dependency on the working directory.
+
+# Vulkan SC Triangle Demo - visual rendering with static memory.
+#
+# No longer guarded. The exclusion here was issue #48 item 2: a GCC 15 internal compiler error
+# ("internal compiler error: Segmentation fault" inside <array>) compiling this translation unit
+# under C++23 modules. With the project's GCC floor raised to 16 the guard became unreachable -
+# every GCC that can configure this project is one the ICE was never observed on - and an
+# unreachable guard that still names a version is worse than none, because it reads as a live
+# constraint. #48 item 2 is closed by the floor rather than by a workaround.
+# GLFW is the triangle demo's, and only the triangle demo's - the examples-only windowing
+# boundary. MduX itself never links it, which mdux_verify_trust_zones() enforces from the
+# other side for the governed target.
+#
+# Unconditional again now the compiler guard is gone: this example is always built, so GLFW is
+# always needed. It was moved inside the guard while the example could be excluded, to avoid a
+# find_package and possibly a source download for a target that would not be built.
 find_package(glfw3 QUIET)
-if(glfw3_FOUND)
-    target_link_libraries(MedicalUiExample PRIVATE glfw)
-    message(STATUS "Using system GLFW for MedicalUiExample")
-else()
-    # Fallback to CPM for examples only
-    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4 
+if(NOT glfw3_FOUND)
+    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4
                   OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF")
-    target_link_libraries(MedicalUiExample PRIVATE glfw)
-    message(STATUS "Using CPM GLFW for MedicalUiExample")
+    message(STATUS "Using CPM GLFW for VulkanSCTriangleExample")
+else()
+    message(STATUS "Using system GLFW for VulkanSCTriangleExample")
 endif()
 
-# Compile shaders for triangle demo
-find_program(GLSL_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/Bin)
+add_executable(VulkanSCTriangleExample
+    VulkanSCTriangleExample.cpp
+)
 
-set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
-set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+# The generated module lives in the build tree, so it needs a file set naming that directory.
+target_sources(VulkanSCTriangleExample
+    PRIVATE
+        FILE_SET generated_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+            FILES ${MDUX_TRIANGLE_SHADER_MODULE}
+)
+add_dependencies(VulkanSCTriangleExample emit-shader-triangle)
 
-file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
+target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
 
-set(VERT_SHADER ${SHADER_DIR}/triangle.vert)
-set(FRAG_SHADER ${SHADER_DIR}/triangle.frag)
-set(VERT_SPV ${SHADER_BINARY_DIR}/triangle.vert.spv)
-set(FRAG_SPV ${SHADER_BINARY_DIR}/triangle.frag.spv)
+# GLFW for windowing. The conditional this replaces linked `glfw` in both branches, so it
+# never chose anything - which is why the target name is resolved above instead.
+target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
 
-if(GLSL_VALIDATOR)
-    add_custom_command(
-        OUTPUT ${VERT_SPV}
-        COMMAND ${GLSL_VALIDATOR} -V ${VERT_SHADER} -o ${VERT_SPV}
-        DEPENDS ${VERT_SHADER}
-        COMMENT "Compiling vertex shader"
-    )
+# Set C++23 standard
+set_target_properties(VulkanSCTriangleExample PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
 
-    add_custom_command(
-        OUTPUT ${FRAG_SPV}
-        COMMAND ${GLSL_VALIDATOR} -V ${FRAG_SHADER} -o ${FRAG_SPV}
-        DEPENDS ${FRAG_SHADER}
-        COMMENT "Compiling fragment shader"
-    )
-
-    add_custom_target(CompileShaders DEPENDS ${VERT_SPV} ${FRAG_SPV})
-else()
-    message(WARNING "glslangValidator not found. Shaders will not be compiled.")
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(VulkanSCTriangleExample PROPERTIES CXX_MODULE_STD ON)
 endif()
 
-# Vulkan SC Triangle Demo - Visual rendering with static memory
-# Temporarily disabled on GCC 15 due to compiler ICE bugs with C++23 modules
-# (Segmentation fault in std::array with modules, fixed in future GCC versions)
-if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
-    add_executable(VulkanSCTriangleExample
-        VulkanSCTriangleExample.cpp
-    )
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(VulkanSCTriangleExample PRIVATE /experimental:module /std:c++latest)
+endif()
 
-    if(GLSL_VALIDATOR)
-        add_dependencies(VulkanSCTriangleExample CompileShaders)
-    endif()
-
-    target_link_libraries(VulkanSCTriangleExample PRIVATE MduX::MduX)
-
-    # GLFW for windowing
-    if(glfw3_FOUND)
-        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
-    else()
-        target_link_libraries(VulkanSCTriangleExample PRIVATE glfw)
-    endif()
-
-    # Set C++23 standard
-    set_target_properties(VulkanSCTriangleExample PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-    )
-
-    if(TARGET __CMAKE::CXX23)
-        set_target_properties(VulkanSCTriangleExample PROPERTIES CXX_MODULE_STD ON)
-    endif()
-
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        target_compile_options(VulkanSCTriangleExample PRIVATE /experimental:module /std:c++latest)
-    endif()
-
-    if(UNIX)
-        target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
-    endif()
-else()
-    message(STATUS "Skipping VulkanSCTriangleExample on GCC 15 due to compiler ICE bugs with C++23 modules")
+if(UNIX)
+    target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
 endif()
 
 # Platform-specific libraries for file watching
@@ -122,4 +104,43 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MedicalUiExample PRIVATE /std:c++latest)
     # target_compile_options(MduXExample PRIVATE /experimental:module) # Disabled legacy example
     # target_compile_options(MduXExample PRIVATE /std:c++latest) # Disabled legacy example
+endif()
+
+# The ECG classifier demonstrator (issue #64, ADR-008).
+#
+# Links MduX::MlBakeLib rather than MduX::MduX: it needs no Vulkan and no window, and the governed
+# ML modules come through transitively. The host-tools dependency is only for the package loader -
+# a constexpr package emitter would remove it, and the runtime already needs no parser.
+#
+# The two mdux_embed_blob() calls are the whole "weights are data" story. Pointing them at
+# generated/model/ecg-demo-alt/ instead swaps the model with no change to
+# EcgClassifierExample.cpp - which is exactly what tests/ml/WeightSwapTests.cpp asserts.
+add_executable(EcgClassifierExample
+    EcgClassifierExample.cpp
+)
+
+target_link_libraries(EcgClassifierExample PRIVATE MduX::MlBakeLib)
+
+mdux_embed_blob(EcgClassifierExample
+    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/weights.bin
+    SYMBOL ecgModelWeights
+)
+mdux_embed_blob(EcgClassifierExample
+    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/package.json
+    SYMBOL ecgModelPackage
+)
+
+set_target_properties(EcgClassifierExample
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(EcgClassifierExample PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(EcgClassifierExample PRIVATE /experimental:module /std:c++latest)
 endif()

@@ -1,0 +1,74 @@
+# The DejaVu Sans UI font package.
+#
+# Baked by mdux-textbake into generated/font/dejavu-ui/, which is committed and byte-verified by
+# `ctest -L evidence` on every active toolchain (ADR-007, ADR-010).
+#
+# ## Provenance and license, stated plainly
+#
+# `dejavu-ui/DejaVuSans.ttf` is DejaVu Sans, redistributed here **unmodified**. Its terms are in
+# `dejavu-ui/LICENSE-DejaVu.txt`, which is the upstream license file byte for byte - the Bitstream
+# Vera terms, the Arev additions with the Tavmjong Bah notice, and the DejaVu changes in the public
+# domain. Provenance and the reasoning behind that file are in `dejavu-ui/README.md`; the SOUP
+# entry is in docs/governance/soup-register.toml.
+#
+# Two consequences worth being explicit about, because both are easy to get wrong later:
+#
+#   - The naming restriction in that license binds *modified* versions. MduX does not modify the
+#     font - it reads it and rasterises glyphs from it - so the restriction is not engaged. A
+#     future change that subsets or edits the .ttf before committing it would engage it, and would
+#     need the file renamed.
+#   - The license covers the font. It does not cover, and does not need to cover, the coverage
+#     bitmaps this recipe bakes out of it: rasterising a glyph is use of the font, the same as
+#     printing a document with it.
+#
+# ## The .ttf is a committed source asset, not a build output
+#
+# Same reasoning as the .spv files under recipes/shader/ and the .safetensors under
+# recipes/model/: an artifact whose bytes depend on which version of a tool the CI image ships is
+# not byte-reproducible. The font is an input, pinned by its digest in report.json. To change it,
+# replace the file and run
+#
+#   cmake --build <build-dir> --target mdux-bake-update
+#
+# then review the diff to generated/font/dejavu-ui/.
+#
+# ## Why this charset
+#
+# Printable ASCII only, for v1. Two reasons, one of them load-bearing:
+#
+#   - Every glyph in U+0020..U+007E is a *simple* outline in DejaVu Sans - measured, not assumed:
+#     95 of 95 code points map and 95 of 95 produce outlines with zero composites. The parser
+#     rejects composites (ADR-010's "substitutions the baker did not pre-bake"), so a charset
+#     reaching into accented Latin would fail the bake until composite pre-baking lands.
+#   - The restricted-charset table that makes the character set enforceable rather than
+#     conventional is #161 (S5). Until it exists, keeping the set small keeps the committed
+#     artifact small and the first end-to-end proof honest.
+
+[package]
+id = "dejavu-ui"
+source = "recipes/font/dejavu-ui/DejaVuSans.ttf"
+sidecar = "atlas.bin"
+
+# Em size in pixels. The rasteriser scales font units by pixelSize/unitsPerEm, so this is the
+# only knob that changes the atlas' size, and it is recorded in report.json's options because a
+# silently changed default must not leave every report looking unchanged (ADR-007).
+pixelSize = 16
+
+# Locales this package is approved for. Declared rather than inferred: the .medui compiler (#15)
+# checks a screen's locale against this list, and a font that happens to contain a glyph is not
+# the same as a font a manufacturer approved for that locale.
+[locales]
+ids = ["en-US"]
+
+# The character set, as parallel arrays of scalars.
+#
+# mdux.tools.toml implements a deliberate subset of TOML with no [[table]] support, so a list of
+# ranges is spelled as one array per field with entry N of each describing range N - the same
+# shape recipes/model/ecg-demo.toml uses for its layers. The baker rejects a length mismatch by
+# name rather than truncating to the shortest array.
+[charset]
+names           = ["basic-latin-printable"]
+# Decimal, not hex: mdux.tools.toml's subset has no hexadecimal literals, and it says so rather
+# than guessing. 32 is U+0020 (space) and 126 is U+007E (tilde).
+firstCodePoints = [32]
+lastCodePoints  = [126]

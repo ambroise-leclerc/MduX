@@ -1,0 +1,158 @@
+{
+  "standard": "IEC 62366-1:2015",
+  "corpus": "docs/iec62366",
+  "rows": [
+    {
+      "clause": "§1",
+      "title": "Scope",
+      "file": "01-scope-and-terms.md",
+      "anchor": "1-scope",
+      "pointer": "MduX renders content described by a device's own UI design; it does not itself define what that device's users see or how they interact with it in a specific clinical context.",
+      "justifications": []
+    },
+    {
+      "clause": "§2",
+      "title": "Normative references",
+      "file": "01-scope-and-terms.md",
+      "anchor": "2-normative-references",
+      "pointer": "Read alongside docs/iso14971/, which covers the risk-management framework this standard's use-related risk analysis sits inside.",
+      "justifications": []
+    },
+    {
+      "clause": "§3",
+      "title": "Terms and definitions",
+      "file": "01-scope-and-terms.md",
+      "anchor": "3-terms-and-definitions",
+      "pointer": "MduX has no mechanism addressing use error directly yet; the closest adjacent idea is rendered-truth verification (issue #16), which confirms *what is displayed* matches the compiled screen's specification, a precondition for a user being able to act on correct information at all.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1",
+      "title": "General requirements",
+      "file": "02-principles.md",
+      "anchor": "41-general-requirements",
+      "pointer": "MduX provides no mechanism against this clause and cannot: applying a usability engineering process requires a device, its users and its use environment, none of which a rendering library has.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1.1",
+      "title": "Usability engineering process",
+      "file": "02-principles.md",
+      "anchor": "411-usability-engineering-process",
+      "pointer": "Device-level; MduX supplies no process, having no users of its own.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1.2",
+      "title": "Risk control as it relates to user interface design",
+      "file": "02-principles.md",
+      "anchor": "412-risk-control-as-it-relates-to-user-interface-design",
+      "pointer": "MduX's planned mechanisms attach to this sub-clause more directly than to any other in §4.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.1.3",
+      "title": "Information for safety as it relates to usability",
+      "file": "02-principles.md",
+      "anchor": "413-information-for-safety-as-it-relates-to-usability",
+      "pointer": "No MduX mechanism, and the boundary is worth stating plainly: MduX renders whatever text a device gives it.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.2",
+      "title": "Usability engineering file",
+      "file": "02-principles.md",
+      "anchor": "42-usability-engineering-file",
+      "pointer": "MduX supplies no usability engineering file.",
+      "justifications": []
+    },
+    {
+      "clause": "§4.3",
+      "title": "Tailoring of the usability engineering effort",
+      "file": "02-principles.md",
+      "anchor": "43-tailoring-of-the-usability-engineering-effort",
+      "pointer": "A manufacturer tailoring their effort may reasonably treat parts of a UI built on MduX differently from others; MduX neither makes nor records that judgement.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.1",
+      "title": "Prepare use specification",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "51-prepare-use-specification",
+      "pointer": "Entirely device-level information MduX has no visibility into.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.2",
+      "title": "Identify user interface characteristics related to safety and potential use errors",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "52-identify-user-interface-characteristics-related-to-safety-and-potential-use-errors",
+      "pointer": "The step MduX's planned mechanisms attach to - @safety_critical annotations, requirement binding, locale text budgets (issue #15) and rendered-truth verification (issue #16) - none of which exists yet.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.3",
+      "title": "Identify known or foreseeable hazards and hazardous situations",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "53-identify-known-or-foreseeable-hazards-and-hazardous-situations",
+      "pointer": "MduX has no mechanism: a hazard is a property of the device and its clinical context, not of a rendering library.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.4",
+      "title": "Identify and describe hazard-related use scenarios",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "54-identify-and-describe-hazard-related-use-scenarios",
+      "pointer": "No MduX mechanism, and none plausible: a use scenario is a description of what a person does, which a library cannot enumerate for a device it has never seen.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.5",
+      "title": "Select the hazard-related use scenarios for summative evaluation",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "55-select-the-hazard-related-use-scenarios-for-summative-evaluation",
+      "pointer": "No MduX mechanism.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.6",
+      "title": "Establish user interface specification",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "56-establish-user-interface-specification",
+      "pointer": "A .medui source file (issue #15) is what a device's UI specification would be authored against, but the specification itself stays the manufacturer's.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.7",
+      "title": "Establish user interface evaluation plan",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "57-establish-user-interface-evaluation-plan",
+      "pointer": "Device-level; no MduX mechanism, and none plausible: an evaluation plan is a statement about people and a use environment, neither of which a library has.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.8",
+      "title": "Perform user interface design, implementation and formative evaluation",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "58-perform-user-interface-design-implementation-and-formative-evaluation",
+      "pointer": "For a device built on MduX, implementing a user interface *is* authoring and compiling `.medui` screens (issue #15).",
+      "justifications": []
+    },
+    {
+      "clause": "§5.9",
+      "title": "Perform summative evaluation of the usability of the user interface",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "59-perform-summative-evaluation-of-the-usability-of-the-user-interface",
+      "pointer": "Rendered-truth verification (issue #16) is the closest adjacent idea MduX has, and it is worth naming the gap precisely: it confirms that a compiled screen renders the state it was given.",
+      "justifications": []
+    },
+    {
+      "clause": "§5.10",
+      "title": "User interface of unknown provenance",
+      "file": "03-usability-engineering-process.md",
+      "anchor": "510-user-interface-of-unknown-provenance",
+      "pointer": "**This is the clause an integrator is most likely to apply to MduX itself**, and it was missing from this corpus entirely until the numbering was verified.",
+      "justifications": []
+    }
+  ]
+}

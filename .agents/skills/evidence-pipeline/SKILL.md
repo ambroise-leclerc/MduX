@@ -9,18 +9,25 @@ Companion to § 4 ("Repository map") of [`AGENTS.md`](../../../AGENTS.md). This 
 *baked-artifact* discipline; for `.medui` authoring specifically see `medui-authoring`, and for the
 regulatory framing of an evidence artifact see `regulatory-citations`.
 
-## Status: planned, not yet implemented
+## Status: infrastructure and the first baker exist; no artifact is committed yet
 
-**No baker tool, no `generated/` directory, and no `cmake/MduXBake.cmake` exist in this repository
-yet.** This skill describes the target doctrine adopted for the MduX ↔ TrustSC parity programme
-(tracked as [issue #12](https://github.com/ambroise-leclerc/MduX/issues/12) and consumed by
-[#13](https://github.com/ambroise-leclerc/MduX/issues/13), [#14](https://github.com/ambroise-leclerc/MduX/issues/14),
-[#18](https://github.com/ambroise-leclerc/MduX/issues/18)). Use it once those land; until then,
-there is nothing to bake.
+What is in the tree today:
 
-The one thing that already exists and is relevant: `examples/shaders/compiled/*.spv` are committed
-SPIR-V with no consumer and no provenance record — they are exactly the kind of artifact this
-pipeline formalizes, and issue #42 deletes them as dead weight pending a real bake.
+- The evidence kernel — `mdux.evidence.digest`, `mdux.evidence.json`, `mdux.evidence.report` —
+  and `cmake/MduXBake.cmake`, which defines `mdux_bake_artifact()`, the `mdux-bake-all` and
+  `mdux-bake-update` targets, and the `evidence`-labelled comparison test. Issue
+  [#12](https://github.com/ambroise-leclerc/MduX/issues/12) is complete.
+- `mdux-shaderbake` (`tools/shader/`), the first baker, from issue
+  [#119](https://github.com/ambroise-leclerc/MduX/issues/119). It is the worked example to copy
+  when writing the font, image, `.medui` and ML bakers.
+
+What is **not** in the tree yet: any `recipes/` or `generated/` directory. `mdux_bake_artifact()`
+has no call sites, so `ctest -L evidence` currently selects no tests. Issue
+[#120](https://github.com/ambroise-leclerc/MduX/issues/120) commits the first artifact and is what
+makes the CI byte-comparison start doing work.
+
+So: the doctrine below is live and the machinery is real, but if you are looking for an existing
+`generated/<kind>/<id>/` to copy, there is not one yet — copy the tool instead.
 
 ## The pattern
 

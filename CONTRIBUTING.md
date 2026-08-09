@@ -11,7 +11,9 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 - **Functions/Methods:**
   - Use `lowerCamelCase` (e.g., `processData()`, `getValue()`).
 - **Variables (including const, constexpr, and constinit variables):**
-  - Use `lowerCamelCase` (e.g., `dataBuffer`, `isReady`).
+  - Use `lowerCamelCase` (e.g., `dataBuffer`, `isReady`, `maxSweepWork`).
+  - No Hungarian notation, and **no `k` prefix on constants**: `kMaxSweepWork` is wrong,
+    `maxSweepWork` is right. A constant is a variable and follows the same rule as one.
 - **Namespaces:**
   - Use 'lowercase' (e.g., 'mui', 'backend').
 - **Macros:**
@@ -33,12 +35,39 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 
 We use **Doxygen** syntax for code documentation. Follow these guidelines:
 
-- **File-level documentation:** Use `@brief` only, no `@file` or `@author` tags.
+- **File-level documentation:** open the block with `@file`, naming the file **with its
+  extension and no path**, then `@brief`. Still no `@author` tags.
+
+  ```cpp
+  /**
+   * @file VulkanRenderer.cppm
+   * @brief One sentence on what this file is.
+   */
+  ```
+
+  The extension matters: `Draw.cppm` and `Draw.cpp` are different files with the same stem, and
+  this tree has several such pairs.
+
+  `@file` is what makes Doxygen attach the block to the *file*. Without it the block is not
+  ignored — it silently becomes the documentation of whatever comes next. Measured on
+  `tests/framework/RunRecords.hpp` with Doxygen 1.15: with the tag, the file page carries "The v1
+  glyph-run record encoder, shared by…"; without it, the file page's brief is empty and that
+  sentence turns up as the documentation for `namespace mdux::spec`. Wrong documentation, with no
+  warning, rather than missing documentation.
+
+  This rule previously said the opposite. It was never what the tree did — 82 files used `@file`
+  against 56 that did not — and review bots cite this document, so the contradiction kept
+  resurfacing on unrelated pull requests. #180 settled it in favour of the half that works.
 - **Class documentation:** Include `@brief` with detailed description and usage examples.
 - **Method documentation:**
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.
   - Use full format with `@param`, `@return`, `@note` for complex methods.
   - Include usage examples with `@code` blocks when helpful.
+- **`///` line comments carry no `@brief`.** The tag belongs to `/** */` blocks. A `///` comment
+  *is* the brief — Doxygen already treats it as one, and prefixing it adds a word that says only
+  "this is a comment". The tree is consistent on this: 485 `///` comments, none with `@brief`.
+  Reviewers and review bots ask for it regularly; the answer is no, and this line is here so the
+  question has somewhere to be answered once.
 - **Template parameters:** Document with `@tparam` when non-obvious.
 - **Private members:** Generally no documentation needed unless complex.
 

@@ -16,7 +16,7 @@ Before configuring, check:
 
 1. **Platform**: Windows 10+ or Linux only. There is no macOS build path — a fatal CMake check in
    the root `CMakeLists.txt` rejects other platforms.
-2. **Compiler version**: MSVC 17.14+, GCC 15+, or Clang 20+. The root `CMakeLists.txt` fails fast
+2. **Compiler version**: MSVC 17.14+, GCC 16+, or Clang 20+. The root `CMakeLists.txt` fails fast
    with `message(FATAL_ERROR ...)` if the detected compiler is below these floors — read that
    error message; it names the exact required version.
 3. **CMake**: 4.0+ (`cmake_minimum_required(VERSION 4.0.0)`).
@@ -32,22 +32,28 @@ know will fail or guessing at results.
 ## Workflow
 
 1. **Configure** (out-of-source only — `cmake/PreventInSourceBuilds.cmake` blocks in-source
-   builds):
-   - Windows: `cmake --preset ninja-msvc` (the only preset defined in `CMakePresets.json`; it
-     targets Ninja + MSVC specifically).
-   - Linux (no preset exists yet): mirror what `.github/workflows/ci.yml`'s `linux-build` job
-     runs:
-     ```bash
-     cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-     ```
+   builds). Plain CMake, same on Linux and Windows:
+   ```bash
+   mkdir build && cd build
+   cmake .. -G Ninja
+   ```
+   - `-G Ninja` is mandatory and is checked at configure time. CMake implements C++ modules only
+     for the Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A
+     bare `cmake ..` picks the platform default and fails with a message naming the generator it
+     found — that failure is the check working, not a broken tree.
+   - To select a compiler other than the default: `CC=gcc-16 CXX=g++-16 cmake .. -G Ninja`.
    - Relevant options: `MDUX_BUILD_EXAMPLES`, `MDUX_BUILD_TESTS` (default `ON`),
      `MDUX_BUILD_DOCS`, `MDUX_ENABLE_REGULATORY_DOCS` (default `OFF`/`ON` respectively).
+   - `CMakePresets.json`'s presets (`ninja-gcc`, `ninja-msvc`, `ninja-clang`, and `-debug`
+     variants) exist so each CI workflow invokes a configuration this repository owns rather than
+     a look-alike command line. Use one only when reproducing a CI leg exactly; each writes to its
+     own binary dir (`build-gcc`, `build-clang`, …), so it will not collide with `build/`.
 
 2. **Build** a focused target first, then the full project if needed:
    ```bash
-   cmake --build build --target MduX            # library only
+   cmake --build build --target MduX             # library only
    cmake --build build --target MedicalUiExample # one example
-   cmake --build build                            # everything enabled by the configure options
+   cmake --build build                           # everything the configure options enabled
    ```
    Known target names (verify against `cmake --build build --target help` if the list may have
    changed since this skill was written): library `MduX`; examples `MedicalUiExample`,
@@ -56,8 +62,8 @@ know will fail or guessing at results.
 
 3. **Test**, focused before broad:
    ```bash
-   ctest --test-dir build -R MduXUnitTests --output-on-failure   # one suite
-   ctest --test-dir build --output-on-failure                    # full suite
+   ctest --test-dir build -R MduXUnitTests --output-on-failure  # one suite
+   ctest --test-dir build --output-on-failure                   # full suite
    ```
    Registered CTest names: `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
    `VulkanSCDeviceObjectTests`.
@@ -66,17 +72,20 @@ know will fail or guessing at results.
 
 ## Compiler-specific module limitations
 
-- **GCC 15+**: `VulkanSCTriangleExample` is currently skipped entirely on **any GCC version 15.0 or
-  later** in `examples/CMakeLists.txt` (the guard is `CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL
-  15.0`, not a check for exactly GCC 15) due to a documented internal-compiler-error (segfault in
-  `std::array` under C++23 modules). This means GCC 16 and newer are skipped too, not just GCC 15 —
-  do not assume a newer GCC re-enables the target. Do not try to force-enable it as a workaround for
-  a task — treat the skip as the working configuration and report the underlying GCC limitation if
-  it blocks your task.
-- **Clang 20**: the Clang CI job in `.github/workflows/ci.yml` is present but commented out. Clang
-  builds are not currently verified by CI even though the version floor is enforced in
-  `CMakeLists.txt` — treat any Clang build result as unverified against the project's own CI and
-  say so.
+- **GCC**: the project floor is **GCC 16**, enforced by a `FATAL_ERROR` in the root
+  `CMakeLists.txt`. GCC 15 built the library but could not build a SpecLab-based test suite
+  (`failed to load pendings for 'std::_Sp_counted_ptr_inplace'`, a defect in GCC's own `std` BMI),
+  and it is also the compiler whose `<array>` ICE kept `VulkanSCTriangleExample` excluded. Both
+  problems are gone with the floor: the example is now built unconditionally, and there is no
+  version guard on it any more.
+- **GCC, still current**: `vulkansc_memory_tests` is compiled `-O0` on GCC. That one is *not*
+  historical - the ICE in the GIMPLE ealias pass reproduces on GCC 16 as well, and every level
+  above `-O0` triggers it. See `tests/CMakeLists.txt` and issue #48.
+- **Clang 20**: `.github/workflows/clang-build.yml` is a live, syntax-checked workflow, but its
+  only trigger is `workflow_dispatch` — it can be started by hand from the Actions tab, and no
+  push or pull request starts it. So Clang is outside automatic CI coverage even though the
+  version floor is enforced in `CMakeLists.txt`. Report a Clang build result as unverified
+  against the project's automatic CI, unless you can cite a specific manual run of that workflow.
 - **MSVC**: requires `/experimental:module` and `/std:c++latest`, already wired into
   `CMakeLists.txt`; the Visual Studio *generator* is explicitly rejected in favor of Ninja for
   `import std;` support (see the `CMAKE_GENERATOR MATCHES "Visual Studio"` fatal-error check).

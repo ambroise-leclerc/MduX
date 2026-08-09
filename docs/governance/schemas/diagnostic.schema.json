@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/governance/diagnostic.schema.json",
+  "title": "Tool diagnostic envelope",
+  "description": "Validates the `--format=json` output of every MduX tool that reports findings: the bakers through `mdux::tools::cli::render` (tools/common/Cli.cppm), and the Python lints `mdux-docs-lint` and `mdux-evidence-lint`. One envelope for the whole repository is the point, not one per tool - an agent that can fix a finding from one tool can fix a finding from any of them, without parsing prose and without a per-tool parser. This schema is published before the shader, `.medui` and ML bakers land, so that they adopt the envelope rather than each inventing one and forcing a later migration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tool", "findings"],
+  "properties": {
+    "tool": {
+      "type": "string",
+      "description": "The tool that produced these findings, as it is invoked: 'mdux-shaderbake', 'mdux-docs-lint'. Present so output aggregated from several tools stays attributable; a consumer merging two runs must be able to tell which one objected.",
+      "minLength": 1
+    },
+    "filesChecked": {
+      "type": "integer",
+      "description": "How many files this run examined. Optional, and emitted only by the tools that scan a file set - the lints, not the bakers, which are handed exactly one recipe. It is worth carrying because zero findings over zero files and zero findings over five hundred are very different results, and a consumer reading only `findings` cannot tell them apart.",
+      "minimum": 0
+    },
+    "findings": {
+      "type": "array",
+      "description": "Every finding from this run, in the order the tool reported them. An empty array is the success case and is emitted rather than omitted, so a consumer never special-cases success.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line", "column", "code", "severity", "message", "fixHint"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The file the finding is about, repository-relative and using forward slashes on every platform. Never absolute: a diagnostic quoting a build machine's directory layout is not actionable anywhere else.",
+            "minLength": 1
+          },
+          "line": {
+            "type": "integer",
+            "description": "1-based line, or 0 when the finding is about the file as a whole.",
+            "minimum": 0
+          },
+          "column": {
+            "type": "integer",
+            "description": "1-based column, or 0 when there is no precise column. Independent of `line`: a tool that knows the line but not the column reports the line and leaves this 0, rather than inventing a position it does not have. A non-zero `column` with a zero `line` is meaningless and tools do not emit it.",
+            "minimum": 0
+          },
+          "code": {
+            "type": "string",
+            "description": "Short stable identifier for the kind of finding, such as 'MDX-D011' or 'FB001'. This is the field an agent keys off, so its meaning must not change once published - reword the message instead. The empty string is permitted, and means the tool has not assigned a code to this finding; `mdux::tools::cli::render` omits the bracketed code from its text form in that case.",
+            "pattern": "^([A-Za-z0-9][A-Za-z0-9-]*)?$"
+          },
+          "severity": {
+            "type": "string",
+            "description": "Closed vocabulary, matching `mdux::tools::cli::Severity` and `describe()`. Only 'error' affects exit status; a warning alone never fails a bake, because whether a bake is acceptable is decided by CI's byte comparison rather than by the baker's opinion.",
+            "enum": ["error", "warning", "note"]
+          },
+          "message": {
+            "type": "string",
+            "description": "What is wrong, in one sentence, naming the offending value where there is one. Free prose: consumers key off `code`, so this may be reworded without breaking them.",
+            "minLength": 1
+          },
+          "fixHint": {
+            "type": "string",
+            "description": "What to do about it, when the tool can say something concrete - 'raise atlasWidth or reduce the charset'. Empty when there is no single obvious fix, which is honest and common; an invented hint is worse than none."
+          }
+        }
+      }
+    }
+  }
+}

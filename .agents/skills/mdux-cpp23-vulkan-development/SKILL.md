@@ -43,18 +43,23 @@ ground truth for current conventions, not this document.
 - These conventions exist to work around current C++23 modules toolchain limitations (see
   `docs/adr/ADR-003-compiler-modernization.md`, status "Accepted") — don't restructure them
   without checking whether the change still compiles on all three supported compilers (see
-  `mdux-build-and-test` for the per-compiler caveats, notably the GCC 15 ICE and unverified Clang
-  CI).
+  `mdux-build-and-test` for the per-compiler caveats, notably the `-O0` requirement for
+  `vulkansc_memory_tests` on GCC and the unverified Clang CI).
 
 ## Vulkan / Vulkan SC resource-ownership model
 
-- `VulkanContext` (`include/mdux/mdux.cppm`) is populated by the **caller**: `VkDevice`,
-  `VkPhysicalDevice`, `VkCommandBuffer`, and a compatible `VkRenderPass` all come from the host
-  application. MduX code must never assume it can create these — only consume them.
-- `MedicalUiRenderer` owns resources it creates itself from that caller-supplied context
-  (descriptor set layout, descriptor pool, pipeline layout, pipeline) and is responsible for their
-  cleanup — follow this same caller-owned-input / library-owned-output split for any new
-  Vulkan-integrating type.
+- `mdux::render::VulkanRenderContext` (`include/mdux/render/VulkanRenderer.cppm`) is populated by
+  the **caller**, and its members are exactly: `VkDevice`, `VkPhysicalDevice`, `VkRenderPass`,
+  `VkQueue`, `queueFamilyIndex`, a non-zero `viewport` (`mdux::core::Extent2D`) and `subpass`.
+  There is **no** `VkCommandBuffer` in it — a command buffer is passed to `UiRenderer::record()`
+  per frame, not held in the context, and the queue is there because `create()` uploads a default
+  atlas once. Every member is initialised, and `isValid()` rejects any that is null or empty.
+  MduX code must never assume it can create these — only consume them.
+- `mdux::render::UiRenderer` owns resources it creates itself from that caller-supplied context
+  (shader modules, descriptor set layout, descriptor pool and set, pipeline layout, pipeline,
+  mapped vertex and index buffers, and a 1x1 default atlas with its view and sampler) and is
+  responsible for their cleanup — follow this same caller-owned-input / library-owned-output split
+  for any new Vulkan-integrating type.
 - `mdux.vulkansc.memory` / `mdux.vulkansc.objects` (`include/mdux/vulkansc/*.cppm`) implement the
   Vulkan SC constraint that certain objects (device memory, command pools, descriptor pools, query
   pools, swapchains) cannot be freed before device destruction. If you add Vulkan SC-facing code
@@ -80,10 +85,12 @@ ground truth for current conventions, not this document.
 ## Required test/doc updates
 
 - Add or extend tests under `tests/` following the existing plain-`TestRunner` pattern (see
-  `tests/TestMain.cpp`) and register new executables/tests in `tests/CMakeLists.txt` (both the
-  `add_executable` and the corresponding `add_test`). There is currently no third-party test
-  framework wired in — `docs/adr/ADR-002-testing-framework-selection.md` proposing Catch2/BDD is
-  still status "Proposed", not adopted; don't assume Catch2 headers are available.
+  `tests/TestMain.cpp`) and register new executables in `tests/CMakeLists.txt`, then call
+  `mdux_discover_tests(<target>)` — discovery produces one CTest entry per case, so a hand-written
+  `add_test` is not needed. Two frameworks are in use and both are fine for new work
+  (`docs/adr/ADR-009-in-repository-test-framework.md`): the in-repository `MduXTest`, and SpecLab
+  for Given/When/Then scenarios via `tests/framework/SpecLabBridge.hpp`. **Catch2 is not available**
+  — ADR-002 selected it, it was never adopted, and ADR-009 supersedes that decision.
 - Document new public API with Doxygen comments following `CONTRIBUTING.md`'s `@brief`-first
   style.
 - If the change affects an existing ADR's decision or introduces a new architectural decision,

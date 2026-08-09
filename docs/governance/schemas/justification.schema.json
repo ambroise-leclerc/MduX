@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/governance/justification.schema.json",
+  "title": "MduX Justification",
+  "description": "Links a design decision to a specific standard's clause, in original prose, with the concrete repository mechanism that addresses the clause's intent. See docs/governance/citation-convention.md for the rule this schema formalizes: a Justification with no real evidence_refs is decorative, not load-bearing, and mdux-docs-lint treats it as an error rather than as valid metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "justification_id",
+    "standard",
+    "clause_ref",
+    "rationale",
+    "evidence_refs"
+  ],
+  "properties": {
+    "justification_id": {
+      "type": "string",
+      "description": "Unique across the whole corpus, not just within one standard's documents.",
+      "pattern": "^JUS-[0-9]{3,}$"
+    },
+    "standard": {
+      "type": "string",
+      "description": "One of the five standards MduX cites against. Closed set, matching docs/governance/citation-convention.md's approved identifiers exactly.",
+      "enum": [
+        "IEC 62304:2006",
+        "ISO 13485:2016",
+        "ISO 14971:2019",
+        "IEC 62366-1:2015",
+        "IEC 81001-5-1:2021"
+      ]
+    },
+    "clause_ref": {
+      "type": "string",
+      "description": "The citation-key format from docs/governance/citation-convention.md: '<Standard> §<clause> <Short clause title>'. Must start with the same value as `standard` - enforced below by the per-standard if/then pairs, since a plain pattern here cannot cross-reference a sibling property.",
+      "pattern": "^(IEC 62304:2006|ISO 13485:2016|ISO 14971:2019|IEC 62366-1:2015|IEC 81001-5-1:2021) §[0-9]+(\\.[0-9]+)* .+$"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Original prose explaining why the cited mechanism satisfies the clause's intent. Never a quotation or close paraphrase of the standard's own wording (ADR-006) - mdux-docs-lint's reproduction heuristic runs over this field along with everything else in the corpus.",
+      "minLength": 1
+    },
+    "requirement_id": {
+      "type": "string",
+      "description": "Optional link to a tracked requirement, when one exists independently of this justification.",
+      "pattern": "^REQ-[A-Z0-9-]+$"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Repository-relative paths to the concrete mechanism - a module, an ADR, a CI step, a test - that addresses the clause's intent. Never empty: a Justification with no evidence is exactly the 'decorative citation' the citation convention rejects.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "standard": { "const": "IEC 62304:2006" } } },
+      "then": { "properties": { "clause_ref": { "pattern": "^IEC 62304:2006 " } } }
+    },
+    {
+      "if": { "properties": { "standard": { "const": "ISO 13485:2016" } } },
+      "then": { "properties": { "clause_ref": { "pattern": "^ISO 13485:2016 " } } }
+    },
+    {
+      "if": { "properties": { "standard": { "const": "ISO 14971:2019" } } },
+      "then": { "properties": { "clause_ref": { "pattern": "^ISO 14971:2019 " } } }
+    },
+    {
+      "if": { "properties": { "standard": { "const": "IEC 62366-1:2015" } } },
+      "then": { "properties": { "clause_ref": { "pattern": "^IEC 62366-1:2015 " } } }
+    },
+    {
+      "if": { "properties": { "standard": { "const": "IEC 81001-5-1:2021" } } },
+      "then": { "properties": { "clause_ref": { "pattern": "^IEC 81001-5-1:2021 " } } }
+    }
+  ]
+}

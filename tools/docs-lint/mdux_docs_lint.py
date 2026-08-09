@@ -69,20 +69,44 @@ REQUIRED_JUSTIFICATION_FIELDS = (
 
 DEFAULT_SCAN_DIRS = ("docs", "software_development_file")
 
+# Root documents are scanned too. Wave 2 deleted and renamed files under docs/ while live
+# references in README.md and AGENTS.md survived until an integration repair - exactly the failure
+# the link check below exists to catch, and it would be missed if the scan stopped at docs/.
+DEFAULT_SCAN_FILES = ("README.md", "AGENTS.md", "CONTRIBUTING.md")
+
+# Where retired paths are recorded. References to a path listed here are permitted inside this
+# document (it is the disposition record) and rejected everywhere else.
+SUPERSEDED_RECORD = "docs/governance/superseded-documents.md"
+
+MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+# Paths look like a/b or a/b.ext; a bare word in backticks is prose, not a path.
+RETIRED_PATH_RE = re.compile(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._*-]+)+")
+
 
 @dataclass
 class Finding:
+    """One finding in the shared envelope - docs/governance/schemas/diagnostic.schema.json.
+
+    Deliberately the same field names and severity vocabulary as `mdux::tools::cli::Diagnostic`
+    (tools/common/Cli.cppm) and mdux-evidence-lint, so an agent parses one schema for the whole
+    repository. `line` and `column` are both 1-based, with 0 meaning "no precise position on this
+    axis": a finding about a whole block sets the line and leaves the column 0.
+    """
+
     path: str
     line: int
     code: str
     severity: str
     message: str
     fix_hint: str = ""
+    column: int = 0
 
     def to_json(self) -> dict:
         return {
             "file": self.path,
             "line": self.line,
+            "column": self.column,
             "code": self.code,
             "severity": self.severity,
             "message": self.message,
@@ -102,8 +126,22 @@ class LintContext:
         except ValueError:
             return str(path)
 
-    def report(self, path: Path, line: int, code: str, severity: str, message: str, fix_hint: str = "") -> None:
-        self.findings.append(Finding(self.relativize(path), line, code, severity, message, fix_hint))
+    def report(
+        self,
+        path: Path,
+        line: int,
+        code: str,
+        severity: str,
+        message: str,
+        fix_hint: str = "",
+        *,
+        column: int = 0,
+    ) -> None:
+        # `column` is keyword-only so the existing positional call sites, which have no column to
+        # report, keep working unchanged rather than every one of them growing a `0`.
+        self.findings.append(
+            Finding(self.relativize(path), line, code, severity, message, fix_hint, column)
+        )
 
 
 def check_citation_keys(ctx: LintContext, path: Path, text: str) -> None:
@@ -117,6 +155,9 @@ def check_citation_keys(ctx: LintContext, path: Path, text: str) -> None:
                     path, lineno, "MDX-D001", "error",
                     f"Unknown or malformed standard identifier '{standard}' in citation key.",
                     f"Use one of: {', '.join(APPROVED_STANDARDS)}",
+                    # A line may carry several citations; the column is what distinguishes which
+                    # one is wrong, and it is known exactly here.
+                    column=match.start() + 1,
                 )
 
 
@@ -256,7 +297,150 @@ def check_reproduction_markers(ctx: LintContext, path: Path, text: str) -> None:
                 break  # one finding per line is enough
 
 
-def lint_file(ctx: LintContext, path: Path) -> None:
+
+def slugify_heading(text: str) -> str:
+    """GitHub's anchor slug: lowercase, drop punctuation, spaces to hyphens.
+
+    Markdown formatting is stripped first, so `## The `foo` rule` anchors as `the-foo-rule` rather
+    than keeping the backticks a reader does not type into a URL.
+    """
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"[*_~]", "", text)
+    slug = text.strip().lower()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    return re.sub(r"[\s]+", "-", slug).strip("-")
+
+
+def collect_anchors(text: str) -> set[str]:
+    """Every heading anchor in `text`, with GitHub's -1/-2 suffixes for repeats."""
+    anchors: set[str] = set()
+    counts: dict[str, int] = {}
+    in_fence = False
+    for line in text.splitlines():
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = HEADING_RE.match(line)
+        if not match:
+            continue
+        slug = slugify_heading(match.group(1))
+        if not slug:
+            continue
+        seen = counts.get(slug, 0)
+        anchors.add(slug if seen == 0 else f"{slug}-{seen}")
+        counts[slug] = seen + 1
+    return anchors
+
+
+def check_internal_links(ctx: LintContext, path: Path, text: str) -> None:
+    """Repository-relative link targets resolve, and local anchors exist.
+
+    External links are deliberately not fetched: network availability must not decide whether CI
+    passes. This check is entirely local and therefore deterministic.
+    """
+    in_fence = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+
+        for target in MARKDOWN_LINK_RE.findall(line):
+            if target.startswith(("http://", "https://", "mailto:", "#!")):
+                continue
+
+            if target.startswith("#"):
+                anchor = target[1:]
+                if anchor and anchor not in collect_anchors(text):
+                    ctx.report(
+                        path, number, "MDX-D010", "error",
+                        f"Link target '{target}' does not match any heading in this document.",
+                        "Check the heading spelling, or link to the file instead of an anchor.",
+                    )
+                continue
+
+            file_part, _, anchor = target.partition("#")
+            if not file_part:
+                continue
+
+            resolved = (path.parent / file_part).resolve()
+            try:
+                relative = resolved.relative_to(ctx.repo_root)
+            except ValueError:
+                ctx.report(
+                    path, number, "MDX-D012", "error",
+                    f"Link target '{target}' escapes the repository.",
+                    "Use a path inside the repository, or an external https:// URL.",
+                )
+                continue
+
+            if not resolved.exists():
+                ctx.report(
+                    path, number, "MDX-D010", "error",
+                    f"Link target '{target}' does not exist ({relative}).",
+                    "Fix the path, or remove the link if the document was retired.",
+                )
+                continue
+
+            if anchor and resolved.is_file() and resolved.suffix == ".md":
+                try:
+                    other = resolved.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if anchor not in collect_anchors(other):
+                    ctx.report(
+                        path, number, "MDX-D011", "error",
+                        f"Link target '{target}' names a heading '{anchor}' that {relative} "
+                        "does not have.",
+                        "Check the heading spelling in the linked document.",
+                    )
+
+
+def load_retired_paths(repo_root: Path) -> set[str]:
+    """Paths retired by the disposition record, read from its table's first column."""
+    record = repo_root / SUPERSEDED_RECORD
+    if not record.is_file():
+        return set()
+    retired: set[str] = set()
+    for line in record.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or not cells[0].startswith("`"):
+            continue
+        candidate = cells[0].strip("`")
+        # Glob entries such as `docs/.../*.json` name a set of files rather than one path; a
+        # literal match on the glob text is still worth catching, so keep them as written.
+        if RETIRED_PATH_RE.fullmatch(candidate):
+            retired.add(candidate)
+    return retired
+
+
+def check_retired_paths(ctx: LintContext, path: Path, text: str, retired: set[str]) -> None:
+    """A retired path may be named in the disposition record and nowhere else.
+
+    Wave 2 deleted documents while live references survived, so a reader followed a link into
+    nothing. Naming the path at all is the failure - the reference does not have to be a link.
+    """
+    if ctx.relativize(path).replace("\\", "/") == SUPERSEDED_RECORD:
+        return
+    for number, line in enumerate(text.splitlines(), start=1):
+        for candidate in retired:
+            if candidate in line:
+                ctx.report(
+                    path, number, "MDX-D013", "error",
+                    f"'{candidate}' was retired and must not be referenced outside "
+                    f"{SUPERSEDED_RECORD}.",
+                    "Point at the replacement named in the disposition record, or drop the "
+                    "reference.",
+                )
+
+
+def lint_file(ctx: LintContext, path: Path, retired: set[str] | None = None) -> None:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -265,6 +449,8 @@ def lint_file(ctx: LintContext, path: Path) -> None:
     check_citation_keys(ctx, path, text)
     check_justifications(ctx, path, text)
     check_reproduction_markers(ctx, path, text)
+    check_internal_links(ctx, path, text)
+    check_retired_paths(ctx, path, text, retired if retired is not None else set())
 
 
 def find_repo_root(start: Path) -> Path:
@@ -280,6 +466,7 @@ def collect_markdown_files(repo_root: Path, paths: list[str]) -> list[Path]:
         roots = [Path(p) for p in paths]
     else:
         roots = [repo_root / d for d in DEFAULT_SCAN_DIRS if (repo_root / d).is_dir()]
+        roots += [repo_root / f for f in DEFAULT_SCAN_FILES if (repo_root / f).is_file()]
 
     files: list[Path] = []
     for root in roots:
@@ -292,7 +479,7 @@ def collect_markdown_files(repo_root: Path, paths: list[str]) -> list[Path]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("paths", nargs="*", help="Files or directories to lint (default: docs/, software_development_file/)")
+    parser.add_argument("paths", nargs="*", help="Files or directories to lint (default: docs/, software_development_file/, and the root README/AGENTS/CONTRIBUTING)")
     parser.add_argument("--format", choices=("text", "json"), default="text")
     args = parser.parse_args(argv)
 
@@ -300,17 +487,30 @@ def main(argv: list[str]) -> int:
     ctx = LintContext(repo_root=repo_root)
 
     files = collect_markdown_files(repo_root, args.paths)
+    retired = load_retired_paths(repo_root)
     for path in files:
-        lint_file(ctx, path)
+        lint_file(ctx, path, retired)
 
     if args.format == "json":
-        print(json.dumps({"findings": [f.to_json() for f in ctx.findings]}, indent=2))
+        # The shared envelope: docs/governance/schemas/diagnostic.schema.json. `tool` is what
+        # keeps findings attributable once several tools' output is aggregated.
+        print(
+            json.dumps(
+                {
+                    "tool": "mdux-docs-lint",
+                    "filesChecked": len(files),
+                    "findings": [f.to_json() for f in ctx.findings],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     else:
         if not ctx.findings:
             print(f"mdux-docs-lint: OK ({len(files)} files checked, 0 findings)")
         else:
             for f in ctx.findings:
-                loc = f"{f.path}:{f.line}"
+                loc = f"{f.path}:{f.line}" + (f":{f.column}" if f.column else "")
                 print(f"{loc}: {f.severity}: [{f.code}] {f.message}")
                 if f.fix_hint:
                     print(f"  hint: {f.fix_hint}")

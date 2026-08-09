@@ -1,0 +1,108 @@
+# Clang leg — manual-dispatch only, not part of the automatic CI set.
+#
+# This job is NOT wired to push or pull_request on purpose: Clang 20's `std` module support is
+# not ready for this codebase (issue #48 added the GCC 16 leg but did not re-enable this one, so
+# the Clang half of that story remains open). It is kept as a live workflow rather than a
+# commented-out `.disabled` file so that:
+#
+#   - the YAML stays syntax-checked by GitHub instead of rotting silently,
+#   - Dependabot can see and bump the action versions pinned below,
+#   - re-enabling it is adding a trigger, not a rename plus an un-comment pass.
+#
+# Run it from the Actions tab when checking whether a newer Clang has caught up. Because it is
+# `workflow_dispatch` only, a red result here never blocks a PR.
+#
+# When it is turned back on for real, add an evidence step matching the MSVC and GCC legs in
+# windows-build.yml / linux-gcc16-build.yml:
+#
+#     - name: Verify evidence artifacts (Clang)
+#       run: ctest --preset ninja-clang -L evidence
+#
+# Clang's floating-point code generation differs from both MSVC's and GCC's, so a third
+# independent toolchain strengthens the byte-identity claim in ADR-007 further (decision 6).
+
+name: Clang Build (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clang-build:
+    name: Linux (Clang, Vulkan)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No step here performs an authenticated Git operation, so the checkout token has no
+      # reason to survive into .git/config where any later build or test step could read it
+      # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
+      with:
+        persist-credentials: false
+
+    - name: Setup CMake (latest)
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
+      with:
+        cmake-version: 'latest'
+
+    - name: Install LLVM/Clang 20
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        # apt-key is deprecated, and worse, it trusts the added key for *every* configured
+        # repository - a compromised LLVM key would then be trusted to sign Ubuntu's own
+        # packages. Scope it instead: fetch over HTTPS into /etc/apt/keyrings and reference it
+        # from the source line with signed-by, so this key can validate only the LLVM repo.
+        # The fingerprint below is the Debian LLVM archive key (Sylvestre Ledru); checking it
+        # before installing means a substituted key fails the step rather than being trusted.
+        LLVM_KEY_FPR="6084F3CF814B57C1CF12EFD515CF4D18AF4F7421"
+        sudo install -d -m 0755 /etc/apt/keyrings
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /tmp/llvm-snapshot.asc
+        gpg --show-keys --with-colons --fingerprint /tmp/llvm-snapshot.asc \
+          | awk -F: '/^fpr:/ {print $10}' | grep -qx "$LLVM_KEY_FPR"
+        gpg --dearmor < /tmp/llvm-snapshot.asc > /tmp/llvm.gpg
+        sudo install -m 0644 /tmp/llvm.gpg /etc/apt/keyrings/llvm.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-20.list
+        sudo apt-get update
+        sudo apt-get install -y \
+          ninja-build \
+          build-essential \
+          clang-20 \
+          libc++-20-dev \
+          libc++abi-20-dev \
+          vulkan-tools \
+          libvulkan-dev \
+          vulkan-utility-libraries-dev \
+          spirv-tools \
+          libglfw3-dev \
+          xvfb
+
+    - name: Setup Clang 20
+      run: |
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
+        clang --version
+        clang++ --version
+
+    - name: Verify Vulkan installation
+      run: |
+        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+
+    # The preset, not an equivalent-looking configure line: CMakePresets.json's ninja-clang
+    # description exists precisely to keep preset and CI from drifting apart, which a
+    # hand-written duplicate of its cache variables would defeat.
+    - name: Configure CMake
+      run: cmake --preset ninja-clang
+
+    - name: Build
+      run: cmake --build --preset ninja-clang
+
+    - name: Run Tests
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        ctest --preset ninja-clang --output-on-failure

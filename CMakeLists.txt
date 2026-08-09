@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
-project(MduX VERSION 0.2.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
+project(MduX VERSION 0.5.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -31,15 +31,49 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         message(FATAL_ERROR "MSVC 17.14 (Visual Studio 2022 version 17.10) or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "15.0")
-        message(FATAL_ERROR "GCC 15 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
+    # GCC 16, not 15. GCC 15 builds the library, but cannot build a test suite written against
+    # SpecLab: reading a named module that transitively re-exports parts of `std` fails with
+    # "failed to load pendings for 'std::_Sp_counted_ptr_inplace'", a defect in GCC's own std BMI
+    # rather than in any code here or in SpecLab. It is also the compiler whose ICE keeps
+    # VulkanSCTriangleExample excluded, and whose -Warray-bounds false positive on std::string
+    # concatenation has failed CI on code the other two toolchains accept.
+    #
+    # Raising the floor rather than excluding the BDD suites on one leg: a test that does not run
+    # on a supported compiler is a coverage hole that reads as coverage.
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
+        message(FATAL_ERROR "GCC 16 or later is required. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
         message(FATAL_ERROR "Clang 20 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
 else()
-    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 15+, or Clang 20+ for C++23 modules support.")
+    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or Clang 20+ for C++23 modules support.")
+endif()
+
+# Generator validation.
+#
+# CMake implements C++ modules for the Ninja, Ninja Multi-Config and Visual Studio 17.4+
+# generators only, and this project rules Visual Studio out separately because it cannot do
+# `import std` (see the CXX_MODULE_STD block further down). That leaves the Ninja family.
+#
+# This check exists so that a plain `cmake ..` - which picks the platform default, "Unix
+# Makefiles" on Linux - fails here with an actionable message. Without it, the first thing to
+# notice is `find_package(Threads)` below, which fails inside a try_compile with a CMake-internal
+# backtrace that never mentions the generator.
+if(NOT CMAKE_GENERATOR MATCHES "Ninja")
+    message(FATAL_ERROR
+        "MduX requires the Ninja generator, but CMake selected \"${CMAKE_GENERATOR}\".\n"
+        "C++23 modules and `import std` are not supported by that generator.\n"
+        "\n"
+        "Configure with:\n"
+        "    cmake .. -G Ninja\n"
+        "\n"
+        "Or set it once for the shell and omit the flag from then on:\n"
+        "    export CMAKE_GENERATOR=Ninja        # Windows: set CMAKE_GENERATOR=Ninja\n"
+        "\n"
+        "If Ninja is missing: `apt install ninja-build`, `dnf install ninja-build`,\n"
+        "or `winget install Ninja-build.Ninja`.")
 endif()
 
 # Platform validation
@@ -64,6 +98,20 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # MSVC-specific modules configuration for C++23 and import std
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/experimental:module>)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/std:c++latest>)
+    # Source and execution character sets are both UTF-8. Without this MSVC reads sources in the
+    # host's ANSI code page and, worse, encodes a universal-character-name like "²" into that
+    # code page rather than into UTF-8 - so `Value::string("mm²")` is two bytes on GCC and
+    # Clang and one byte on MSVC, and every test asserting on UTF-8 output fails on Windows only.
+    # mdux.evidence.json validates its input as UTF-8 and emits UTF-8 unconditionally (ADR-007);
+    # a build whose execution charset is anything else contradicts the format the library defines.
+    #
+    # Set through CMAKE_CXX_FLAGS rather than add_compile_options() on purpose. /utf-8 defines
+    # _UTF8, and MSVC raises C5050 ("possible incompatible environment while importing module
+    # 'std'") when a translation unit's macro environment differs from the one the std module was
+    # built with. add_compile_options() does not reach CMake's internal __cmake_cxx_std_23 target,
+    # so the flag has to be somewhere that target inherits too, or every import std becomes a
+    # warning - and warnings are errors here.
+    string(APPEND CMAKE_CXX_FLAGS " /utf-8")
 endif()
 
 # Module setup
@@ -79,6 +127,19 @@ include(StaticAnalyzers)
 include(Doxygen)
 include(DependencySummaryTable)
 include(MduXTrustZones)
+include(MduXDeterminism)
+include(MduXBuildInfo)
+include(MduXBake)
+include(MduXEmbedBlob)
+
+# Artifact provenance for host tools (ADR-007): defines MduX::BuildInfo carrying
+# MDUX_TOOL_VERSION and MDUX_GIT_SHA. Runs before any target is created so bakers can link it.
+mdux_define_build_info()
+
+# Bake aggregate targets, declared here rather than next to add_subdirectory(tools) below so
+# this has no dependency on tools/ existing. They exist even with no artifact registered yet, so
+# `--target mdux-bake-all` succeeds trivially rather than failing with "no such target".
+mdux_declare_bake_targets()
 
 # Build options
 option(MDUX_BUILD_EXAMPLES "Build MduX examples" ON)
@@ -106,6 +167,13 @@ add_library(MduX_warnings INTERFACE)
 mdux_declare_governed(MduXCore)
 mdux_declare_governed(MduX_warnings)
 
+# Floating-point determinism (ADR-008, issue #59). Applied to the whole governed
+# target rather than to src/ml/Kernels.cpp alone: the kernels are what the rule
+# exists for, but no governed module has any business being compiled with
+# contraction or fast-math, and a target-wide setting cannot be defeated by
+# someone adding a second ML source file and forgetting the per-source property.
+mdux_enforce_fp_determinism(MduXCore)
+
 # MduXCore's own module sources. Deliberately does not link MduX_options - that
 # interface target carries Vulkan::Vulkan (see the find_package(Vulkan) block
 # below), which a governed target must never reach, transitively or otherwise.
@@ -117,8 +185,35 @@ target_sources(MduXCore
             include/mdux/core/Units.cppm
             include/mdux/core/Result.cppm
             include/mdux/evidence/Digest.cppm
+            include/mdux/evidence/Json.cppm
+            include/mdux/evidence/Report.cppm
+            include/mdux/governance/Governance.cppm
+            include/mdux/governance/Compliance.cppm
+            include/mdux/shader/Schema.cppm
+            include/mdux/ml/Schema.cppm
+            include/mdux/ml/Kernels.cppm
+            include/mdux/ml/Runtime.cppm
+            include/mdux/draw/Draw.cppm
+            include/mdux/font/Schema.cppm
+            include/mdux/text/Draw.cppm
+            include/mdux/text/Schema.cppm
+            include/mdux/text/Raster.cppm
     PRIVATE
         src/evidence/Digest.cpp
+        src/evidence/Json.cpp
+        src/evidence/Report.cpp
+        src/shader/Schema.cpp
+        src/ml/Kernels.cpp
+        src/ml/Runtime.cpp
+        src/draw/Draw.cpp
+        src/font/Schema.cpp
+        src/text/Draw.cpp
+        src/text/Schema.cpp
+        src/text/Raster.cpp
+        src/governance/Governance.cpp
+        src/governance/Justification.cpp
+        src/governance/Program.cpp
+        src/governance/Compliance.cpp
 )
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
@@ -137,10 +232,14 @@ target_sources(MduX
         FILE_SET CXX_MODULES
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         FILES
+            include/mdux/render/VulkanRenderer.cppm
+            include/mdux/render/Offscreen.cppm
             include/mdux/mdux.cppm
             include/mdux/vulkansc/MemoryPoolManager.cppm
             include/mdux/vulkansc/DeviceObjectManager.cppm
     PRIVATE
+        src/render/VulkanRenderer.cpp
+        src/render/Offscreen.cpp
         src/mdux.cpp
         src/vulkansc/MemoryPoolManager.cpp
         src/vulkansc/DeviceObjectManager.cpp
@@ -153,15 +252,11 @@ if(TARGET __CMAKE::CXX23)
     set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
     message(STATUS "CXX_MODULE_STD enabled for MduX target")
 else()
+    # Not fatal on its own: `import std` is opt-in per CMake version and toolchain, and the
+    # project still builds without it. The Visual Studio case that used to be caught here is
+    # now caught by the generator check near the top of this file, which rejects every
+    # non-Ninja generator rather than only that one.
     message(STATUS "CXX_MODULE_STD disabled - __CMAKE::CXX23 target not available")
-    if(CMAKE_GENERATOR MATCHES "Visual Studio")
-        message(FATAL_ERROR 
-            "Visual Studio generator does not support import std; with C++23 modules.\n"
-            "Please use Ninja generator instead:\n"
-            "  1. Install Ninja: winget install Ninja-build.Ninja\n"
-            "  2. Use: cmake .. -G Ninja\n"
-            "  3. Build with: cmake --build .")
-    endif()
 endif()
 
 target_include_directories(MduX PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
@@ -259,6 +354,118 @@ target_link_libraries(MduX PRIVATE MduX_warnings)
 target_link_libraries(MduXCore PRIVATE MduX_warnings)
 
 # Subdirectories
+#
+# tools/ comes before tests/ so the test targets can link MduX::ToolsCommon. It is not gated on
+# an option: the bakers under tools/ are what produce every committed artifact, so a build that
+# skipped them could not run `ctest -L evidence` at all (ADR-007).
+add_subdirectory(tools)
+
+# Baked artifacts (ADR-007). Declared here rather than in tools/ because a bake is a property of
+# the repository, not of the tool that happens to produce it - and because mdux_bake_artifact()
+# requires its TOOL target to exist already.
+#
+# Each call registers three things: a build-time bake into the build tree, a `-update` target that
+# stages the result into generated/ (the only path in the build permitted to write into the source
+# tree), and an `evidence.<kind>.<id>` test that byte-compares the two. A normal build never
+# writes into generated/; CI's "Verify no source-tree writes" step depends on that.
+mdux_bake_artifact(
+    KIND shader
+    ID mdux-ui
+    TOOL mdux-shaderbake
+    RECIPE recipes/shader/mdux-ui.toml
+    SOURCES
+        recipes/shader/mdux-ui/ui.vert.spv
+        recipes/shader/mdux-ui/ui.frag.spv
+    OUTPUTS
+        package.json
+        report.json
+        shaders.spv
+)
+
+# The triangle example's shaders (issue #122), so the example stops loading SPIR-V from the
+# working directory at runtime. Also the first package with an empty contract - no descriptors,
+# no push constants - which mdux-ui never exercises.
+# The ECG demonstrator model (epic #18, ADR-008). Its weights are synthetic and carry no clinical
+# validity - the recipe says so at length, and so does generate-demonstrator-weights.py beside it.
+#
+# Registered here for the same reason the shader packages are: the artifact is a property of the
+# repository, and mdux_bake_artifact() requires its TOOL target to exist already.
+mdux_bake_artifact(
+    KIND model
+    ID ecg-demo
+    TOOL mdux-mlbake
+    RECIPE recipes/model/ecg-demo.toml
+    SOURCES
+        recipes/model/ecg-demo/ecg-demo.safetensors
+    OUTPUTS
+        package.json
+        report.json
+        weights.bin
+)
+
+# The second weight set, baked from the same architecture. It exists so that issue #64's
+# weight-swap test has two real committed packages to compare rather than a fixture it built
+# itself - the claim being proved is about committed artifacts, so the test has to use them.
+mdux_bake_artifact(
+    KIND model
+    ID ecg-demo-alt
+    TOOL mdux-mlbake
+    RECIPE recipes/model/ecg-demo-alt.toml
+    SOURCES
+        recipes/model/ecg-demo/ecg-demo-alt.safetensors
+    OUTPUTS
+        package.json
+        report.json
+        weights.bin
+)
+
+# The first font package (#160, S4). Its source is a third-party font redistributed unmodified -
+# see recipes/font/dejavu-ui.toml for the provenance and license, and
+# docs/governance/soup-register.toml for its SOUP entry. Registered last of the four because it is
+# the only bake that reads a binary this repository did not produce.
+mdux_bake_artifact(
+    KIND font
+    ID dejavu-ui
+    TOOL mdux-textbake
+    RECIPE recipes/font/dejavu-ui.toml
+    SOURCES
+        recipes/font/dejavu-ui/DejaVuSans.ttf
+    OUTPUTS
+        package.json
+        report.json
+        atlas.bin
+)
+
+mdux_bake_artifact(
+    KIND shader
+    ID triangle
+    TOOL mdux-shaderbake
+    RECIPE recipes/shader/triangle.toml
+    SOURCES
+        recipes/shader/triangle/triangle.vert.spv
+        recipes/shader/triangle/triangle.frag.spv
+    OUTPUTS
+        package.json
+        report.json
+        shaders.spv
+)
+
+# Generated C++ for that package (issue #121). Build-tree only, never committed - see
+# cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
+# module form; the header form exists for a translation unit that cannot import a named module.
+include(cmake/MduXShaderEmit.cmake)
+mdux_emit_shader_package(
+    ID mdux-ui
+    OUT_MODULE MDUX_UI_SHADER_MODULE
+    OUT_HEADER MDUX_UI_SHADER_HEADER
+    OUT_DIR MDUX_GENERATED_SHADER_DIR
+)
+mdux_emit_shader_package(
+    ID triangle
+    OUT_MODULE MDUX_TRIANGLE_SHADER_MODULE
+    OUT_DIR MDUX_GENERATED_SHADER_DIR
+)
+
 if(MDUX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
@@ -289,6 +496,11 @@ endif()
 # the full link graph (including test/example targets that might accidentally
 # link a governed target to something Vulkan-adjacent) is established.
 mdux_verify_trust_zones()
+
+# Floating-point determinism check (ADR-008) - run last for the same reason, so a
+# fast-math option arriving through any target's interface compile options, or
+# through CMAKE_CXX_FLAGS, is seen rather than assumed absent.
+mdux_verify_fp_determinism()
 
 # Installation
 #

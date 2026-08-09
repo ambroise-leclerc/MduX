@@ -26,16 +26,21 @@ When sources disagree, resolve the discrepancy using this precedence order:
 2. Tests (`tests/`).
 3. Current ADRs and contributor documentation (`docs/adr/`, `CONTRIBUTING.md`, `README.md`).
 4. Historical or reference material (regulatory framework documents under `docs/`,
-   `risk-assessment-templates.md`).
+   `software_development_file/templates/`).
 
 **Do not invent an answer to resolve a contradiction.** If sources conflict in a way that affects
 your task, state the contradiction explicitly and ask, or clearly flag the assumption you are
 making and why.
 
-Known existing contradiction: `README.md`'s "Implementation Status" table marks the ISO 14971 /
-ISO 13485 risk-management and quality-management frameworks as "Completed" with example
-namespaces (`risk::`, `qms::`, `lifecycle::`). No such code exists in `include/` or `src/` today —
-treat that table as aspirational/planned, not implemented, per the precedence order above.
+Two documents are now the fastest way to resolve a question about current state, and both are
+checked against the build rather than written from memory:
+[`docs/architecture.md`](docs/architecture.md) for what exists and what is planned, and
+[`docs/getting-started.md`](docs/getting-started.md) for supported build and consumption surfaces.
+
+The `README.md` contradiction previously recorded here — an "Implementation Status" table
+advertising risk-management and quality-management frameworks with `risk::`, `qms::` and
+`lifecycle::` namespaces that do not exist — was fixed by issue `#111`. No such code exists, and
+the README now says so rather than claiming otherwise above the table.
 
 ### The TrustSC parity programme
 
@@ -43,17 +48,31 @@ MduX has a Rust sibling, [TrustSC](https://github.com/ambroise-leclerc/TrustSC),
 problem (a medical-device UI SDK with IEC 62304 Class B/C compliance modelling built in) with a more
 coherent architecture. MduX is being deliberately steered toward structural parity with it. The full
 roadmap is tracked as GitHub epics `#7`-`#19` on `ambroise-leclerc/MduX`, each with child issues.
-Three decisions from that programme apply repository-wide and are **not** yet reflected in the code:
+Three decisions from that programme apply repository-wide:
 
-1. **`.medui` will replace the HTML/CSS UI story entirely.** `UiFileWatcher`, `MedicalUiContent`,
-   and `MedicalUiRenderer` in `include/mdux/mdux.cppm` / `src/mdux.cpp` are slated for deletion, not
-   extension (issue `#13`). Do not add HTML/CSS parsing capability to that path.
-2. **A trust-zone split is coming**: a new governed `MduXCore` target that never receives Vulkan's
-   include directories, so `#include <vulkan/vulkan.h>` in governed code becomes a compile error
-   (issue `#11`). Until that lands, the single `MduX` target described in § 3 below remains accurate.
-3. **Reproduced normative standard text is being purged** from `docs/` and from git history
-   (issue `#7`) — see `regulatory-citations` in § 7. Do not add new material that reproduces or
-   closely paraphrases a standard's wording, even though older files in the tree still do.
+1. **The HTML/CSS UI story is gone.** `UiFileWatcher`, `MedicalUiContent`, `MedicalUiConfig`,
+   `MedicalUiRenderer`, `RenderStatistics` and `VulkanContext` were deleted by issue `#127`. What
+   replaces them is `mdux.draw` (a governed description of a frame) plus `mdux.render.vulkan` (the
+   adapter that renders it); `.medui` (issue `#15`) will generate the former. Do not reintroduce
+   HTML/CSS parsing.
+2. **The trust-zone split has landed**: `MduXCore` is a governed target that never receives
+   Vulkan's include directories, so `#include <vulkan/vulkan.h>` in governed code is a link-graph
+   error `mdux_verify_trust_zones()` reports at configure time (issue `#11`).
+3. **Reproduced normative standard text is gone**, from `docs/` and from git history (issue `#7`,
+   closed) — see `regulatory-citations` in § 7 and [ADR-006](docs/adr/ADR-006-no-reproduction-of-normative-standard-text.md).
+   Do not add new material that reproduces or closely paraphrases a standard's wording.
+   `mdux-docs-lint` enforces this in CI.
+4. **Evidence is baked and committed** (issue `#12`, closed). Five artifacts live under
+   `generated/`: two shader packages, two ML model packages and one font package. A normal build never writes into
+   the source tree — `mdux-bake-update` is the only path that does, run deliberately by an author
+   who commits the diff. CI asserts byte-identity on both toolchain legs.
+5. **Zero-SOUP ML inference has landed** (issue `#18`, closed). `mdux.ml.kernels` is imported by
+   both the device runtime and the host baker, and `Classifier1D::create()` fails closed on a
+   digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
+
+Waves 1 to 4 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0, v0.5.0). Wave 4 was the font
+and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#15`), now
+unblocked.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -64,36 +83,52 @@ code*; treat this subsection as the direction that code is moving in.
 
 | Module | Interface | Implementation |
 |---|---|---|
-| `mdux` | `include/mdux/mdux.cppm` | `src/mdux.cpp` |
+| `mdux` (facade: version, compliance, Vulkan capability) | `include/mdux/mdux.cppm` | `src/mdux.cpp` |
+| `mdux.core.result`, `mdux.core.units` | `include/mdux/core/` | header-only |
+| `mdux.evidence.digest`, `.json`, `.report` | `include/mdux/evidence/` | `src/evidence/` |
+| `mdux.governance`, `mdux.governance.compliance` | `include/mdux/governance/` | `src/governance/` |
+| `mdux.shader.schema` (governed) | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.ml.schema` (governed) | `include/mdux/ml/Schema.cppm` | header-only |
+| `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
+| `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
+| `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |
 | `mdux.vulkansc.objects` (imports `mdux.vulkansc.memory`) | `include/mdux/vulkansc/DeviceObjectManager.cppm` | `src/vulkansc/DeviceObjectManager.cpp` |
 
-Every `.cppm` interface has a matching `.cpp` implementation file, and both are declared in the
-`MduX` target in `CMakeLists.txt` (interfaces under `FILE_SET CXX_MODULES`, implementations as
-plain `PRIVATE` sources).
+Interfaces are declared under `FILE_SET CXX_MODULES` and implementations as plain `PRIVATE`
+sources. Note the split: the governed modules belong to `MduXCore` and the adapter ones to `MduX`.
+Not every interface has an implementation file - `mdux.core.result` and `mdux.core.units` are
+header-only - and `src/governance/Justification.cpp` and `Program.cpp` implement parts of
+`mdux.governance` without interfaces of their own.
 
-**Vulkan boundary / caller-owned resources**: the `mdux` module's `VulkanContext` struct
-(`include/mdux/mdux.cppm`) is populated by the caller — `VkDevice`, `VkPhysicalDevice`,
-`VkCommandBuffer`, and a compatible `VkRenderPass` are all supplied by the host application.
-`MedicalUiRenderer` creates and owns its *own* Vulkan resources (descriptor set layout/pool,
-pipeline layout, pipeline) from that caller-supplied context; it does not create a device,
-instance, or swapchain.
+**Vulkan boundary / caller-owned resources**: `mdux::render::VulkanRenderContext`
+(`include/mdux/render/VulkanRenderer.cppm`) is populated by the caller — `VkDevice`,
+`VkPhysicalDevice`, `VkRenderPass` and a `VkQueue` are all supplied by the host application, and
+every member is initialised so a partially-filled context fails validation rather than faulting.
+`mdux::render::UiRenderer` creates and owns its *own* Vulkan resources (shader modules, descriptor
+set layout and pool, pipeline layout, pipeline, the two frame buffers and a default atlas) from
+that context; it does not create a device, instance, or swapchain.
 
 **Vulkan SC module**: `mdux.vulkansc.memory` and `mdux.vulkansc.objects` implement static
 memory-pool and device-lifetime-object management patterns required by Vulkan SC (memory/objects
 that cannot be freed until device destruction). These are independent of the `mdux` UI module and
 carry their own `@compliance` Doxygen annotations referencing IEC 62304 Class C / ISO 14971.
 
-**Windowing-dependency policy**: the `MduX` library target itself has no windowing dependency —
-`include/mdux/mdux.cppm` includes only `<vulkan/vulkan.h>` and `<stdint.h>` in its global module
-fragment. GLFW is used only by example programs (`examples/CMakeLists.txt` links GLFW into the
-`MedicalUiExample` and `VulkanSCTriangleExample` targets) as *one* way a host application can
-create a window and Vulkan surface — it is not a library requirement. `examples/BasicExample.cpp`
-exists in the tree but is not currently registered as a build target in
-`examples/CMakeLists.txt`; treat it as inactive/legacy unless you verify otherwise.
+**Windowing-dependency policy**: the `MduX` library target itself has no windowing dependency.
+GLFW is linked only into `VulkanSCTriangleExample`, as *one* way a host application can create a
+window and Vulkan surface — it is not a library requirement. `MedicalUiExample` deliberately does
+not link it: building a frame needs neither a window nor a device, and that is part of what the
+example demonstrates. `EcgClassifierExample` links neither Vulkan nor GLFW either — it embeds its
+model and weights with `mdux_embed_blob()` and opens no files at all.
 
-**Current implementation vs. planned/conceptual**: the `MedicalUiRenderer`, `UiFileWatcher`,
-compliance-metadata types, and the two Vulkan SC managers are implemented and built today. The
+All three examples in `examples/CMakeLists.txt` are active build targets; there is no inactive
+example source left in the tree.
+
+**Current implementation vs. planned/conceptual**: the shader pipeline (`mdux.shader.schema`,
+`mdux-shaderbake`, `mdux-shaderemit`), the governed draw types (`mdux.draw`), the Vulkan renderer
+and offscreen target (`mdux.render.*`), the compliance-metadata types and the two Vulkan SC
+managers are implemented and built today. The
 ISO 14971/ISO 13485 risk-management and quality-management framework described in `README.md`
 (risk analysis engine, CAPA system, design-control stages) is conceptual/planned and not present
 in `include/` or `src/`.
@@ -103,22 +138,31 @@ in `include/` or `src/`.
 - `include/mdux/*.cppm`, `include/mdux/vulkansc/*.cppm` — C++23 module interfaces (public API surface).
 - `src/*.cpp`, `src/vulkansc/*.cpp` — module implementations.
 - `tests/` — unit and compliance test executables, driven by `tests/CMakeLists.txt`.
-- `examples/` — example programs and their `CMakeLists.txt`; `examples/*.html` are inactive/legacy
-  mockups — the built `MedicalUiExample` target (`SimpleMedicalUiExample.cpp`) does not construct
-  `MedicalUiRenderer` and consumes none of them; issue #42 tracks their deletion.
+- `examples/` — example programs and their `CMakeLists.txt`. `MedicalUiExample`
+  (`SimpleMedicalUiExample.cpp`) builds a frame with no device and no window;
+  `VulkanSCTriangleExample` owns a device and a window and renders from the baked shader package.
+  `examples/*.html` are inactive/legacy mockups nothing consumes; issue #42 tracks their deletion.
 - `cmake/` — CMake support modules (compiler settings, warnings, sanitizers, Doxygen, Vulkan
   discovery helpers, etc.), included from the root `CMakeLists.txt`.
 - `docs/adr/` — Architecture Decision Records (see § "Verified architecture summary" above for how
   their status matters).
-- `docs/iec62304/`, `docs/iso13485/` — structured regulatory reference documentation with
-  AI-automation schemas and code examples.
-- `docs/MduX_IEC-62304-Software-Lifecycle-Framework.md`, `docs/MduX_ISO-13485-Quality-Management-Framework.md`,
-  `docs/MduX_ISO-14971-Risk-Management-Framework.md`, and the top-level `risk-assessment-templates.md`
-  — regulatory framework reference documents (conceptual; see § 1).
-- `.github/workflows/ci.yml` — the authoritative description of what actually gets built/tested in
-  CI.
-- `CMakePresets.json` — currently defines a single Windows-only preset (`ninja-msvc`); there is no
-  Linux preset.
+- `docs/iec62304/`, `docs/iso13485/`, `docs/iso14971/`, `docs/iec62366/`, `docs/iec81001/` — the
+  regulatory corpus, one directory per standard: clause-range modules, a generated per-clause
+  `AI-Reference.md`/`.json` index, and `schemas/*.json` field-aligned with the governance types.
+  `tools/docs-lint/` checks all of it in CI.
+- `docs/regulatory-compliance.md` — the scope limits this project claims, and the ones it does not.
+- `docs/governance/` — the citation convention, the shared `Justification` schema, the SOUP
+  register, and `superseded-documents.md`, which records every point-in-time document that was
+  retired and why. The three framework monoliths (IEC 62304, ISO 13485, ISO 14971),
+  `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
+  superseded by the clause corpus above or by an ADR. Read that file before concluding content was
+  lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
+- `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
+  `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
+  `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
+  gets built/tested in CI.
+- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
+  `ninja-clang` (issue #45).
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
 
 ## 5. Supported environment and common commands
@@ -135,26 +179,32 @@ scope, not a mechanically enforced restriction.
 
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
-- GCC 15+
-- Clang 20+ — note the Clang CI job in `.github/workflows/ci.yml` is currently commented out
-  (disabled), so Clang support is unverified in CI even though the version floor is enforced.
+- GCC 16+
+- Clang 20+ — note that `.github/workflows/clang-build.yml` carries only a `workflow_dispatch`
+  trigger. It is a live workflow that can be started from the Actions tab, but no push or pull
+  request runs it, so Clang is unverified by automatic CI even though the version floor is
+  enforced at configure time. Treat a Clang result as unverified unless you can point at a
+  specific manual run of that workflow.
 - CMake 4.0+
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`
-enforces this). On Windows, the `ninja-msvc` preset in `CMakePresets.json` is available:
+enforces this). Plain CMake, identical on Linux and Windows:
 
 ```bash
-cmake --preset ninja-msvc
-cmake --build --preset ninja-msvc
+mkdir build && cd build
+cmake .. -G Ninja
+cmake --build .
 ```
 
-On Linux (no preset exists — use the explicit form CI actually runs):
+`-G Ninja` is mandatory and checked at configure time: CMake implements C++ modules only for the
+Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A bare `cmake ..`
+takes the platform default and stops with a message naming the generator it found.
+`export CMAKE_GENERATOR=Ninja` removes the need for the flag.
 
-```bash
-cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DMDUX_BUILD_EXAMPLES=ON -DMDUX_BUILD_TESTS=ON -DMDUX_BUILD_DOCS=OFF
-cmake --build build
-```
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang` and `-debug` variants.
+Those exist so each CI workflow invokes a configuration this repository owns instead of a
+look-alike command line; they are not needed to build by hand, and each uses its own binary dir.
 
 **Build options** (`option(...)` in root `CMakeLists.txt`):
 - `MDUX_BUILD_EXAMPLES` (default `ON`)
@@ -163,13 +213,23 @@ cmake --build build
 - `MDUX_ENABLE_REGULATORY_DOCS` (default `ON`)
 
 **Targets** (verified in `CMakeLists.txt`, `examples/CMakeLists.txt`, `tests/CMakeLists.txt`):
-- Library: `MduX` (alias `MduX::MduX`)
-- Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (skipped on GCC 15 due to a documented
-  compiler internal-compiler-error with C++23 modules — see the comment in
-  `examples/CMakeLists.txt`)
-- Tests: `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`,
-  registered with CTest as `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
-  `VulkanSCDeviceObjectTests`
+- Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
+  PUBLIC-links `MduXCore`)
+- Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
+  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`. Not exported.
+- Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
+  GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
+  links `MduX::MlBakeLib`, needs no Vulkan and no window, and embeds its model with
+  `mdux_embed_blob()`)
+- Tests: sixteen executables. Nine on the in-repository MduXTest framework (`core_tests`,
+  `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seven on SpecLab
+  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
+  `ml_noheap_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
+  `ctest -R <scenario>` selects an individual test.
+- Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
+  a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
+  `pixel`, `regulatory`.
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:
@@ -184,6 +244,36 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 [`.agents/skills/mdux-build-and-test/SKILL.md`](.agents/skills/mdux-build-and-test/SKILL.md).
 
 ## 6. Repository-wide working rules
+
+### Branch naming
+
+Work branches use the scheme GitHub's **"Create a branch for this issue"** button generates: the
+issue number, a dash, then the slugified issue title.
+
+```
+158-hand-parsed-truetype-glyf-only
+14-text-schema
+```
+
+This is not cosmetic. Every workflow filters `pull_request` on the pattern `[0-9]+-*`, and
+**those filters match a pull request's base branch, not its head**. A PR whose base matches no
+listed pattern reports no checks at all — not failures, *nothing* — which is the failure mode
+easiest to miss on review. So:
+
+- Create branches from the issue, with that button or by writing the same name by hand.
+- A stacked PR (one targeting its predecessor rather than `develop`, so a reviewer sees one
+  issue's diff instead of the cumulative one) is covered automatically, because its base is
+  itself an issue branch.
+- `main`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
+  convention and is kept only for branches already in flight.
+- A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
+  it**. If you need one, add its pattern to the `branches:` list of every workflow under
+  `.github/workflows/` that has a `pull_request:` trigger.
+
+`push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
+own branch, and adding work branches there would run every workflow twice per commit.
+
+### Conventions
 
 - Follow the naming, formatting, and documentation conventions in
   [`CONTRIBUTING.md`](CONTRIBUTING.md): `UpperCamelCase` classes/structs, `lowerCamelCase`
@@ -210,9 +300,9 @@ For the detailed build/test workflow, toolchain diagnosis, and evidence checklis
 | [`mdux-cpp23-vulkan-development`](.agents/skills/mdux-cpp23-vulkan-development/SKILL.md) | Changing module interfaces/implementations, Vulkan or Vulkan SC integration, rendering resources, examples, or public APIs. | Module file placement and CMake registration, import/export conventions, the Vulkan/Vulkan SC resource-ownership model, windowing policy, required test/doc updates. |
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
-| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Planned** — no baker exists yet (issue `#12`). |
+| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
 | [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Planned** — no `.medui` compiler exists yet (issue `#15`). |
-| [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Planned** — `software_development_file/` doesn't exist yet (issue `#9`). |
+| [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Live** — `software_development_file/` exists with templates and records (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.
 
