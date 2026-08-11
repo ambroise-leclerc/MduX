@@ -273,6 +273,35 @@ easiest to miss on review. So:
 `push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
 
+### Stacked delivery
+
+Branch naming above is what keeps CI *attached* to a stack. This is what keeps a stack *correct*.
+The full policy is in [`CONTRIBUTING.md`](CONTRIBUTING.md) § "Stacked delivery"; the rules an agent
+has to apply while working are:
+
+- **Declare the base.** A PR states whether it targets `develop` or a predecessor branch, and
+  which PR that predecessor is. `.github/pull_request_template.md` has the fields.
+- **Never merge a successor before its predecessor.** After the predecessor merges, rebase onto
+  current `develop` and re-request review of the final diff against `develop` — not against the
+  predecessor.
+- **Wait for the post-merge `develop` run**, not just the PR check, before merging the next
+  dependent PR. The PR check proves the branch builds; only the `develop` run proves the
+  integration does.
+- **Resolve a shared-registry conflict as a union by default.** The root `CMakeLists.txt`, the
+  `FILE_SET CXX_MODULES` lists, `tools/CMakeLists.txt`, `tests/CMakeLists.txt`, the schemas, the
+  generated indexes and the committed artifacts under `generated/` are the files where taking one
+  side deletes the other side's work while leaving a build that still compiles and tests that
+  still pass. If a conflict genuinely has to be resolved by taking one side, say in the PR
+  description which side you took and why — an undocumented one-sided resolution is the Wave 2
+  failure, a documented one is a decision.
+- **Land canonical types and schemas before their consumers.** Import what the predecessor
+  defined; do not restate it on a parallel branch.
+
+This is not general good practice written down for its own sake. Wave 2's stacked PRs lost CMake,
+module and test wiring during conflict resolution, and allowed two incompatible governance models
+to coexist until integration found them — repaired by #104 and reconciled by #105. Each rule above
+is one of the things that would have caught that earlier.
+
 ### Conventions
 
 - Follow the naming, formatting, and documentation conventions in
