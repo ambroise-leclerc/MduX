@@ -186,11 +186,11 @@ context:
 
 > Governed targets have no declared platform or graphics dependencies; their sources are checked
 > to reject direct inclusion of platform, graphics, and OS headers, are checked by an enforced
-> static-analysis profile, contain no throw expression in either their source or their emitted
-> objects, and are covered by determinism tests. This is **not** a claim that governed modules
-> cannot contain undefined behaviour, that compiler system headers are physically inaccessible,
-> that governed code cannot reach a throwing standard-library helper, or that governed targets can
-> be built with `-fno-exceptions`.
+> static-analysis profile, contain no throw expression — verified at source level on every
+> toolchain and additionally in the emitted objects on GCC/Clang — and are covered by determinism
+> tests. This is **not** a claim that governed modules cannot contain undefined behaviour, that
+> compiler system headers are physically inaccessible, that governed code cannot reach a throwing
+> standard-library helper, or that governed targets can be built with `-fno-exceptions`.
 
 Each clause of that paragraph names a mechanism that runs in CI, and each exclusion names something
 that was checked and found not to hold — see ADR-005's "What is enforced" for the throw-related

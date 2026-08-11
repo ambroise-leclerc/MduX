@@ -95,21 +95,23 @@ Two consequences worth stating plainly:
 
 ### The layers that do run
 
-| Layer | Reads | Where |
-|---|---|---|
-| `mdux-governed-lint` | the source | `tools/governed-lint/`, CI job `Governed Source Lint` |
-| `governed.noThrow.symbolScan` | the emitted objects | `cmake/MduXNoHeapScan.cmake`, a ctest |
-| `bugprone-exception-escape` | the AST | `.clang-tidy` |
+| Layer | Reads | Where | Gates on |
+|---|---|---|---|
+| `mdux-governed-lint` | the source | `tools/governed-lint/`, CI job `Governed Source Lint` | every toolchain |
+| `governed.noThrow.symbolScan` | the emitted objects | `cmake/MduXNoHeapScan.cmake`, a ctest | GCC/Clang; reports only on MSVC |
+| `bugprone-exception-escape` | the AST | `.clang-tidy` | nothing yet — see below |
+
+Only the first is a gate everywhere. That is the honest reading of the table, and the reason the
+source lint rather than the symbol scan is what the no-throw claim rests on.
 
 **`mdux-governed-lint`** rejects `throw`, `try`/`catch`, throwing `.value()`, raw allocation,
 filesystem and console facilities, clocks and randomness, unsafe casts, and `std::fma`. It scans
 exactly the sources `CMakeLists.txt` lists for `MduXCore`, parsed out of that block rather than
 globbed, and matches on the source with comments and string literals removed.
 
-**`governed.noThrow.symbolScan`** is the stronger of the two, and the reason the flags are not
-missed as much as they might be: it sees a throw arriving through a std facility the source never
-spells out, which `-fno-exceptions` would only have caught by refusing to compile the facility.
-It forbids `__cxa_throw` across all 29 governed objects, and none references it.
+**`governed.noThrow.symbolScan`** sees a throw arriving through a std facility the source never
+spells out, which `-fno-exceptions` would only have caught by refusing to compile the facility. It
+forbids `__cxa_throw` across all 29 governed objects, and none references it.
 
 It **tolerates**, and prints on every run, libstdc++'s throw *helpers*: `__throw_length_error`,
 `__throw_logic_error` and `__throw_out_of_range_fmt`, 14 references across eight objects. They
@@ -119,6 +121,19 @@ invariant makes the throw unreachable. Forbidding them means banning those types
 zone outright, which may be the right end state for a Class C build but is a larger decision than
 #116 and needs its own ADR.
 
+**This layer is a gate on GCC/Clang only, and is informational on MSVC.** The distinction it rests
+on — a literal `throw` emits one symbol, the library's own throw sites emit another — is a property
+of libstdc++'s code generation, not a portable one. The MSVC STL inlines its throw sites, so an
+ordinary `std::string` growth path emits `_CxxThrowException` directly into the governed object,
+the identical symbol a hand-written `throw` would emit. Nine governed objects reference it while
+`mdux-governed-lint` confirms none of their sources contains a `throw`.
+
+Forbidding that symbol would fail the build on correct code; tolerating it would forbid nothing. So
+under `dumpbin` the profile forbids nothing, reports what it finds, and its closing message states
+that no verdict is claimed. The rule is still enforced on Windows — by the source lint, which is
+toolchain-independent. What is GCC-specific is only the object-level corroboration, and the
+negative fixture is not registered on MSVC for the same reason.
+
 **`bugprone-exception-escape`** is re-enabled, as this ADR's original follow-up asked, but it is
 *available* rather than *enforced*: the only CI job running clang-tidy invokes it with `|| true`
 against a GCC-generated compile database it cannot parse for module interface units. It becomes a
@@ -126,10 +141,15 @@ real gate when the Clang leg is restored (issue #48).
 
 ### What is therefore claimed
 
-Governed code contains no throw expression, and no source-level construct from the banned list;
-both are checked mechanically on every pull request. Governed code **can still reach libstdc++'s
-throwing helpers** through ordinary `std::string` and `std::vector` use, and `MduXCore` **cannot
-currently be compiled with `-fno-exceptions`**. Anything stronger than that is not established.
+Governed code contains no throw expression and no source-level construct from the banned list,
+checked mechanically on every pull request and on every toolchain by `mdux-governed-lint`. On
+GCC/Clang that is independently corroborated in the emitted objects.
+
+Three things are **not** established. Governed code can still reach the standard library's throwing
+helpers through ordinary `std::string` and `std::vector` use. The object-level check does not gate
+on MSVC, so the no-throw property is single-sourced to the source lint there. And `MduXCore` cannot
+currently be compiled with `-fno-exceptions` on any toolchain. Anything stronger than the paragraph
+above is not established.
 
 **`MedicalUiRenderer`'s throwing constructor was grandfathered**, not retrofitted — it lived in the
 adapter zone and was scheduled for deletion with the HTML/CSS UI path rather than for a

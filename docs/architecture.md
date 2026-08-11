@@ -191,7 +191,7 @@ Labels select the evidence-bearing suites:
 | `evidence-unit` | unit tests of the evidence modules themselves |
 | `determinism` | the ML kernels produce the frozen bit patterns |
 | `noheap` | `predict()` performs no allocation |
-| `governed` | no governed object contains a throw expression ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
+| `governed` | no governed object contains a throw expression — a gate on GCC/Clang, informational on MSVC ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
 | `pixel` | rendered output matches expectations, under lavapipe |
 | `regulatory` | corpus indexes and schemas are current |
 
@@ -200,10 +200,16 @@ must not produce the same CI signal. `governed` is separate from `noheap` for th
 run `cmake/MduXNoHeapScan.cmake`, but over different objects with different forbidden sets, and a
 CI leg selecting one should not silently start covering the other.
 
-`governed` includes a negative test. `governed.noThrow.symbolScan.negative` scans a deliberately
-non-conforming object (`tests/governed/ThrowFixture.cpp`) and passes only when the scan rejects it
-with the expected message — because a check that has only ever run against conforming code passes
-identically when it is working and when it is looking for the wrong thing.
+`governed` includes a negative test on GCC/Clang. `governed.noThrow.symbolScan.negative` scans a
+deliberately non-conforming object (`tests/governed/ThrowFixture.cpp`) and passes only when the scan
+rejects it with the expected message — because a check that has only ever run against conforming
+code passes identically when it is working and when it is looking for the wrong thing.
+
+Neither test gates on MSVC, and the reason is worth knowing: the MSVC STL inlines its own throw
+sites, so `_CxxThrowException` in a governed object is the same symbol whether it came from a
+hand-written `throw` or from a `std::string` growth path. The scan reports there instead of
+failing, and [`mdux-governed-lint`](../tools/governed-lint/) — which reads source and is
+toolchain-independent — is what enforces the rule on Windows.
 
 ## Install and export
 
