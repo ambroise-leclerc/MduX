@@ -64,14 +64,15 @@ safety-critical nodes live.
 
 | File | Committed | Contents |
 |---|---|---|
-| `package.json` | yes | the compiled screen: resolved nodes, absolute rectangles, `DrawBudget`, literal RGBA8 colours, baked glyph runs, requirement ids — plus the authoring names each resolved value came from |
+| `package.json` | yes | the compiled screen: resolved nodes, absolute rectangles, `DrawBudget`, requirement ids, and the validated `Theme.Colors.<Token>` and `t("STR-KEY")` names each node draws with. **No locale field, no glyph runs, no RGBA8** |
 | `goldens.json` | yes | one golden reference per node matching ADR-011's predicate: `@safety_critical`, or an explicit `position:`, or both merged into one entry (#196). Always written, as `[]` when a screen matches no node |
 | `report.json` | yes | the ADR-007 bake report: inputs, digests, tool version |
 
-The colour and text columns are **resolved values, not lookups** — ADR-011 fixes that boundary, and
-the distinction matters here because a package carrying only a token name would oblige the runtime
-to resolve it. The authoring names ride along beside the resolved values so that a diff is readable
-and a golden reference can name what an author wrote, but nothing on the device reads them.
+The colour and text columns are **validated names, not baked values** — ADR-011 fixes that boundary.
+The compiler proves every token exists and every key is present in every approved locale, and the
+device performs the substitution by a bounded lookup in a governed table. Carrying names rather than
+values is also what makes the package readable in a diff: a reviewer sees
+`Theme.Colors.ScoreDigits`, not `[33, 184, 107, 255]`.
 
 Canonical JSON throughout, written through `mdux.evidence.json`. Registered via
 `mdux_bake_artifact()`, so each screen gets a build-tree bake, an `-update` target and an
@@ -87,13 +88,17 @@ that way, both binding on #198:
   slug from the screen name rather than using it, and the mapping has to be injective and recorded
   in the recipe, since two screens differing only in case would otherwise collide.
 
-**Open: whether locales multiply this layout.** Since the package carries baked glyph runs rather
-than text keys, one screen with three approved locales is either one package holding all three or
-three packages. The layout above assumes the former and does not argue for it; `mdux.text.schema`'s
-`TextPackage` took the latter shape — a single `locale` field, "the runtime reads no others"
-(`include/mdux/text/Schema.cppm:145`). #197 settles it when it defines the schema and #198 when it
-lays out `generated/screen/`; whichever is chosen, the `evidence.screen.<id>` id has to stay unique,
-which is the constraint that makes this a layout question rather than a schema detail.
+**Locales do not multiply this layout.** One screen, one directory, whatever the approved locale
+count — because ADR-011 keeps the package locale-free and leaves the per-locale glyph runs in the
+text package. `mdux.text.schema`'s `TextPackage` already carries a single `locale` field and "the
+runtime reads no others" (`include/mdux/text/Schema.cppm:145`), so a device pairs one screen package
+with the text package for the locale it is running.
+
+This question was recorded as open in an earlier revision, on the assumption that the screen carried
+baked glyph runs. It closes with that assumption. The reason to prefer it, stated as a consequence
+rather than a preference: **adding an approved locale rewrites no screen artifact**, so a translation
+update cannot change the digest of a screen whose layout nobody touched. In a byte-compared evidence
+pipeline that is the difference between re-verifying one artifact and re-verifying all of them.
 
 ### 2. The payload is **layout, not geometry**
 
@@ -107,10 +112,9 @@ vertices would mean baking only the static subset and computing the rest anyway 
 where one suffices, and a budget split across both.
 
 What is fixed at compile time is everything that makes the runtime's job bounded: *where* each node
-is, *how much* it may draw, and *which* atlas entries it may use — in the resolved form decision 1
-fixes, so the colours are RGBA8 values rather than tokens awaiting a lookup. Turning that into
-vertices is arithmetic over a known bound, which is exactly what a governed, allocation-free
-runtime can do.
+is, *how much* it may draw, and *which* validated token and key it draws with. Turning that into
+vertices is a bounded table lookup followed by arithmetic over a known bound, which is exactly what
+a governed, allocation-free runtime can do.
 
 ### 3. Generated C++ is emitted, never committed
 
