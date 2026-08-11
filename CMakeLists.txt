@@ -197,7 +197,6 @@ target_sources(MduXCore
             include/mdux/font/Schema.cppm
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
-            include/mdux/text/Raster.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
@@ -209,7 +208,6 @@ target_sources(MduXCore
         src/font/Schema.cpp
         src/text/Draw.cpp
         src/text/Schema.cpp
-        src/text/Raster.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
         src/governance/Program.cpp

@@ -548,9 +548,10 @@ mdux_discover_tests(ml_spec)
 #
 # Links MduX::Core only. mdux.text.schema is governed and contains no Vulkan handle, so a
 # scenario that needed MduX::MduX to build it would mean the trust-zone boundary had moved -
-# the same standing evidence shader_spec, draw_spec and ml_spec give. S1 ships the schema and a
-# no-run baker skeleton; the TrueType parser (#158), rasteriser (#159), atlas font baker (#160),
-# font schema (#161) and coverage draw path (#162) follow as their blockers close.
+# the same standing evidence shader_spec, draw_spec and ml_spec give. The suite covers the
+# governed half of the text pipeline: the schema (#157), the font schema (#161) and the coverage
+# draw path (#162). The host-only halves - the TrueType parser (#158), the rasteriser (#159) and
+# the atlas font baker (#160) - are covered by text_tools_spec instead.
 # Font schema suite (issue #161)
 #
 # Its own executable rather than cases inside text_spec, because a font package and a text package
@@ -587,7 +588,6 @@ mdux_discover_tests(font_spec)
 add_executable(text_spec
     text/TextSpecMain.cpp
     text/SchemaTests.cpp
-    text/RasterTests.cpp
     text/DrawTests.cpp
 )
 
@@ -619,11 +619,17 @@ mdux_discover_tests(text_spec)
 # `ml_tools_spec` and `shader_spec` follow: drive `parseRecipe()` / `run()` / `write()` / `verify()`
 # as calls so a failing assertion names the diagnostic code that failed rather than only an exit
 # status from a spawned process.
+#
+# RasterTests.cpp lives here rather than in text_spec since #116, because `mdux.text.raster` moved
+# to the host-tools zone. Moving the test with the module is not bookkeeping: text_spec links
+# MduX::Core alone, and that link line *is* the standing evidence above. Leaving raster cases there
+# would force MduX::TextBakeLib onto text_spec and destroy the very thing it exists to demonstrate.
 add_executable(text_tools_spec
     text/TextToolsSpecMain.cpp
     text/TextBakeTests.cpp
     text/TruetypeTests.cpp
     text/AtlasPackerTests.cpp
+    text/RasterTests.cpp
 )
 
 target_link_libraries(text_tools_spec PRIVATE MduX::TextBakeLib speclab::speclab)

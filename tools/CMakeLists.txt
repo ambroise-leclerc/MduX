@@ -218,6 +218,11 @@ endif()
 # that hosts the recipe model. S4 extends the recipe with the font pipeline inputs and S5
 # (#161) adds the restricted-charset validation; no mdux_bake_artifact() call site is
 # registered until S4 commits a real artifact.
+#
+# `mdux.text.raster` moved here from MduXCore in #116. It allocates, and `std::vector` reports
+# failure by throwing, so it could not stay in a governed target compiled with -fno-exceptions.
+# Nothing else about it changed - it is integer-only and its output is still byte-compared in CI.
+# See tools/text/Raster.cppm for the full argument.
 add_library(MduXTextBakeLib)
 add_library(MduX::TextBakeLib ALIAS MduXTextBakeLib)
 
@@ -229,10 +234,12 @@ target_sources(MduXTextBakeLib
             text/TextBake.cppm
             text/Truetype.cppm
             text/AtlasPacker.cppm
+            text/Raster.cppm
     PRIVATE
         text/TextBake.cpp
         text/Truetype.cpp
         text/AtlasPacker.cpp
+        text/Raster.cpp
 )
 
 target_compile_features(MduXTextBakeLib PUBLIC cxx_std_23)

@@ -1,10 +1,9 @@
 /**
  * @file Raster.cpp
- * @brief Implementation of the governed-zone glyph rasteriser.
+ * @brief Implementation of the host-tools glyph rasteriser.
  *
- * @compliance ADR-004 Trust zones in C++ (governed zone)
+ * @compliance ADR-004 Trust zones in C++ (host-tools zone)
  * @compliance ADR-007 Evidence pipeline doctrine
- * @compliance ADR-008 Zero-SOUP ML inference (decision 1, mirrored to text by ADR-010)
  * @compliance ADR-010 No on-device text shaping
  *
  * Four passes, in order:
@@ -578,8 +577,12 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
     //
     // `std::length_error` is caught alongside `bad_alloc` because `resize()` raises it when a
     // request exceeds `max_size()`, which is the same condition arriving by a different name.
-    // The final `catch (...)` is defensive: nothing in the governed zone throws anything else,
-    // and if that ever stops being true this still returns rather than terminating.
+    // The final `catch (...)` is defensive: nothing else on this path throws anything else, and
+    // if that ever stops being true this still returns rather than terminating.
+    //
+    // This block is what put the module in the host-tools zone (#116). `MduXCore` is compiled
+    // with `-fno-exceptions`, so `try` cannot appear there at all - see Raster.cppm on why the
+    // zone moved rather than the code.
     try {
         return rasteriseImpl(request);
     } catch (const std::bad_alloc&) {
