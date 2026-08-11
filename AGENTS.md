@@ -287,10 +287,13 @@ has to apply while working are:
 - **Wait for the post-merge `develop` run**, not just the PR check, before merging the next
   dependent PR. The PR check proves the branch builds; only the `develop` run proves the
   integration does.
-- **Resolve every shared-registry conflict as a union.** The root `CMakeLists.txt`, the
-  `FILE_SET CXX_MODULES` lists, `tools/CMakeLists.txt`, `tests/CMakeLists.txt`, the schemas and
-  the generated indexes are the files where taking one side deletes the other side's work while
-  leaving a build that still compiles and tests that still pass.
+- **Resolve a shared-registry conflict as a union by default.** The root `CMakeLists.txt`, the
+  `FILE_SET CXX_MODULES` lists, `tools/CMakeLists.txt`, `tests/CMakeLists.txt`, the schemas, the
+  generated indexes and the committed artifacts under `generated/` are the files where taking one
+  side deletes the other side's work while leaving a build that still compiles and tests that
+  still pass. If a conflict genuinely has to be resolved by taking one side, say in the PR
+  description which side you took and why — an undocumented one-sided resolution is the Wave 2
+  failure, a documented one is a decision.
 - **Land canonical types and schemas before their consumers.** Import what the predecessor
   defined; do not restate it on a parallel branch.
 

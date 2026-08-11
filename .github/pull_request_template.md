@@ -61,6 +61,16 @@ locally, CI covers it" is an acceptable answer and a more useful one than a wron
 
 - [ ] I understand that the `develop` workflow must be green after this merges before the next
       dependent PR may merge.
+- **Post-merge `develop` run:** <!-- workflow URL or run ID once this has merged, or "no successor" -->
+- [ ] That run is green. *(Tick after merging this PR and before merging its successor. "No
+      successor" above means there is nothing to gate, and this box may be left unticked.)*
+
+<!--
+The first box records that the author knows the rule; the second records that the rule was
+followed. They are not redundant - a successor could otherwise merge against an unverified
+integration while the template looked complete, which is the gap this section exists to close.
+-->
+
 
 ## Regulatory impact
 

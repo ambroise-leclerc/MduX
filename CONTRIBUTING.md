@@ -149,7 +149,9 @@ it earlier.
   is not the diff that will land.
 - **Required PR CI must be green, and then the resulting `develop` workflow must be green,**
   before the next dependent PR merges. A green PR check proves the branch builds; only the
-  post-merge `develop` run proves the *integration* does.
+  post-merge `develop` run proves the *integration* does. **Record that run** — its URL or id — in
+  the successor's "Post-merge gate" section, so the gate leaves evidence rather than only an
+  intention. A checkbox saying the author understood the rule is not a record that it was followed.
 
 ### Conflicts
 
