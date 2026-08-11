@@ -64,7 +64,7 @@ safety-critical nodes live.
 
 | File | Committed | Contents |
 |---|---|---|
-| `package.json` | yes | the compiled screen: resolved nodes, absolute rectangles, `DrawBudget`, requirement ids, and the validated `Theme.Colors.<Token>` and `t("STR-KEY")` names each node draws with. **No locale field, no glyph runs, no RGBA8** |
+| `package.json` | yes | the compiled screen: compiled nodes, absolute rectangles, `DrawBudget`, requirement ids, and the validated `Theme.Colors.<Token>` and `t("STR-KEY")` names each node draws with. **No locale field, no glyph runs, no RGBA8** |
 | `goldens.json` | yes | one golden reference per node matching ADR-011's predicate: `@safety_critical`, or an explicit `position:`, or both merged into one entry (#196). Always written, as `[]` when a screen matches no node |
 | `report.json` | yes | the ADR-007 bake report: inputs, digests, tool version |
 
@@ -230,7 +230,8 @@ human should read.
 - ADR-004: Trust zones in C++ — why the compiler is host-only
 - ADR-007: Evidence pipeline doctrine — the committed-artifact model, canonical JSON, bake reports
 - ADR-008: Zero-SOUP ML inference — decision 2, the constexpr-package end state #153 pursues
-- ADR-010: No on-device text shaping — why text is resolved before the device sees it
+- ADR-010: No on-device text shaping — why text is *shaped* before the device sees it; the
+  key-to-run lookup this record leaves on device is not shaping
 - ADR-011: The deterministic `.medui` compile boundary — the decision this one details
 - `cmake/MduXShaderEmit.cmake` and `tools/shader/Emit.cppm` — the bake-versus-emit argument in full
 - Issues #196, #197, #198 and #16

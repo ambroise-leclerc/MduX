@@ -20,8 +20,11 @@ storage sized from that budget and never grown. A compiler that could not comput
 build time would leave that type with no way to be used as designed.
 
 **Text shaping is already forbidden on device.** ADR-010 settled that static text bakes to
-positioned glyph runs and dynamic text is restricted to a validated charset. A `.medui` runtime
-that resolved `t("STR-KEY")` itself would reopen the question ADR-010 closed.
+positioned glyph runs and dynamic text is restricted to a validated charset. A `.medui` runtime that
+*shaped* `t("STR-KEY")` — chose glyphs, applied substitutions, measured — would reopen the question
+ADR-010 closed. Looking a key up to find the run ADR-010 already baked does not: the shaping
+happened on the build machine either way, and the lookup is a bounded scan of a fixed table. That
+distinction is what lets the Decision below keep keys in the package rather than baked runs.
 
 **The governed zone is a hostile place to put a parser.** ADR-004 keeps `MduXCore` on `std` alone,
 and issue #116 made ADR-005's no-throwing rule mechanical — `mdux-governed-lint` rejects
@@ -40,7 +43,8 @@ consumes. That choice determines whether a device build links a parser at all.
 ## Medical Device Considerations
 
 ### IEC 62304 implications (software lifecycle)
-- **Verification moves left.** A screen whose layout, text budgets and colour tokens are resolved at
+- **Verification moves left.** A screen whose layout is solved, whose text budgets are checked and
+  whose colour tokens and text keys are *validated* at
   build time can be rejected by a build, and a build failure is an artifact of the development
   process rather than a field observation. A screen resolved at runtime can only be verified by
   running it, on every input that changes it.
@@ -78,9 +82,10 @@ device runtime performs none of them, and turns that layout into vertices.**
 | Emit golden references (see rule below) | build machine | host tools |
 | **Build a `DrawList` from a compiled screen** | **device** | **governed** |
 
-*Layout*, not *geometry*: the compiler produces rectangles, colours and budgets, and the runtime
-produces vertices and indices from them. ADR-012 decision 2 explains why the vertex data cannot be
-baked. Both records use the word this way, and neither uses "geometry" for the compiled form.
+*Layout*, not *geometry*: the compiler produces rectangles, budgets and the validated token and key
+*names* each node draws with, and the runtime produces vertices and indices from them. ADR-012
+decision 2 explains why the vertex data cannot be baked. Both records use the word this way, and
+neither uses "geometry" for the compiled form.
 
 **Resolution is validated at build time; the last substitution is a bounded table lookup.** A
 `Theme.Colors.<Token>` and a `t("STR-KEY")` are both *checked* by the compiler — an unknown token
@@ -103,11 +108,17 @@ by looking each node's `text_key` up for the running locale. TrustSC does exactl
 `ScreenTextLayout::from_screen(screen, package, locale)`.
 
 The consequence that decides it: **adding an approved locale touches no screen artifact at all.**
-The alternative — one screen package per locale, carrying baked runs — would add a file and a
-`evidence.screen.<id>` per locale, and would re-baked every screen when a translation changed.
+The alternative — one screen package per locale, carrying baked runs — would add a file and an
+`evidence.screen.<id>` per locale, and would rebake every screen when a translation changed.
 Translations change far more often than layouts, and coupling the two makes the frequent change
-rewrite the stable artifact. It would also oblige a single-package variant to size `DrawBudget` for
-the widest locale on every device, including devices shipping only one.
+rewrite the stable artifact.
+
+**The cost of choosing this way, stated as a cost.** A locale-free screen does not know which locale
+it will be paired with, so its `DrawBudget` has to cover the widest approved translation — and a
+device shipping only `en-US` carries the German or Finnish ceiling in its buffers. Per-locale
+packages would size each budget to its own locale, and that is their one real advantage; it is
+given up deliberately. Buffer headroom is cheap and recoverable, while a translation update that
+rewrites every screen's digest is neither.
 
 Two things this does *not* relax. The compiler still validates every key against every approved
 locale, and still validates text budgets against the widest approved translation (#195) — that work
