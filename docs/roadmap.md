@@ -1,7 +1,7 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 4 August 2026
-> Verified against `develop @ d1329da` · 4 August 2026
+> Backlog · ambroise-leclerc/MduX · updated 11 August 2026
+> Verified against `v0.5.0` · 11 August 2026
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
@@ -14,9 +14,9 @@ generates the screens it draws.
 | Metric | Count |
 |---|---|
 | Epics | 13 |
-| Delivered | 7 |
-| Remaining | 6 |
-| Waves shipped | 3 |
+| Delivered | 9 |
+| Remaining | 4 |
+| Waves shipped | 4 |
 
 ## The thesis
 
@@ -32,10 +32,10 @@ the whole of Track C.
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
 | Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Five artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
-| Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time. | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
+| Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. 436 tests on `develop`, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Tests | Closed. 438 tests on `develop`, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 ## Dependency order
@@ -44,10 +44,12 @@ the whole of Track C.
 
 An epic opens when every epic it depends on has closed. Four waves have shipped
 (v0.2.0, v0.3.0, v0.4.0, v0.5.0), one epic per wave closing the dependency it held.
-Wave 5 is open now: #15's blockers were #12 and #14, both closed. #19 spans waves by design; its S3–S6 follow #15.
+Wave 5 is open now: #15's blockers were #12 and #14, both closed. #11 closed ahead of it with
+`#116` and `#117`, so no enforcement gap carries into the largest epic of the programme.
+#19 spans waves by design; its S3–S6 follow #15.
 
 ```text
-Wave 1 · shipped v0.2.0     #7 (done)   #11 (open · #116, #117)  #19 (S4–S6 open)
+Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
@@ -136,16 +138,27 @@ _All nine closed in PR #154. `#65` also closes the S1 child of #19_
 
 ### Track B · Load-bearing foundations
 
-#### #11 — Foundations & trust-zone skeleton · **Open · Wave 2 enforcement gaps**
+#### #11 — Foundations & trust-zone skeleton · **Done**
 
 A new `MduXCore` that never receives Vulkan's include directories — so
-`#include <vulkan/vulkan.h>` in governed code is a compile error on every platform. Plus
+`#include <vulkan/vulkan.h>` in governed code is rejected on every platform. Plus
 the prerequisites that produce no demo and block everything.
 
 The foundations shipped in Wave 1: `MduXCore` split, link-graph verification, the test
 framework, presets, install/export, and `#48` (GCC 16 CI green; the Clang CI leg stays
-disabled, an honesty scope pinned in ADR-007). The epic stays open for the two enforcement
-gaps that postdate v0.2.0 and were folded back in.
+disabled, an honesty scope pinned in ADR-007). The two enforcement gaps that postdate
+v0.2.0 closed before Wave 5 opened, which closes the epic.
+
+`#116` found the gap it was written for to be live rather than theoretical. ADR-005
+asserted in the present tense a governed-source lint that had never been written, and
+`src/text/Raster.cpp` — governed, shipped in v0.5.0 — contained `try` and three `catch`
+clauses. The intended fix, `-fno-exceptions` on `MduXCore`, turned out to be unavailable:
+GCC records the language dialect in every module BMI and CMake synthesises one shared
+`std` target, so `import std` and `-fno-exceptions` are mutually exclusive. Enforcement
+landed instead as `mdux-governed-lint` over the source and `governed.noThrow.symbolScan`
+over the emitted objects; the rasteriser moved to the host-tools zone; and ADR-004 and
+ADR-005 were rewritten to describe only mechanisms CI runs, including what they still
+cannot claim.
 
 - #40 ADR: trust zones in C++
 - #41 ADR: error handling and exceptions
@@ -159,7 +172,15 @@ gaps that postdate v0.2.0 and were folded back in.
 - #116 S10 — Enforce governed-zone source and exception policy
 - #117 S11 — Stack-safe PR integration and post-merge policy
 
-_Remaining: `#116`, `#117`. Downstream epics are no longer blocked_
+_All eleven closed. `#117`'s PR template and merge-ordering policy land ahead of Wave 5,
+which is the most stacked epic of the programme_
+
+> **Closure depends on two independent merges**, and this line exists so that a reader can check
+> rather than assume: `#116` closes with PR #189 (the last of a three-PR stack behind #188 and
+> #187), and `#117` closes with PR #186, which targets `develop` on its own. Neither gates the
+> other in GitHub. If you are reading this and #186 is still open, the "Done" above is ahead of
+> the tree — which is precisely the kind of unearned status `#116` existed to remove, so say so
+> rather than working around it.
 
 #### #12 — Evidence kernel · **Done v0.3.0**
 
@@ -336,6 +357,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Verified at `v0.5.0` · 9 August 2026_
-_13 epics · 8 delivered · Waves 1–4 shipped · Wave 5 open · #11 enforcement open_
+_Verified at `v0.5.0` · 11 August 2026_
+_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 open · no enforcement gaps outstanding_
 _All epics on GitHub_

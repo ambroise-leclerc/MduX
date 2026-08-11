@@ -89,7 +89,7 @@ mdux::core::Result<Classifier1D, MlError> Classifier1D::create(const ModelPackag
     //
     // Note the golden self-test below independently covers a *wrong* interpretation of these
     // bytes: if the weights were being read incorrectly, no golden vector would reproduce.
-    const auto blobAddress = reinterpret_cast<std::uintptr_t>(weights.data());
+    const auto blobAddress = reinterpret_cast<std::uintptr_t>(weights.data());  // mdux-governed-lint:allow
     if (!weights.empty() && blobAddress % alignof(float) != 0) {
         return err(MlError{.code = MlError::Code::WeightsUnaligned});
     }
@@ -107,7 +107,7 @@ mdux::core::Result<Classifier1D, MlError> Classifier1D::create(const ModelPackag
     classifier.outputLength_ = package.outputLength;
 
     // Resolve every tensor to a float span once, here, rather than per predict() call.
-    const float* base = weights.empty() ? nullptr : reinterpret_cast<const float*>(weights.data());
+    const float* base = weights.empty() ? nullptr : reinterpret_cast<const float*>(weights.data());  // mdux-governed-lint:allow
     for (std::size_t i = 0; i < package.layers.size(); ++i) {
         const LayerDesc& layer = package.layers[i];
         LayerTensors tensors;

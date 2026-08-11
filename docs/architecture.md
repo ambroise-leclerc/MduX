@@ -32,8 +32,17 @@ It is a *link-graph* property, checked mechanically.
 
 **What it is not:** it is not `#![forbid(unsafe_code)]`. It does not prove the absence of undefined
 behaviour, and no combination of C++ tooling here does. Governed modules are compiled without access
-to platform, graphics or OS headers, are covered by determinism and no-heap tests, and are held to
-an enforced warning set — that is the whole of the claim.
+to platform, graphics or OS headers, are checked at the source level by
+[`mdux-governed-lint`](../tools/governed-lint/) and at the object level by
+`governed.noThrow.symbolScan`, are covered by determinism and no-heap tests, and are held to an
+enforced warning set — that is the whole of the claim.
+
+Two things that claim deliberately does not include. Governed code can still reach libstdc++'s
+throwing helpers through ordinary `std::string` and `std::vector` use — 14 such references exist and
+the scan prints them on every run rather than implying otherwise. And `MduXCore` cannot be built
+with `-fno-exceptions`: `import std` and that flag are mutually exclusive on GCC, because the std
+BMI records its dialect and CMake synthesises one shared std target. Both are recorded in
+[ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md), "What is enforced".
 
 ## Modules
 
@@ -182,11 +191,25 @@ Labels select the evidence-bearing suites:
 | `evidence-unit` | unit tests of the evidence modules themselves |
 | `determinism` | the ML kernels produce the frozen bit patterns |
 | `noheap` | `predict()` performs no allocation |
+| `governed` | no governed object contains a throw expression — a gate on GCC/Clang, informational on MSVC ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
 | `pixel` | rendered output matches expectations, under lavapipe |
 | `regulatory` | corpus indexes and schemas are current |
 
 The `evidence` / `evidence-unit` split is deliberate: a broken SHA-256 test and a drifted artifact
-must not produce the same CI signal.
+must not produce the same CI signal. `governed` is separate from `noheap` for the same reason: both
+run `cmake/MduXNoHeapScan.cmake`, but over different objects with different forbidden sets, and a
+CI leg selecting one should not silently start covering the other.
+
+`governed` includes a negative test on GCC/Clang. `governed.noThrow.symbolScan.negative` scans a
+deliberately non-conforming object (`tests/governed/ThrowFixture.cpp`) and passes only when the scan
+rejects it with the expected message — because a check that has only ever run against conforming
+code passes identically when it is working and when it is looking for the wrong thing.
+
+Neither test gates on MSVC, and the reason is worth knowing: the MSVC STL inlines its own throw
+sites, so `_CxxThrowException` in a governed object is the same symbol whether it came from a
+hand-written `throw` or from a `std::string` growth path. The scan reports there instead of
+failing, and [`mdux-governed-lint`](../tools/governed-lint/) — which reads source and is
+toolchain-independent — is what enforces the rule on Windows.
 
 ## Install and export
 
