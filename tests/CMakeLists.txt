@@ -729,6 +729,19 @@ file(GENERATE
     CONTENT "$<JOIN:$<FILTER:$<TARGET_OBJECTS:MduXCore>,INCLUDE,/ml/>,\n>"
 )
 
+# The same mechanism over the whole governed target (issue #116), with the forbidden set narrowed
+# to the throw expression alone. No filter: every MduXCore object, module interfaces included.
+#
+# The allocator symbols cannot come along. mdux.evidence.json and mdux.governance allocate by
+# design - they build strings and vectors - so the ml-noheap forbidden set applied here would fail
+# on correct code. What generalises is the no-throwing half, which is a property ADR-005 asserts of
+# the whole governed zone rather than only of the ML modules.
+set(mdux_governed_object_list "${CMAKE_CURRENT_BINARY_DIR}/governed_objects_$<CONFIG>.txt")
+file(GENERATE
+    OUTPUT "${mdux_governed_object_list}"
+    CONTENT "$<JOIN:$<TARGET_OBJECTS:MduXCore>,\n>"
+)
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     find_program(MDUX_SYMBOL_TOOL NAMES dumpbin)
     set(mdux_symbol_tool_kind "dumpbin")
@@ -745,16 +758,74 @@ endif()
 if(MDUX_SYMBOL_TOOL)
     add_test(NAME ml.noheap.symbolScan
         COMMAND ${CMAKE_COMMAND}
+            -DMDUX_SCAN_PROFILE=ml-noheap
             -DMDUX_NOHEAP_OBJECT_LIST=${mdux_ml_object_list}
             -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
             -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
             -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
     )
     set_tests_properties(ml.noheap.symbolScan PROPERTIES LABELS "noheap")
+
+    # Issue #116. Labelled `governed` rather than `noheap`: it is not a no-heap check, and a CI leg
+    # selecting -L noheap should not silently start covering something else.
+    add_test(NAME governed.noThrow.symbolScan
+        COMMAND ${CMAKE_COMMAND}
+            -DMDUX_SCAN_PROFILE=governed-throw
+            -DMDUX_NOHEAP_OBJECT_LIST=${mdux_governed_object_list}
+            -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
+            -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
+    )
+    set_tests_properties(governed.noThrow.symbolScan PROPERTIES LABELS "governed")
+
+    # The negative fixture. See tests/governed/ThrowFixture.cpp for why a scan that only ever runs
+    # against conforming code is not yet evidence of anything.
+    #
+    # CXX_SCAN_FOR_MODULES OFF keeps this object out of the module dependency graph: it declares no
+    # module and imports none, and a fixture whose job is to be non-conforming has no business in
+    # anyone's dyndep.
+    add_library(mdux_throw_fixture OBJECT governed/ThrowFixture.cpp)
+    set_target_properties(mdux_throw_fixture
+        PROPERTIES
+            CXX_STANDARD 23
+            CXX_STANDARD_REQUIRED ON
+            CXX_EXTENSIONS OFF
+            CXX_SCAN_FOR_MODULES OFF
+    )
+
+    set(mdux_throw_fixture_object_list
+        "${CMAKE_CURRENT_BINARY_DIR}/throw_fixture_objects_$<CONFIG>.txt")
+    file(GENERATE
+        OUTPUT "${mdux_throw_fixture_object_list}"
+        CONTENT "$<JOIN:$<TARGET_OBJECTS:mdux_throw_fixture>,\n>"
+    )
+
+    add_test(NAME governed.noThrow.symbolScan.negative
+        COMMAND ${CMAKE_COMMAND}
+            -DMDUX_SCAN_PROFILE=governed-throw
+            -DMDUX_NOHEAP_OBJECT_LIST=${mdux_throw_fixture_object_list}
+            -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
+            -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
+    )
+    # PASS_REGULAR_EXPRESSION rather than WILL_FAIL, and the two must not be combined. When
+    # PASS_REGULAR_EXPRESSION is set CTest ignores the exit status and passes the test iff the
+    # regex matches, so it already accommodates the expected non-zero exit; adding WILL_FAIL then
+    # *inverts* that verdict and turns the correct outcome into a reported failure (observed).
+    #
+    # Matching the message rather than merely the exit status is what makes this a real negative
+    # test. A bare WILL_FAIL would be satisfied by a missing object, a misspelled profile or a bad
+    # path - every way of failing except the one being verified.
+    set_tests_properties(governed.noThrow.symbolScan.negative
+        PROPERTIES
+            PASS_REGULAR_EXPRESSION "Symbol scan violation \\(profile 'governed-throw'\\)"
+            LABELS "governed"
+    )
 else()
-    # Deliberately not silent. A missing tool means this layer is not running, and the other two
-    # layers do not cover what it covers.
+    # Deliberately not silent. A missing tool means these layers are not running, and nothing else
+    # covers what they cover.
     message(WARNING
-        "No symbol tool (nm/dumpbin) found - ml.noheap.symbolScan will not run, so issue #63's "
-        "layer 2 is unverified in this build.")
+        "No symbol tool (nm/dumpbin) found - ml.noheap.symbolScan and governed.noThrow.symbolScan "
+        "will not run, so issue #63's layer 2 and issue #116's object-level no-throw check are "
+        "both unverified in this build.")
 endif()
