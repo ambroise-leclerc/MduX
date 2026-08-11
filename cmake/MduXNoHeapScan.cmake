@@ -34,11 +34,18 @@
 # is a genuine difference in how the two standard libraries generate code, not a gap in effort.
 #
 # On libstdc++, a `throw` expression emits `__cxa_throw`, while the library's own throw sites go
-# through out-of-line helpers - `std::__throw_length_error`, `std::__throw_logic_error`,
-# `std::__throw_out_of_range_fmt`. The two are therefore distinguishable in the object, and this
-# profile forbids the first while reporting the second. Eight governed objects reference the
-# helpers, all from inside `std::string` and `std::vector`: growth paths reference
-# `__throw_length_error`, and `std::string_view::substr` references `__throw_out_of_range_fmt` even
+# through out-of-line helpers. The two are therefore distinguishable in the object, and this
+# profile forbids the first while reporting the second.
+#
+# The reported set is `__throw_length_error`, `__throw_logic_error`, `__throw_out_of_range` and
+# `__throw_bad_alloc`, matched as substrings - so `__throw_out_of_range` also covers libstdc++'s
+# `__throw_out_of_range_fmt`, which is the spelling actually seen in this tree. `__throw_bad_alloc`
+# is in the set for completeness rather than because anything references it today; a scan that
+# reports only the symbols it has already met would go quiet exactly when something new arrived.
+#
+# Eight governed objects reference these, all from inside `std::string` and `std::vector`: growth
+# paths reference `__throw_length_error`, and `std::string_view::substr` references
+# `__throw_out_of_range_fmt` even
 # where the caller's invariant makes the throw unreachable (Json.cpp's parser and Governance.cpp's
 # id splitting are both of that shape).
 #
@@ -79,7 +86,10 @@ file(STRINGS "${MDUX_NOHEAP_OBJECT_LIST}" MDUX_NOHEAP_OBJECTS)
 if(MDUX_NOHEAP_OBJECTS STREQUAL "")
     message(FATAL_ERROR
         "MduXNoHeapScan: the object list is empty. That would make this test pass by checking "
-        "nothing - the '${MDUX_SCAN_PROFILE}' profile expects objects to be part of MduXCore.")
+        "nothing. Whichever file(GENERATE) produced '${MDUX_NOHEAP_OBJECT_LIST}' resolved to no "
+        "objects - check the $<TARGET_OBJECTS:...> expression that writes it. Note that the "
+        "negative fixture deliberately scans an object library outside MduXCore, so an empty list "
+        "here does not necessarily mean MduXCore is the target that went missing.")
 endif()
 
 # Mangled and demangled spellings both, so this works whether or not the tool demangles.

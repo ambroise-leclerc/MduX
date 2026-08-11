@@ -15,7 +15,14 @@
  *
  * The `throw` below is what the compiler turns into a `__cxa_throw` reference, the exact symbol
  * the `governed-throw` profile forbids. Narrow that forbidden set or break the symbol matching and
- * this stops failing, which CTest reports as an error because the test carries `WILL_FAIL`.
+ * the scan stops rejecting this object, which CTest reports as a failure because the test carries
+ * `PASS_REGULAR_EXPRESSION` matching the violation message. Deliberately *not* `WILL_FAIL`: with a
+ * pass regex CTest already ignores the exit status, and adding `WILL_FAIL` inverts the verdict so
+ * the correct outcome is reported as a failure. `tests/CMakeLists.txt` carries the full reasoning.
+ *
+ * Only registered on GCC/Clang. The MSVC STL inlines its own throw sites, so the `governed-throw`
+ * profile forbids no symbol under `dumpbin` — and a negative test needs something to be forbidden
+ * before it can prove the rejection works.
  *
  * Plain includes rather than `import std`, and no module declaration: the fixture is compiled as
  * an object library outside the module graph, so that a file whose entire purpose is to be
