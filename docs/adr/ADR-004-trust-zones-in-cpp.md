@@ -62,12 +62,22 @@ existing precedent):
    accidental use of SDK-private headers that are reachable only through those targets. It does
    **not** make system-installed headers unreachable: a compiler may still find Vulkan, platform,
    or OS headers in its default search paths.
-2. **A mandatory CI banned-include lint** over governed directories rejects direct inclusion of
-   Vulkan, GLFW, platform, and OS headers. The same lint bans `reinterpret_cast`, `const_cast`,
-   `new `, `malloc`, `<random>`, `std::chrono::*_clock::now`, `std::fma`, `getenv`,
-   `std::filesystem`, and decimal float format specifiers (`%f`, `%g`, `%e`) in evidence-writing
-   code. This check, rather than include-directory isolation alone, enforces the source-level header
-   boundary on machines where those SDKs are installed.
+2. **`mdux-governed-lint`** (`tools/governed-lint/`, CI job `Governed Source Lint`, issue #116)
+   rejects direct inclusion of Vulkan, GLFW, platform and OS headers (GOV009), plus
+   `reinterpret_cast`, `const_cast`, raw `new`/`delete`/`malloc`, `<random>`,
+   `std::chrono::*_clock`, `std::fma`, `getenv`, `std::filesystem`, console streams, `throw`,
+   `try`/`catch` and throwing `.value()`. This check, rather than include-directory isolation
+   alone, enforces the source-level header boundary on machines where those SDKs are installed.
+
+   It scans exactly the sources `CMakeLists.txt` lists for `MduXCore`, parsed out of that block, so
+   a module is enrolled by being registered rather than by a second list someone maintains — and
+   generated code, which lives in the build tree, is excluded by construction. Matching runs on the
+   source with comments and string literals removed, so documentation may discuss the constructs it
+   bans. A line ending `mdux-governed-lint:allow` is a per-line, reviewed exception; there are two
+   in the tree, both the weights-blob `reinterpret_cast` in `src/ml/Runtime.cpp`.
+
+   Decimal float format specifiers in evidence-writing code are `mdux-evidence-lint`'s rule, not
+   this one — ADR-007 owns that boundary.
 3. **Configure-time link-graph assertion.** `cmake/MduXTrustZones.cmake` provides
    `mdux_declare_governed(<target>)`, recording the target in a global property, and
    `mdux_verify_trust_zones()`, called once at the end of the top-level `CMakeLists.txt`, which
@@ -88,8 +98,11 @@ existing precedent):
 
 - Nothing stops a governed module from writing undefined behavior inside its own translation unit.
   There is no `unsafe` keyword and no borrow checker to forbid.
-- `import std;` gives governed code `std::vector`, threads, and file/network I/O. Only the grep
-  lint (item 2) and code review keep those out of a module that should not need them.
+- `import std;` gives governed code `std::vector`, threads, and file/network I/O. Only
+  `mdux-governed-lint` (item 2) and code review keep those out of a module that should not need
+  them. `import std` also has a second cost, found in #116: it makes `-fno-exceptions` unavailable
+  to the governed zone, because GCC records the dialect in each module BMI and CMake synthesises
+  one shared `std` target for the whole build. See ADR-005, "What is enforced".
 - clang-tidy's analysis of C++23 module interface units is immature as of this writing. Run it in
   the Clang CI leg only (once issue #48 re-enables that leg); treat its results as advisory on
   Windows/MSVC.
@@ -122,7 +135,24 @@ evidence, draw-list, and ML modules to it as they land. `mdux.vulkansc.memory` a
 `mdux.vulkansc.objects` remain in the adapter zone — they take `VkDevice` in their public APIs by
 design and are not candidates for `MduXCore`.
 
-## Consequences
+### What allocation means for zone placement (issue #116)
+
+A module that allocates cannot be governed if its allocation failure has to be reported rather than
+terminate the process, because `std::vector` reports that failure by throwing.
+
+`mdux.text.raster` was governed on the argument that a device path might one day need to rasterise,
+which ADR-008 decision 1 would then require to be *that* module rather than a second one. It moved
+to the host-tools zone in #116. It allocates — the coverage accumulator alone can ask for 256 MiB —
+and `rasterise()`'s `noexcept` entry point therefore catches `std::bad_alloc` to turn an
+out-of-memory condition into a diagnostic instead of `std::terminate`. That is correct code, and it
+is not governed code.
+
+The general rule this establishes: **a speculative future device consumer does not justify governed
+placement against a present constraint.** The rasteriser runs once per glyph at build time, its
+only callers are `mdux-textbake` and its tests, and nothing on a device has ever called it. Where a
+module genuinely must be governed *and* must allocate, the pattern is `mdux.ml.runtime`'s — take
+caller-supplied scratch storage and never allocate at all, verified by
+`ml.noheap.symbolScan`.
 
 ### Positive
 - Target usage requirements cannot accidentally propagate native SDK dependencies into governed
@@ -156,9 +186,15 @@ context:
 
 > Governed targets have no declared platform or graphics dependencies; their sources are checked
 > to reject direct inclusion of platform, graphics, and OS headers, are checked by an enforced
-> static-analysis profile, and are covered by determinism tests. This is **not** a claim that
-> governed modules cannot contain undefined behaviour or that compiler system headers are
-> physically inaccessible.
+> static-analysis profile, contain no throw expression in either their source or their emitted
+> objects, and are covered by determinism tests. This is **not** a claim that governed modules
+> cannot contain undefined behaviour, that compiler system headers are physically inaccessible,
+> that governed code cannot reach a throwing standard-library helper, or that governed targets can
+> be built with `-fno-exceptions`.
+
+Each clause of that paragraph names a mechanism that runs in CI, and each exclusion names something
+that was checked and found not to hold — see ADR-005's "What is enforced" for the throw-related
+half. Nothing in it is aspirational.
 
 ## References
 - [TrustSC ADR-005: Pure-Rust project boundary and dependency policy](https://github.com/ambroise-leclerc/TrustSC/blob/main/docs/adr/ADR-005-pure-rust-project-boundary-and-dependency-policy.md)
@@ -169,4 +205,7 @@ context:
 ## Approval
 - **Decision Date**: 2026-07-26
 - **Approved By**: Project maintainer
-- **Review Date**: at the next parity-programme epic boundary (issue #12 landing)
+- **Amended**: 2026-08-11 (issue #116) — item 2's banned-include lint exists now and is named;
+  added the allocation-and-zone-placement rule that moved `mdux.text.raster` to host tools; the
+  claim paragraph gained its no-throw clause and its `-fno-exceptions` exclusion.
+- **Review Date**: at the next parity-programme epic boundary (issue #15 landing)

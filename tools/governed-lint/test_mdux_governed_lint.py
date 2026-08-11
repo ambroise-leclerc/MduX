@@ -119,6 +119,19 @@ class Rules(unittest.TestCase):
     def test_fma(self):
         self.assertEqual(codes_for("acc = std::fma(a, b, acc);\n"), ["GOV008"])
 
+    def test_banned_platform_headers(self):
+        self.assertEqual(codes_for("#include <vulkan/vulkan.h>\n"), ["GOV009"])
+        self.assertEqual(codes_for("#include <GLFW/glfw3.h>\n"), ["GOV009"])
+        self.assertEqual(codes_for("#include <windows.h>\n"), ["GOV009"])
+        self.assertEqual(codes_for("#include <sys/mman.h>\n"), ["GOV009"])
+        # Spacing variants a real file might use.
+        self.assertEqual(codes_for("#  include  < vulkan/vulkan.h >\n"), ["GOV009"])
+
+    def test_permitted_std_headers(self):
+        # src/draw/Draw.cppm:39 does exactly this, in a global module fragment.
+        self.assertEqual(codes_for("#include <cstddef>\n"), [])
+        self.assertEqual(codes_for("#include <stdexcept>\n"), [])
+
     def test_suppression_marker(self):
         source = "auto* p = reinterpret_cast<int*>(q);  // mdux-governed-lint:allow\n"
         self.assertEqual(codes_for(source), [])

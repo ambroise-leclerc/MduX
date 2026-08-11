@@ -29,6 +29,10 @@ So the rule is enforced at two levels instead, and this is the source-level one:
 Neither subsumes the other. The scan is blind to a `std::filesystem` call that never throws; this
 is blind to a throw inside a header it does not read.
 
+GOV009 additionally closes the gap ADR-004 item 1 names explicitly: denying `MduXCore` Vulkan's
+include *directories* does not make a system-installed `<vulkan/vulkan.h>` unreachable, because the
+compiler still finds it in a default search path. Only a source-level check does.
+
 ## What it scans
 
 **Exactly the sources `CMakeLists.txt` lists for `MduXCore`**, parsed out of the
@@ -173,6 +177,21 @@ RULES = (
             "Prefer std::bit_cast, std::as_bytes or a span conversion. Where the cast is genuinely "
             f"the mechanism - reading a caller-supplied blob - end the line with {SUPPRESS_MARKER} "
             "so the exception is reviewed rather than silent."
+        ),
+    ),
+    Rule(
+        code="GOV009",
+        pattern=re.compile(
+            r"#\s*include\s*<\s*(?:vulkan/|GLFW/|windows\.h|winsock|unistd\.h|sys/|fcntl\.h"
+            r"|pthread\.h|dlfcn\.h|X11/|wayland-)",
+            re.IGNORECASE,
+        ),
+        message="platform, graphics or OS header in governed code",
+        fix_hint=(
+            "ADR-004 item 1 keeps these off the include path that MduXCore is *given*, but a "
+            "system-installed header is still findable in the compiler's default search paths - "
+            "which is the gap this rule closes. Governed code takes handles and bytes from its "
+            "caller; the adapter zone is where a platform header belongs."
         ),
     ),
     Rule(
