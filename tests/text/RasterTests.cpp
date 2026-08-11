@@ -1,11 +1,14 @@
 /**
  * @file RasterTests.cpp
- * @brief BDD scenarios for the governed-zone glyph rasteriser (issue #159).
+ * @brief BDD scenarios for the host-tools glyph rasteriser (issue #159).
  *
- * @compliance ADR-004 Trust zones in C++ (governed zone)
+ * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-007 Evidence pipeline doctrine
- * @compliance ADR-008 Zero-SOUP ML inference (decision 1, mirrored to text by ADR-010)
  * @compliance ADR-010 No on-device text shaping
+ *
+ * Part of text_tools_spec rather than text_spec since #116, because `mdux.text.raster` moved to
+ * the host-tools zone. The scenarios themselves are unchanged: the rasteriser is still
+ * integer-only, and the frozen-digest scenario at the bottom still holds it to the byte.
  *
  * The outlines here are built in code rather than loaded from a font, for the reason
  * `TruetypeTests.cpp` gives: a fixture whose intended defect a reviewer has to take on trust is

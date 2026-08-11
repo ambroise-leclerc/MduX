@@ -1,28 +1,38 @@
 /**
  * @file Raster.cppm
- * @brief Governed-zone glyph rasteriser: outlines to an R8 coverage bitmap, integer arithmetic
+ * @brief Host-tools glyph rasteriser: outlines to an R8 coverage bitmap, integer arithmetic
  *        only, so the same glyph produces the same bytes on every supported toolchain.
  *
- * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
- * @compliance ADR-005 Error handling and exceptions policy (Result-returning, noexcept)
+ * @compliance ADR-004 Trust zones in C++ (host-tools zone: runs at build time, never on a device)
+ * @compliance ADR-005 Error handling and exceptions policy (Result-returning, noexcept entry point)
  * @compliance ADR-007 Evidence pipeline doctrine (the bytes this produces get committed)
- * @compliance ADR-008 Zero-SOUP ML inference (decision 1, mirrored to text by ADR-010: one
- *             module, not a host implementation and a device one that could drift)
  * @compliance ADR-010 No on-device text shaping
  *
- * Part of MduXCore. The font baker (#160, S4) imports this to fill an atlas; if a device path
- * ever needs to rasterise, it imports *this* module rather than growing a second implementation.
- * That is ADR-008 decision 1 applied to text, and it is why this file is governed rather than
- * sitting in `tools/` next to the parser that feeds it.
+ * Part of `MduXTextBakeLib`. The font baker (#160, S4) imports this to fill an atlas.
+ *
+ * ## Why this is host-tools code and not governed
+ *
+ * It was governed until issue #116, on the argument that a device path might one day want to
+ * rasterise and should import *this* module rather than grow a second implementation - ADR-008
+ * decision 1 applied to text. The argument was speculative and the cost was not: `rasterise()`
+ * allocates, and a `std::vector` reports failure by throwing, so the `noexcept` entry point below
+ * has to catch. ADR-005 forbids exactly that in the governed zone, and #116 made the rule
+ * mechanical - `mdux-governed-lint` rejects `try`/`catch` in governed source, and on GCC/Clang
+ * `governed.noThrow.symbolScan` rejects the resulting `__cxa_throw` reference in the object. A
+ * present rule outranks a hypothetical consumer.
+ *
+ * Nothing about the module's determinism changes with the move. The integer-only rule below is a
+ * property of the source, and the committed atlas bytes it produces are byte-compared in CI
+ * exactly as before.
  *
  * ## Why it does not take a `truetype::SimpleGlyph`
  *
- * `mdux.tools.truetype` (#158) is host-tools-zone code. ADR-004 forbids a governed module from
- * importing one, and the rule is mechanically checked by `mdux_verify_trust_zones()` - so this
- * module cannot name that type even though it is the obvious input. It takes `Outline` instead:
- * the same TrueType shape (points, per-contour end indices, on/off-curve flags) expressed in
- * governed types, with the baker doing a flat conversion. That indirection is the trust-zone
- * boundary made visible, not an abstraction for its own sake.
+ * It could now - `mdux.tools.truetype` (#158) is in this same zone, and the trust-zone rule that
+ * forbade naming that type no longer applies. The `Outline` input is kept anyway: it is the same
+ * TrueType shape (points, per-contour end indices, on/off-curve flags) in types that carry no
+ * parser with them, so this module stays movable back into `MduXCore` if a device path is ever
+ * built and made allocation-free. What used to be a constraint is now a deliberately preserved
+ * option, and the distinction is worth stating rather than leaving for a reader to infer.
  *
  * ## The determinism rule
  *
@@ -144,8 +154,10 @@ struct OutlinePoint {
 /**
  * @brief A glyph outline in font units: points, plus the index of each contour's last point.
  *
- * The shape `mdux.tools.truetype`'s `SimpleGlyph` carries, restated in governed types because a
- * governed module may not import a host-tools one (ADR-004). `contourEnds[i]` is the index of
+ * The shape `mdux.tools.truetype`'s `SimpleGlyph` carries, restated in parser-independent types.
+ * Until #116 that restatement was forced - a governed module may not import a host-tools one
+ * (ADR-004) - and it is now kept by choice, so this module stays movable back into `MduXCore` if
+ * a device path is ever built and made allocation-free. `contourEnds[i]` is the index of
  * the final point of contour `i`, so contour 0 is `points[0 .. contourEnds[0]]` and contour `i`
  * is `points[contourEnds[i-1] + 1 .. contourEnds[i]]` - TrueType's own convention, kept rather
  * than converted to offsets so the baker's translation stays a copy rather than a computation.

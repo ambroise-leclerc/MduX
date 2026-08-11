@@ -53,7 +53,6 @@ are ordinary `PRIVATE` sources.
 | `mdux.governance.compliance` | `include/mdux/governance/Compliance.cppm` | `src/governance/Compliance.cpp` |
 | `mdux.shader.schema` | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
 | `mdux.text.schema` | `include/mdux/text/Schema.cppm` | `src/text/Schema.cpp` |
-| `mdux.text.raster` | `include/mdux/text/Raster.cppm` | `src/text/Raster.cpp` |
 | `mdux.font.schema` | `include/mdux/font/Schema.cppm` | `src/font/Schema.cpp` |
 | `mdux.text.draw` | `include/mdux/text/Draw.cppm` | `src/text/Draw.cpp` |
 | `mdux.draw` | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
@@ -89,10 +88,16 @@ performs no checking and confers no compliance.
 | `MduXToolsCommon` | `tools/common/` | TOML subset reader, CLI parser, shared diagnostic envelope |
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
-| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158) and `mdux.tools.atlaspacker` (the shelf packer, #160) |
+| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
+
+`mdux.text.raster` was governed until [#116](https://github.com/ambroise-leclerc/MduX/issues/116).
+It allocates, and `std::vector` reports failure by throwing, so its `noexcept` entry point has to
+catch — which [ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md) forbids in governed
+code. It runs once per glyph at build time and never on a device, which is what made the host-tools
+zone the right home rather than a reason to rewrite it.
 
 ## The Vulkan boundary
 

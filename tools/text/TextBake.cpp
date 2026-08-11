@@ -470,9 +470,12 @@ struct BakedGlyph {
                 continue;
             }
 
-            // Translate the parser's outline into the rasteriser's governed input type. This copy
-            // is the trust-zone boundary made concrete: mdux.text.raster is governed and cannot
-            // name a host-tools type, so the baker is what bridges them (ADR-004).
+            // Translate the parser's outline into the rasteriser's own input type. This copy was
+            // the trust-zone boundary made concrete until #116, when mdux.text.raster joined this
+            // zone; the rasteriser could now name `truetype::GlyphPoint` directly. It is kept
+            // because the decoupling is what would let the rasteriser move back into MduXCore if a
+            // device path is ever built (see Raster.cppm), and the copy costs one pass per glyph
+            // at build time.
             std::vector<raster::OutlinePoint> points;
             points.reserve(outline->points.size());
             for (const truetype::GlyphPoint& gp : outline->points) {
