@@ -194,8 +194,16 @@ human should read.
   nothing in the format prevents them diverging. The check cannot live in the governed
   `validate()`: decision 4 puts the goldens outside the schema precisely because the runtime never
   reads them, so the `static_assert` in §3 sees only `package.json` and has no ids to compare
-  against. The mitigation is host-side — the baker writes both files from one AST and #197 owns a
-  test that every `goldens.json` node id resolves in the package it sits beside.
+  against. The mitigation is host-side — the baker writes both files from one AST, and #197 owns
+  the test.
+
+  That test compares **sets, not references**. Applying ADR-011's predicate to the nodes in
+  `package.json` yields exactly the ids `goldens.json` must contain, so the test derives that set
+  and requires equality: an id in the goldens with no node behind it fails, and — the direction
+  that matters more — a node the predicate selects with no golden fails too. Checking only that
+  listed ids resolve would accept the dangerous case silently, since a safety-critical node whose
+  golden was dropped looks exactly like a screen with fewer safety-critical nodes. #16's verifier
+  derives its expectations the same way rather than trusting the file to be complete.
 
 ### Risks
 - **The package grows to carry things the runtime does not need**, because it is the convenient
