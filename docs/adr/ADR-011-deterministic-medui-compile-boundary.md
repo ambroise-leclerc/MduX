@@ -23,11 +23,15 @@ build time would leave that type with no way to be used as designed.
 positioned glyph runs and dynamic text is restricted to a validated charset. A `.medui` runtime
 that resolved `t("STR-KEY")` itself would reopen the question ADR-010 closed.
 
-**The governed zone cannot host a parser.** ADR-004 keeps `MduXCore` on `std` alone, and issue #116
-made ADR-005's no-throwing rule mechanical — `mdux-governed-lint` rejects `throw`/`try`/`catch` in
-governed source on every toolchain. A parser over untrusted input that must report failure without
-throwing, without allocating, and without a filesystem is a very different program from one that may
-do all three. The host-tools zone exists for the second kind.
+**The governed zone is a hostile place to put a parser.** ADR-004 keeps `MduXCore` on `std` alone,
+and issue #116 made ADR-005's no-throwing rule mechanical — `mdux-governed-lint` rejects
+`throw`/`try`/`catch`, `.value()`, raw allocation and filesystem or console access in governed
+source on every toolchain. That rules out the usual shape of a parser outright. It does not rule
+out every shape: a non-allocating, non-throwing reader over a span would pass all of those rules,
+and neither ADR-004 nor ADR-005 names parsing as such. The case against that residual shape is
+argued rather than enforced, under Alternative 2 below. Either way, a parser over untrusted input
+that must report failure without throwing, without allocating, and without a filesystem is a very
+different program from one that may do all three. The host-tools zone exists for the second kind.
 
 What is *not* yet settled, and what this ADR therefore has to state rather than assume, is whether
 the compiled result is a data blob a governed runtime interprets, or generated source a compiler
@@ -86,6 +90,12 @@ diagnostics — but nothing on the device reads them to decide what to draw. A r
 unresolved token would be performing the last step of a resolution this ADR places on the build
 machine, which is the boundary being drawn rather than a detail of it.
 
+Baking the glyph runs makes *which locale* a property of the artifact rather than of the running
+device, and this ADR does not settle whether one compiled screen carries every approved locale or
+whether there is one per locale. Colours have no such multiplicity; text does, because the budget
+row above validates against every approved locale. ADR-012 decision 1 owns the file layout and
+records the question against #197 and #198.
+
 **Golden references cover safety-critical nodes and explicitly-positioned ones.** Two rules from
 the `medui-authoring` skill, stated here because ADR-012 depends on the same predicate: a
 `@safety_critical` node emits an entry, and **any** node with an explicit `position:` emits a
@@ -115,10 +125,14 @@ Concretely:
    different domain, and #199 builds it into `MduXCore` so that `mdux-governed-lint` and
    `governed.noThrow.symbolScan` cover it without a second registration.
 
-5. **The language is restricted so that the budget is computable.** Loops, conditionals, recursion,
-   runtime scripting and nested `Row` are rejected by the parser with a diagnostic. This is not
-   minimalism for its own sake: each of them makes the number of primitives depend on something the
-   compiler cannot see, and a `DrawBudget` that cannot be computed exactly is not a budget.
+5. **The language is restricted so that the budget is computable.** Loops, conditionals, recursion
+   and runtime scripting are rejected by the parser with a diagnostic, because each of them makes
+   the number of primitives depend on something the compiler cannot see, and a `DrawBudget` that
+   cannot be computed exactly is not a budget. Nested `Row` is rejected too, but for a different
+   reason and it should not be defended with this one: its depth is fully visible to the compiler
+   and the primitive count stays exact either way. It is excluded to keep the layout solver a
+   single flattening pass over a known structure — a solver argument, not a budget one — and the
+   `medui-authoring` skill already publishes the restriction.
 
 6. **Layout arithmetic is integer-only.** The compiled output is committed and byte-compared across
    toolchains under ADR-007, so a float in the solver would make the artifact a property of the
@@ -129,8 +143,10 @@ Concretely:
 ### 1. Interpret `.medui` on the device (Rejected)
 **Pros:** A screen could be replaced without rebuilding; one artifact instead of a compile step;
 matches how the deleted HTML/CSS path was shaped.
-**Cons:** Puts a parser over untrusted input inside the governed zone, which ADR-004 forbids and
-issue #116 now checks mechanically. Makes memory use a function of document content, so `DrawBudget`
+**Cons:** Puts a parser over untrusted input inside the governed zone. An interpreter's usual shape
+— throwing on malformed input, allocating an AST — is rejected outright by `mdux-governed-lint`
+since issue #116; the shape that would survive the lint is rejected on the argument the next
+alternative makes. Makes memory use a function of document content, so `DrawBudget`
 stops being knowable ahead of time and the bounded-storage design of `mdux.draw` has no basis.
 Moves every check this ADR pulls forward — locale coverage, text budgets, unknown colour tokens —
 into runtime failures on a device.
@@ -195,7 +211,6 @@ fails; there is no reason to relitigate it here.
   *Mitigation*: `mdux-governed-lint` rejects allocation and filesystem access in governed source,
   and the rule to apply in review is that the runtime may compute vertices from a compiled screen
   and may not compute *structure*. Neither of those is a bound on work, which is the next item.
-
 - **Nothing yet bounds the runtime's frame cost, and no test would catch it if that changed.**
   Raised in review of this ADR, and worth stating precisely because the neighbouring guarantees
   make it easy to assume otherwise: a no-heap test proves the runtime does not allocate, which is
@@ -213,6 +228,9 @@ fails; there is no reason to relitigate it here.
   which should either encode the bound in the schema — a declared maximum work figure the runtime
   asserts against — or record that it did not. This ADR does not decide which; it records that the
   guarantee is currently an argument rather than a check, so that #199 cannot inherit it as settled.
+  If #199 takes the schema route, the field belongs to #197: `mdux.medui.schema` is #197's module
+  and `package.json` is a committed, byte-compared artifact, so adding a field afterwards is a
+  schema version bump and a rebake of every screen. #197 should reserve it or decline it knowingly.
 - **Two definitions of a screen appear anyway**, one in the emitter and one in the schema.
   *Mitigation*: #197 requires a test that compiles both emitted forms in one binary and asserts they
   describe the same screen, which is what `shader_spec` already does for shaders.
