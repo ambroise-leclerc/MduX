@@ -128,8 +128,8 @@ correctly rather than on separate target usage requirements plus mandatory sourc
 
 ## Decision (continued): what "governed" will contain
 
-No code moves out of `mdux.cppm` as part of this ADR — it stays an adapter module for now. Issue
-#11 (S7) creates `MduXCore` with initial scaffolding (`mdux.core.units`, `mdux.core.result`) and
+No code moves out of `mdux.cppm` as part of this ADR — it stays an adapter module for now.
+Issue #11 (S7) creates `MduXCore` with initial scaffolding (`mdux.core.units`, `mdux.core.result`) and
 wires up the verification mechanism; later epics (`#12`, `#13`, `#15`, `#18`) add governed schema,
 evidence, draw-list, and ML modules to it as they land. `mdux.vulkansc.memory` and
 `mdux.vulkansc.objects` remain in the adapter zone — they take `VkDevice` in their public APIs by

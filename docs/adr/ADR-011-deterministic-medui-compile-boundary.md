@@ -61,18 +61,37 @@ consumes. That choice determines whether a device build links a parser at all.
 
 ## Decision
 
-**Every stage from source text to positioned, budgeted geometry runs on the build machine. The
-device runtime performs none of them.**
+**Every stage from source text to positioned, budgeted layout runs on the build machine. The
+device runtime performs none of them, and turns that layout into vertices.**
 
 | Stage | Where | Zone |
 |---|---|---|
 | Lex, parse, build AST | build machine | host tools |
-| Resolve theme tokens and locale strings | build machine | host tools |
+| Resolve theme tokens to literal RGBA8, and text keys to baked glyph runs | build machine | host tools |
 | Solve layout, flatten `Row`, compute absolute rectangles | build machine | host tools |
 | Validate text budgets against every approved locale | build machine | host tools |
 | Compute the `DrawBudget` | build machine | host tools |
-| Emit golden references for safety-critical nodes | build machine | host tools |
+| Emit golden references (see rule below) | build machine | host tools |
 | **Build a `DrawList` from a compiled screen** | **device** | **governed** |
+
+*Layout*, not *geometry*: the compiler produces rectangles, colours and budgets, and the runtime
+produces vertices and indices from them. ADR-012 decision 2 explains why the vertex data cannot be
+baked. Both records use the word this way, and neither uses "geometry" for the compiled form.
+
+**Resolved means literal, not looked up.** A `Theme.Colors.<Token>` becomes an RGBA8 value in the
+package, not a token name the runtime resolves against a table; a `t("STR-KEY")` becomes the baked
+glyph run for that locale, not a key the runtime looks up. The authoring names are retained
+*alongside* the resolved values — for diff readability, for the golden references, and for
+diagnostics — but nothing on the device reads them to decide what to draw. A runtime holding an
+unresolved token would be performing the last step of a resolution this ADR places on the build
+machine, which is the boundary being drawn rather than a detail of it.
+
+**Golden references cover safety-critical nodes and explicitly-positioned ones.** Two rules from
+the `medui-authoring` skill, stated here because ADR-012 depends on the same predicate: a
+`@safety_critical` node emits an entry, and **any** node with an explicit `position:` emits a
+`Bounds` entry whether annotated or not, because a declared position is a safety-relevant claim by
+itself. A node matching both rules emits exactly one merged entry with deduplicated `cv_checks`,
+never two. #196 implements this and ADR-012's `goldens.json` carries the result.
 
 Concretely:
 
@@ -110,7 +129,7 @@ Concretely:
 **Pros:** A screen could be replaced without rebuilding; one artifact instead of a compile step;
 matches how the deleted HTML/CSS path was shaped.
 **Cons:** Puts a parser over untrusted input inside the governed zone, which ADR-004 forbids and
-#116 now checks mechanically. Makes memory use a function of document content, so `DrawBudget`
+issue #116 now checks mechanically. Makes memory use a function of document content, so `DrawBudget`
 stops being knowable ahead of time and the bounded-storage design of `mdux.draw` has no basis.
 Moves every check this ADR pulls forward — locale coverage, text budgets, unknown colour tokens —
 into runtime failures on a device.
@@ -172,10 +191,27 @@ fails; there is no reason to relitigate it here.
   so the guarantee holds; what is lost is the reviewability of the authored source, which is a
   review concern rather than a runtime one.
 - **The governed runtime grows toward being an interpreter** as components accumulate in #17.
-  *Mitigation*: `mdux-governed-lint` rejects the constructs an interpreter needs (allocation,
-  filesystem, unbounded loops are not covered — allocation and filesystem are), and #199's no-heap
-  test is the standing check. The rule to apply in review is that the runtime may compute geometry
-  from a compiled screen and may not compute *structure*.
+  *Mitigation*: `mdux-governed-lint` rejects allocation and filesystem access in governed source,
+  and the rule to apply in review is that the runtime may compute vertices from a compiled screen
+  and may not compute *structure*. Neither of those is a bound on work, which is the next item.
+
+- **Nothing yet bounds the runtime's frame cost, and no test would catch it if that changed.**
+  Raised in review of this ADR, and worth stating precisely because the neighbouring guarantees
+  make it easy to assume otherwise: a no-heap test proves the runtime does not allocate, which is
+  not termination and not a bound on iteration.
+
+  The *invariant* is available and follows from the decision above: a compiled screen has a fixed
+  node count and a `DrawBudget` whose `maxVertices`, `maxIndices` and `maxCommands` are computed at
+  build time, and every `DrawList` operation fails closed once a budget is exhausted. A runtime that
+  iterates only over the package's nodes and only writes through `DrawList` therefore performs work
+  bounded by numbers that are known before the device runs, and the restriction on loops and
+  recursion in the source language is what keeps those numbers finite.
+
+  What does not exist is any mechanism holding the runtime to that invariant. It is not enforced by
+  the schema, and no test asserts a maximum frame cost. *Owner*: #199, which builds the runtime, and
+  which should either encode the bound in the schema — a declared maximum work figure the runtime
+  asserts against — or record that it did not. This ADR does not decide which; it records that the
+  guarantee is currently an argument rather than a check, so that #199 cannot inherit it as settled.
 - **Two definitions of a screen appear anyway**, one in the emitter and one in the schema.
   *Mitigation*: #197 requires a test that compiles both emitted forms in one binary and asserts they
   describe the same screen, which is what `shader_spec` already does for shaders.

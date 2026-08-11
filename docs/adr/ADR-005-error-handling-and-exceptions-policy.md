@@ -118,8 +118,8 @@ It **tolerates**, and prints on every run, libstdc++'s throw *helpers*: `__throw
 arrive from inside `std::string`, `std::vector` and `std::string_view::substr` — `Json.cpp`'s
 parser and `Governance.cpp`'s id splitting are both of that shape, and in both the caller's
 invariant makes the throw unreachable. Forbidding them means banning those types from the governed
-zone outright, which may be the right end state for a Class C build but is a larger decision than
-#116 and needs its own ADR.
+zone outright, which may be the right end state for a Class C build but is a larger decision
+than #116 and needs its own ADR.
 
 **This layer is a gate on GCC/Clang only, and is informational on MSVC.** The distinction it rests
 on — a literal `throw` emits one symbol, the library's own throw sites emit another — is a property

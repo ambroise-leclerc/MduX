@@ -6,7 +6,7 @@ Accepted (2026-08-11)
 ## Context
 
 [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) fixes *where* the work happens: every
-stage from `.medui` source to positioned, budgeted geometry runs on the build machine, and the
+stage from `.medui` source to positioned, budgeted layout runs on the build machine, and the
 governed runtime only turns a compiled screen into a `DrawList`. This record fixes *what crosses
 that boundary* — the files the compiler writes, which of them are committed and byte-compared, and
 what the generated C++ contains.
@@ -57,9 +57,14 @@ safety-critical nodes live.
 
 | File | Committed | Contents |
 |---|---|---|
-| `package.json` | yes | the compiled screen: resolved nodes, absolute rectangles, `DrawBudget`, text keys, colour tokens, requirement ids |
-| `goldens.json` | yes | one golden reference per safety-critical or explicitly-positioned node (#196) |
+| `package.json` | yes | the compiled screen: resolved nodes, absolute rectangles, `DrawBudget`, literal RGBA8 colours, baked glyph runs, requirement ids — plus the authoring names each resolved value came from |
+| `goldens.json` | yes | one golden reference per node matching ADR-011's predicate: `@safety_critical`, or an explicit `position:`, or both merged into one entry (#196) |
 | `report.json` | yes | the ADR-007 bake report: inputs, digests, tool version |
+
+The colour and text columns are **resolved values, not lookups** — ADR-011 fixes that boundary, and
+the distinction matters here because a package carrying only a token name would oblige the runtime
+to resolve it. The authoring names ride along beside the resolved values so that a diff is readable
+and a golden reference can name what an author wrote, but nothing on the device reads them.
 
 Canonical JSON throughout, written through `mdux.evidence.json`. Registered via
 `mdux_bake_artifact()`, so each screen gets a build-tree bake, an `-update` target and an
@@ -89,8 +94,13 @@ the same argument: the reviewed artifact is the JSON, and a few thousand lines o
 initialisers under review is noise that hides signal.
 
 The generated source contains `static_assert(screen.validate().has_value())`, so a malformed screen
-is a compile error rather than a startup failure. `mdux.medui.schema` is header-only and fully
-`constexpr` for this purpose, as `mdux.ml.schema` already is.
+is a compile error rather than a startup failure. That requires `mdux.medui.schema` to be
+header-only and fully `constexpr`, which is a property #197 has to deliver rather than one that
+exists — no such module is in the tree. `mdux.ml.schema` is the precedent that it is achievable:
+`tests/ml/SchemaTests.cpp:126` already `static_assert`s a reference package validating at compile
+time, and #197 should carry the equivalent for screens, built from `constexpr`-compatible types
+throughout. The owning `TextPackage` shape is explicitly *not* the model to copy here, since it
+holds `std::string` and `std::vector` and so cannot appear in a `static_assert`.
 
 ### 4. Goldens are a sidecar, not a section of the package
 
