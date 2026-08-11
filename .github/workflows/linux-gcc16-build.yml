@@ -108,6 +108,15 @@ jobs:
     - name: Verify ML determinism (GCC 16)
       run: ctest --preset ninja-gcc -L determinism --output-on-failure
 
+    # Governed-zone no-throw, at the object level (ADR-005, issue #116). Broken out with -V rather
+    # than folded into the full run above, because a passing ctest prints none of a test's output -
+    # and this scan's output is half its purpose. It reports the throw-helper references it
+    # deliberately tolerates, and the ADR justifies tolerating them on the grounds that they stay
+    # "visible and counted". A number nobody can see in a job log is not counted. -V is what makes
+    # the claim true, and is the same reason the pixel step below uses it.
+    - name: Verify governed-zone no-throw (GCC 16)
+      run: ctest --preset ninja-gcc -L governed -V --no-tests=error
+
     # Rendered-truth verification (issue #125), moved here when the GCC 15 leg was retired.
     # Without it a broken ICD turns the only test that renders anything into a silent no-op:
     # offscreen_tests exits 77 with no device and CTest reports Skipped, which does not fail a run.
