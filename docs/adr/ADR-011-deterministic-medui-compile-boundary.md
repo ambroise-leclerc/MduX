@@ -101,9 +101,10 @@ Concretely:
    because nothing it contains reaches a device.
 
 2. **The schema is governed and shared.** A single `mdux.medui.schema` module defines the compiled
-   screen. It is imported by both the host compiler that writes one and the device runtime that
-   reads one. This is ADR-008 decision 1 applied to screens: not a discipline that two
-   implementations be kept in step, but one definition that cannot drift from itself.
+   screen, imported by both the host compiler that writes one and the device runtime that reads
+   one. This is ADR-008 decision 1 applied to screens: not a discipline that two implementations be
+   kept in step, but one definition that cannot drift from itself. #197 builds the module; no such
+   module is in the tree today, and ADR-012 decision 3 records what it must satisfy.
 
 3. **The compiled screen is `constexpr`-constructible over spans, and contains no parser.** It is
    the shape `mdux.ml.schema`'s `ModelPackage` already has, for the same reason — a device with no
