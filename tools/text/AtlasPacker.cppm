@@ -17,8 +17,8 @@
  *
  * `mdux.text.raster` (#159) sits in this zone for the same reason as of #116. It was governed
  * on the argument that a device path might one day rasterise, which ADR-008 decision 1 would
- * then require to be *that* module rather than a second one - but it allocates, so it could not
- * stay in a target compiled with `-fno-exceptions`. See `Raster.cppm`.
+ * then require to be *that* module rather than a second one - but it allocates, so it has to
+ * catch at its `noexcept` boundary, which ADR-005 forbids in governed code. See `Raster.cppm`.
  *
  * ## Shelf placement, and why not something better
  *

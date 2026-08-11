@@ -94,9 +94,10 @@ Host tools parse untrusted input, so they are deliberately outside the governed 
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
 
 `mdux.text.raster` was governed until [#116](https://github.com/ambroise-leclerc/MduX/issues/116).
-It allocates, and `std::vector` reports failure by throwing, so it could not remain in a target
-compiled with `-fno-exceptions`. It runs once per glyph at build time and never on a device, which
-is what made the host-tools zone the right home rather than a reason to rewrite it.
+It allocates, and `std::vector` reports failure by throwing, so its `noexcept` entry point has to
+catch — which [ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md) forbids in governed
+code. It runs once per glyph at build time and never on a device, which is what made the host-tools
+zone the right home rather than a reason to rewrite it.
 
 ## The Vulkan boundary
 

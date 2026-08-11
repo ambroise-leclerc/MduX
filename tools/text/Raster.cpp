@@ -580,8 +580,8 @@ Result<CoverageBitmap, RasterError> rasterise(const RasterRequest& request) noex
     // The final `catch (...)` is defensive: nothing else on this path throws anything else, and
     // if that ever stops being true this still returns rather than terminating.
     //
-    // This block is what put the module in the host-tools zone (#116). `MduXCore` is compiled
-    // with `-fno-exceptions`, so `try` cannot appear there at all - see Raster.cppm on why the
+    // This block is what put the module in the host-tools zone (#116): governed code does not
+    // throw, and ADR-005 makes that a rule rather than a preference. See Raster.cppm on why the
     // zone moved rather than the code.
     try {
         return rasteriseImpl(request);

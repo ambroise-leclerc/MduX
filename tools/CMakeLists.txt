@@ -220,7 +220,8 @@ endif()
 # registered until S4 commits a real artifact.
 #
 # `mdux.text.raster` moved here from MduXCore in #116. It allocates, and `std::vector` reports
-# failure by throwing, so it could not stay in a governed target compiled with -fno-exceptions.
+# failure by throwing, so its noexcept entry point has to catch - which ADR-005 forbids in the
+# governed zone.
 # Nothing else about it changed - it is integer-only and its output is still byte-compared in CI.
 # See tools/text/Raster.cppm for the full argument.
 add_library(MduXTextBakeLib)

@@ -15,10 +15,11 @@
  * It was governed until issue #116, on the argument that a device path might one day want to
  * rasterise and should import *this* module rather than grow a second implementation - ADR-008
  * decision 1 applied to text. The argument was speculative and the cost was not: `rasterise()`
- * allocates, and a `std::vector` reports failure by throwing, so keeping this module in
- * `MduXCore` is incompatible with compiling the governed zone under `-fno-exceptions`. That
- * compile mode is the thing ADR-005 calls a Class C and Vulkan SC prerequisite, and a real
- * prerequisite outranks a hypothetical consumer.
+ * allocates, and a `std::vector` reports failure by throwing, so the `noexcept` entry point below
+ * has to catch. ADR-005 forbids exactly that in the governed zone, and #116 made the rule
+ * mechanical - `mdux-governed-lint` rejects `try`/`catch` in governed source, and on GCC/Clang
+ * `governed.noThrow.symbolScan` rejects the resulting `__cxa_throw` reference in the object. A
+ * present rule outranks a hypothetical consumer.
  *
  * Nothing about the module's determinism changes with the move. The integer-only rule below is a
  * property of the source, and the committed atlas bytes it produces are byte-compared in CI
@@ -153,8 +154,10 @@ struct OutlinePoint {
 /**
  * @brief A glyph outline in font units: points, plus the index of each contour's last point.
  *
- * The shape `mdux.tools.truetype`'s `SimpleGlyph` carries, restated in governed types because a
- * governed module may not import a host-tools one (ADR-004). `contourEnds[i]` is the index of
+ * The shape `mdux.tools.truetype`'s `SimpleGlyph` carries, restated in parser-independent types.
+ * Until #116 that restatement was forced - a governed module may not import a host-tools one
+ * (ADR-004) - and it is now kept by choice, so this module stays movable back into `MduXCore` if
+ * a device path is ever built and made allocation-free. `contourEnds[i]` is the index of
  * the final point of contour `i`, so contour 0 is `points[0 .. contourEnds[0]]` and contour `i`
  * is `points[contourEnds[i-1] + 1 .. contourEnds[i]]` - TrueType's own convention, kept rather
  * than converted to offsets so the baker's translation stays a copy rather than a computation.
