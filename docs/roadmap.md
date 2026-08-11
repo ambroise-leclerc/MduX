@@ -175,6 +175,13 @@ cannot claim.
 _All eleven closed. `#117`'s PR template and merge-ordering policy land ahead of Wave 5,
 which is the most stacked epic of the programme_
 
+> **Closure depends on two independent merges**, and this line exists so that a reader can check
+> rather than assume: `#116` closes with PR #189 (the last of a three-PR stack behind #188 and
+> #187), and `#117` closes with PR #186, which targets `develop` on its own. Neither gates the
+> other in GitHub. If you are reading this and #186 is still open, the "Done" above is ahead of
+> the tree — which is precisely the kind of unearned status `#116` existed to remove, so say so
+> rather than working around it.
+
 #### #12 — Evidence kernel · **Done v0.3.0**
 
 Host-only bakers produce committed artifacts; CI re-derives them and asserts byte-identity.

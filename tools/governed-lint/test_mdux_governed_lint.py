@@ -104,6 +104,18 @@ class Rules(unittest.TestCase):
         self.assertEqual(codes_for("delete p;\n"), ["GOV004"])
         self.assertEqual(codes_for("void* p = malloc(4);\n"), ["GOV004"])
 
+    def test_array_delete_spellings(self):
+        """`delete[] p` slipped through until review: `\\bdelete\\s` needs trailing whitespace."""
+        self.assertEqual(codes_for("delete[] p;\n"), ["GOV004"])
+        self.assertEqual(codes_for("delete [] p;\n"), ["GOV004"])
+        self.assertEqual(codes_for("auto* p = new int[4];\n"), ["GOV004"])
+
+    def test_c_formatting_and_system(self):
+        self.assertEqual(codes_for('std::snprintf(b, n, "x");\n'), ["GOV005"])
+        self.assertEqual(codes_for('snprintf(b, n, "x");\n'), ["GOV005"])
+        self.assertEqual(codes_for('system("rm -rf /");\n'), ["GOV005"])
+        self.assertEqual(codes_for("getenv(\"HOME\");\n"), ["GOV005"])
+
     def test_filesystem_and_console(self):
         self.assertEqual(codes_for("std::filesystem::path p;\n"), ["GOV005"])
         self.assertEqual(codes_for("std::cout << x;\n"), ["GOV005"])
@@ -211,6 +223,29 @@ class GovernedSourceList(unittest.TestCase):
         root = lint.find_repository_root()
         for path in lint.governed_sources(root):
             self.assertNotIn("mdux_generated", str(path))
+
+    def test_display_path_handles_a_file_outside_the_repository(self):
+        """The documented [paths...] interface must not traceback.
+
+        `Path.relative_to` raises for anything outside the root, which crashed the tool for any
+        file elsewhere on the filesystem - reported in review and reproduced with a file under
+        /tmp. Editor integrations are the reason that interface exists, and they pass absolute
+        paths.
+        """
+        root = lint.find_repository_root()
+        outside = Path("/tmp/definitely-not-in-the-repo.cpp")
+        self.assertIsInstance(lint.display_path(outside, root), str)
+
+    def test_check_file_reports_rather_than_crashes_outside_the_repository(self):
+        import tempfile
+
+        root = lint.find_repository_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Outside.cpp"
+            path.write_text("void f() { throw 1; }\n", encoding="utf-8")
+            findings: list[lint.Finding] = []
+            lint.check_file(path, root, findings)
+            self.assertEqual(["GOV001"], [f.code for f in findings])
 
     def test_rejects_a_cmakelists_without_the_block(self):
         import tempfile

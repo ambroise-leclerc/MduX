@@ -78,6 +78,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -136,7 +137,12 @@ RULES = (
     ),
     Rule(
         code="GOV004",
-        pattern=re.compile(r"\bnew\s+[A-Za-z_:]|\bdelete\s|\b(?:m|c|re)alloc\s*\(|\bfree\s*\("),
+        # `delete` needs the `[` alternative: `\bdelete\s` requires trailing whitespace, so the
+        # very common `delete[] p` spelling slipped through while `delete [] p` was caught.
+        pattern=re.compile(
+            r"\bnew\s+[A-Za-z_:(]|\bdelete\s*(?:\[\s*\]|\s)"
+            r"|\b(?:m|c|re)alloc\s*\(|\bfree\s*\("
+        ),
         message="raw owning allocation in governed code",
         fix_hint=(
             "Governed code uses caller-supplied storage or std containers, never a raw new/delete "
@@ -146,9 +152,15 @@ RULES = (
     ),
     Rule(
         code="GOV005",
+        # The printf family is matched with an optional `std::`, because the C spellings are
+        # equally reachable through `import std` and a bare `system("...")` is the one that
+        # matters most. `snprintf`/`vsnprintf` are included: they write to a buffer rather than a
+        # stream, but they are still the C formatting machinery this zone has no use for, and
+        # ADR-007 has its own reasons to keep float formatting out of anything evidence-adjacent.
         pattern=re.compile(
             r"std::filesystem|\bstd::(?:i|o)fstream\b|\bstd::(?:cout|cerr|cin|clog)\b"
-            r"|\bstd::getenv\b|\bgetenv\s*\(|\bstd::system\s*\(|\bstd::(?:f|s)?printf\s*\("
+            r"|\b(?:std::)?getenv\s*\(|\b(?:std::)?system\s*\("
+            r"|\b(?:std::)?v?(?:f|s|sn)?printf\s*\("
         ),
         message="platform, filesystem or console facility in governed code",
         fix_hint=(
@@ -181,9 +193,20 @@ RULES = (
     ),
     Rule(
         code="GOV009",
+        # A blocklist, and therefore not exhaustive - stated plainly here because the alternative
+        # is a reader assuming otherwise. An allowlist of std headers would be the airtight shape,
+        # but governed code reaches std through `import std` and carries almost no #include at all
+        # (one, `<cstddef>`, at the time of writing), so an allowlist would be a large mechanism
+        # guarding a nearly empty surface. The names below are the ones actually reachable on the
+        # platforms this project builds on; add to them when a new one becomes reachable.
+        #
+        # The real backstop is not this rule: it is ADR-004 item 3's link-graph assertion, which
+        # fails at configure time if a governed target ever acquires a dependency that would make
+        # such a header resolvable through target usage requirements.
         pattern=re.compile(
             r"#\s*include\s*<\s*(?:vulkan/|GLFW/|windows\.h|winsock|unistd\.h|sys/|fcntl\.h"
-            r"|pthread\.h|dlfcn\.h|X11/|wayland-)",
+            r"|pthread\.h|dlfcn\.h|X11/|wayland-|linux/|termios\.h|io\.h|direct\.h|process\.h"
+            r"|signal\.h|poll\.h|netinet/|arpa/|sched\.h|mmintrin\.h|immintrin\.h)",
             re.IGNORECASE,
         ),
         message="platform, graphics or OS header in governed code",
@@ -191,7 +214,8 @@ RULES = (
             "ADR-004 item 1 keeps these off the include path that MduXCore is *given*, but a "
             "system-installed header is still findable in the compiler's default search paths - "
             "which is the gap this rule closes. Governed code takes handles and bytes from its "
-            "caller; the adapter zone is where a platform header belongs."
+            "caller; the adapter zone is where a platform header belongs. This list is a "
+            "blocklist: if you have reached a platform header it does not name, add it."
         ),
     ),
     Rule(
@@ -362,13 +386,33 @@ def strip_cmake_comments(text: str) -> str:
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
+def display_path(path: Path, root: Path) -> str:
+    """The path as a finding should name it: repository-relative where possible.
+
+    `Path.relative_to` raises for anything outside `root`, which made the documented `[paths...]`
+    interface traceback on any file elsewhere on the filesystem - reported in review, reproduced
+    with a file under /tmp. A lint that crashes instead of reporting is not usable in the editor
+    integrations that interface exists for, so `os.path.relpath` handles the outside case and falls
+    back to the absolute path when even that is not expressible (a different drive on Windows).
+    """
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        try:
+            return os.path.relpath(path, root)
+        except ValueError:
+            return str(path)
+
+
 def check_file(path: Path, root: Path, findings: list[Finding]) -> None:
+    relative = display_path(path, root)
+
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         findings.append(
             Finding(
-                path=str(path.relative_to(root)),
+                path=relative,
                 line=0,
                 code="GOV000",
                 severity="error",
@@ -376,8 +420,6 @@ def check_file(path: Path, root: Path, findings: list[Finding]) -> None:
             )
         )
         return
-
-    relative = str(path.relative_to(root))
     code_only = strip_comments_and_literals(text)
     original_lines = text.splitlines()
 
@@ -442,6 +484,11 @@ def main(argv: list[str]) -> int:
 
     root = find_repository_root()
     if args.paths:
+        # Relative arguments resolve against the working directory, not the repository root.
+        # That is what every other command-line tool does, and what mdux-evidence-lint already
+        # does, so `mdux_governed_lint.py Draw.cpp` from inside src/draw/ means the file the shell
+        # would have completed. Findings are still *reported* repository-relative - see
+        # display_path(), which also keeps a path outside the repository from crashing the run.
         sources = [p if p.is_absolute() else (Path.cwd() / p) for p in args.paths]
     else:
         try:
