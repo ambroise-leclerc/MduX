@@ -115,6 +115,16 @@ jobs:
       run: ctest --preset ninja-msvc -L determinism
       shell: cmd
 
+    # Governed-zone no-throw (ADR-005, issue #116). Informational on this toolchain, and run
+    # anyway: the MSVC STL inlines its own throw sites, so _CxxThrowException in a governed object
+    # is the same symbol whether it came from a hand-written throw or a std::string growth path.
+    # The scan therefore forbids nothing here and prints what it found, which is worth having in
+    # the log - it is the only place the MSVC-side references are visible at all. mdux-governed-lint
+    # is what actually gates the rule on Windows. -V because a passing ctest prints no test output.
+    - name: Verify governed-zone no-throw (MSVC, informational)
+      run: ctest --preset ninja-msvc -L governed -V --no-tests=error
+      shell: cmd
+
     - name: Verify no source-tree writes
       shell: pwsh
       run: |
