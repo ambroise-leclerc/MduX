@@ -781,46 +781,62 @@ if(MDUX_SYMBOL_TOOL)
     # The negative fixture. See tests/governed/ThrowFixture.cpp for why a scan that only ever runs
     # against conforming code is not yet evidence of anything.
     #
+    # MSVC is excluded, and the reason is the same one that makes the positive scan
+    # report-only there: the MSVC STL inlines its own throw sites, so `_CxxThrowException` cannot
+    # distinguish a governed `throw` from an ordinary `std::string` growth path. The
+    # `governed-throw` profile therefore forbids nothing under dumpbin, and a negative test needs
+    # something to be forbidden before it can prove the rejection works. Registering it anyway
+    # would produce a test that fails on Windows for a reason unrelated to any defect - the kind of
+    # noise that trains a reader to ignore a red check.
+    #
     # CXX_SCAN_FOR_MODULES OFF keeps this object out of the module dependency graph: it declares no
     # module and imports none, and a fixture whose job is to be non-conforming has no business in
     # anyone's dyndep.
-    add_library(mdux_throw_fixture OBJECT governed/ThrowFixture.cpp)
-    set_target_properties(mdux_throw_fixture
-        PROPERTIES
-            CXX_STANDARD 23
-            CXX_STANDARD_REQUIRED ON
-            CXX_EXTENSIONS OFF
-            CXX_SCAN_FOR_MODULES OFF
-    )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        message(STATUS
+            "governed.noThrow.symbolScan.negative not registered on MSVC - the governed-throw "
+            "profile forbids no symbol under dumpbin, so there is nothing for a negative test to "
+            "prove. mdux-governed-lint covers the rule on this toolchain.")
+    else()
+        add_library(mdux_throw_fixture OBJECT governed/ThrowFixture.cpp)
+        set_target_properties(mdux_throw_fixture
+            PROPERTIES
+                CXX_STANDARD 23
+                CXX_STANDARD_REQUIRED ON
+                CXX_EXTENSIONS OFF
+                CXX_SCAN_FOR_MODULES OFF
+        )
 
-    set(mdux_throw_fixture_object_list
-        "${CMAKE_CURRENT_BINARY_DIR}/throw_fixture_objects_$<CONFIG>.txt")
-    file(GENERATE
-        OUTPUT "${mdux_throw_fixture_object_list}"
-        CONTENT "$<JOIN:$<TARGET_OBJECTS:mdux_throw_fixture>,\n>"
-    )
+        set(mdux_throw_fixture_object_list
+            "${CMAKE_CURRENT_BINARY_DIR}/throw_fixture_objects_$<CONFIG>.txt")
+        file(GENERATE
+            OUTPUT "${mdux_throw_fixture_object_list}"
+            CONTENT "$<JOIN:$<TARGET_OBJECTS:mdux_throw_fixture>,\n>"
+        )
 
-    add_test(NAME governed.noThrow.symbolScan.negative
-        COMMAND ${CMAKE_COMMAND}
-            -DMDUX_SCAN_PROFILE=governed-throw
-            -DMDUX_NOHEAP_OBJECT_LIST=${mdux_throw_fixture_object_list}
-            -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
-            -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
-            -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
-    )
-    # PASS_REGULAR_EXPRESSION rather than WILL_FAIL, and the two must not be combined. When
-    # PASS_REGULAR_EXPRESSION is set CTest ignores the exit status and passes the test iff the
-    # regex matches, so it already accommodates the expected non-zero exit; adding WILL_FAIL then
-    # *inverts* that verdict and turns the correct outcome into a reported failure (observed).
-    #
-    # Matching the message rather than merely the exit status is what makes this a real negative
-    # test. A bare WILL_FAIL would be satisfied by a missing object, a misspelled profile or a bad
-    # path - every way of failing except the one being verified.
-    set_tests_properties(governed.noThrow.symbolScan.negative
-        PROPERTIES
-            PASS_REGULAR_EXPRESSION "Symbol scan violation \\(profile 'governed-throw'\\)"
-            LABELS "governed"
-    )
+        add_test(NAME governed.noThrow.symbolScan.negative
+            COMMAND ${CMAKE_COMMAND}
+                -DMDUX_SCAN_PROFILE=governed-throw
+                -DMDUX_NOHEAP_OBJECT_LIST=${mdux_throw_fixture_object_list}
+                -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
+                -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+                -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
+        )
+        # PASS_REGULAR_EXPRESSION rather than WILL_FAIL, and the two must not be combined. When
+        # PASS_REGULAR_EXPRESSION is set CTest ignores the exit status and passes the test iff the
+        # regex matches, so it already accommodates the expected non-zero exit; adding WILL_FAIL
+        # then *inverts* that verdict and turns the correct outcome into a reported failure
+        # (observed).
+        #
+        # Matching the message rather than merely the exit status is what makes this a real
+        # negative test. A bare WILL_FAIL would be satisfied by a missing object, a misspelled
+        # profile or a bad path - every way of failing except the one being verified.
+        set_tests_properties(governed.noThrow.symbolScan.negative
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION "Symbol scan violation \\(profile 'governed-throw'\\)"
+                LABELS "governed"
+        )
+    endif()
 else()
     # Deliberately not silent. A missing tool means these layers are not running, and nothing else
     # covers what they cover.
