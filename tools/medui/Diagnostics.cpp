@@ -109,19 +109,41 @@ constexpr std::array<CodeInfo, 22> table{{
 
 std::span<const CodeInfo> registry() noexcept { return table; }
 
-const CodeInfo& info(Code code) noexcept {
+const CodeInfo* tryInfo(Code code) noexcept {
     for (const CodeInfo& row : table) {
         if (row.code == code) {
-            return row;
+            return &row;
         }
     }
-    // Unreachable while DiagnosticsTests' completeness case passes, which is what makes returning
-    // the first row acceptable rather than a silent wrong answer waiting to happen: the test fails
-    // in the pull request that adds an enumerator without a row, not on the path that hits it.
-    return table.front();
+    return nullptr;
 }
 
-std::string_view id(Code code) noexcept { return info(code).id; }
+const CodeInfo& info(Code code) {
+    if (const CodeInfo* row = tryInfo(code)) {
+        return *row;
+    }
+    // Fails loudly rather than returning the first row.
+    //
+    // An earlier revision returned `table.front()` on the argument that the completeness test makes
+    // this unreachable. Two reviewers objected independently, and they were right: the completeness
+    // test covers every *enumerator*, and `Code` has a fixed underlying type, so
+    // `static_cast<Code>(200)` is a well-formed value of the type that no enumerator names. A cast,
+    // a value read from data, or an uninitialised member would all have mapped silently to
+    // MDX-E000 - "the recipe file could not be opened" - with that code's severity and fix hint
+    // attached to an unrelated failure. A registry whose purpose is that a code means one thing
+    // cannot have a path that quietly assigns the wrong one.
+    //
+    // Throwing is available here because this is the host-tools zone (ADR-004, ADR-005): the
+    // compiler never reaches a device, and `tools/CMakeLists.txt` says as much. Callers that need
+    // the non-throwing form have `tryInfo()`.
+    throw std::logic_error{
+        std::format("mdux::tools::medui::info: no registry row for Code value {}. Every enumerator "
+                    "must have a row in Diagnostics.cpp's table; a value outside the enumerators "
+                    "means a cast or an uninitialised Code reached this call.",
+                    static_cast<unsigned>(code))};
+}
+
+std::string_view id(Code code) { return info(code).id; }
 
 std::span<const std::string_view> retired() noexcept {
     static constexpr std::array<std::string_view, 0> none{};

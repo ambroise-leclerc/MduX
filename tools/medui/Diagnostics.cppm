@@ -118,11 +118,28 @@ struct CodeInfo {
  */
 [[nodiscard]] std::span<const CodeInfo> registry() noexcept;
 
-/// The row for `code`. Every enumerator has one, which `registry()`'s test asserts.
-[[nodiscard]] const CodeInfo& info(Code code) noexcept;
+/// The row for `code`, or `nullptr` when no row names it. Non-throwing; `info()` is the form
+/// most callers want.
+[[nodiscard]] const CodeInfo* tryInfo(Code code) noexcept;
 
-/// The published identifier, e.g. `"MDX-E030"`.
-[[nodiscard]] std::string_view id(Code code) noexcept;
+/**
+ * @brief The row for `code`. Every enumerator has one, which `DiagnosticsTests` asserts.
+ *
+ * @throws std::logic_error if no row names `code`.
+ *
+ * Not `noexcept`, and it does not fall back to a default row. The completeness test covers every
+ * *enumerator*, but `Code` has a fixed underlying type, so `static_cast<Code>(200)` is a well-formed
+ * value the test cannot reach - and returning some row for it would attach one code's severity and
+ * fix hint to an unrelated failure. A registry exists so that a code means one thing; a silent
+ * wrong answer is the one outcome it must not have.
+ *
+ * Throwing is available because this is the host-tools zone (ADR-004, ADR-005). Use `tryInfo()`
+ * where a miss is an expected outcome rather than a programming error.
+ */
+[[nodiscard]] const CodeInfo& info(Code code);
+
+/// The published identifier, e.g. `"MDX-E030"`. Throws for an unregistered value, as `info()` does.
+[[nodiscard]] std::string_view id(Code code);
 
 /**
  * @brief Numbers that were published and then retired.

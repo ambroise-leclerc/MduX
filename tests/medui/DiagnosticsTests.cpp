@@ -82,12 +82,17 @@ const mdux::spec::Register everyCodeIsRegistered{
                   [] {
                       mdux::spec::Checks checks;
                       for (md::Code code : allCodes) {
-                          const md::CodeInfo& row = md::info(code);
-                          // info() falls back to the first row for an unregistered enumerator, so
-                          // comparing the round-trip is what actually detects a missing row.
-                          checks.expect(row.code == code,
+                          // tryInfo() rather than info(): a missing row must fail this scenario
+                          // with a named enumerator, not throw out of the loop and lose which one.
+                          const md::CodeInfo* row = md::tryInfo(code);
+                          checks.expect(row != nullptr,
                                         std::format("enumerator {} has its own row",
                                                     static_cast<int>(code)));
+                          if (row != nullptr) {
+                              checks.expect(row->code == code,
+                                            std::format("row for enumerator {} names it back",
+                                                        static_cast<int>(code)));
+                          }
                       }
                       checks.expect(md::registry().size() == allCodes.size(),
                                     std::format("table has {} rows, one per enumerator (has {})",
@@ -243,6 +248,36 @@ const mdux::spec::Register positionsMayBeAbsent{
                                                        0, "could not open recipe.toml");
                 checks.expect(d.line == 0 && d.column == 0, "no position invented");
                 checks.expect(d.code == "MDX-E000", "code is carried");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register unregisteredValuesFailLoudly{
+    "info() throws for a Code value no enumerator names",
+    "evidence-unit",
+    [] {
+        // `Code` has a fixed underlying type, so `static_cast<Code>(200)` is a well-formed value of
+        // the type - not undefined behaviour - and the completeness scenario above cannot reach it,
+        // because it walks the enumerators. An earlier revision returned the first row here, which
+        // would have attached MDX-E000's severity and fix hint to an unrelated failure. Two
+        // reviewers objected to that independently; this scenario is what keeps the objection
+        // answered.
+        return speclab::Test("medui-diagnostics-unregistered")
+            .Given("a Code value outside the enumerators", [] {})
+            .When("it is looked up", [] {})
+            .Then("tryInfo() reports the miss and info() throws", [] {
+                mdux::spec::Checks checks;
+                const auto stray = static_cast<md::Code>(200);
+                checks.expect(md::tryInfo(stray) == nullptr, "tryInfo() returns nullptr");
+
+                bool threw = false;
+                try {
+                    static_cast<void>(md::info(stray));
+                } catch (const std::logic_error&) {
+                    threw = true;
+                }
+                checks.expect(threw, "info() throws std::logic_error rather than returning a row");
                 checks.raise();
             })
             .Execute();
