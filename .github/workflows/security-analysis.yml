@@ -21,7 +21,11 @@ jobs:
   security-analysis:
     name: Security Analysis
     runs-on: ubuntu-latest
-    container: gcc:16
+    # Pinned for the reason linux-gcc16-build.yml states at length: the floating `gcc:16` tag
+    # moved to 16.2.0 and broke the module build (#205). This job does not compile modules, so it
+    # survived - but a floating toolchain makes any failure here ambiguous between "the code
+    # changed" and "the container changed", which is the property worth removing everywhere.
+    container: gcc:16.1.0
 
     steps:
     - name: Checkout repository

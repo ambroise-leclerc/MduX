@@ -29,7 +29,18 @@ jobs:
   sanitize:
     name: ASan + UBSan (GCC 16)
     runs-on: ubuntu-latest
-    container: gcc:16
+    # Pinned to a patch release, not the floating `gcc:16` tag. That tag moved from 16.1.0 to
+    # 16.2.0 on 2026-08-12 and turned develop red on a markdown-only commit (#205): GCC 16.2 could
+    # not read the module BMIs the SpecLab sources produce - "failed to read compiled module
+    # cluster ... Bad file data". The BMI format is not stable across GCC patch releases, and every
+    # other input to this job is already pinned (SpecLab to a commit SHA, CMake to 4.1.1), so the
+    # compiler was the one floating input - and the one most likely to break a C++23 modules build.
+    #
+    # Same reasoning as the CMake pin in windows-build.yml, which that file states at length after
+    # the same thing happened with `latest`. Moving to a newer GCC is a deliberate change: bump this
+    # tag in a PR of its own, so the diff that changes the compiler is the diff that fixes whatever
+    # the change breaks.
+    container: gcc:16.1.0
 
     steps:
     - name: Checkout repository
