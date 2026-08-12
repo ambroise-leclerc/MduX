@@ -20,8 +20,11 @@ storage sized from that budget and never grown. A compiler that could not comput
 build time would leave that type with no way to be used as designed.
 
 **Text shaping is already forbidden on device.** ADR-010 settled that static text bakes to
-positioned glyph runs and dynamic text is restricted to a validated charset. A `.medui` runtime
-that resolved `t("STR-KEY")` itself would reopen the question ADR-010 closed.
+positioned glyph runs and dynamic text is restricted to a validated charset. A `.medui` runtime that
+*shaped* `t("STR-KEY")` — chose glyphs, applied substitutions, measured — would reopen the question
+ADR-010 closed. Looking a key up to find the run ADR-010 already baked does not: the shaping
+happened on the build machine either way, and the lookup is a bounded scan of a fixed table. That
+distinction is what lets the Decision below keep keys in the package rather than baked runs.
 
 **The governed zone is a hostile place to put a parser.** ADR-004 keeps `MduXCore` on `std` alone,
 and issue #116 made ADR-005's no-throwing rule mechanical — `mdux-governed-lint` rejects
@@ -40,7 +43,8 @@ consumes. That choice determines whether a device build links a parser at all.
 ## Medical Device Considerations
 
 ### IEC 62304 implications (software lifecycle)
-- **Verification moves left.** A screen whose layout, text budgets and colour tokens are resolved at
+- **Verification moves left.** A screen whose layout is solved, whose text budgets are checked and
+  whose colour tokens and text keys are *validated* at
   build time can be rejected by a build, and a build failure is an artifact of the development
   process rather than a field observation. A screen resolved at runtime can only be verified by
   running it, on every input that changes it.
@@ -71,30 +75,56 @@ device runtime performs none of them, and turns that layout into vertices.**
 | Stage | Where | Zone |
 |---|---|---|
 | Lex, parse, build AST | build machine | host tools |
-| Resolve theme tokens to literal RGBA8, and text keys to baked glyph runs | build machine | host tools |
+| Validate theme tokens and text keys against every approved locale | build machine | host tools |
 | Solve layout, flatten `Row`, compute absolute rectangles | build machine | host tools |
 | Validate text budgets against every approved locale | build machine | host tools |
 | Compute the `DrawBudget` | build machine | host tools |
 | Emit golden references (see rule below) | build machine | host tools |
 | **Build a `DrawList` from a compiled screen** | **device** | **governed** |
 
-*Layout*, not *geometry*: the compiler produces rectangles, colours and budgets, and the runtime
-produces vertices and indices from them. ADR-012 decision 2 explains why the vertex data cannot be
-baked. Both records use the word this way, and neither uses "geometry" for the compiled form.
+*Layout*, not *geometry*: the compiler produces rectangles, budgets and the validated token and key
+*names* each node draws with, and the runtime produces vertices and indices from them. ADR-012
+decision 2 explains why the vertex data cannot be baked. Both records use the word this way, and
+neither uses "geometry" for the compiled form.
 
-**Resolved means literal, not looked up.** A `Theme.Colors.<Token>` becomes an RGBA8 value in the
-package, not a token name the runtime resolves against a table; a `t("STR-KEY")` becomes the baked
-glyph run for that locale, not a key the runtime looks up. The authoring names are retained
-*alongside* the resolved values — for diff readability, for the golden references, and for
-diagnostics — but nothing on the device reads them to decide what to draw. A runtime holding an
-unresolved token would be performing the last step of a resolution this ADR places on the build
-machine, which is the boundary being drawn rather than a detail of it.
+**Resolution is validated at build time; the last substitution is a bounded table lookup.** A
+`Theme.Colors.<Token>` and a `t("STR-KEY")` are both *checked* by the compiler — an unknown token
+is a compile error, and a key missing from any approved locale is a compile error naming the locale
+— and both are then carried into the package **as names**, resolved on device against a governed
+table.
 
-Baking the glyph runs makes *which locale* a property of the artifact rather than of the running
-device, and this ADR does not settle whether one compiled screen carries every approved locale or
-whether there is one per locale. Colours have no such multiplicity; text does, because the budget
-row above validates against every approved locale. ADR-012 decision 1 owns the file layout and
-records the question against #197 and #198.
+An earlier draft of this ADR required the opposite: RGBA8 values and baked glyph runs in the screen
+package, on the argument that a runtime holding a token would be "performing the last step of a
+resolution this ADR places on the build machine". That argument was definitional rather than
+consequential, and it is withdrawn. What this boundary exists to keep off the device is *parsing*
+and *unbounded work*; a lookup in a fixed, governed table is neither. The sibling project reached
+this conclusion first — `resolve_color_token()` and `THEME_COLORS` are in TrustSC's governed
+`trustsc-ui` crate, and its `CompiledScreenPackage` carries `text_key` and `color_token` — and the
+parity programme's direction is MduX moving toward it.
+
+**A compiled screen is locale-free.** It carries no locale field and no glyph runs. Per-locale
+glyph runs stay in the text package where ADR-010 already put them, and the two are joined on device
+by looking each node's `text_key` up for the running locale. TrustSC does exactly this in
+`ScreenTextLayout::from_screen(screen, package, locale)`.
+
+The consequence that decides it: **adding an approved locale touches no screen artifact at all.**
+The alternative — one screen package per locale, carrying baked runs — would add a file and an
+`evidence.screen.<id>` per locale, and would rebake every screen when a translation changed.
+Translations change far more often than layouts, and coupling the two makes the frequent change
+rewrite the stable artifact.
+
+**The cost of choosing this way, stated as a cost.** A locale-free screen does not know which locale
+it will be paired with, so its `DrawBudget` has to cover the widest approved translation — and a
+device shipping only `en-US` carries the German or Finnish ceiling in its buffers. Per-locale
+packages would size each budget to its own locale, and that is their one real advantage; it is
+given up deliberately. Buffer headroom is cheap and recoverable, while a translation update that
+rewrites every screen's digest is neither.
+
+Two things this does *not* relax. The compiler still validates every key against every approved
+locale, and still validates text budgets against the widest approved translation (#195) — that work
+does not move to the device just because the substitution does. And the lookup must be a bounded
+scan of a fixed table with a `Result` on miss, never an allocation or a throw; `mdux-governed-lint`
+and `governed.noThrow.symbolScan` hold the runtime to that.
 
 **Golden references cover safety-critical nodes and explicitly-positioned ones.** Two rules from
 the `medui-authoring` skill, stated here because ADR-012 depends on the same predicate: a
