@@ -14,13 +14,13 @@
  *
  * Every other tool in this repository spells its codes as string literals at the call site:
  * `constexpr std::string_view recipeUnparsed = "TXT001";` in `tools/text/TextBake.cpp`, and in
- * `mdux-docs-lint` not even that - `"MDX-D011"` appears inline at nineteen call sites. That works
- * until someone needs to answer a question about the *set*: is this code already taken, is this
- * code still emitted, does every code have a fix hint. None of those is answerable by grep with
- * any confidence, and all three are answerable by construction here.
+ * `mdux-docs-lint` not even that - its nineteen `MDX-D###` call sites spell the code inline, with
+ * no table anywhere. That works until someone needs to answer a question about the *set*: is this
+ * code already taken, is this code still emitted, does every code have a fix hint. None of those
+ * is answerable by grep with any confidence, and all three are answerable by construction here.
  *
  * The shape is a `constexpr` table keyed by an enum. Call sites name `Code::UnknownColorToken`,
- * never `"MDX-E004"`, so:
+ * never `"MDX-E030"`, so:
  *
  * - **An unregistered code cannot be emitted.** There is no overload taking a string.
  * - **A registered-but-unused code is detectable**, because the enum is exhaustive and a test can
@@ -112,8 +112,9 @@ struct CodeInfo {
 /**
  * @brief The registry, in code order.
  *
- * `std::span` over a function-local `static constexpr` array rather than an inline variable, so
- * there is exactly one table however many translation units import this module.
+ * `std::span` over a namespace-scope `constexpr` array in the module's implementation unit
+ * rather than an inline variable, so there is exactly one table however many translation units
+ * import this module.
  */
 [[nodiscard]] std::span<const CodeInfo> registry() noexcept;
 
