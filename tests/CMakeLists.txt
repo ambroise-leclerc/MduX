@@ -653,6 +653,38 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
+# .medui compiler host-tools suite (issue #191)
+#
+# Links MduX::MeduiLib. At S2 the library is the diagnostic code registry and nothing else, so this
+# suite is entirely registry invariants - completeness, uniqueness, identifier shape, ordering
+# against the retired list, and the envelope diagnose() produces. Those are the questions a
+# registry exists to answer mechanically; without them the module is a table of string literals
+# with extra steps.
+add_executable(medui_tools_spec
+    medui/MeduiToolsSpecMain.cpp
+    medui/DiagnosticsTests.cpp
+)
+
+target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)
+target_include_directories(medui_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(medui_tools_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(medui_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(medui_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(medui_tools_spec)
+
 # ML host-tools suite (issue #60)
 #
 # Links MduX::MlBakeLib, the host-tools-zone target. Deliberately separate from ml_spec, which

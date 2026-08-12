@@ -262,6 +262,52 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXTextBakeLib PRIVATE /experimental:module /std:c++latest)
 endif()
 
+# ---------------------------------------------------------------------------
+# The .medui compiler (epic #15, ADR-011, ADR-012)
+# ---------------------------------------------------------------------------
+#
+# Host-tools zone, like every other baker: the compiler parses untrusted input and may throw and
+# allocate freely, because nothing it contains reaches a device. Deliberately not declared
+# governed, which is also what stops a governed target linking it - mdux_verify_trust_zones()
+# reports that at configure time.
+#
+# At S2 (#191) this is the diagnostic code registry and nothing else. The lexer, parser and AST
+# are #192, the emitters #197, and the mdux-meduic executable and its mdux_compile_screen()
+# registration are #198 - so there is no add_executable() here yet, and no bake call site. The
+# library exists now because the registry has to live somewhere the tests can link, and because
+# every later stage adds sources to this target rather than inventing another.
+add_library(MduXMeduiLib)
+add_library(MduX::MeduiLib ALIAS MduXMeduiLib)
+
+target_sources(MduXMeduiLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            medui/Diagnostics.cppm
+    PRIVATE
+        medui/Diagnostics.cpp
+)
+
+target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
+target_link_libraries(MduXMeduiLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXMeduiLib PRIVATE MduX_warnings)
+
+set_target_properties(MduXMeduiLib
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXMeduiLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXMeduiLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
 add_executable(mdux-textbake text/TextBakeMain.cpp)
 target_link_libraries(mdux-textbake PRIVATE MduX::TextBakeLib MduX_warnings)
 
