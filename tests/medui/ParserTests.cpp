@@ -149,8 +149,8 @@ const mdux::spec::Register acceptedScreenShape{
                     }
                     // Position is asserted, not just presence: it is what a diagnostic three
                     // stages later will quote back to the author.
-                    checks.expect(display->position.line == 9,
-                                  std::format("declared on line 9, got {}",
+                    checks.expect(display->position.line == 11,
+                                  std::format("declared on line 11, got {}",
                                               display->position.line));
                 }
 

@@ -1,6 +1,8 @@
-// The skill's own worked example, extended to exercise every construct the parser accepts.
-// Kept close to the published grammar deliberately: a fixture that drifts from the documentation
-// stops being evidence that the documentation is implementable.
+// The skill's worked example, extended to exercise every construct the parser accepts.
+// One property per line, matching TrustSC's own neurosense.medui: its parser splits a component
+// body line by line, so two properties on one line are rejected there even though MduX's
+// token-based parser would accept them. Written the portable way on purpose - a fixture that
+// only compiles under one of the two implementations is not evidence the grammar is shared.
 Screen NeuroSense500 {
     layout: Vertical { spacing: 8px; padding: 0px; }
     surface: 1920px, 1080px;
@@ -8,7 +10,8 @@ Screen NeuroSense500 {
     @safety_critical(cv_check: [Bounds, ColorHash])
     NumericDisplay {
         id: sedation-index;
-        width: 512px; height: 512px;
+        width: 512px;
+        height: 512px;
         position: 1392px, 80px;
         requirement: "REQ-NS-001";
         template: "TPL-SEDATION-INDEX-160";
@@ -23,7 +26,8 @@ Screen NeuroSense500 {
 
         Label {
             id: title;
-            width: Fill; height: 64px;
+            width: Fill;
+            height: 64px;
             text: t("STR-TITLE");
             color: Theme.Colors.Title;
         }

@@ -27,6 +27,20 @@
  * and the theme table belong to #193, and a parser that consulted them would have to change every
  * time a component is added. See `Ast.cppm` for the argument in full.
  *
+ * ## Whitespace, and a one-way portability note
+ *
+ * This parser is token-based, so `width: 512px; height: 512px;` on one line parses exactly as the
+ * two-line form. TrustSC's reference implementation is *line*-based: it splits a component body
+ * line by line and takes each line's first `:`, so the one-line form is read there as a width of
+ * `512px; height: 512px` and rejected.
+ *
+ * That makes MduX's accepted grammar a strict superset, and portability one-way: every screen
+ * TrustSC accepts compiles here, and a screen written with two properties on a line does not
+ * compile there. The superset is not the problem - a token-based parser is the better tool, and
+ * narrowing it to match a line-based one would buy nothing. What matters is that authored screens
+ * stay portable, so the `medui-authoring` skill now documents one property per line and the
+ * fixture corpus is written that way.
+ *
  * ## Recovery
  *
  * On an unexpected token the parser skips to the next `;` or `}` and continues, so one run reports
