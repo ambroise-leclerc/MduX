@@ -27,8 +27,6 @@ import mdux.tools.medui.parser;
 
 #include "../framework/SpecLabBridge.hpp"
 
-#include <cstdlib>
-
 namespace {
 
 namespace md = mdux::tools::medui;
