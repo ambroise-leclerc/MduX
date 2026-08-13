@@ -1,0 +1,8 @@
+Screen BadUnit {
+    surface: 800px, 600px;
+    Label {
+        id: label;
+        width: 10rem;
+        height: 10px;
+    }
+}

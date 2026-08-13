@@ -271,11 +271,10 @@ endif()
 # governed, which is also what stops a governed target linking it - mdux_verify_trust_zones()
 # reports that at configure time.
 #
-# At S2 (#191) this is the diagnostic code registry and nothing else. The lexer, parser and AST
-# are #192, the emitters #197, and the mdux-meduic executable and its mdux_compile_screen()
-# registration are #198 - so there is no add_executable() here yet, and no bake call site. The
-# library exists now because the registry has to live somewhere the tests can link, and because
-# every later stage adds sources to this target rather than inventing another.
+# At S3 (#192) this is the diagnostic registry (#191) plus the lexer, AST and parser. The
+# emitters are #197, and the mdux-meduic executable with its mdux_compile_screen() registration
+# is #198 - so there is still no add_executable() here and no bake call site. Every later stage
+# adds sources to this target rather than inventing another.
 add_library(MduXMeduiLib)
 add_library(MduX::MeduiLib ALIAS MduXMeduiLib)
 
@@ -285,8 +284,13 @@ target_sources(MduXMeduiLib
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             medui/Diagnostics.cppm
+            medui/Lexer.cppm
+            medui/Ast.cppm
+            medui/Parser.cppm
     PRIVATE
         medui/Diagnostics.cpp
+        medui/Lexer.cpp
+        medui/Parser.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)

@@ -674,20 +674,25 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
-# .medui compiler host-tools suite (issue #191)
+# .medui compiler host-tools suite (issues #191, #192)
 #
-# Links MduX::MeduiLib. At S2 the library is the diagnostic code registry and nothing else, so this
-# suite is entirely registry invariants - completeness, uniqueness, identifier shape, ordering
-# against the retired list, and the envelope diagnose() produces. Those are the questions a
-# registry exists to answer mechanically; without them the module is a table of string literals
-# with extra steps.
+# Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
+# completeness, uniqueness, identifier shape, ordering against the retired list, and the envelope
+# diagnose() produces - and the lexer and parser (#192), whose rejection cases assert the code and
+# the position rather than the message, since #191 published the codes as the contract and
+# messages are explicitly rewordable.
 add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
+    medui/ParserTests.cpp
 )
 
 target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)
 target_include_directories(medui_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# The parser scenarios read tests/medui/fixtures/*.medui, which are real files an author could
+# open rather than string literals - #200's mdux-medui-check will be pointed at the same corpus,
+# and a fixture that exists only inside a test cannot be reused by the tool that checks files.
+target_compile_definitions(medui_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
 set_target_properties(medui_tools_spec
     PROPERTIES

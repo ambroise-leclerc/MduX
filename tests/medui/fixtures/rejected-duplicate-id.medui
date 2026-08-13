@@ -1,0 +1,11 @@
+Screen Duplicated {
+    surface: 800px, 600px;
+    Label {
+        id: same;
+        width: 10px; height: 10px;
+    }
+    Label {
+        id: same;
+        width: 10px; height: 10px;
+    }
+}
