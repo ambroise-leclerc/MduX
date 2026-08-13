@@ -485,13 +485,26 @@ const mdux::spec::Register trailingContentRejected{
             .Then("both are rejected", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult two = md::parse("Screen A { }\nScreen B { }\n", "t.medui");
-                checks.expect(!two.ok(),
-                              std::format("a second Screen is rejected, got {}",
+                const cli::Diagnostic* d2 = find(two.diagnostics, md::Code::UnexpectedToken);
+                checks.expect(d2 != nullptr,
+                              std::format("MDX-E010 for a second Screen, got {}",
                                           codesOf(two.diagnostics)));
+                if (d2 != nullptr) {
+                    checks.expect(d2->line == 2 && d2->column == 1,
+                                  std::format("at 2:1, the second Screen keyword, got {}:{}",
+                                              d2->line, d2->column));
+                }
+
                 const md::ParseResult junk = md::parse("Screen A { } garbage\n", "t.medui");
-                checks.expect(!junk.ok(),
-                              std::format("trailing junk is rejected, got {}",
+                const cli::Diagnostic* dj = find(junk.diagnostics, md::Code::UnexpectedToken);
+                checks.expect(dj != nullptr,
+                              std::format("MDX-E010 for trailing junk, got {}",
                                           codesOf(junk.diagnostics)));
+                if (dj != nullptr) {
+                    checks.expect(dj->line == 1 && dj->column == 14,
+                                  std::format("at 1:14, the junk token, got {}:{}",
+                                              dj->line, dj->column));
+                }
                 checks.raise();
             })
             .Execute();
@@ -512,21 +525,46 @@ const mdux::spec::Register annotatedChildOutsideRowRejected{
                 mdux::spec::Checks checks;
                 const md::ParseResult child =
                     md::parse("Screen A {\n Card {\n  @x Label { }\n }\n}\n", "a.medui");
-                checks.expect(!child.ok(),
-                              std::format("annotated child rejected, got {}",
+                const cli::Diagnostic* dc = find(child.diagnostics, md::Code::UnexpectedToken);
+                checks.expect(dc != nullptr,
+                              std::format("MDX-E010 for an annotated child, got {}",
                                           codesOf(child.diagnostics)));
+                if (dc != nullptr) {
+                    checks.expect(dc->line == 3 && dc->column == 3,
+                                  std::format("at 3:3, the '@', got {}:{}", dc->line, dc->column));
+                    checks.expect(dc->message.find("Card") != std::string::npos,
+                                  "the message names the offending parent");
+                }
 
+                // A Row under a non-Row is rejected as a child, *not* as a nested Row: the parent
+                // is a Card, so MDX-E015 would be the wrong code. The nested-Row rule is asserted
+                // separately below, where the parent really is a Row.
                 const md::ParseResult row =
                     md::parse("Screen A {\n Card {\n  @x Row { }\n }\n}\n", "a.medui");
-                checks.expect(!row.ok(),
-                              std::format("annotated Row under a non-Row rejected, got {}",
+                checks.expect(find(row.diagnostics, md::Code::UnexpectedToken) != nullptr,
+                              std::format("MDX-E010 for an annotated Row under a Card, got {}",
                                           codesOf(row.diagnostics)));
+
+                // An *annotated* Row inside a Row is the case the gate previously let through
+                // with no diagnostic at all. It must be MDX-E015, exactly as the unannotated form.
+                const md::ParseResult nested =
+                    md::parse("Screen A {\n Row {\n  @x Row { }\n }\n}\n", "a.medui");
+                const cli::Diagnostic* dn = find(nested.diagnostics, md::Code::NestedRow);
+                checks.expect(dn != nullptr,
+                              std::format("MDX-E015 for an annotated nested Row, got {}",
+                                          codesOf(nested.diagnostics)));
+                if (dn != nullptr) {
+                    checks.expect(dn->line == 3 && dn->column == 6,
+                                  std::format("at 3:6, the inner Row, got {}:{}",
+                                              dn->line, dn->column));
+                }
 
                 // The unannotated form was always rejected; asserted so the two paths cannot
                 // drift apart again without a test noticing.
                 const md::ParseResult plain =
                     md::parse("Screen A {\n Card {\n  Label { }\n }\n}\n", "a.medui");
-                checks.expect(!plain.ok(), "the unannotated form stays rejected");
+                checks.expect(find(plain.diagnostics, md::Code::UnexpectedToken) != nullptr,
+                              "the unannotated form stays rejected with the same code");
                 checks.raise();
             })
             .Execute();
@@ -544,8 +582,13 @@ const mdux::spec::Register forbiddenWordInLayoutRejected{
             .Then("MDX-E016 is reported", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse("Screen A {\n layout: if { }\n}\n", "l.medui");
-                checks.expect(has(r.diagnostics, md::Code::ForbiddenConstruct),
+                const cli::Diagnostic* d = find(r.diagnostics, md::Code::ForbiddenConstruct);
+                checks.expect(d != nullptr,
                               std::format("MDX-E016 reported, got {}", codesOf(r.diagnostics)));
+                if (d != nullptr) {
+                    checks.expect(d->line == 2 && d->column == 10,
+                                  std::format("at 2:10, the 'if', got {}:{}", d->line, d->column));
+                }
                 checks.raise();
             })
             .Execute();
@@ -602,8 +645,9 @@ const mdux::spec::Register backslashAtLineEndDoesNotEatTheNewline{
                               std::format("a diagnostic was reported, got {}",
                                           codesOf(r.diagnostics)));
                 if (d != nullptr) {
-                    checks.expect(d->line == 2,
-                                  std::format("at the opening quote's line 2, got {}", d->line));
+                    checks.expect(d->line == 2 && d->column == 5,
+                                  std::format("at the opening quote, 2:5, got {}:{}",
+                                              d->line, d->column));
                 }
                 // The token after the broken string must still be on line 3, which it cannot be if
                 // the newline was swallowed.
