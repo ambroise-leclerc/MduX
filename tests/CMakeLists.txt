@@ -450,7 +450,7 @@ mdux_discover_tests(vulkansc_object_tests)
 # The commit is SpecLab v0.1.0, its first release. Pinned by SHA and not by the tag name, and the
 # reason is not theoretical: this pin was written against `v0.1.0` while the tag pointed at
 # ea7f2e363, and within the hour the tag was moved to 37b51fcec to pick up a release-packaging fix
-# (SpecLab #18). Nothing in that commit affects this build - it makes SpecLab's project version a
+# (ambroise-leclerc/SpecLab#18). Nothing in that commit affects this build - it makes SpecLab's project version a
 # cache variable and edits its own release workflow - but a reference that can change under a
 # frozen MduX commit is a moving reference whatever it is called, and ADR-007's reproducibility
 # argument does not distinguish between a branch and a retagged release.
@@ -459,9 +459,13 @@ mdux_discover_tests(vulkansc_object_tests)
 # commit and change both, in a reviewable diff.
 #
 # That release is also what makes MduX's own gcc:16.1.0 pin (#206) coherent rather than a
-# workaround. SpecLab hit the same GCC 16.2 BMI corruption in its own CI (SpecLab #15), diagnosed
+# workaround. SpecLab hit the same GCC 16.2 BMI corruption in its own CI
+# (ambroise-leclerc/SpecLab#15), diagnosed
 # it the same way, and pinned identically; its CMakeLists now enforces GCC 16.1+. A future working
-# 16.2.x bump is tracked upstream as SpecLab #17, and MduX's #205 follow-up depends on it.
+# 16.2.x bump is tracked upstream as ambroise-leclerc/SpecLab#17, and this repository's #205
+# follow-up depends on it. Upstream issue numbers are written in full: a bare #15 or #17 here names
+# MduX's .medui compiler and Content components epics, which is a confusing thing to mean by
+# accident in a comment about a different repository.
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
