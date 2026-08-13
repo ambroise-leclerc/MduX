@@ -12,13 +12,13 @@
  *
  * - The shape: one `Screen`, an optional `layout:` and `surface:`, then nodes with fields.
  * - **No control flow.** `if`, `else`, `for`, `while`, `loop`, `match`, `fn`, `let`, `return` and
- *   `import` are rejected with `MDX-E016` wherever they appear. ADR-011 decision 5: each makes the
+ *   `import` are rejected with `MEDUI-E016` wherever they appear. ADR-011 decision 5: each makes the
  *   primitive count depend on data the compiler cannot see, and a `DrawBudget` that cannot be
  *   computed exactly is not a budget.
- * - **No nested `Row`** (`MDX-E015`). ADR-011 is explicit that this one is a *solver* restriction,
+ * - **No nested `Row`** (`MEDUI-E015`). ADR-011 is explicit that this one is a *solver* restriction,
  *   not a budget one - a nested Row's depth is visible and the primitive count stays exact - so the
  *   diagnostic says flatten it, and does not cite the budget argument that does not apply.
- * - **No duplicate node ids within a screen** (`MDX-E014`). Ids address nodes in golden references
+ * - **No duplicate node ids within a screen** (`MEDUI-E014`). Ids address nodes in golden references
  *   (#196) and requirement traces, so a duplicate makes those ambiguous.
  *
  * ## What it does not

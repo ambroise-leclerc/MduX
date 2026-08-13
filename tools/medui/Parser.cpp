@@ -308,7 +308,7 @@ private:
             if (at(TokenKind::At)) {
                 // Only a Row has children. The unannotated branch above already enforced that;
                 // this one did not, so `Card { @x Label { } }` was accepted and - worse -
-                // `Card { @x Row { } }` placed a Row at depth two with no MDX-E015, because the
+                // `Card { @x Row { } }` placed a Row at depth two with no MEDUI-E015, because the
                 // annotated path also passed insideRow=false. Reported independently by three
                 // reviewers on #209, and the AST contract in Ast.cppm says children is non-empty
                 // only for Row, which #194's single-pass solver relies on.
@@ -497,7 +497,7 @@ private:
             }
             // A dotted path is only a *colour token* when it is one. `Foo.Bar` and a truncated
             // `Theme.Colors` were both classified as ColorToken, which would have sent #193 to the
-            // theme table for a value that never named a colour - and produced MDX-E030 "not in the
+            // theme table for a value that never named a colour - and produced MEDUI-E030 "not in the
             // governed table" for what is really a malformed value.
             const bool isThemeColor = path.starts_with("Theme.Colors.") &&
                                       path.size() > std::string_view{"Theme.Colors."}.size();

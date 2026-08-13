@@ -1,0 +1,4 @@
+repository = "https://github.com/Compliatory/MedUI"
+version = "0.1.0-candidate"
+commit = "763499016fdf16e9ba697cc938647ea67e8f8145"
+capabilities = ["syntax"]

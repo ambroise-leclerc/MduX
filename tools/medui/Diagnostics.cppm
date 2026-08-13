@@ -20,23 +20,22 @@
  * is answerable by grep with any confidence, and all three are answerable by construction here.
  *
  * The shape is a `constexpr` table keyed by an enum. Call sites name `Code::UnknownColorToken`,
- * never `"MDX-E030"`, so:
+ * never `"MEDUI-E030"`, so:
  *
  * - **An unregistered code cannot be emitted.** There is no overload taking a string.
  * - **A registered-but-unused code is detectable**, because the enum is exhaustive and a test can
  *   walk it. `DiagnosticsTests.cpp` does.
  * - **A typo is a compile error** rather than a diagnostic nobody can grep for.
  *
- * ## The `MDX-E` prefix
+ * ## The shared `MEDUI-E` prefix
  *
- * `mdux-docs-lint` publishes `MDX-D###`, and the diagnostic schema names `MDX-D011` in its own
- * description, so `MDX-` + one letter + three digits is an established family and this joins it as
- * `MDX-E###`. The bakers' three-letter codes (`SHB`, `SHE`, `TXT`, `MLB`, `EVL`, `GOV`) are a
- * second, older convention; they are not changed here, and nothing needs them to be - the schema's
- * `code` pattern admits both, and `code` is opaque to a consumer that keys off it.
+ * MedUI diagnostics are owned by the pinned `Compliatory/MedUI` contract rather than by either
+ * implementation. MduX's previously published `MDX-E###` identifiers map one-to-one to the same
+ * numbered `MEDUI-E###` identifiers for one release; the upstream alias manifest records that
+ * transition. Non-MedUI tools retain their existing local code families.
  *
- * **`E` is for the language, not for "error".** Severity is a separate field, and an `MDX-E` code
- * may be a warning. Reading the letter as a severity would make `MDX-E###` at severity `warning`
+ * **`E` is for the language, not for "error".** Severity is a separate field, and a `MEDUI-E` code
+ * may be a warning. Reading the letter as a severity would make `MEDUI-E###` at severity `warning`
  * look like a mistake, so it is worth saying which reading is intended.
  *
  * ## Stability
@@ -103,7 +102,7 @@ enum class Code : std::uint8_t {
 /// One row of the registry. `constexpr`-friendly throughout: the table is built at compile time.
 struct CodeInfo {
     Code code{};
-    std::string_view id;       ///< the published `MDX-E###` string; stable once shipped
+    std::string_view id;       ///< the published `MEDUI-E###` string; stable once shipped
     cli::Severity severity{};  ///< the severity this code is emitted at, unless a call site lowers it
     std::string_view summary;  ///< what the code means, one clause, for documentation and tests
     std::string_view fixHint;  ///< what an author should do; empty when there is no single fix
@@ -138,15 +137,18 @@ struct CodeInfo {
  */
 [[nodiscard]] const CodeInfo& info(Code code);
 
-/// The published identifier, e.g. `"MDX-E030"`. Throws for an unregistered value, as `info()` does.
+/// The published identifier, e.g. `"MEDUI-E030"`. Throws for an unregistered value, as `info()` does.
 [[nodiscard]] std::string_view id(Code code);
+
+/** One-release compatibility alias, e.g. `"MDX-E030"`. Canonical output always uses [`id`]. */
+[[nodiscard]] std::string legacyId(Code code);
 
 /**
  * @brief Numbers that were published and then retired.
  *
  * Empty today, and present from the start so that the first retirement has somewhere to go rather
  * than prompting a decision under time pressure. A retired number is never reused: a consumer that
- * pinned behaviour to `MDX-E017` must not silently start matching a different rule.
+ * pinned behaviour to `MEDUI-E017` must not silently start matching a different rule.
  */
 [[nodiscard]] std::span<const std::string_view> retired() noexcept;
 

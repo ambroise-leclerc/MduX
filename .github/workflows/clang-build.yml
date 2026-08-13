@@ -33,6 +33,8 @@ jobs:
   clang-build:
     name: Linux (Clang, Vulkan)
     runs-on: ubuntu-latest
+    env:
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
     steps:
     - name: Checkout repository
@@ -41,6 +43,14 @@ jobs:
       # reason to survive into .git/config where any later build or test step could read it
       # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
       with:
+        persist-credentials: false
+
+    - name: Checkout pinned MedUI conformance contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: Compliatory/MedUI
+        ref: 763499016fdf16e9ba697cc938647ea67e8f8145
+        path: .medui-conformance
         persist-credentials: false
 
     - name: Setup CMake (latest)

@@ -95,7 +95,7 @@ struct Annotation {
 /**
  * @brief A component instance, or a `Row`.
  *
- * `children` is non-empty only for `Row`. The parser rejects a `Row` inside a `Row` (`MDX-E015`),
+ * `children` is non-empty only for `Row`. The parser rejects a `Row` inside a `Row` (`MEDUI-E015`),
  * so this is one level deep by construction rather than by convention - #194's solver relies on
  * that, and ADR-011 decision 5 records why the restriction is a solver argument rather than a
  * budget one.

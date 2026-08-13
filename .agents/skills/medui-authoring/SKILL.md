@@ -13,7 +13,7 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 ## Status: the front end is implemented; the compiler and runtime are not
 
 **A `.medui` lexer, AST and parser exist** in the host-tools zone as of issue #192 (`tools/medui/`), and
-the diagnostic codes they emit are registered as `MDX-E###` (#191). They parse a screen and reject
+the diagnostic codes they emit are registered as `MEDUI-E###` (#191). They parse a screen and reject
 the grammar's structural violations; they resolve nothing.
 
 **There is still no compiler, no emitter and no runtime.** The HTML/CSS path that used
@@ -25,9 +25,11 @@ What exists now is the layer a `.medui` compiler will target: `mdux.draw` descri
 bounded vertex, index and command buffers with a compiler-computed budget, and
 `mdux.render.vulkan` renders one. So the compiler's job is to emit a `DrawList` and a
 `DrawBudget`, not to invent a rendering path. `.medui` itself is
-[issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). This skill describes the *target*
-grammar, adapted from the sibling Rust project TrustSC, so authoring work can start the moment the
-compiler exists — do not write a `.medui` file expecting it to build anything yet.
+[issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
+contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
+grammar, component semantics, diagnostics, and portable guidance live in
+[`Compliatory/MedUI`](https://github.com/Compliatory/MedUI). Do not write a `.medui` file expecting
+it to build anything in MduX until the compiler waves land.
 
 ## Grammar shape
 
