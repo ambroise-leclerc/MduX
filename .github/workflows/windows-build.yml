@@ -25,7 +25,7 @@ jobs:
     name: Windows (MSVC, Vulkan)
     runs-on: windows-latest
     env:
-      MEDUI_CONFORMANCE_DIR: ${{ runner.temp }}/medui-conformance
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
     steps:
     - name: Checkout repository
@@ -41,7 +41,7 @@ jobs:
       with:
         repository: Compliatory/MedUI
         ref: 763499016fdf16e9ba697cc938647ea67e8f8145
-        path: ${{ runner.temp }}/medui-conformance
+        path: .medui-conformance
         persist-credentials: false
 
     # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
