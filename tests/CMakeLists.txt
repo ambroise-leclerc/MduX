@@ -443,14 +443,22 @@ mdux_discover_tests(vulkansc_object_tests)
 # It is also the reason this project's GCC floor is 16. GCC 15 cannot build SpecLab at all -
 # reading a named module that transitively re-exports parts of `std` fails with "failed to load
 # pendings for 'std::_Sp_counted_ptr_inplace'", a defect in GCC's own std BMI.
-# Pinned to a commit, not to a branch. SpecLab has no tagged release yet, and a moving ref would
-# mean the test framework under a medical device library could change between two builds of the
-# same MduX commit - which is the same reproducibility argument ADR-007 makes about baked
-# artifacts. Bump this deliberately, in a reviewable diff.
+# Pinned to a tag, not to a branch. A moving ref would mean the test framework under a medical
+# device library could change between two builds of the same MduX commit - the same reproducibility
+# argument ADR-007 makes about baked artifacts. Bump this deliberately, in a reviewable diff.
+#
+# v0.1.0 is SpecLab's first tag; this was a bare commit until it existed. The tag resolves to
+# ea7f2e363, recorded here so a moved tag is detectable rather than silently different - a git tag
+# is mutable in a way a commit is not, and that is the one property the bare SHA had over this.
+#
+# That release is also what makes MduX's own gcc:16.1.0 pin (#206) coherent rather than a
+# workaround. SpecLab hit the same GCC 16.2 BMI corruption in its own CI (SpecLab #15), diagnosed
+# it the same way, and pinned identically; its CMakeLists now enforces GCC 16.1+. A future working
+# 16.2.x bump is tracked upstream as SpecLab #17, and MduX's #205 follow-up depends on it.
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
-    GIT_TAG 84631c9f01f5309baf1d12618b2ef66c3512b511
+    GIT_TAG v0.1.0
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"

@@ -90,24 +90,24 @@ known_anomaly_tracking = "Tool qualification, and any anomaly found in a specifi
 [[entries]]
 component_id = "speclab"
 name = "SpecLab"
-version = "commit 84631c9f01f5309baf1d12618b2ef66c3512b511 (no tagged release upstream)"
+version = "v0.1.0 (tag, resolving to commit ea7f2e363)"
 classification = "SOUP"
 supplier = "ambroise-leclerc / SpecLab contributors"
 repository = "https://github.com/ambroise-leclerc/SpecLab"
-license = "See upstream repository"
-usage = "Given/When/Then BDD scenarios in seven test executables (shader_spec, draw_spec, tools_spec, bridge_spec, ml_spec, ml_tools_spec, ml_noheap_spec), adapted to this project's CTest discovery contract by tests/framework/SpecLabBridge.hpp. Never linked into a library, an example, or the install/export set."
+license = "EUPL-1.2, with alternative commercial terms available from the project steward (upstream LICENSE and LICENSING.md at v0.1.0). The same dual-licensing model this repository adopted in #185."
+usage = "Given/When/Then BDD scenarios in eleven test executables (bridge_spec, draw_spec, font_spec, medui_tools_spec, ml_noheap_spec, ml_spec, ml_tools_spec, shader_spec, text_spec, text_tools_spec, tools_spec), adapted to this project's CTest discovery contract by tests/framework/SpecLabBridge.hpp. Never linked into a library, an example, or the install/export set."
 trust_zone = "tests"
-integration_path = "tests/CMakeLists.txt (CPMAddPackage NAME SpecLab, pinned by commit); linked only into test executables"
+integration_path = "tests/CMakeLists.txt (CPMAddPackage NAME SpecLab, pinned by tag v0.1.0); linked only into test executables"
 pinned_by = ["tests/CMakeLists.txt"]
 runtime_deployment = false
-support_model = "Single-maintainer open-source project with no tagged release and no support agreement. Pinned by commit rather than by branch or tag precisely because a moving reference would make the build non-reproducible, which the evidence pipeline (ADR-007) cannot tolerate."
+support_model = "Single-maintainer open-source project with no support agreement. Tagged releases began with v0.1.0; this entry read 'no tagged release' until then, and the pin was a bare commit for exactly that reason. Pinned by tag rather than by branch because a moving reference would make the build non-reproducible, which the evidence pipeline (ADR-007) cannot tolerate; the tag's commit is recorded beside it in tests/CMakeLists.txt so a moved tag is detectable."
 boundary_rationale = "Test-only. No library target links it, it is absent from the install/export set, and mdux_verify_trust_zones() would reject it on a governed target. A defect in it cannot reach a device; its risk is false confidence in test results, not patient harm - see ADR-009."
 risk_controls = [
-    "Pinned to an immutable commit, so a rebuild uses the same source or fails outright.",
+    "Pinned to a tag whose commit is recorded alongside it, so a rebuild uses the same source, or fails outright, or is detectably different.",
     "bridge_spec exists solely to test the SpecLab integration, so a broken adapter fails with a name that says so rather than looking like a failure in the code under test.",
-    "Nine further test executables use the in-repository MduXTest framework instead, so a SpecLab regression cannot silence the whole suite.",
+    "Nine further test executables use the in-repository MduXTest framework instead, so a SpecLab regression cannot silence the whole suite (verified: eleven SpecLab, nine MduXTest).",
 ]
-known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry. Note this dependency is also why the project's GCC floor is 16: GCC 15 cannot build it."
+known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry. Note this dependency is also why the project's GCC floor is 16: GCC 15 cannot build it, and upstream dropped GCC 15 support before v0.1.0. One toolchain anomaly is known and shared: GCC 16.2.0 corrupts the module BMIs for speclab.core.testsuite and speclab.runners.testrunner, which turned this repository's develop red (#205) and upstream's CI too (SpecLab #15). Both projects pin gcc:16.1.0; a working 16.2.x is tracked as SpecLab #17."
 
 [[entries]]
 name = "DejaVu Sans"
