@@ -443,9 +443,10 @@ mdux_discover_tests(vulkansc_object_tests)
 # It is also the reason this project's GCC floor is 16. GCC 15 cannot build SpecLab at all -
 # reading a named module that transitively re-exports parts of `std` fails with "failed to load
 # pendings for 'std::_Sp_counted_ptr_inplace'", a defect in GCC's own std BMI.
-# Pinned to a tag, not to a branch. A moving ref would mean the test framework under a medical
-# device library could change between two builds of the same MduX commit - the same reproducibility
-# argument ADR-007 makes about baked artifacts. Bump this deliberately, in a reviewable diff.
+# Pinned to a commit, not to a tag or a branch. A moving ref would mean the test framework under a
+# medical device library could change between two builds of the same MduX commit - the same
+# reproducibility argument ADR-007 makes about baked artifacts. Bump this deliberately, in a
+# reviewable diff.
 #
 # The commit is SpecLab v0.1.0, its first release. Pinned by SHA and not by the tag name, and the
 # reason is not theoretical: this pin was written against `v0.1.0` while the tag pointed at
