@@ -1,0 +1,7 @@
+Screen Unterminated {
+    surface: 800px, 600px;
+    Label {
+        id: label;
+        requirement: "REQ-OPEN;
+    }
+}

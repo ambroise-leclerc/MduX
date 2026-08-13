@@ -1,0 +1,11 @@
+Screen Nested {
+    surface: 800px, 600px;
+    Row {
+        id: outer;
+        height: 64px;
+        Row {
+            id: inner;
+            height: 32px;
+        }
+    }
+}

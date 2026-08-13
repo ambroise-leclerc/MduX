@@ -1,0 +1,31 @@
+// The skill's own worked example, extended to exercise every construct the parser accepts.
+// Kept close to the published grammar deliberately: a fixture that drifts from the documentation
+// stops being evidence that the documentation is implementable.
+Screen NeuroSense500 {
+    layout: Vertical { spacing: 8px; padding: 0px; }
+    surface: 1920px, 1080px;
+
+    @safety_critical(cv_check: [Bounds, ColorHash])
+    NumericDisplay {
+        id: sedation-index;
+        width: 512px; height: 512px;
+        position: 1392px, 80px;
+        requirement: "REQ-NS-001";
+        template: "TPL-SEDATION-INDEX-160";
+        source: "SEDATION_INDEX";
+        color: Theme.Colors.ScoreDigits;
+    }
+
+    Row {
+        id: topbar;
+        height: 64px;
+        background: Theme.Colors.TopbarBackground;
+
+        Label {
+            id: title;
+            width: Fill; height: 64px;
+            text: t("STR-TITLE");
+            color: Theme.Colors.Title;
+        }
+    }
+}
