@@ -447,9 +447,16 @@ mdux_discover_tests(vulkansc_object_tests)
 # device library could change between two builds of the same MduX commit - the same reproducibility
 # argument ADR-007 makes about baked artifacts. Bump this deliberately, in a reviewable diff.
 #
-# v0.1.0 is SpecLab's first tag; this was a bare commit until it existed. The tag resolves to
-# ea7f2e363, recorded here so a moved tag is detectable rather than silently different - a git tag
-# is mutable in a way a commit is not, and that is the one property the bare SHA had over this.
+# The commit is SpecLab v0.1.0, its first release. Pinned by SHA and not by the tag name, and the
+# reason is not theoretical: this pin was written against `v0.1.0` while the tag pointed at
+# ea7f2e363, and within the hour the tag was moved to 37b51fcec to pick up a release-packaging fix
+# (SpecLab #18). Nothing in that commit affects this build - it makes SpecLab's project version a
+# cache variable and edits its own release workflow - but a reference that can change under a
+# frozen MduX commit is a moving reference whatever it is called, and ADR-007's reproducibility
+# argument does not distinguish between a branch and a retagged release.
+#
+# Read the tag name as documentation and the SHA as the pin. To bump, resolve the new tag to its
+# commit and change both, in a reviewable diff.
 #
 # That release is also what makes MduX's own gcc:16.1.0 pin (#206) coherent rather than a
 # workaround. SpecLab hit the same GCC 16.2 BMI corruption in its own CI (SpecLab #15), diagnosed
@@ -458,7 +465,8 @@ mdux_discover_tests(vulkansc_object_tests)
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
-    GIT_TAG v0.1.0
+    # SpecLab v0.1.0
+    GIT_TAG 37b51fcec
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"
