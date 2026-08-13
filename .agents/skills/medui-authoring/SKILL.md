@@ -10,9 +10,13 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: planned, not yet implemented
+## Status: the front end is implemented; the compiler and runtime are not
 
-**There is no `.medui` parser, compiler, or runtime in MduX today.** The HTML/CSS path that used
+**A `.medui` lexer, AST and parser exist** in the host-tools zone as of issue #192 (`tools/medui/`), and
+the diagnostic codes they emit are registered as `MDX-E###` (#191). They parse a screen and reject
+the grammar's structural violations; they resolve nothing.
+
+**There is still no compiler, no emitter and no runtime.** The HTML/CSS path that used
 to stand in for one - `UiFileWatcher::loadContent()`, which sniffed a file extension and stored
 the file as a string, with no parsing, layout or rendering behind it - was deleted by
 [issue #127](https://github.com/ambroise-leclerc/MduX/issues/127).
@@ -96,6 +100,8 @@ verifier checks against. Rules:
 
 ## Checking a file without a full build
 
-`mdux-medui-check path/to/screen.medui` (issue #15, S11) will validate a single file and print
-diagnostics — once it exists. Until then, review a `.medui` file by hand against this grammar and
-the component table above; there is no tooling shortcut yet.
+`mdux-medui-check path/to/screen.medui` (issue #200) will validate a single file and print
+diagnostics — once it exists. The parser it will call already does (#192), so a syntax error, a
+nested `Row`, a control-flow keyword or a duplicate id are already detectable; what is missing is
+the command that exposes them. Until it lands, review a `.medui` file by hand against this grammar
+and the component table above.

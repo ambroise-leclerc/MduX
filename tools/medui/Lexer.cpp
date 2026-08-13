@@ -209,6 +209,14 @@ LexResult lex(std::string_view source, std::string file) {
                     break;  // a string does not span lines; report it at the opening quote
                 }
                 if (ch == '\\') {
+                    // A backslash at end of line or end of file is not an escape. Consuming the
+                    // next byte regardless let a string swallow its own newline and run on into
+                    // the following line, skewing every position after it - and the unterminated
+                    // string would then be reported somewhere the author never wrote one.
+                    const char next = cursor.peekNext();
+                    if (next == '\n' || next == '\0') {
+                        break;  // leaves `terminated` false: reported at the opening quote
+                    }
                     static_cast<void>(cursor.advance());
                     const char esc = cursor.peek();
                     switch (esc) {

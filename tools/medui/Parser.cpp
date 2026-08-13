@@ -40,11 +40,15 @@ public:
     [[nodiscard]] std::vector<cli::Diagnostic> take() { return std::move(diagnostics_); }
 
     [[nodiscard]] std::optional<ast::Screen> parseScreen() {
+        // Captured before expectWord() consumes it: Ast.cppm says a node carries the position of
+        // the token that introduced it, and parseLayout/parseSurface both do this. This one read
+        // the position *after* advancing, so it pointed at the screen name.
+        const ast::Position screenKeyword = position();
         if (!expectWord("Screen")) {
             return std::nullopt;
         }
         ast::Screen screen;
-        screen.position = position();
+        screen.position = screenKeyword;
 
         const Token* name = expect(TokenKind::Identifier, "a screen name");
         if (name == nullptr) {
@@ -62,6 +66,16 @@ public:
             }
         }
         static_cast<void>(expect(TokenKind::RBrace, "'}' closing the screen"));
+
+        // A source declares exactly one screen. Without this, `Screen A { } Screen B { }` and
+        // `Screen A { } garbage` both parsed clean and returned a screen - the trailing content was
+        // simply never looked at. #200's file checker would have reported such a file as valid.
+        if (!at(TokenKind::EndOfFile)) {
+            report(Code::UnexpectedToken,
+                   std::format("unexpected {} after the screen's closing brace",
+                               describe(current().kind)),
+                   "a .medui source declares exactly one Screen, and nothing follows it");
+        }
 
         checkDuplicateIds(screen);
         return screen;
@@ -171,6 +185,11 @@ private:
         screen.layoutPosition = position();
         static_cast<void>(advance());  // 'layout'
         if (expect(TokenKind::Colon, "':' after 'layout'") == nullptr) {
+            return false;
+        }
+        // Before expect(): a forbidden word is an Identifier, so without this `layout: if { }`
+        // parsed clean. "Wherever an identifier may appear" has to include this one.
+        if (rejectIfForbidden()) {
             return false;
         }
         const Token* kind = expect(TokenKind::Identifier, "a layout kind such as 'Vertical'");
@@ -287,6 +306,20 @@ private:
                 continue;
             }
             if (at(TokenKind::At)) {
+                // Only a Row has children. The unannotated branch above already enforced that;
+                // this one did not, so `Card { @x Label { } }` was accepted and - worse -
+                // `Card { @x Row { } }` placed a Row at depth two with no MDX-E015, because the
+                // annotated path also passed insideRow=false. Reported independently by three
+                // reviewers on #209, and the AST contract in Ast.cppm says children is non-empty
+                // only for Row, which #194's single-pass solver relies on.
+                if (!isRow) {
+                    report(Code::UnexpectedToken,
+                           std::format("'{}' cannot contain another component", node.component),
+                           "only a Row holds child components; move this out, or make the parent "
+                           "a Row");
+                    recover();
+                    continue;
+                }
                 std::vector<ast::Annotation> childAnnotations;
                 bool bad = false;
                 while (at(TokenKind::At)) {
@@ -295,7 +328,7 @@ private:
                     childAnnotations.push_back(std::move(*annotation));
                 }
                 if (bad || !parseNodeInto(node.children, std::move(childAnnotations),
-                                          /*insideRow=*/isRow)) {
+                                          /*insideRow=*/true)) {
                     recover();
                 }
                 continue;
@@ -462,7 +495,24 @@ private:
                 path += part->text;
                 dotted = true;
             }
-            value->kind = dotted ? ast::ValueKind::ColorToken : ast::ValueKind::Identifier;
+            // A dotted path is only a *colour token* when it is one. `Foo.Bar` and a truncated
+            // `Theme.Colors` were both classified as ColorToken, which would have sent #193 to the
+            // theme table for a value that never named a colour - and produced MDX-E030 "not in the
+            // governed table" for what is really a malformed value.
+            const bool isThemeColor = path.starts_with("Theme.Colors.") &&
+                                      path.size() > std::string_view{"Theme.Colors."}.size();
+            // `dotted` no longer decides anything: an unqualified dotted path and a bare word are
+            // both just identifiers for #193 to interpret. Kept as a named variable only for the
+            // diagnostic below, so the reader is told which shape was seen.
+            value->kind = isThemeColor ? ast::ValueKind::ColorToken : ast::ValueKind::Identifier;
+            if (dotted && !isThemeColor) {
+                // Not an error here - #193 owns what a field may hold - but worth saying, because
+                // a dotted path that is not a theme colour is almost always a mistyped one.
+                report(Code::UnexpectedToken,
+                       std::format("'{}' is not a Theme.Colors token", path),
+                       "colours are written Theme.Colors.<Token>; other dotted paths have no "
+                       "meaning in this grammar");
+            }
             value->text = std::move(path);
             return value;
         }

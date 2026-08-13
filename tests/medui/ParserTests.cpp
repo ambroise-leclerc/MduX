@@ -272,6 +272,7 @@ const mdux::spec::Register forbiddenConstructRejected{
                               std::format("MDX-E016 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 3, std::format("at line 3, got {}", d->line));
+                    checks.expect(d->column == 5, std::format("at column 5, got {}", d->column));
                     checks.expect(d->message.find("if") != std::string::npos,
                                   "the message names the offending word");
                 }
@@ -297,6 +298,7 @@ const mdux::spec::Register duplicateIdRejected{
                 if (d != nullptr) {
                     checks.expect(d->line == 8, std::format("at the second id, line 8, got {}",
                                                             d->line));
+                    checks.expect(d->column == 9, std::format("at column 9, got {}", d->column));
                     // Naming only the duplicate would leave an author hunting for the original.
                     checks.expect(d->message.find("line 4") != std::string::npos,
                                   std::format("the message cites the first, got '{}'", d->message));
@@ -322,6 +324,7 @@ const mdux::spec::Register unknownUnitRejected{
                               std::format("MDX-E010 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 5, std::format("at line 5, got {}", d->line));
+                    checks.expect(d->column == 18, std::format("at column 18, got {}", d->column));
                     checks.expect(d->fixHint.find("Npx") != std::string::npos,
                                   "the hint names the accepted form");
                 }
@@ -432,6 +435,205 @@ const mdux::spec::Register severalProblemsInOneRun{
                 checks.expect(count >= 2,
                               std::format("at least two findings, got {}",
                                           codesOf(r.diagnostics)));
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// Regressions. Each of these parsed clean before review on #209.
+// ---------------------------------------------------------------------------
+
+const mdux::spec::Register columnsAreUtf8Bytes{
+    "A column counts UTF-8 bytes, not code points",
+    "evidence-unit",
+    [] {
+        // Raised by @coderabbitai: every other position scenario uses ASCII, so a lexer counting
+        // code points would pass all of them. The comment before "e" is 3 ASCII + one 2-byte
+        // character (U+00E9) + 1 ASCII = 6 bytes, so `Screen` starts at byte column 7 and at code
+        // point column 6. Asserting 7 is what pins the convention shared with mdux-docs-lint.
+        return speclab::Test("medui-lex-utf8-columns")
+            .Given("a line with a multi-byte character before a token", [] {})
+            .When("it is lexed", [] {})
+            .Then("the token's column is its byte offset", [] {
+                mdux::spec::Checks checks;
+                const md::LexResult r = md::lex("/*\u00e9*/Screen A { }\n", "u.medui");
+                // `/*` is not a comment in this grammar, so those are unexpected-character
+                // diagnostics; the token positions are what this scenario is about.
+                const auto screen = std::ranges::find_if(
+                    r.tokens, [](const md::Token& t) { return t.text == "Screen"; });
+                checks.expect(screen != r.tokens.end(), "the Screen token was produced");
+                if (screen != r.tokens.end()) {
+                    checks.expect(screen->column == 7,
+                                  std::format("byte column 7 (code-point column would be 6), got {}",
+                                              screen->column));
+                }
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register trailingContentRejected{
+    "Content after the screen's closing brace is rejected",
+    "evidence-unit",
+    [] {
+        // Before review this parsed clean: the closing brace was consumed and nothing looked at
+        // what followed, so a second Screen or plain garbage produced ok() == true.
+        return speclab::Test("medui-reject-trailing")
+            .Given("two screens in one source, and a source with trailing junk", [] {})
+            .When("each is parsed", [] {})
+            .Then("both are rejected", [] {
+                mdux::spec::Checks checks;
+                const md::ParseResult two = md::parse("Screen A { }\nScreen B { }\n", "t.medui");
+                checks.expect(!two.ok(),
+                              std::format("a second Screen is rejected, got {}",
+                                          codesOf(two.diagnostics)));
+                const md::ParseResult junk = md::parse("Screen A { } garbage\n", "t.medui");
+                checks.expect(!junk.ok(),
+                              std::format("trailing junk is rejected, got {}",
+                                          codesOf(junk.diagnostics)));
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register annotatedChildOutsideRowRejected{
+    "An annotated child is rejected outside a Row, and a Row inside one is still MDX-E015",
+    "evidence-unit",
+    [] {
+        // Reported independently by three reviewers on #209. The unannotated path enforced
+        // "only a Row has children"; the annotated path did not, so `Card { @x Label { } }`
+        // was accepted - and `Card { @x Row { } }` put a Row at depth two with no MDX-E015,
+        // because the annotated path also passed insideRow = false.
+        return speclab::Test("medui-reject-annotated-child")
+            .Given("an annotated child under a non-Row parent", [] {})
+            .When("it is parsed", [] {})
+            .Then("it is rejected, as the unannotated form already was", [] {
+                mdux::spec::Checks checks;
+                const md::ParseResult child =
+                    md::parse("Screen A {\n Card {\n  @x Label { }\n }\n}\n", "a.medui");
+                checks.expect(!child.ok(),
+                              std::format("annotated child rejected, got {}",
+                                          codesOf(child.diagnostics)));
+
+                const md::ParseResult row =
+                    md::parse("Screen A {\n Card {\n  @x Row { }\n }\n}\n", "a.medui");
+                checks.expect(!row.ok(),
+                              std::format("annotated Row under a non-Row rejected, got {}",
+                                          codesOf(row.diagnostics)));
+
+                // The unannotated form was always rejected; asserted so the two paths cannot
+                // drift apart again without a test noticing.
+                const md::ParseResult plain =
+                    md::parse("Screen A {\n Card {\n  Label { }\n }\n}\n", "a.medui");
+                checks.expect(!plain.ok(), "the unannotated form stays rejected");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register forbiddenWordInLayoutRejected{
+    "A control-flow keyword as a layout kind is MDX-E016",
+    "evidence-unit",
+    [] {
+        // "Wherever an identifier may appear" did not include the layout kind, so `layout: if { }`
+        // parsed clean.
+        return speclab::Test("medui-reject-forbidden-layout")
+            .Given("layout: if { }", [] {})
+            .When("it is parsed", [] {})
+            .Then("MDX-E016 is reported", [] {
+                mdux::spec::Checks checks;
+                const md::ParseResult r = md::parse("Screen A {\n layout: if { }\n}\n", "l.medui");
+                checks.expect(has(r.diagnostics, md::Code::ForbiddenConstruct),
+                              std::format("MDX-E016 reported, got {}", codesOf(r.diagnostics)));
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register onlyThemeColorsIsAColourToken{
+    "A dotted path is a colour token only when it is Theme.Colors.<Token>",
+    "evidence-unit",
+    [] {
+        // Every dotted path was classified ColorToken, so `Foo.Bar` would have reached #193's
+        // theme lookup and produced MDX-E030 "not in the governed table" for a value that never
+        // claimed to name a colour.
+        return speclab::Test("medui-value-colour-classification")
+            .Given("three dotted paths", [] {})
+            .When("they are parsed as values", [] {})
+            .Then("only the qualified one is a ColorToken", [] {
+                mdux::spec::Checks checks;
+                const auto kindOf = [&](std::string_view value) {
+                    const md::ParseResult r = md::parse(
+                        std::format("Screen A {{\n L {{ c: {}; }}\n}}\n", value), "v.medui");
+                    if (!r.screen || r.screen->nodes.empty() ||
+                        r.screen->nodes[0].fields.empty() ||
+                        r.screen->nodes[0].fields[0].value == nullptr) {
+                        return md::ast::ValueKind::Number;  // a sentinel none of the cases expect
+                    }
+                    return r.screen->nodes[0].fields[0].value->kind;
+                };
+                checks.expect(kindOf("Theme.Colors.ScoreDigits") == md::ast::ValueKind::ColorToken,
+                              "Theme.Colors.ScoreDigits is a ColorToken");
+                checks.expect(kindOf("Foo.Bar") == md::ast::ValueKind::Identifier,
+                              "Foo.Bar is not a ColorToken");
+                checks.expect(kindOf("Theme.Colors") == md::ast::ValueKind::Identifier,
+                              "a truncated Theme.Colors is not a ColorToken");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register backslashAtLineEndDoesNotEatTheNewline{
+    "A backslash at end of line does not let a string span lines",
+    "evidence-unit",
+    [] {
+        // The escape branch consumed the next byte unconditionally, so a trailing backslash ate
+        // the newline and the string ran on - skewing every position after it, and reporting the
+        // unterminated string somewhere the author never wrote one.
+        return speclab::Test("medui-lex-backslash-eol")
+            .Given("a string with a trailing backslash", [] {})
+            .When("it is lexed", [] {})
+            .Then("it is unterminated, reported at its opening quote, and lines still line up", [] {
+                mdux::spec::Checks checks;
+                const md::LexResult r = md::lex("Screen A {\n r: \"ab\\\n cd\";\n}\n", "b.medui");
+                const cli::Diagnostic* d = find(r.diagnostics, md::Code::UnexpectedToken);
+                checks.expect(d != nullptr,
+                              std::format("a diagnostic was reported, got {}",
+                                          codesOf(r.diagnostics)));
+                if (d != nullptr) {
+                    checks.expect(d->line == 2,
+                                  std::format("at the opening quote's line 2, got {}", d->line));
+                }
+                // The token after the broken string must still be on line 3, which it cannot be if
+                // the newline was swallowed.
+                const auto brace = std::ranges::find_if(
+                    r.tokens, [](const md::Token& t) { return t.kind == md::TokenKind::RBrace; });
+                checks.expect(brace != r.tokens.end() && brace->line >= 3,
+                              "positions after the broken string are not skewed");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register screenPositionIsTheKeyword{
+    "A screen's position is the Screen keyword, not its name",
+    "evidence-unit",
+    [] {
+        // Ast.cppm says a node carries the position of the token that introduced it, and
+        // parseLayout/parseSurface both capture before advancing. This one captured after.
+        return speclab::Test("medui-screen-position")
+            .Given("a screen declared at a known column", [] {})
+            .When("it is parsed", [] {})
+            .Then("the position is the keyword's", [] {
+                mdux::spec::Checks checks;
+                const md::ParseResult r = md::parse("Screen A { }\n", "s.medui");
+                checks.expect(r.screen.has_value(), "a screen was produced");
+                if (r.screen) {
+                    checks.expect(r.screen->position.column == 1,
+                                  std::format("column 1, the 'Screen' keyword, got {}",
+                                              r.screen->position.column));
+                }
                 checks.raise();
             })
             .Execute();
