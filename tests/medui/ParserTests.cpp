@@ -32,19 +32,14 @@ namespace {
 namespace md = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
-[[nodiscard]] std::optional<std::string> environmentValue(const char* name) {
-#ifdef _WIN32
-    char* value = nullptr;
-    std::size_t length = 0;
-    if (::_dupenv_s(&value, &length, name) != 0 || value == nullptr) { return std::nullopt; }
-    std::string result{value};
-    std::free(value);
-    return result;
-#else
-    const char* value = std::getenv(name);
-    return value == nullptr ? std::nullopt : std::optional<std::string>{value};
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996) // Test-only environment lookup; no mutable buffer is involved.
 #endif
-}
+[[nodiscard]] const char* conformanceRoot() { return std::getenv("MEDUI_CONFORMANCE_DIR"); }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path =
@@ -61,9 +56,9 @@ namespace cli = mdux::tools::cli;
 }
 
 [[nodiscard]] std::optional<std::string> sharedFixture(std::string_view relative) {
-    const std::optional<std::string> root = environmentValue("MEDUI_CONFORMANCE_DIR");
-    if (!root.has_value() || root->empty()) { return std::nullopt; }
-    const std::filesystem::path path = std::filesystem::path{*root} / relative;
+    const char* root = conformanceRoot();
+    if (root == nullptr || *root == '\0') { return std::nullopt; }
+    const std::filesystem::path path = std::filesystem::path{root} / relative;
     std::ifstream in{path, std::ios::binary};
     if (!in) {
         throw speclab::core::AssertionFailure(
