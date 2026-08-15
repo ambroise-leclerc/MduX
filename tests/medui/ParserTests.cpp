@@ -32,15 +32,6 @@ namespace {
 namespace md = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4996) // Test-only environment lookup; no mutable buffer is involved.
-#endif
-[[nodiscard]] const char* conformanceRoot() { return std::getenv("MEDUI_CONFORMANCE_DIR"); }
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path =
         std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
@@ -48,21 +39,6 @@ namespace cli = mdux::tools::cli;
     if (!in) {
         throw speclab::core::AssertionFailure(
             std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-            std::source_location::current());
-    }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
-[[nodiscard]] std::optional<std::string> sharedFixture(std::string_view relative) {
-    const char* root = conformanceRoot();
-    if (root == nullptr || *root == '\0') { return std::nullopt; }
-    const std::filesystem::path path = std::filesystem::path{root} / relative;
-    std::ifstream in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(
-            std::format("shared fixture could not be opened at {}", path.generic_string()),
             std::source_location::current());
     }
     std::ostringstream buffer;
@@ -701,43 +677,6 @@ const mdux::spec::Register screenPositionIsTheKeyword{
                     checks.expect(r.screen->position.column == 1,
                                   std::format("column 1, the 'Screen' keyword, got {}",
                                               r.screen->position.column));
-                }
-                checks.raise();
-            })
-            .Execute();
-    }};
-
-const mdux::spec::Register sharedSyntaxCandidate{
-    "The parser conforms to the pinned shared MedUI syntax candidate",
-    "evidence-unit",
-    [] {
-        return speclab::Test("medui-shared-syntax-candidate")
-            .Given("the exact checkout named by medui-conformance.toml", [] {})
-            .When("its portable syntax cases are parsed", [] {})
-            .Then("comments parse and nested Row reports the shared identity and position", [] {
-                mdux::spec::Checks checks;
-                const auto accepted = sharedFixture(
-                    "conformance/syntax/accepted-comments/source.medui");
-                const auto nested = sharedFixture(
-                    "conformance/syntax/rejected-nested-row/source.medui");
-                if (!accepted || !nested) {
-                    // Ordinary offline builds keep their local fixture suite. CI sets the path.
-                    return;
-                }
-                const md::ParseResult acceptedResult = md::parse(*accepted, "source.medui");
-                checks.expect(acceptedResult.ok(),
-                              std::format("comments case parses, got {}",
-                                          codesOf(acceptedResult.diagnostics)));
-                const md::ParseResult nestedResult = md::parse(*nested, "source.medui");
-                const cli::Diagnostic* diagnostic =
-                    find(nestedResult.diagnostics, md::Code::NestedRow);
-                checks.expect(diagnostic != nullptr,
-                              std::format("MEDUI-E015 reported, got {}",
-                                          codesOf(nestedResult.diagnostics)));
-                if (diagnostic != nullptr) {
-                    checks.expect(diagnostic->line == 6 && diagnostic->column == 9,
-                                  std::format("position 6:9, got {}:{}", diagnostic->line,
-                                              diagnostic->column));
                 }
                 checks.raise();
             })

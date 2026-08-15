@@ -685,6 +685,7 @@ add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
     medui/ParserTests.cpp
+    medui/SharedConformanceTests.cpp
 )
 
 target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)
