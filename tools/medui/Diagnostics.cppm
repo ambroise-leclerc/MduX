@@ -137,10 +137,18 @@ struct CodeInfo {
  */
 [[nodiscard]] const CodeInfo& info(Code code);
 
-/// The published identifier, e.g. `"MEDUI-E030"`. Throws for an unregistered value, as `info()` does.
+/**
+ * @brief Gets the published identifier, for example `"MEDUI-E030"`.
+ *
+ * Throws for an unregistered value, as `info()` does.
+ */
 [[nodiscard]] std::string_view id(Code code);
 
-/** One-release compatibility alias, e.g. `"MDX-E030"`. Canonical output always uses [`id`]. */
+/**
+ * @brief Gets the one-release compatibility alias, for example `"MDX-E030"`.
+ *
+ * Canonical output always uses `id()`.
+ */
 [[nodiscard]] std::string legacyId(Code code);
 
 /**

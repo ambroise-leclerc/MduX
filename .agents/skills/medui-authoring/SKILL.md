@@ -28,8 +28,8 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
-[`Compliatory/MedUI`](https://github.com/Compliatory/MedUI). Do not write a `.medui` file expecting
-it to build anything in MduX until the compiler waves land.
+[`Compliatory/MedUI` at `c8cc45e`](https://github.com/Compliatory/MedUI/tree/c8cc45ecec2f2dfd84940b9efc17c613e691cc0d).
+Do not write a `.medui` file expecting it to build anything in MduX until the compiler waves land.
 
 ## Grammar shape
 

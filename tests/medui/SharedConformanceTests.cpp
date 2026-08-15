@@ -53,14 +53,7 @@ constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
     throw speclab::core::AssertionFailure(std::move(message), where);
 }
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4996) // Test-only environment lookup; no mutable buffer is involved.
-#endif
 [[nodiscard]] const char* env(const char* name) { return std::getenv(name); }
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 [[nodiscard]] bool isSet(const char* name) {
     const char* value = env(name);
@@ -73,6 +66,103 @@ constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
+}
+
+[[nodiscard]] std::string trim(std::string value) {
+    const auto isWhitespace = [](unsigned char c) {
+        return std::isspace(c) != 0;
+    };
+    const auto first = std::ranges::find_if_not(value, isWhitespace);
+    const auto last  = std::ranges::find_if_not(value | std::views::reverse, isWhitespace).base();
+    if (first >= last) {
+        return {};
+    }
+    return std::string{first, last};
+}
+
+[[nodiscard]] bool isCommitSha(std::string_view value) {
+    return value.size() == 40 && std::ranges::all_of(value, [](unsigned char c) {
+               return std::isxdigit(c) != 0;
+           });
+}
+
+[[nodiscard]] std::filesystem::path resolveGitDirectory(const std::filesystem::path& root) {
+    const std::filesystem::path dotGit = root / ".git";
+    if (std::filesystem::is_directory(dotGit)) {
+        return dotGit;
+    }
+    if (!std::filesystem::is_regular_file(dotGit)) {
+        fail(std::format("{} has no .git metadata; cannot verify the checked-out MedUI revision", root.generic_string()));
+    }
+
+    constexpr std::string_view prefix{"gitdir: "};
+    const std::string          metadata = trim(readFile(dotGit));
+    if (!metadata.starts_with(prefix)) {
+        fail(std::format("{} has malformed gitdir metadata", dotGit.generic_string()));
+    }
+    std::filesystem::path directory{metadata.substr(prefix.size())};
+    if (directory.is_relative()) {
+        directory = root / directory;
+    }
+    return directory.lexically_normal();
+}
+
+[[nodiscard]] std::filesystem::path resolveCommonGitDirectory(const std::filesystem::path& gitDirectory) {
+    const std::filesystem::path marker = gitDirectory / "commondir";
+    if (!std::filesystem::is_regular_file(marker)) {
+        return gitDirectory;
+    }
+
+    std::filesystem::path common{trim(readFile(marker))};
+    if (common.is_relative()) {
+        common = gitDirectory / common;
+    }
+    return common.lexically_normal();
+}
+
+[[nodiscard]] std::string checkoutRevision(const std::filesystem::path& root) {
+    const std::filesystem::path gitDirectory = resolveGitDirectory(root);
+    const std::string           head         = trim(readFile(gitDirectory / "HEAD"));
+    if (isCommitSha(head)) {
+        return head;
+    }
+
+    constexpr std::string_view prefix{"ref: "};
+    if (!head.starts_with(prefix)) {
+        fail(std::format("{} has malformed HEAD metadata", gitDirectory.generic_string()));
+    }
+    const std::string reference = head.substr(prefix.size());
+    if (!reference.starts_with("refs/") || reference.contains("..") || reference.contains('\\')) {
+        fail(std::format("{} names an unsafe HEAD reference '{}'", gitDirectory.generic_string(), reference));
+    }
+
+    const std::filesystem::path commonDirectory = resolveCommonGitDirectory(gitDirectory);
+    for (const std::filesystem::path& directory : {gitDirectory, commonDirectory}) {
+        const std::filesystem::path looseReference = directory / reference;
+        if (std::filesystem::is_regular_file(looseReference)) {
+            const std::string revision = trim(readFile(looseReference));
+            if (isCommitSha(revision)) {
+                return revision;
+            }
+            fail(std::format("{} does not contain a commit SHA", looseReference.generic_string()));
+        }
+    }
+
+    const std::filesystem::path packedReferences = commonDirectory / "packed-refs";
+    if (std::filesystem::is_regular_file(packedReferences)) {
+        std::istringstream lines{readFile(packedReferences)};
+        for (std::string line; std::getline(lines, line);) {
+            const std::size_t separator = line.find(' ');
+            if (separator != std::string::npos && line.substr(separator + 1) == reference) {
+                const std::string revision = line.substr(0, separator);
+                if (isCommitSha(revision)) {
+                    return revision;
+                }
+                fail(std::format("{} has a malformed entry for '{}'", packedReferences.generic_string(), reference));
+            }
+        }
+    }
+    fail(std::format("could not resolve HEAD reference '{}' under {}", reference, gitDirectory.generic_string()));
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +216,7 @@ constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "versi
                          path.generic_string(), declared));
     }
 
-    const bool wellFormed =
-        result.commit.size() == 40 &&
-        std::ranges::all_of(result.commit, [](unsigned char c) { return std::isxdigit(c) != 0; });
-    if (!wellFormed) {
+    if (!isCommitSha(result.commit)) {
         fail(std::format("{} must pin a 40-character commit SHA, got '{}'", path.generic_string(),
                          result.commit));
     }
@@ -217,7 +304,7 @@ struct Case {
     result.phase = requireString(*document, "phase", path);
 
     const std::string source = requireString(*document, "source", path);
-    if (source.contains('/') || !source.ends_with(".medui")) {
+    if (source.contains('/') || source.contains('\\') || !source.ends_with(".medui")) {
         fail(std::format("{}: source must be a sibling .medui file, got '{}'",
                          path.generic_string(), source));
     }
@@ -328,18 +415,30 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
         return;
     }
 
-    checks.expect(!result.ok(),
-                  std::format("{}: rejected, but the parser accepted it", item.id));
+    checks.expect(!result.ok(), std::format("{}: rejected, but the parser accepted it", item.id));
 
+    std::vector<bool> consumed(result.diagnostics.size(), false);
     for (const ExpectedDiagnostic& expected : item.diagnostics) {
-        const auto match = std::ranges::find_if(
-            result.diagnostics,
-            [&expected](const cli::Diagnostic& d) { return d.code == expected.code; });
-        const bool reported = match != result.diagnostics.end();
-        checks.expect(reported, std::format("{}: {} reported, got {}", item.id, expected.code,
-                                            codesOf(result.diagnostics)));
-        if (reported) { checkPosition(item, expected, *match, positions, checks); }
+        std::size_t match = result.diagnostics.size();
+        for (std::size_t index = 0; index < result.diagnostics.size(); ++index) {
+            if (!consumed[index] && result.diagnostics[index].code == expected.code) {
+                match = index;
+                break;
+            }
+        }
+        const bool reported = match != result.diagnostics.size();
+        checks.expect(reported, std::format("{}: {} reported, got {}", item.id, expected.code, codesOf(result.diagnostics)));
+        if (reported) {
+            consumed[match] = true;
+            checkPosition(item, expected, result.diagnostics[match], positions, checks);
+        }
     }
+
+    checks.expect(std::ranges::all_of(consumed,
+                                      [](bool value) {
+                                          return value;
+                                      }),
+                  std::format("{}: every emitted diagnostic is expected, got {}", item.id, codesOf(result.diagnostics)));
 }
 
 }  // namespace
@@ -392,7 +491,16 @@ const mdux::spec::Register pinnedCasesPass{
                     return;
                 }
 
-                const std::vector<Case> cases = loadCases(std::filesystem::path{root});
+                const std::filesystem::path checkout{root};
+                const std::string           actualCommit = checkoutRevision(checkout);
+                checks.expect(actualCommit == pinned.commit,
+                              std::format("MEDUI_CONFORMANCE_DIR is checked out at {}, but "
+                                          "medui-conformance.toml pins {}",
+                                          actualCommit,
+                                          pinned.commit));
+                checks.raise();
+
+                const std::vector<Case> cases = loadCases(checkout);
                 checks.expect(!cases.empty(), "the pinned checkout contains conformance cases");
 
                 std::set<std::string> executed;
