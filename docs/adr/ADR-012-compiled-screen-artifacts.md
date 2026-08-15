@@ -3,6 +3,13 @@
 ## Status
 Accepted (2026-08-11)
 
+## Shared decision identity
+
+This record is MduX's C++ and evidence-format realization of
+[`MEDUI-DEC-003`](https://github.com/Compliatory/MedUI/blob/c8cc45ecec2f2dfd84940b9efc17c613e691cc0d/decisions/MEDUI-DEC-003-compiled-screen-semantics.md)
+and `MEDUI-DEC-004`. The shared records define meaning; this ADR remains authoritative for
+canonical JSON, generated C++ modules/headers, and MduX's committed artifact layout.
+
 ## Context
 
 [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) fixes *where* the work happens: every

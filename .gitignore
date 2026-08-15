@@ -99,3 +99,6 @@ GEMINI.md
 # CI sets PYTHONDONTWRITEBYTECODE=1, but a local run of the self-tests still leaves these behind.
 __pycache__/
 *.pyc
+
+# Ephemeral exact-SHA checkout of the shared MedUI conformance contract in CI.
+.medui-conformance/

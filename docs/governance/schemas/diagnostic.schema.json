@@ -42,7 +42,7 @@
           },
           "code": {
             "type": "string",
-            "description": "Short stable identifier for the kind of finding, such as 'MDX-D011' or 'FB001'. This is the field an agent keys off, so its meaning must not change once published - reword the message instead. The empty string is permitted, and means the tool has not assigned a code to this finding; `mdux::tools::cli::render` omits the bracketed code from its text form in that case.",
+            "description": "Short stable identifier for the kind of finding, such as 'MDX-D011', 'MEDUI-E015', or 'FB001'. MedUI codes are owned by the pinned Compliatory/MedUI contract; other families remain local. This is the field an agent keys off, so its meaning must not change once published - reword the message instead. The empty string is permitted, and means the tool has not assigned a code to this finding; `mdux::tools::cli::render` omits the bracketed code from its text form in that case.",
             "pattern": "^([A-Za-z0-9][A-Za-z0-9-]*)?$"
           },
           "severity": {

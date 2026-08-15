@@ -685,6 +685,7 @@ add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
     medui/ParserTests.cpp
+    medui/SharedConformanceTests.cpp
 )
 
 target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)
@@ -706,7 +707,10 @@ if(TARGET __CMAKE::CXX23)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(medui_tools_spec PRIVATE /experimental:module /std:c++latest)
+    # SharedConformanceTests uses getenv() only to read CI configuration. Suppress MSVC's
+    # blanket deprecation warning for that test at the target boundary instead of adding
+    # compiler-control macros and pragmas to the C++ source.
+    target_compile_options(medui_tools_spec PRIVATE /experimental:module /std:c++latest /wd4996)
 endif()
 
 mdux_discover_tests(medui_tools_spec)

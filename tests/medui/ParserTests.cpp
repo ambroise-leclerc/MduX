@@ -233,19 +233,19 @@ const mdux::spec::Register valuesKeepTheirKinds{
 // ---------------------------------------------------------------------------
 
 const mdux::spec::Register nestedRowRejected{
-    "A Row inside a Row is MDX-E015, at the inner Row",
+    "A Row inside a Row is MEDUI-E015, at the inner Row",
     "evidence-unit",
     [] {
         return speclab::Test("medui-reject-nested-row")
             .Given("a screen with a nested Row", [] {})
             .When("it is parsed", [] {})
-            .Then("MDX-E015 names the inner Row's position", [] {
+            .Then("MEDUI-E015 names the inner Row's position", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse(fixture("rejected-nested-row.medui"),
                                                     "rejected-nested-row.medui");
                 const cli::Diagnostic* d = find(r.diagnostics, md::Code::NestedRow);
                 checks.expect(d != nullptr,
-                              std::format("MDX-E015 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E015 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 6, std::format("at line 6, got {}", d->line));
                     checks.expect(d->column == 9, std::format("at column 9, got {}", d->column));
@@ -257,19 +257,19 @@ const mdux::spec::Register nestedRowRejected{
     }};
 
 const mdux::spec::Register forbiddenConstructRejected{
-    "A control-flow keyword is MDX-E016",
+    "A control-flow keyword is MEDUI-E016",
     "evidence-unit",
     [] {
         return speclab::Test("medui-reject-forbidden")
             .Given("a screen containing 'if'", [] {})
             .When("it is parsed", [] {})
-            .Then("MDX-E016 names it at its position", [] {
+            .Then("MEDUI-E016 names it at its position", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse(fixture("rejected-forbidden-construct.medui"),
                                                     "rejected-forbidden-construct.medui");
                 const cli::Diagnostic* d = find(r.diagnostics, md::Code::ForbiddenConstruct);
                 checks.expect(d != nullptr,
-                              std::format("MDX-E016 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E016 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 3, std::format("at line 3, got {}", d->line));
                     checks.expect(d->column == 5, std::format("at column 5, got {}", d->column));
@@ -282,19 +282,19 @@ const mdux::spec::Register forbiddenConstructRejected{
     }};
 
 const mdux::spec::Register duplicateIdRejected{
-    "A repeated node id is MDX-E014, pointing at the second one",
+    "A repeated node id is MEDUI-E014, pointing at the second one",
     "evidence-unit",
     [] {
         return speclab::Test("medui-reject-duplicate-id")
             .Given("two nodes sharing an id", [] {})
             .When("the screen is parsed", [] {})
-            .Then("MDX-E014 names the second and cites the first", [] {
+            .Then("MEDUI-E014 names the second and cites the first", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse(fixture("rejected-duplicate-id.medui"),
                                                     "rejected-duplicate-id.medui");
                 const cli::Diagnostic* d = find(r.diagnostics, md::Code::DuplicateNodeId);
                 checks.expect(d != nullptr,
-                              std::format("MDX-E014 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E014 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 8, std::format("at the second id, line 8, got {}",
                                                             d->line));
@@ -309,19 +309,19 @@ const mdux::spec::Register duplicateIdRejected{
     }};
 
 const mdux::spec::Register unknownUnitRejected{
-    "A length in a unit other than px is MDX-E010",
+    "A length in a unit other than px is MEDUI-E010",
     "evidence-unit",
     [] {
         return speclab::Test("medui-reject-bad-unit")
             .Given("a width written as 10rem", [] {})
             .When("the screen is parsed", [] {})
-            .Then("MDX-E010 says what units exist", [] {
+            .Then("MEDUI-E010 says what units exist", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse(fixture("rejected-bad-unit.medui"),
                                                     "rejected-bad-unit.medui");
                 const cli::Diagnostic* d = find(r.diagnostics, md::Code::UnexpectedToken);
                 checks.expect(d != nullptr,
-                              std::format("MDX-E010 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E010 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 5, std::format("at line 5, got {}", d->line));
                     checks.expect(d->column == 18, std::format("at column 18, got {}", d->column));
@@ -389,7 +389,7 @@ const mdux::spec::Register commentsAreSkipped{
     }};
 
 const mdux::spec::Register invalidUtf8Rejected{
-    "A source that is not valid UTF-8 is rejected whole, with MDX-E004",
+    "A source that is not valid UTF-8 is rejected whole, with MEDUI-E004",
     "evidence-unit",
     [] {
         // Whole rather than at the byte: past an invalid sequence there are no defined character
@@ -397,13 +397,13 @@ const mdux::spec::Register invalidUtf8Rejected{
         return speclab::Test("medui-lex-bad-utf8")
             .Given("a source containing a lone continuation byte", [] {})
             .When("it is lexed", [] {})
-            .Then("MDX-E004 is reported and no tokens are produced", [] {
+            .Then("MEDUI-E004 is reported and no tokens are produced", [] {
                 mdux::spec::Checks checks;
                 std::string source = "Screen A { }\n";
                 source += '\x80';
                 const md::LexResult r = md::lex(source, "bad.medui");
                 checks.expect(has(r.diagnostics, md::Code::SourceNotUtf8),
-                              std::format("MDX-E004 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E004 reported, got {}", codesOf(r.diagnostics)));
                 checks.expect(r.tokens.empty(), "no tokens, so no invented positions");
                 checks.raise();
             })
@@ -431,7 +431,7 @@ const mdux::spec::Register severalProblemsInOneRun{
                     "}\n",
                     "two.medui");
                 const auto count = std::ranges::count_if(
-                    r.diagnostics, [](const cli::Diagnostic& d) { return d.code == "MDX-E010"; });
+                    r.diagnostics, [](const cli::Diagnostic& d) { return d.code == "MEDUI-E010"; });
                 checks.expect(count >= 2,
                               std::format("at least two findings, got {}",
                                           codesOf(r.diagnostics)));
@@ -487,7 +487,7 @@ const mdux::spec::Register trailingContentRejected{
                 const md::ParseResult two = md::parse("Screen A { }\nScreen B { }\n", "t.medui");
                 const cli::Diagnostic* d2 = find(two.diagnostics, md::Code::UnexpectedToken);
                 checks.expect(d2 != nullptr,
-                              std::format("MDX-E010 for a second Screen, got {}",
+                              std::format("MEDUI-E010 for a second Screen, got {}",
                                           codesOf(two.diagnostics)));
                 if (d2 != nullptr) {
                     checks.expect(d2->line == 2 && d2->column == 1,
@@ -498,7 +498,7 @@ const mdux::spec::Register trailingContentRejected{
                 const md::ParseResult junk = md::parse("Screen A { } garbage\n", "t.medui");
                 const cli::Diagnostic* dj = find(junk.diagnostics, md::Code::UnexpectedToken);
                 checks.expect(dj != nullptr,
-                              std::format("MDX-E010 for trailing junk, got {}",
+                              std::format("MEDUI-E010 for trailing junk, got {}",
                                           codesOf(junk.diagnostics)));
                 if (dj != nullptr) {
                     checks.expect(dj->line == 1 && dj->column == 14,
@@ -511,12 +511,12 @@ const mdux::spec::Register trailingContentRejected{
     }};
 
 const mdux::spec::Register annotatedChildOutsideRowRejected{
-    "An annotated child is rejected outside a Row, and a Row inside one is still MDX-E015",
+    "An annotated child is rejected outside a Row, and a Row inside one is still MEDUI-E015",
     "evidence-unit",
     [] {
         // Reported independently by three reviewers on #209. The unannotated path enforced
         // "only a Row has children"; the annotated path did not, so `Card { @x Label { } }`
-        // was accepted - and `Card { @x Row { } }` put a Row at depth two with no MDX-E015,
+        // was accepted - and `Card { @x Row { } }` put a Row at depth two with no MEDUI-E015,
         // because the annotated path also passed insideRow = false.
         return speclab::Test("medui-reject-annotated-child")
             .Given("an annotated child under a non-Row parent", [] {})
@@ -527,7 +527,7 @@ const mdux::spec::Register annotatedChildOutsideRowRejected{
                     md::parse("Screen A {\n Card {\n  @x Label { }\n }\n}\n", "a.medui");
                 const cli::Diagnostic* dc = find(child.diagnostics, md::Code::UnexpectedToken);
                 checks.expect(dc != nullptr,
-                              std::format("MDX-E010 for an annotated child, got {}",
+                              std::format("MEDUI-E010 for an annotated child, got {}",
                                           codesOf(child.diagnostics)));
                 if (dc != nullptr) {
                     checks.expect(dc->line == 3 && dc->column == 3,
@@ -537,21 +537,21 @@ const mdux::spec::Register annotatedChildOutsideRowRejected{
                 }
 
                 // A Row under a non-Row is rejected as a child, *not* as a nested Row: the parent
-                // is a Card, so MDX-E015 would be the wrong code. The nested-Row rule is asserted
+                // is a Card, so MEDUI-E015 would be the wrong code. The nested-Row rule is asserted
                 // separately below, where the parent really is a Row.
                 const md::ParseResult row =
                     md::parse("Screen A {\n Card {\n  @x Row { }\n }\n}\n", "a.medui");
                 checks.expect(find(row.diagnostics, md::Code::UnexpectedToken) != nullptr,
-                              std::format("MDX-E010 for an annotated Row under a Card, got {}",
+                              std::format("MEDUI-E010 for an annotated Row under a Card, got {}",
                                           codesOf(row.diagnostics)));
 
                 // An *annotated* Row inside a Row is the case the gate previously let through
-                // with no diagnostic at all. It must be MDX-E015, exactly as the unannotated form.
+                // with no diagnostic at all. It must be MEDUI-E015, exactly as the unannotated form.
                 const md::ParseResult nested =
                     md::parse("Screen A {\n Row {\n  @x Row { }\n }\n}\n", "a.medui");
                 const cli::Diagnostic* dn = find(nested.diagnostics, md::Code::NestedRow);
                 checks.expect(dn != nullptr,
-                              std::format("MDX-E015 for an annotated nested Row, got {}",
+                              std::format("MEDUI-E015 for an annotated nested Row, got {}",
                                           codesOf(nested.diagnostics)));
                 if (dn != nullptr) {
                     checks.expect(dn->line == 3 && dn->column == 6,
@@ -571,7 +571,7 @@ const mdux::spec::Register annotatedChildOutsideRowRejected{
     }};
 
 const mdux::spec::Register forbiddenWordInLayoutRejected{
-    "A control-flow keyword as a layout kind is MDX-E016",
+    "A control-flow keyword as a layout kind is MEDUI-E016",
     "evidence-unit",
     [] {
         // "Wherever an identifier may appear" did not include the layout kind, so `layout: if { }`
@@ -579,12 +579,12 @@ const mdux::spec::Register forbiddenWordInLayoutRejected{
         return speclab::Test("medui-reject-forbidden-layout")
             .Given("layout: if { }", [] {})
             .When("it is parsed", [] {})
-            .Then("MDX-E016 is reported", [] {
+            .Then("MEDUI-E016 is reported", [] {
                 mdux::spec::Checks checks;
                 const md::ParseResult r = md::parse("Screen A {\n layout: if { }\n}\n", "l.medui");
                 const cli::Diagnostic* d = find(r.diagnostics, md::Code::ForbiddenConstruct);
                 checks.expect(d != nullptr,
-                              std::format("MDX-E016 reported, got {}", codesOf(r.diagnostics)));
+                              std::format("MEDUI-E016 reported, got {}", codesOf(r.diagnostics)));
                 if (d != nullptr) {
                     checks.expect(d->line == 2 && d->column == 10,
                                   std::format("at 2:10, the 'if', got {}:{}", d->line, d->column));
@@ -599,7 +599,7 @@ const mdux::spec::Register onlyThemeColorsIsAColourToken{
     "evidence-unit",
     [] {
         // Every dotted path was classified ColorToken, so `Foo.Bar` would have reached #193's
-        // theme lookup and produced MDX-E030 "not in the governed table" for a value that never
+        // theme lookup and produced MEDUI-E030 "not in the governed table" for a value that never
         // claimed to name a colour.
         return speclab::Test("medui-value-colour-classification")
             .Given("three dotted paths", [] {})

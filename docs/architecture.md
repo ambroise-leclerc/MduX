@@ -98,7 +98,7 @@ performs no checking and confers no compliance.
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
-| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); at S2 only the `MDX-E` diagnostic registry (#191) — the parser (#192), emitters (#197) and `mdux-meduic` (#198) land on this same target |
+| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191) and parser (#192) are implemented, while emitters (#197) and `mdux-meduic` (#198) land on this same target |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.

@@ -3,6 +3,13 @@
 ## Status
 Accepted (2026-08-11)
 
+## Shared decision identity
+
+This local C++ decision implements
+[`MEDUI-DEC-001`](https://github.com/Compliatory/MedUI/blob/c8cc45ecec2f2dfd84940b9efc17c613e691cc0d/decisions/MEDUI-DEC-001-build-time-compilation.md)
+and the bounded-language portion of `MEDUI-DEC-002`. Its ADR number remains permanent and local;
+cross-repository citations use the shared identity.
+
 ## Context
 
 `.medui` is to become the single authored UI source for MduX (issue #15). The decision this record

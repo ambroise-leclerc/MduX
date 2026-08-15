@@ -109,7 +109,7 @@ struct LexResult {
  * cannot report more than one problem per run. It lexes as far as it can, so a run reports several
  * findings rather than one at a time.
  *
- * A source that is not valid UTF-8 is rejected whole, with `MDX-E004`. Continuing past that would
+ * A source that is not valid UTF-8 is rejected whole, with `MEDUI-E004`. Continuing past that would
  * mean reporting columns into a byte sequence that has no defined character boundaries.
  */
 [[nodiscard]] LexResult lex(std::string_view source, std::string file);

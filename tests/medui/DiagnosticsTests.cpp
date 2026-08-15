@@ -55,13 +55,13 @@ constexpr std::array<md::Code, 22> allCodes{
 };
 
 [[nodiscard]] bool wellFormedId(std::string_view id) {
-    // `MDX-E` followed by exactly three digits. The schema's `code` pattern is looser - it admits
+    // `MEDUI-E` followed by exactly three digits. The schema's `code` pattern is looser - it admits
     // the bakers' `TXT001` too - so this checks the narrower shape this tool committed to, which
     // the schema alone would not catch.
-    if (id.size() != 8 || !id.starts_with("MDX-E")) {
+    if (id.size() != 10 || !id.starts_with("MEDUI-E")) {
         return false;
     }
-    return std::all_of(id.begin() + 5, id.end(),
+    return std::all_of(id.begin() + 7, id.end(),
                        [](char c) { return c >= '0' && c <= '9'; });
 }
 
@@ -127,7 +127,7 @@ const mdux::spec::Register everyIdIsUnique{
     }};
 
 const mdux::spec::Register everyIdIsWellFormed{
-    "Every identifier is MDX-E followed by three digits",
+    "Every identifier is MEDUI-E followed by three digits",
     "evidence-unit",
     [] {
         return speclab::Test("medui-diagnostics-shape")
@@ -138,6 +138,25 @@ const mdux::spec::Register everyIdIsWellFormed{
                 for (const md::CodeInfo& row : md::registry()) {
                     checks.expect(wellFormedId(row.id),
                                   std::format("'{}' is well formed", row.id));
+                }
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register legacyAliasesPreserveNumbers{
+    "The one-release MDX-E aliases preserve every diagnostic number",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-diagnostic-legacy-aliases")
+            .Given("the shared diagnostic registry", [] {})
+            .When("a legacy identifier is requested", [] {})
+            .Then("only the namespace changes", [] {
+                mdux::spec::Checks checks;
+                for (const md::CodeInfo& row : md::registry()) {
+                    const std::string alias = md::legacyId(row.code);
+                    checks.expect(alias == std::string{"MDX"} + std::string{row.id.substr(5)},
+                                  std::format("{} maps without changing its suffix", row.id));
                 }
                 checks.raise();
             })
@@ -204,7 +223,7 @@ const mdux::spec::Register diagnoseCarriesRegisteredIdentity{
                 mdux::spec::Checks checks;
                 const cli::Diagnostic d = md::diagnose(md::Code::UnknownColorToken, "screen.medui",
                                                        12, 5, "Theme.Colors.Wrong is not a token");
-                checks.expect(d.code == "MDX-E030", std::format("code is MDX-E030, got '{}'", d.code));
+                checks.expect(d.code == "MEDUI-E030", std::format("code is MEDUI-E030, got '{}'", d.code));
                 checks.expect(d.severity == cli::Severity::Error, "severity comes from the registry");
                 checks.expect(d.line == 12 && d.column == 5, "position is carried through");
                 checks.expect(!d.fixHint.empty(), "the registry's fix hint is used when none is given");
@@ -247,7 +266,7 @@ const mdux::spec::Register positionsMayBeAbsent{
                 const cli::Diagnostic d = md::diagnose(md::Code::RecipeUnreadable, "recipe.toml", 0,
                                                        0, "could not open recipe.toml");
                 checks.expect(d.line == 0 && d.column == 0, "no position invented");
-                checks.expect(d.code == "MDX-E000", "code is carried");
+                checks.expect(d.code == "MEDUI-E000", "code is carried");
                 checks.raise();
             })
             .Execute();
@@ -260,7 +279,7 @@ const mdux::spec::Register unregisteredValuesFailLoudly{
         // `Code` has a fixed underlying type, so `static_cast<Code>(200)` is a well-formed value of
         // the type - not undefined behaviour - and the completeness scenario above cannot reach it,
         // because it walks the enumerators. An earlier revision returned the first row here, which
-        // would have attached MDX-E000's severity and fix hint to an unrelated failure. Two
+        // would have attached MEDUI-E000's severity and fix hint to an unrelated failure. Two
         // reviewers objected to that independently; this scenario is what keeps the objection
         // answered.
         return speclab::Test("medui-diagnostics-unregistered")
