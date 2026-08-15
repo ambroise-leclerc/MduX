@@ -432,7 +432,19 @@ private:
             return value;
         }
         if (at(TokenKind::Number)) {
-            const Token& number = current();
+            const Token number = current();
+            // A standalone integer is a semantic value form (`max_length: 16`). An identifier
+            // immediately after it still means the author attempted a unit, so route that shape
+            // through parsePixels() to retain the precise unknown-unit diagnostic.
+            if (!peekIs(TokenKind::Identifier)) {
+                static_cast<void>(advance());
+                value->kind = ast::ValueKind::Number;
+                static_cast<void>(std::from_chars(number.text.data(),
+                                                  number.text.data() + number.text.size(),
+                                                  value->number));
+                return value;
+            }
+
             std::optional<std::int64_t> pixels = parsePixels();
             if (pixels) {
                 // `Xpx, Ypx` is a point; a lone `Xpx` is a size. The comma decides.
@@ -451,12 +463,7 @@ private:
                                         .position = value->position};
                 return value;
             }
-            // parsePixels() already reported. Fall back to a bare number so the AST stays usable.
-            value->kind = ast::ValueKind::Number;
-            static_cast<void>(std::from_chars(number.text.data(),
-                                              number.text.data() + number.text.size(),
-                                              value->number));
-            return value;
+            return nullptr;
         }
         if (at(TokenKind::Identifier)) {
             if (rejectIfForbidden()) {
@@ -475,6 +482,17 @@ private:
                 value->text = key->text;
                 return value;
             }
+            if (word == "img" && peekIs(TokenKind::LParen)) {
+                static_cast<void>(advance());  // 'img'
+                static_cast<void>(advance());  // '('
+                const Token* key = expect(TokenKind::String, "an image reference, as img(\"ID\")");
+                if (key == nullptr || expect(TokenKind::RParen, "')' closing img(") == nullptr) {
+                    return nullptr;
+                }
+                value->kind = ast::ValueKind::ImageRef;
+                value->text = key->text;
+                return value;
+            }
             if (word == "Fill") {
                 static_cast<void>(advance());
                 value->kind = ast::ValueKind::Size;
@@ -484,7 +502,6 @@ private:
 
             // A dotted path: `Theme.Colors.ScoreDigits`. Kept whole and unresolved (#193).
             std::string path = advance().text;
-            bool dotted = false;
             while (at(TokenKind::Dot)) {
                 static_cast<void>(advance());
                 const Token* part = expect(TokenKind::Identifier, "a name after '.'");
@@ -493,7 +510,6 @@ private:
                 }
                 path += '.';
                 path += part->text;
-                dotted = true;
             }
             // A dotted path is only a *colour token* when it is one. `Foo.Bar` and a truncated
             // `Theme.Colors` were both classified as ColorToken, which would have sent #193 to the
@@ -501,18 +517,9 @@ private:
             // governed table" for what is really a malformed value.
             const bool isThemeColor = path.starts_with("Theme.Colors.") &&
                                       path.size() > std::string_view{"Theme.Colors."}.size();
-            // `dotted` no longer decides anything: an unqualified dotted path and a bare word are
-            // both just identifiers for #193 to interpret. Kept as a named variable only for the
-            // diagnostic below, so the reader is told which shape was seen.
+            // Any other dotted path is an Identifier for #193 to interpret. This is syntactically
+            // valid: whether a particular field admits a named value is a semantic-domain check.
             value->kind = isThemeColor ? ast::ValueKind::ColorToken : ast::ValueKind::Identifier;
-            if (dotted && !isThemeColor) {
-                // Not an error here - #193 owns what a field may hold - but worth saying, because
-                // a dotted path that is not a theme colour is almost always a mistyped one.
-                report(Code::UnexpectedToken,
-                       std::format("'{}' is not a Theme.Colors token", path),
-                       "colours are written Theme.Colors.<Token>; other dotted paths have no "
-                       "meaning in this grammar");
-            }
             value->text = std::move(path);
             return value;
         }

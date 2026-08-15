@@ -6,7 +6,7 @@ Accepted (2026-08-11)
 ## Shared decision identity
 
 This local C++ decision implements
-[`MEDUI-DEC-001`](https://github.com/Compliatory/MedUI/blob/f966667d3a69e892c73089e36eda9a0c2738a568/decisions/MEDUI-DEC-001-build-time-compilation.md)
+[`MEDUI-DEC-001`](https://github.com/Compliatory/MedUI/blob/d5136a8518bd499760ecff2aad215d3721329f20/decisions/MEDUI-DEC-001-build-time-compilation.md)
 and the bounded-language portion of `MEDUI-DEC-002`. Its ADR number remains permanent and local;
 cross-repository citations use the shared identity.
 

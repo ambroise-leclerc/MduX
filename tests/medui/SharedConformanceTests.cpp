@@ -84,6 +84,21 @@ constexpr std::array<std::string_view, 2> runnableCapabilities{"syntax", "semant
     return std::string{first, last};
 }
 
+void rejectUnknownMembers(const json::Value&                      object,
+                          std::initializer_list<std::string_view> known,
+                          std::string_view                        context,
+                          const std::filesystem::path&            path) {
+    for (const json::Member& entry : object.members()) {
+        if (std::ranges::find(known, entry.key) == known.end()) {
+            fail(std::format("{}: unknown {} member '{}'; shared inputs are rejected unless this "
+                             "adapter consumes them",
+                             path.generic_string(),
+                             context,
+                             entry.key));
+        }
+    }
+}
+
 [[nodiscard]] bool isCommitSha(std::string_view value) {
     return value.size() == 40 && std::ranges::all_of(value, [](unsigned char c) {
                return std::isxdigit(c) != 0;
@@ -325,6 +340,7 @@ struct Case {
         if (inputs->kind() != json::Value::Kind::Object) {
             fail(std::format("{}: member 'inputs' is not an object", path.generic_string()));
         }
+        rejectUnknownMembers(*inputs, {"themeTokens", "textPackages"}, "inputs", path);
         if (inputs->find("themeTokens") != nullptr) {
             for (const json::Value& token : requireArray(*inputs, "themeTokens", path)) {
                 const auto value = token.asString();
@@ -336,6 +352,10 @@ struct Case {
         }
         if (inputs->find("textPackages") != nullptr) {
             for (const json::Value& package : requireArray(*inputs, "textPackages", path)) {
+                if (package.kind() != json::Value::Kind::Object) {
+                    fail(std::format("{}: textPackages contains a non-object", path.generic_string()));
+                }
+                rejectUnknownMembers(package, {"locale", "keys"}, "text package", path);
                 TextPackageInput packageInput{.locale = requireString(package, "locale", path), .keys = {}};
                 for (const json::Value& key : requireArray(package, "keys", path)) {
                     const auto value = key.asString();
@@ -356,6 +376,107 @@ struct Case {
             {.code = requireString(entry, "code", path), .line = requirePosition(entry, "line", path), .column = requirePosition(entry, "column", path)});
     }
     return result;
+}
+
+// The contract is canonical, while ComponentRule is the executable transcription. Comparing the
+// two at the pinned revision prevents a new or renamed field from becoming an unreviewed local
+// dialect merely because both the implementation and its unit tests copied the old table.
+using DictionaryEntry = std::tuple<std::string, std::string, bool>;
+
+[[nodiscard]] std::vector<std::string> backtickValues(std::string_view cell) {
+    std::vector<std::string> values;
+    std::size_t              cursor = 0;
+    for (;;) {
+        const std::size_t open = cell.find('`', cursor);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        const std::size_t close = cell.find('`', open + 1);
+        if (close == std::string_view::npos) {
+            fail("spec/component-model.md contains an unterminated backtick value");
+        }
+        values.emplace_back(cell.substr(open + 1, close - open - 1));
+        cursor = close + 1;
+    }
+    return values;
+}
+
+[[nodiscard]] std::vector<std::string_view> tableCells(std::string_view line) {
+    std::vector<std::string_view> cells;
+    std::size_t                   start = 1;
+    for (;;) {
+        const std::size_t separator = line.find('|', start);
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        std::string_view cell = line.substr(start, separator - start);
+        while (!cell.empty() && std::isspace(static_cast<unsigned char>(cell.front())) != 0) {
+            cell.remove_prefix(1);
+        }
+        while (!cell.empty() && std::isspace(static_cast<unsigned char>(cell.back())) != 0) {
+            cell.remove_suffix(1);
+        }
+        cells.push_back(cell);
+        start = separator + 1;
+    }
+    return cells;
+}
+
+[[nodiscard]] std::set<DictionaryEntry> contractDictionary(const std::filesystem::path& checkout) {
+    const std::filesystem::path path = checkout / "spec" / "component-model.md";
+    std::istringstream          lines{readFile(path)};
+    std::set<DictionaryEntry>   entries;
+    bool                        inTable = false;
+    for (std::string line; std::getline(lines, line);) {
+        if (line.starts_with("| Construct |")) {
+            inTable = true;
+            continue;
+        }
+        if (!inTable) {
+            continue;
+        }
+        if (!line.starts_with('|')) {
+            break;
+        }
+        if (line.starts_with("|---")) {
+            continue;
+        }
+
+        const std::vector<std::string_view> cells = tableCells(line);
+        if (cells.size() != 3) {
+            fail(std::format("{}: malformed component dictionary row '{}'", path.generic_string(), line));
+        }
+        const std::vector<std::string> component = backtickValues(cells[0]);
+        if (component.size() != 1) {
+            fail(std::format("{}: component dictionary row has no single component name", path.generic_string()));
+        }
+        for (const std::string& field : backtickValues(cells[1])) {
+            entries.emplace(component.front(), field, true);
+        }
+        for (const std::string& field : backtickValues(cells[2])) {
+            entries.emplace(component.front(), field, false);
+        }
+    }
+    if (entries.empty()) {
+        fail(std::format("{}: component dictionary table is empty or missing", path.generic_string()));
+    }
+    return entries;
+}
+
+[[nodiscard]] std::set<DictionaryEntry> implementedDictionary() {
+    std::set<DictionaryEntry> entries;
+    for (const md::ComponentRule& component : md::componentDictionary()) {
+        for (const md::FieldRule& field : component.fields) {
+            entries.emplace(component.name, field.name, field.required);
+        }
+    }
+    return entries;
+}
+
+void checkComponentDictionary(const std::filesystem::path& checkout, mdux::spec::Checks& checks) {
+    checks.expect(implementedDictionary() == contractDictionary(checkout),
+                  "the implemented component/field/requiredness set exactly matches the pinned "
+                  "spec/component-model.md table");
 }
 
 [[nodiscard]] std::vector<Case> loadCases(const std::filesystem::path& root) {
@@ -564,6 +685,9 @@ const mdux::spec::Register pinnedCasesPass{"The parser satisfies every pinned ca
                                                                                        "medui-conformance.toml pins {}",
                                                                                        actualCommit,
                                                                                        pinned.commit));
+                                                             checks.raise();
+
+                                                             checkComponentDictionary(checkout, checks);
                                                              checks.raise();
 
                                                              const std::vector<Case> cases = loadCases(checkout);

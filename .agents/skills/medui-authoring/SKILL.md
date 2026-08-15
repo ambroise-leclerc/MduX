@@ -10,13 +10,13 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: parsing and semantic name validation are implemented; emission and runtime are not
+## Status: parsing and semantic validation are implemented; emission and runtime are not
 
 **A `.medui` lexer, AST, parser and semantic analyzer exist** in the host-tools zone
 (`tools/medui/`). The diagnostic codes they emit are registered as `MEDUI-E###` (#191). The parser
-rejects structural violations (#192); the analyzer checks the closed component dictionary, theme
-token names, and text-key presence across every approved locale (#193). It validates names but
-does not substitute them.
+rejects structural violations (#192); the analyzer checks the closed component dictionary, each
+field's value domain, theme-token names, and text-key presence across every approved locale (#193).
+It does not substitute resolved values.
 
 **There is still no compiler, no emitter and no runtime.** The HTML/CSS path that used
 to stand in for one - `UiFileWatcher::loadContent()`, which sniffed a file extension and stored
@@ -30,7 +30,7 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
-[`Compliatory/MedUI` at `f966667`](https://github.com/Compliatory/MedUI/tree/f966667d3a69e892c73089e36eda9a0c2738a568).
+[`Compliatory/MedUI` at `d5136a8`](https://github.com/Compliatory/MedUI/tree/d5136a8518bd499760ecff2aad215d3721329f20).
 Do not write a `.medui` file expecting it to build anything in MduX until the compiler waves land.
 
 ## Grammar shape
@@ -73,18 +73,19 @@ Screen NeuroSense500 {
 
 ## Component dictionary (target)
 
-| Component | Required fields | Notes |
+| Component | Required fields | Optional fields |
 |---|---|---|
-| `CriticalButton` | `id, requirement, width, height, label, color, on_press` | always needs `requirement:` |
-| `Button` | `id, width, height, label, color, source` | `requirement:` optional |
-| `VulkanViewport` | `id, width, height, stream_source` | |
-| `SignalTrace` | `id, width, height, stream_source, color` | scrolling waveform |
-| `NumericDisplay` | `id, width, height, requirement, template, source, color` | live value, restricted charset |
-| `StatusIndicator` | `id, width, height, requirement, source, states` | `states: [t(...), ...]` |
-| `Label` | `id, width, height, text, color` | |
-| `Clock` | `id, width, height, format` | |
-| `Image` | `id, width, height, source` | `source: img("ID")` |
-| `TextInput` | `id, width, height, source, max_length, color` | display + caret only, no IME |
+| `Row` | `id`, `height` | `spacing`, `background` |
+| `CriticalButton` | `id`, `requirement`, `width`, `height`, `label`, `color`, `on_press` | `position` |
+| `Button` | `id`, `width`, `height`, `label`, `color`, `source` | `position`, `requirement` |
+| `VulkanViewport` | `id`, `width`, `height`, `stream_source` | `position` |
+| `SignalTrace` | `id`, `width`, `height`, `stream_source`, `color` | `position` |
+| `NumericDisplay` | `id`, `width`, `height`, `requirement`, `template`, `source`, `color` | `position` |
+| `StatusIndicator` | `id`, `width`, `height`, `requirement`, `source`, `states` | `position`, `colors` |
+| `Label` | `id`, `width`, `height`, `text`, `color` | `position` |
+| `Clock` | `id`, `width`, `height`, `format` | `position` |
+| `Image` | `id`, `width`, `height`, `source` | `position` |
+| `TextInput` | `id`, `width`, `height`, `source`, `max_length`, `color` | `position`, `charset`, `requirement` |
 
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 
@@ -106,6 +107,7 @@ verifier checks against. Rules:
 
 `mdux-medui-check path/to/screen.medui` (issue #200) will validate a single file and print
 diagnostics — once it exists. The parser and analyzer it will call already detect syntax errors,
-structural violations, unknown dictionary/theme names, and incomplete locale keys; what is missing
-is the command that exposes them. Until it lands, review a `.medui` file by hand against this
-grammar and the component table above.
+structural violations, unknown dictionary/theme names, hardcoded text in localizable fields,
+wrong field value domains, and incomplete locale keys; what is missing is the command that exposes
+them. Until it lands, review a `.medui` file by hand against this grammar and the component table
+above.

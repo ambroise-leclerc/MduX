@@ -218,3 +218,92 @@ const mdux::spec::Register semanticHardcodedTextPrecedence{"A literal in a text-
                                                                          })
                                                                    .Execute();
                                                            }};
+
+const mdux::spec::Register semanticFieldDomains{"Known fields reject syntactically valid values from the wrong semantic domain", "evidence-unit", [] {
+                                                    return speclab::Test("medui-semantic-field-domains")
+                                                        .Given("a Row and Label with three mismatched field value forms", [] {})
+                                                        .When("the field domains are analyzed", [] {})
+                                                        .Then("each mismatch is MEDUI-E033 at the value",
+                                                              [] {
+                                                                  constexpr std::string_view                   source = R"(Screen Domains {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    Row {
+        id: content;
+        height: 40px;
+        spacing: Theme.Colors.Title;
+        Label {
+            id: t("STR-TITLE");
+            width: "120px";
+            height: 20px;
+            text: t("STR-TITLE");
+            color: Theme.Colors.Title;
+        }
+    }
+})";
+                                                                  const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                                                                  const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-TITLE"})};
+                                                                  const md::SemanticResult                     result = analyze(source, themes, packages);
+                                                                  mdux::spec::Checks                           checks;
+                                                                  checks.expect(count(result, md::Code::FieldValueKind) == 3,
+                                                                                "all three mismatches report E033");
+                                                                  checks.expect(result.diagnostics.size() == 3,
+                                                                                "domain mismatches do not cascade into name diagnostics");
+                                                                  checks.raise();
+                                                              })
+                                                        .Execute();
+                                                }};
+
+const mdux::spec::Register malformedColorIsSemanticOnly{
+    "A malformed colour path has one semantic-domain diagnostic and no syntax duplicate",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-malformed-color")
+            .Given("a Label color written as Theme.Color.Title", [] {})
+            .When("the source is parsed and analyzed", [] {})
+            .Then("only MEDUI-E033 is emitted",
+                  [] {
+                      constexpr std::string_view                   source = R"(Screen ColorPath {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    Label {
+        id: title;
+        width: 120px;
+        height: 20px;
+        text: t("STR-TITLE");
+        color: Theme.Color.Title;
+    }
+})";
+                      const std::array<std::string_view, 0>        themes{};
+                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-TITLE"})};
+                      const md::SemanticResult                     result = analyze(source, themes, packages);
+                      mdux::spec::Checks                           checks;
+                      checks.expect(result.diagnostics.size() == 1, "the syntax and semantic phases do not duplicate the finding");
+                      checks.expect(count(result, md::Code::FieldValueKind) == 1, "the malformed path reports E033");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register semanticSpecialValueForms{"Image references, positive integer limits, and dotted named values retain distinct forms",
+                                                     "evidence-unit",
+                                                     [] {
+                                                         return speclab::Test("medui-semantic-special-value-forms")
+                                                             .Given("valid Image, TextInput, Clock, and CriticalButton fields", [] {})
+                                                             .When("their component-specific domains are analyzed", [] {})
+                                                             .Then("the forms are accepted without weakening another field",
+                                                                   [] {
+                                                                       constexpr std::string_view                   source = R"(Screen Forms {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    Image { id: logo; width: 32px; height: 32px; source: img("LOGO"); }
+    TextInput { id: input; width: 120px; height: 20px; source: "NAME"; max_length: 16; color: Theme.Colors.Title; }
+    Clock { id: clock; width: 80px; height: 20px; format: TimeFormat.HoursMinutes; }
+    CriticalButton { id: stop; requirement: "REQ-1"; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: SystemEvent.Stop; }
+})";
+                                                                       const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                                                                       const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
+                                                                       const md::SemanticResult                     result = analyze(source, themes, packages);
+                                                                       mdux::spec::Checks                           checks;
+                                                                       checks.expect(result.ok(), "all declared value forms are accepted");
+                                                                       checks.raise();
+                                                                   })
+                                                             .Execute();
+                                                     }};

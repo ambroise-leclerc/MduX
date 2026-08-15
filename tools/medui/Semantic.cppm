@@ -5,9 +5,10 @@
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
  *
- * This stage validates names but deliberately does not substitute them. The AST remains the
- * author's unresolved description; later compiler stages receive it only after this result is
- * successful and perform layout and emission against their own governed inputs.
+ * This stage validates the component dictionary, field value domains, and external names but
+ * deliberately does not substitute them. The AST remains the author's unresolved description;
+ * later compiler stages receive it only after this result is successful and perform layout and
+ * emission against their own governed inputs.
  */
 module;
 
@@ -19,6 +20,46 @@ import mdux.tools.cli;
 import mdux.tools.medui.ast;
 
 export namespace mdux::tools::medui {
+
+/// The syntactic value form one component field admits during semantic analysis.
+enum class FieldDomain : std::uint8_t {
+    Identifier,
+    Size,
+    Point,
+    String,
+    TextKey,
+    TextKeyList,
+    ColorToken,
+    ColorTokenList,
+    ImageRef,
+    Number,
+};
+
+/// One field admitted by a component and the value form that field accepts.
+struct FieldRule {
+    /// Field spelling from the canonical component dictionary.
+    std::string_view name;
+    /// Whether every instance of the component must carry this field.
+    bool required{false};
+    /// Syntactic value form accepted for this field.
+    FieldDomain domain{FieldDomain::Identifier};
+};
+
+/// One component and its complete closed set of fields.
+struct ComponentRule {
+    /// Component spelling from the canonical component dictionary.
+    std::string_view name;
+    /// Complete required and optional field set for the component.
+    std::span<const FieldRule> fields;
+};
+
+/**
+ * @brief The closed component dictionary implemented by this semantic stage.
+ *
+ * Exposed so the pinned shared-conformance test can compare the transcription with the contract
+ * it implements. Consumers should still treat Compliatory/MedUI as the canonical definition.
+ */
+[[nodiscard]] std::span<const ComponentRule> componentDictionary() noexcept;
 
 /**
  * @brief External name tables against which one screen is checked.
@@ -32,6 +73,7 @@ struct SemanticInputs {
     std::span<const mdux::text::TextPackage> textPackages;
 };
 
+/// Accumulated semantic diagnostics; an empty result admits the screen to the next stage.
 struct SemanticResult {
     std::vector<mdux::tools::cli::Diagnostic> diagnostics;
 
@@ -41,10 +83,10 @@ struct SemanticResult {
 };
 
 /**
- * @brief Validates component and field names, theme tokens, and locale-complete text keys.
+ * @brief Validates component fields and values, theme tokens, and locale-complete text keys.
  *
  * Diagnostics accumulate in source traversal order. The screen is never modified and resolved
- * values are not returned: successful name validation is a gate, not a substitution pass.
+ * values are not returned: successful semantic validation is a gate, not a substitution pass.
  */
 [[nodiscard]] SemanticResult analyze(const ast::Screen& screen, std::string file, SemanticInputs inputs);
 
