@@ -79,9 +79,15 @@ constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
 // medui-conformance.toml
 // ---------------------------------------------------------------------------
 
+/// The declared diagnostic position precision from `spec/diagnostics.md`. MduX's lexer carries
+/// exact columns, so it declares `full`; the other two exist because the manifest may name them
+/// and a declaration this file ignored would be a declaration nothing checks.
+enum class Positions : std::uint8_t { Full, LineOnly, None };
+
 struct Manifest {
     std::string commit;
     std::vector<std::string> capabilities;
+    Positions positions{Positions::Full};
 };
 
 [[nodiscard]] Manifest manifest() {
@@ -92,7 +98,20 @@ struct Manifest {
     const toml::Table& root = document.root();
 
     Manifest result{.commit = root.require("commit").asString(),
-                    .capabilities = root.require("capabilities").asStringArray()};
+                    .capabilities = root.require("capabilities").asStringArray(),
+                    .positions = Positions::Full};
+
+    const std::string declared = root.require("positions").asString();
+    if (declared == "full") {
+        result.positions = Positions::Full;
+    } else if (declared == "line-only") {
+        result.positions = Positions::LineOnly;
+    } else if (declared == "none") {
+        result.positions = Positions::None;
+    } else {
+        fail(std::format("{}: positions must be \"full\", \"line-only\" or \"none\", got '{}'",
+                         path.generic_string(), declared));
+    }
 
     const bool wellFormed =
         result.commit.size() == 40 &&
@@ -253,7 +272,40 @@ struct Case {
     return joined;
 }
 
-void runCase(const Case& item, mdux::spec::Checks& checks) {
+/// `spec/diagnostics.md`, "Positions in conformance cases": a pinned position is matched as far as
+/// the declared precision goes, and reporting more than was declared fails. The declaration is
+/// checked rather than tolerated, so precision cannot move in either direction without a manifest
+/// edit. MduX reports `0` for "unknown", which is how an absent position is spelled.
+void checkPosition(const Case& item, const ExpectedDiagnostic& expected, const cli::Diagnostic& got,
+                   Positions positions, mdux::spec::Checks& checks) {
+    switch (positions) {
+    case Positions::Full:
+        checks.expect(got.line == expected.line && got.column == expected.column,
+                      std::format("{}: {} at {}:{}, got {}:{}", item.id, expected.code,
+                                  expected.line, expected.column, got.line, got.column));
+        return;
+    case Positions::LineOnly:
+        checks.expect(got.line == expected.line,
+                      std::format("{}: {} at line {}, got {}", item.id, expected.code,
+                                  expected.line, got.line));
+        checks.expect(got.column == 0,
+                      std::format("{}: medui-conformance.toml declares positions = \"line-only\", "
+                                  "but {} reported column {}. Raise the declaration to \"full\" so "
+                                  "the pinned column {} is checked.",
+                                  item.id, expected.code, got.column, expected.column));
+        return;
+    case Positions::None:
+        checks.expect(got.line == 0 && got.column == 0,
+                      std::format("{}: medui-conformance.toml declares positions = \"none\", but "
+                                  "{} reported {}:{}. Raise the declaration so the pinned position "
+                                  "{}:{} is checked.",
+                                  item.id, expected.code, got.line, got.column, expected.line,
+                                  expected.column));
+        return;
+    }
+}
+
+void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) {
     const std::string source = readFile(item.source);
     const md::ParseResult result = md::parse(source, item.source.filename().string());
 
@@ -273,11 +325,7 @@ void runCase(const Case& item, mdux::spec::Checks& checks) {
         const bool reported = match != result.diagnostics.end();
         checks.expect(reported, std::format("{}: {} reported, got {}", item.id, expected.code,
                                             codesOf(result.diagnostics)));
-        if (reported) {
-            checks.expect(match->line == expected.line && match->column == expected.column,
-                          std::format("{}: {} at {}:{}, got {}:{}", item.id, expected.code,
-                                      expected.line, expected.column, match->line, match->column));
-        }
+        if (reported) { checkPosition(item, expected, *match, positions, checks); }
     }
 }
 
@@ -338,7 +386,7 @@ const mdux::spec::Register pinnedCasesPass{
                 std::vector<std::string> unclaimed;
                 for (const Case& item : cases) {
                     if (std::ranges::find(pinned.capabilities, item.phase) != pinned.capabilities.end()) {
-                        runCase(item, checks);
+                        runCase(item, pinned.positions, checks);
                         executed.insert(item.phase);
                     } else {
                         unclaimed.push_back(std::format("{} ({})", item.id, item.phase));
