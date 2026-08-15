@@ -90,6 +90,11 @@ struct Manifest {
     Positions positions{Positions::Full};
 };
 
+/// `governance/versioning.md` makes an unknown key an error rather than something to ignore, so a
+/// misspelled `capabilties` fails here instead of silently claiming nothing.
+constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "version", "commit",
+                                                            "capabilities", "positions"};
+
 [[nodiscard]] Manifest manifest() {
     const std::filesystem::path path =
         std::filesystem::path{MDUX_REPO_ROOT} / "medui-conformance.toml";
@@ -100,6 +105,14 @@ struct Manifest {
     Manifest result{.commit = root.require("commit").asString(),
                     .capabilities = root.require("capabilities").asStringArray(),
                     .positions = Positions::Full};
+
+    for (const auto& entry : root.entries()) {
+        if (std::ranges::find(knownManifestKeys, entry.first) == knownManifestKeys.end()) {
+            fail(std::format("{}: unknown key '{}'; the consumer manifest rejects keys it does "
+                             "not define",
+                             path.generic_string(), entry.first));
+        }
+    }
 
     const std::string declared = root.require("positions").asString();
     if (declared == "full") {
