@@ -151,7 +151,7 @@ Derived from the targets and tests that build on `develop`.
 | Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
 | **Not started** | | |
 | Text and glyph rendering | Planned | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) |
-| `.medui` compiler | Planned | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) |
+| `.medui` compiler | Partial | parser and semantic name validation implemented; [#15](https://github.com/ambroise-leclerc/MduX/issues/15) tracks the remaining stages |
 | Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
 
 The HTML/CSS path that earlier revisions described was **deleted** by

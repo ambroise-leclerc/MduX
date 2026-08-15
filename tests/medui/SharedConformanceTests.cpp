@@ -19,41 +19,43 @@
  *   and must be backed by a case that really executed. Claiming a phase with no adapter fails
  *   here instead of passing quietly.
  *
- * Only the parse phase is observable: `md::parse` answers acceptance, codes and positions.
- * Claiming `semantics`, `layout` or `safety` additionally needs the resolver (#193), the solver
- * (#194) and the golden pass (#196), plus a convention for the `inputs` member the case schema
- * declares and no case yet uses — so a claim to any of them is rejected below rather than
- * silently evaluated by a parser that cannot see those phases.
+ * Syntax and semantics are observable: `md::parse` answers syntax acceptance, and `md::analyze`
+ * checks the portable theme-token and per-locale key views in semantic case inputs. Claiming
+ * `layout` or `safety` still needs the solver (#194) and golden pass (#196), so a claim to either
+ * is rejected below rather than silently evaluated by a stage that cannot see it.
  */
 
 import std;
 import speclab;
 import mdux.core.result;
 import mdux.evidence.json;
+import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.parser;
+import mdux.tools.medui.semantic;
 import mdux.tools.toml;
 
 #include "../framework/SpecLabBridge.hpp"
 
 namespace {
 
-namespace md = mdux::tools::medui;
-namespace cli = mdux::tools::cli;
+namespace md   = mdux::tools::medui;
+namespace cli  = mdux::tools::cli;
 namespace json = mdux::evidence::json;
 namespace toml = mdux::tools::toml;
 
 /// Phases this file can genuinely observe. Anything else in `capabilities` is a claim with no
 /// adapter behind it.
-constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
+constexpr std::array<std::string_view, 2> runnableCapabilities{"syntax", "semantics"};
 
-[[noreturn]] void fail(std::string message,
-                       std::source_location where = std::source_location::current()) {
+[[noreturn]] void fail(std::string message, std::source_location where = std::source_location::current()) {
     throw speclab::core::AssertionFailure(std::move(message), where);
 }
 
-[[nodiscard]] const char* env(const char* name) { return std::getenv(name); }
+[[nodiscard]] const char* env(const char* name) {
+    return std::getenv(name);
+}
 
 [[nodiscard]] bool isSet(const char* name) {
     const char* value = env(name);
@@ -62,7 +64,9 @@ constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
 
 [[nodiscard]] std::string readFile(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
-    if (!in) { fail(std::format("could not open {}", path.generic_string())); }
+    if (!in) {
+        fail(std::format("could not open {}", path.generic_string()));
+    }
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -175,32 +179,29 @@ constexpr std::array<std::string_view, 1> runnableCapabilities{"syntax"};
 enum class Positions : std::uint8_t { Full, LineOnly, None };
 
 struct Manifest {
-    std::string commit;
+    std::string              commit;
     std::vector<std::string> capabilities;
-    Positions positions{Positions::Full};
+    Positions                positions{Positions::Full};
 };
 
 /// `governance/versioning.md` makes an unknown key an error rather than something to ignore, so a
 /// misspelled `capabilties` fails here instead of silently claiming nothing.
-constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "version", "commit",
-                                                            "capabilities", "positions"};
+constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "version", "commit", "capabilities", "positions"};
 
 [[nodiscard]] Manifest manifest() {
-    const std::filesystem::path path =
-        std::filesystem::path{MDUX_REPO_ROOT} / "medui-conformance.toml";
-    const std::string text = readFile(path);
-    const toml::Document document = toml::parse(text);
-    const toml::Table& root = document.root();
+    const std::filesystem::path path     = std::filesystem::path{MDUX_REPO_ROOT} / "medui-conformance.toml";
+    const std::string           text     = readFile(path);
+    const toml::Document        document = toml::parse(text);
+    const toml::Table&          root     = document.root();
 
-    Manifest result{.commit = root.require("commit").asString(),
-                    .capabilities = root.require("capabilities").asStringArray(),
-                    .positions = Positions::Full};
+    Manifest result{.commit = root.require("commit").asString(), .capabilities = root.require("capabilities").asStringArray(), .positions = Positions::Full};
 
     for (const auto& entry : root.entries()) {
         if (std::ranges::find(knownManifestKeys, entry.first) == knownManifestKeys.end()) {
             fail(std::format("{}: unknown key '{}'; the consumer manifest rejects keys it does "
                              "not define",
-                             path.generic_string(), entry.first));
+                             path.generic_string(),
+                             entry.first));
         }
     }
 
@@ -212,18 +213,15 @@ constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "versi
     } else if (declared == "none") {
         result.positions = Positions::None;
     } else {
-        fail(std::format("{}: positions must be \"full\", \"line-only\" or \"none\", got '{}'",
-                         path.generic_string(), declared));
+        fail(std::format("{}: positions must be \"full\", \"line-only\" or \"none\", got '{}'", path.generic_string(), declared));
     }
 
     if (!isCommitSha(result.commit)) {
-        fail(std::format("{} must pin a 40-character commit SHA, got '{}'", path.generic_string(),
-                         result.commit));
+        fail(std::format("{} must pin a 40-character commit SHA, got '{}'", path.generic_string(), result.commit));
     }
     if (result.capabilities.empty()) {
         // An empty claim would make this whole suite assert nothing while still looking green.
-        fail(std::format("{} claims no capabilities, so nothing would be checked",
-                         path.generic_string()));
+        fail(std::format("{} claims no capabilities, so nothing would be checked", path.generic_string()));
     }
     return result;
 }
@@ -238,16 +236,22 @@ struct ExpectedDiagnostic {
     std::size_t column{0};
 };
 
-struct Case {
-    std::string id;
-    std::string phase;
-    std::filesystem::path source;
-    bool valid{false};
-    std::vector<ExpectedDiagnostic> diagnostics;
+struct TextPackageInput {
+    std::string              locale;
+    std::vector<std::string> keys;
 };
 
-[[nodiscard]] const json::Value& member(const json::Value& object, std::string_view key,
-                                        const std::filesystem::path& path) {
+struct Case {
+    std::string                     id;
+    std::string                     phase;
+    std::filesystem::path           source;
+    bool                            valid{false};
+    std::vector<ExpectedDiagnostic> diagnostics;
+    std::vector<std::string>        themeTokens;
+    std::vector<TextPackageInput>   textPackages;
+};
+
+[[nodiscard]] const json::Value& member(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
     const json::Value* found = object.find(key);
     if (found == nullptr) {
         fail(std::format("{}: missing required member '{}'", path.generic_string(), key));
@@ -255,15 +259,15 @@ struct Case {
     return *found;
 }
 
-[[nodiscard]] std::string requireString(const json::Value& object, std::string_view key,
-                                        const std::filesystem::path& path) {
+[[nodiscard]] std::string requireString(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
     const auto text = member(object, key, path).asString();
-    if (!text) { fail(std::format("{}: member '{}' is not a string", path.generic_string(), key)); }
+    if (!text) {
+        fail(std::format("{}: member '{}' is not a string", path.generic_string(), key));
+    }
     return std::string{*text};
 }
 
-[[nodiscard]] std::size_t requirePosition(const json::Value& object, std::string_view key,
-                                          const std::filesystem::path& path) {
+[[nodiscard]] std::size_t requirePosition(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
     const auto number = member(object, key, path).asInt();
     if (!number) {
         fail(std::format("{}: member '{}' is not an integer", path.generic_string(), key));
@@ -277,9 +281,7 @@ struct Case {
 /// `Value::elements()` yields an empty span for anything that is not an array, so a `diagnostics`
 /// member of the wrong shape would silently read as "no expectations" and the case would assert
 /// almost nothing. Check the kind instead of trusting the span.
-[[nodiscard]] std::span<const json::Value> requireArray(const json::Value& object,
-                                                        std::string_view key,
-                                                        const std::filesystem::path& path) {
+[[nodiscard]] std::span<const json::Value> requireArray(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
     const json::Value& found = member(object, key, path);
     if (found.kind() != json::Value::Kind::Array) {
         fail(std::format("{}: member '{}' is not an array", path.generic_string(), key));
@@ -287,26 +289,28 @@ struct Case {
     return found.elements();
 }
 
-[[nodiscard]] bool requireBool(const json::Value& object, std::string_view key,
-                               const std::filesystem::path& path) {
+[[nodiscard]] bool requireBool(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
     const auto flag = member(object, key, path).asBool();
-    if (!flag) { fail(std::format("{}: member '{}' is not a boolean", path.generic_string(), key)); }
+    if (!flag) {
+        fail(std::format("{}: member '{}' is not a boolean", path.generic_string(), key));
+    }
     return *flag;
 }
 
 [[nodiscard]] Case readCase(const std::filesystem::path& path) {
-    const std::string text = readFile(path);
-    const auto document = json::parse(text);
-    if (!document) { fail(std::format("{}: is not valid JSON", path.generic_string())); }
+    const std::string text     = readFile(path);
+    const auto        document = json::parse(text);
+    if (!document) {
+        fail(std::format("{}: is not valid JSON", path.generic_string()));
+    }
 
     Case result;
-    result.id = requireString(*document, "id", path);
+    result.id    = requireString(*document, "id", path);
     result.phase = requireString(*document, "phase", path);
 
     const std::string source = requireString(*document, "source", path);
     if (source.contains('/') || source.contains('\\') || !source.ends_with(".medui")) {
-        fail(std::format("{}: source must be a sibling .medui file, got '{}'",
-                         path.generic_string(), source));
+        fail(std::format("{}: source must be a sibling .medui file, got '{}'", path.generic_string(), source));
     }
     result.source = path.parent_path() / source;
 
@@ -314,23 +318,49 @@ struct Case {
     // the wrong phase is a contract error rather than something to route around.
     const std::string directoryPhase = path.parent_path().parent_path().filename().string();
     if (result.phase != directoryPhase) {
-        fail(std::format("{}: declares phase '{}' but sits under '{}'", path.generic_string(),
-                         result.phase, directoryPhase));
+        fail(std::format("{}: declares phase '{}' but sits under '{}'", path.generic_string(), result.phase, directoryPhase));
+    }
+
+    if (const json::Value* inputs = document->find("inputs")) {
+        if (inputs->kind() != json::Value::Kind::Object) {
+            fail(std::format("{}: member 'inputs' is not an object", path.generic_string()));
+        }
+        if (inputs->find("themeTokens") != nullptr) {
+            for (const json::Value& token : requireArray(*inputs, "themeTokens", path)) {
+                const auto value = token.asString();
+                if (!value) {
+                    fail(std::format("{}: themeTokens contains a non-string", path.generic_string()));
+                }
+                result.themeTokens.emplace_back(*value);
+            }
+        }
+        if (inputs->find("textPackages") != nullptr) {
+            for (const json::Value& package : requireArray(*inputs, "textPackages", path)) {
+                TextPackageInput packageInput{.locale = requireString(package, "locale", path), .keys = {}};
+                for (const json::Value& key : requireArray(package, "keys", path)) {
+                    const auto value = key.asString();
+                    if (!value) {
+                        fail(std::format("{}: text package keys contains a non-string", path.generic_string()));
+                    }
+                    packageInput.keys.emplace_back(*value);
+                }
+                result.textPackages.push_back(std::move(packageInput));
+            }
+        }
     }
 
     const json::Value& expected = member(*document, "expected", path);
-    result.valid = requireBool(expected, "valid", path);
+    result.valid                = requireBool(expected, "valid", path);
     for (const json::Value& entry : requireArray(expected, "diagnostics", path)) {
-        result.diagnostics.push_back({.code = requireString(entry, "code", path),
-                                      .line = requirePosition(entry, "line", path),
-                                      .column = requirePosition(entry, "column", path)});
+        result.diagnostics.push_back(
+            {.code = requireString(entry, "code", path), .line = requirePosition(entry, "line", path), .column = requirePosition(entry, "column", path)});
     }
     return result;
 }
 
 [[nodiscard]] std::vector<Case> loadCases(const std::filesystem::path& root) {
     std::vector<std::filesystem::path> paths;
-    const std::filesystem::path directory = root / "conformance";
+    const std::filesystem::path        directory = root / "conformance";
     if (!std::filesystem::is_directory(directory)) {
         fail(std::format("{} has no conformance/ directory; is MEDUI_CONFORMANCE_DIR pointing at "
                          "a Compliatory/MedUI checkout?",
@@ -345,7 +375,9 @@ struct Case {
 
     std::vector<Case> cases;
     cases.reserve(paths.size());
-    for (const std::filesystem::path& path : paths) { cases.push_back(readCase(path)); }
+    for (const std::filesystem::path& path : paths) {
+        cases.push_back(readCase(path));
+    }
     return cases;
 }
 
@@ -356,17 +388,23 @@ struct Case {
 [[nodiscard]] std::string join(const std::vector<std::string>& parts) {
     std::string joined;
     for (const std::string& part : parts) {
-        if (!joined.empty()) { joined += ", "; }
+        if (!joined.empty()) {
+            joined += ", ";
+        }
         joined += part;
     }
     return joined;
 }
 
 [[nodiscard]] std::string codesOf(const std::vector<cli::Diagnostic>& diagnostics) {
-    if (diagnostics.empty()) { return "no diagnostics"; }
+    if (diagnostics.empty()) {
+        return "no diagnostics";
+    }
     std::string joined;
     for (const cli::Diagnostic& diagnostic : diagnostics) {
-        if (!joined.empty()) { joined += ", "; }
+        if (!joined.empty()) {
+            joined += ", ";
+        }
         joined += std::format("{} at {}:{}", diagnostic.code, diagnostic.line, diagnostic.column);
     }
     return joined;
@@ -376,61 +414,92 @@ struct Case {
 /// the declared precision goes, and reporting more than was declared fails. The declaration is
 /// checked rather than tolerated, so precision cannot move in either direction without a manifest
 /// edit. MduX reports `0` for "unknown", which is how an absent position is spelled.
-void checkPosition(const Case& item, const ExpectedDiagnostic& expected, const cli::Diagnostic& got,
-                   Positions positions, mdux::spec::Checks& checks) {
+void checkPosition(const Case& item, const ExpectedDiagnostic& expected, const cli::Diagnostic& got, Positions positions, mdux::spec::Checks& checks) {
     switch (positions) {
-    case Positions::Full:
-        checks.expect(got.line == expected.line && got.column == expected.column,
-                      std::format("{}: {} at {}:{}, got {}:{}", item.id, expected.code,
-                                  expected.line, expected.column, got.line, got.column));
-        return;
-    case Positions::LineOnly:
-        checks.expect(got.line == expected.line,
-                      std::format("{}: {} at line {}, got {}", item.id, expected.code,
-                                  expected.line, got.line));
-        checks.expect(got.column == 0,
-                      std::format("{}: medui-conformance.toml declares positions = \"line-only\", "
-                                  "but {} reported column {}. Raise the declaration to \"full\" so "
-                                  "the pinned column {} is checked.",
-                                  item.id, expected.code, got.column, expected.column));
-        return;
-    case Positions::None:
-        checks.expect(got.line == 0 && got.column == 0,
-                      std::format("{}: medui-conformance.toml declares positions = \"none\", but "
-                                  "{} reported {}:{}. Raise the declaration so the pinned position "
-                                  "{}:{} is checked.",
-                                  item.id, expected.code, got.line, got.column, expected.line,
-                                  expected.column));
-        return;
+        case Positions::Full:
+            checks.expect(got.line == expected.line && got.column == expected.column,
+                          std::format("{}: {} at {}:{}, got {}:{}", item.id, expected.code, expected.line, expected.column, got.line, got.column));
+            return;
+        case Positions::LineOnly:
+            checks.expect(got.line == expected.line, std::format("{}: {} at line {}, got {}", item.id, expected.code, expected.line, got.line));
+            checks.expect(got.column == 0,
+                          std::format("{}: medui-conformance.toml declares positions = \"line-only\", "
+                                      "but {} reported column {}. Raise the declaration to \"full\" so "
+                                      "the pinned column {} is checked.",
+                                      item.id,
+                                      expected.code,
+                                      got.column,
+                                      expected.column));
+            return;
+        case Positions::None:
+            checks.expect(got.line == 0 && got.column == 0,
+                          std::format("{}: medui-conformance.toml declares positions = \"none\", but "
+                                      "{} reported {}:{}. Raise the declaration so the pinned position "
+                                      "{}:{} is checked.",
+                                      item.id,
+                                      expected.code,
+                                      got.line,
+                                      got.column,
+                                      expected.line,
+                                      expected.column));
+            return;
     }
 }
 
 void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) {
-    const std::string source = readFile(item.source);
-    const md::ParseResult result = md::parse(source, item.source.filename().string());
+    const std::string            source      = readFile(item.source);
+    const std::string            file        = item.source.filename().string();
+    const md::ParseResult        parsed      = md::parse(source, file);
+    std::vector<cli::Diagnostic> diagnostics = parsed.diagnostics;
+
+    if (item.phase == "semantics" && parsed.screen) {
+        std::vector<std::string_view> themeTokens;
+        themeTokens.reserve(item.themeTokens.size());
+        for (const std::string& token : item.themeTokens) {
+            themeTokens.push_back(token);
+        }
+
+        std::vector<mdux::text::TextPackage> packages;
+        packages.reserve(item.textPackages.size());
+        for (const TextPackageInput& input : item.textPackages) {
+            mdux::text::TextPackage package;
+            package.header.id   = std::format("shared-conformance-{}", input.locale);
+            package.atlasId     = "shared-conformance-atlas";
+            package.locale      = input.locale;
+            package.sidecarPath = "runs.bin";
+            for (const std::string& key : input.keys) {
+                package.runs.push_back(mdux::text::TextRun{.id = key, .byteOffset = 0, .byteLength = 0, .sha256 = {}});
+            }
+            packages.push_back(std::move(package));
+        }
+
+        md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = packages});
+        diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
+    }
+
+    const bool accepted = parsed.screen.has_value() && diagnostics.empty();
 
     if (item.valid) {
-        checks.expect(result.ok(), std::format("{}: accepted, got {}", item.id,
-                                               codesOf(result.diagnostics)));
+        checks.expect(accepted, std::format("{}: accepted, got {}", item.id, codesOf(diagnostics)));
         return;
     }
 
-    checks.expect(!result.ok(), std::format("{}: rejected, but the parser accepted it", item.id));
+    checks.expect(!accepted, std::format("{}: rejected, but the claimed phase accepted it", item.id));
 
-    std::vector<bool> consumed(result.diagnostics.size(), false);
+    std::vector<bool> consumed(diagnostics.size(), false);
     for (const ExpectedDiagnostic& expected : item.diagnostics) {
-        std::size_t match = result.diagnostics.size();
-        for (std::size_t index = 0; index < result.diagnostics.size(); ++index) {
-            if (!consumed[index] && result.diagnostics[index].code == expected.code) {
+        std::size_t match = diagnostics.size();
+        for (std::size_t index = 0; index < diagnostics.size(); ++index) {
+            if (!consumed[index] && diagnostics[index].code == expected.code) {
                 match = index;
                 break;
             }
         }
-        const bool reported = match != result.diagnostics.size();
-        checks.expect(reported, std::format("{}: {} reported, got {}", item.id, expected.code, codesOf(result.diagnostics)));
+        const bool reported = match != diagnostics.size();
+        checks.expect(reported, std::format("{}: {} reported, got {}", item.id, expected.code, codesOf(diagnostics)));
         if (reported) {
             consumed[match] = true;
-            checkPosition(item, expected, result.diagnostics[match], positions, checks);
+            checkPosition(item, expected, diagnostics[match], positions, checks);
         }
     }
 
@@ -438,7 +507,7 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
                                       [](bool value) {
                                           return value;
                                       }),
-                  std::format("{}: every emitted diagnostic is expected, got {}", item.id, codesOf(result.diagnostics)));
+                  std::format("{}: every emitted diagnostic is expected, got {}", item.id, codesOf(diagnostics)));
 }
 
 }  // namespace
@@ -447,85 +516,82 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
 // Scenarios
 // ---------------------------------------------------------------------------
 
-const mdux::spec::Register claimsNameAPhaseThisSuiteCanObserve{
-    "Every claimed capability is one this suite can actually check",
-    "evidence-unit",
-    [] {
-        return speclab::Test("medui-shared-claims-are-observable")
-            .Given("the capabilities named in medui-conformance.toml", [] {})
-            .When("they are compared with what this suite can observe", [] {})
-            .Then("no phase is claimed without an adapter behind it", [] {
-                mdux::spec::Checks checks;
-                for (const std::string& capability : manifest().capabilities) {
-                    checks.expect(std::ranges::find(runnableCapabilities, capability) != runnableCapabilities.end(),
-                                  std::format("'{}' is observable here; add the adapter that "
-                                              "checks that phase before claiming it",
-                                              capability));
-                }
-                checks.raise();
-            })
-            .Execute();
-    }};
+const mdux::spec::Register claimsNameAPhaseThisSuiteCanObserve{"Every claimed capability is one this suite can actually check", "evidence-unit", [] {
+                                                                   return speclab::Test("medui-shared-claims-are-observable")
+                                                                       .Given("the capabilities named in medui-conformance.toml", [] {})
+                                                                       .When("they are compared with what this suite can observe", [] {})
+                                                                       .Then("no phase is claimed without an adapter behind it",
+                                                                             [] {
+                                                                                 mdux::spec::Checks checks;
+                                                                                 for (const std::string& capability : manifest().capabilities) {
+                                                                                     checks.expect(std::ranges::find(runnableCapabilities, capability)
+                                                                                                       != runnableCapabilities.end(),
+                                                                                                   std::format("'{}' is observable here; add the adapter that "
+                                                                                                               "checks that phase before claiming it",
+                                                                                                               capability));
+                                                                                 }
+                                                                                 checks.raise();
+                                                                             })
+                                                                       .Execute();
+                                                               }};
 
-const mdux::spec::Register pinnedCasesPass{
-    "The parser satisfies every pinned case in a claimed phase",
-    "evidence-unit",
-    [] {
-        return speclab::Test("medui-shared-conformance")
-            .Given("the exact checkout named by medui-conformance.toml", [] {})
-            .When("each case in a claimed phase is parsed", [] {})
-            .Then("acceptance, codes and positions match the pinned expectations", [] {
-                mdux::spec::Checks checks;
-                const Manifest pinned = manifest();
+const mdux::spec::Register pinnedCasesPass{"The parser satisfies every pinned case in a claimed phase", "evidence-unit", [] {
+                                               return speclab::Test("medui-shared-conformance")
+                                                   .Given("the exact checkout named by medui-conformance.toml", [] {})
+                                                   .When("each case in a claimed phase is parsed", [] {})
+                                                   .Then("acceptance, codes and positions match the pinned expectations",
+                                                         [] {
+                                                             mdux::spec::Checks checks;
+                                                             const Manifest     pinned = manifest();
 
-                const char* root = env("MEDUI_CONFORMANCE_DIR");
-                if (root == nullptr || *root == '\0') {
-                    // Never a silent skip: in CI this is the failure that keeps the claim honest,
-                    // and offline it says out loud that nothing shared was checked.
-                    checks.expect(!isSet("CI"),
-                                  "MEDUI_CONFORMANCE_DIR is set in CI, so the capabilities "
-                                  "claimed in medui-conformance.toml are actually substantiated");
-                    checks.raise();
-                    std::cerr << "MedUI conformance: SKIPPED - set MEDUI_CONFORMANCE_DIR to a "
-                                 "checkout of the pinned commit to run the shared cases locally.\n";
-                    return;
-                }
+                                                             const char* root = env("MEDUI_CONFORMANCE_DIR");
+                                                             if (root == nullptr || *root == '\0') {
+                                                                 // Never a silent skip: in CI this is the failure that keeps the claim honest,
+                                                                 // and offline it says out loud that nothing shared was checked.
+                                                                 checks.expect(!isSet("CI"),
+                                                                               "MEDUI_CONFORMANCE_DIR is set in CI, so the capabilities "
+                                                                               "claimed in medui-conformance.toml are actually substantiated");
+                                                                 checks.raise();
+                                                                 std::cerr << "MedUI conformance: SKIPPED - set MEDUI_CONFORMANCE_DIR to a "
+                                                                              "checkout of the pinned commit to run the shared cases locally.\n";
+                                                                 return;
+                                                             }
 
-                const std::filesystem::path checkout{root};
-                const std::string           actualCommit = checkoutRevision(checkout);
-                checks.expect(actualCommit == pinned.commit,
-                              std::format("MEDUI_CONFORMANCE_DIR is checked out at {}, but "
-                                          "medui-conformance.toml pins {}",
-                                          actualCommit,
-                                          pinned.commit));
-                checks.raise();
+                                                             const std::filesystem::path checkout{root};
+                                                             const std::string           actualCommit = checkoutRevision(checkout);
+                                                             checks.expect(actualCommit == pinned.commit,
+                                                                           std::format("MEDUI_CONFORMANCE_DIR is checked out at {}, but "
+                                                                                       "medui-conformance.toml pins {}",
+                                                                                       actualCommit,
+                                                                                       pinned.commit));
+                                                             checks.raise();
 
-                const std::vector<Case> cases = loadCases(checkout);
-                checks.expect(!cases.empty(), "the pinned checkout contains conformance cases");
+                                                             const std::vector<Case> cases = loadCases(checkout);
+                                                             checks.expect(!cases.empty(), "the pinned checkout contains conformance cases");
 
-                std::set<std::string> executed;
-                std::vector<std::string> unclaimed;
-                for (const Case& item : cases) {
-                    if (std::ranges::find(pinned.capabilities, item.phase) != pinned.capabilities.end()) {
-                        runCase(item, pinned.positions, checks);
-                        executed.insert(item.phase);
-                    } else {
-                        unclaimed.push_back(std::format("{} ({})", item.id, item.phase));
-                    }
-                }
+                                                             std::set<std::string>    executed;
+                                                             std::vector<std::string> unclaimed;
+                                                             for (const Case& item : cases) {
+                                                                 if (std::ranges::find(pinned.capabilities, item.phase) != pinned.capabilities.end()) {
+                                                                     runCase(item, pinned.positions, checks);
+                                                                     executed.insert(item.phase);
+                                                                 } else {
+                                                                     unclaimed.push_back(std::format("{} ({})", item.id, item.phase));
+                                                                 }
+                                                             }
 
-                for (const std::string& capability : pinned.capabilities) {
-                    checks.expect(executed.contains(capability),
-                                  std::format("capability '{}' is backed by a case that ran; "
-                                              "either the pin is wrong or the claim is unsupported",
-                                              capability));
-                }
+                                                             for (const std::string& capability : pinned.capabilities) {
+                                                                 checks.expect(executed.contains(capability),
+                                                                               std::format("capability '{}' is backed by a case that ran; "
+                                                                                           "either the pin is wrong or the claim is unsupported",
+                                                                                           capability));
+                                                             }
 
-                std::cerr << std::format(
-                    "MedUI conformance: {} case(s) at {}; unclaimed and not asserted: {}\n",
-                    cases.size(), pinned.commit,
-                    unclaimed.empty() ? std::string{"none"} : join(unclaimed));
-                checks.raise();
-            })
-            .Execute();
-    }};
+                                                             std::cerr << std::format("MedUI conformance: {} case(s) at {}; unclaimed and not asserted: {}\n",
+                                                                                      cases.size(),
+                                                                                      pinned.commit,
+                                                                                      unclaimed.empty() ? std::string{"none"} : join(unclaimed));
+                                                             checks.raise();
+                                                         })
+                                                   .Execute();
+                                           }};
