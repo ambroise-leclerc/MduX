@@ -437,11 +437,18 @@ private:
             // immediately after it still means the author attempted a unit, so route that shape
             // through parsePixels() to retain the precise unknown-unit diagnostic.
             if (!peekIs(TokenKind::Identifier)) {
+                std::int64_t parsed = 0;
+                const auto [ptr, ec] = std::from_chars(
+                    number.text.data(), number.text.data() + number.text.size(), parsed);
+                if (ec != std::errc{} || ptr != number.text.data() + number.text.size()) {
+                    report(Code::UnexpectedToken,
+                           std::format("'{}' is not an integer this compiler can represent",
+                                       number.text));
+                    return nullptr;
+                }
                 static_cast<void>(advance());
                 value->kind = ast::ValueKind::Number;
-                static_cast<void>(std::from_chars(number.text.data(),
-                                                  number.text.data() + number.text.size(),
-                                                  value->number));
+                value->number = parsed;
                 return value;
             }
 

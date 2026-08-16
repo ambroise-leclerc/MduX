@@ -333,6 +333,36 @@ const mdux::spec::Register unknownUnitRejected{
             .Execute();
     }};
 
+const mdux::spec::Register outOfRangeIntegerRejected{
+    "A bare integer outside the AST's range is rejected during parsing",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-reject-out-of-range-integer")
+            .Given("a max_length larger than an int64 can represent", [] {})
+            .When("the bare integer is parsed", [] {})
+            .Then("MEDUI-E010 points at the number instead of producing a zero-valued AST node",
+                  [] {
+                      constexpr std::string_view source = R"(Screen IntegerRange {
+    TextInput { max_length: 999999999999999999999999; }
+})";
+                      const md::ParseResult r = md::parse(source, "integer-range.medui");
+                      const cli::Diagnostic* d = find(r.diagnostics, md::Code::UnexpectedToken);
+                      mdux::spec::Checks checks;
+                      checks.expect(d != nullptr,
+                                    std::format("MEDUI-E010 reported, got {}",
+                                                codesOf(r.diagnostics)));
+                      if (d != nullptr) {
+                          checks.expect(d->line == 2 && d->column == 29,
+                                        std::format("at the number, 2:29, got {}:{}",
+                                                    d->line, d->column));
+                          checks.expect(d->message.contains("cannot represent"),
+                                        "the diagnostic explains the range failure");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register unterminatedStringRejected{
     "An unterminated string is reported at its opening quote",
     "evidence-unit",

@@ -248,6 +248,14 @@ const mdux::spec::Register semanticFieldDomains{"Known fields reject syntactical
                                                                                 "all three mismatches report E033");
                                                                   checks.expect(result.diagnostics.size() == 3,
                                                                                 "domain mismatches do not cascade into name diagnostics");
+                                                                  if (result.diagnostics.size() == 3) {
+                                                                      checks.expect(result.diagnostics[0].line == 6 && result.diagnostics[0].column == 18,
+                                                                                    "Row spacing points at Theme.Colors.Title");
+                                                                      checks.expect(result.diagnostics[1].line == 8 && result.diagnostics[1].column == 17,
+                                                                                    "Label id points at t(\"STR-TITLE\")");
+                                                                      checks.expect(result.diagnostics[2].line == 9 && result.diagnostics[2].column == 20,
+                                                                                    "Label width points at the string literal");
+                                                                  }
                                                                   checks.raise();
                                                               })
                                                         .Execute();
@@ -278,6 +286,10 @@ const mdux::spec::Register malformedColorIsSemanticOnly{
                       mdux::spec::Checks                           checks;
                       checks.expect(result.diagnostics.size() == 1, "the syntax and semantic phases do not duplicate the finding");
                       checks.expect(count(result, md::Code::FieldValueKind) == 1, "the malformed path reports E033");
+                      if (result.diagnostics.size() == 1) {
+                          checks.expect(result.diagnostics[0].line == 8 && result.diagnostics[0].column == 16,
+                                        "E033 points at Theme.Color.Title");
+                      }
                       checks.raise();
                   })
             .Execute();
@@ -307,3 +319,36 @@ const mdux::spec::Register semanticSpecialValueForms{"Image references, positive
                                                                    })
                                                              .Execute();
                                                      }};
+
+const mdux::spec::Register semanticHardcodedTextList{
+    "A literal inside a text-key list is reported as hardcoded text at that element",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-hardcoded-text-list")
+            .Given("a StatusIndicator states list mixing a literal and a governed key", [] {})
+            .When("the list is analyzed element by element", [] {})
+            .Then("the literal reports MEDUI-E017 without hiding valid keys",
+                  [] {
+                      constexpr std::string_view source = R"(Screen States {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    StatusIndicator {
+        id: state;
+        width: 100px;
+        height: 20px;
+        requirement: "REQ-STATE";
+        source: "STATE";
+        states: ["Ready", t("STR-STOP")];
+    }
+})";
+                      const std::array<std::string_view, 0> themes{};
+                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
+                      const md::SemanticResult result = analyze(source, themes, packages);
+                      const cli::Diagnostic* literal = find(result, md::Code::HardcodedString);
+                      mdux::spec::Checks checks;
+                      checks.expect(result.diagnostics.size() == 1, "only the literal is rejected");
+                      checks.expect(literal != nullptr && literal->line == 9 && literal->column == 18,
+                                    "E017 points at the literal list element");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

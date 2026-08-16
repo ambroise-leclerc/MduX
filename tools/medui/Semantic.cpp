@@ -223,6 +223,28 @@ private:
     }
 
     void analyzeText(const ast::Value& value, FieldDomain domain) {
+        if (domain == TextKeyList && value.kind == ast::ValueKind::List) {
+            if (value.list.empty()) {
+                report(Code::FieldValueKind, value.position,
+                       std::format("text field requires {}", describe(domain)));
+                return;
+            }
+            for (const std::shared_ptr<ast::Value>& element : value.list) {
+                if (element == nullptr) {
+                    report(Code::FieldValueKind, value.position,
+                           std::format("text field requires {}", describe(domain)));
+                } else if (element->kind == ast::ValueKind::String) {
+                    report(Code::HardcodedString, element->position,
+                           "literal text cannot be checked against every approved locale");
+                } else if (element->kind != ast::ValueKind::TextKey) {
+                    report(Code::FieldValueKind, element->position,
+                           std::format("text field requires {}", describe(domain)));
+                } else {
+                    analyzeTextKey(*element);
+                }
+            }
+            return;
+        }
         if (value.kind == ast::ValueKind::String) {
             report(Code::HardcodedString, value.position, "literal text cannot be checked against every approved locale");
             return;
@@ -231,13 +253,7 @@ private:
             report(Code::FieldValueKind, value.position, std::format("text field requires {}", describe(domain)));
             return;
         }
-        if (domain == TextKey) {
-            analyzeTextKey(value);
-        } else {
-            for (const std::shared_ptr<ast::Value>& element : value.list) {
-                analyzeTextKey(*element);
-            }
-        }
+        analyzeTextKey(value);
     }
 
     void analyzeColor(const ast::Value& value, FieldDomain domain) {

@@ -378,9 +378,10 @@ struct Case {
     return result;
 }
 
-// The contract is canonical, while ComponentRule is the executable transcription. Comparing the
-// two at the pinned revision prevents a new or renamed field from becoming an unreviewed local
-// dialect merely because both the implementation and its unit tests copied the old table.
+/// @brief Compares the canonical contract dictionary with the executable transcription.
+///
+/// Checking both at the pinned revision prevents a new or renamed field from becoming an
+/// unreviewed local dialect merely because implementation and unit tests copied the old table.
 using DictionaryEntry = std::tuple<std::string, std::string, bool>;
 
 [[nodiscard]] std::vector<std::string> backtickValues(std::string_view cell) {
