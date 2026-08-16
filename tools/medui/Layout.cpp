@@ -47,6 +47,14 @@ namespace {
     return field->value->text;
 }
 
+/// Returns the authored `id` field position, falling back for malformed directly-built ASTs.
+[[nodiscard]] ast::Position idFieldPosition(const ast::Node& node) noexcept {
+    if (const ast::Field* field = fieldFor(node, "id")) {
+        return field->namePosition;
+    }
+    return node.position;
+}
+
 /// Returns a validated size field.
 [[nodiscard]] const ast::Size& sizeOf(const ast::Node& node, std::string_view name) {
     const ast::Field* field = fieldFor(node, name);
@@ -194,6 +202,8 @@ private:
     bool preflightPositionedFill(std::span<const ast::Node> nodes) {
         for (const ast::Node& node : nodes) {
             if (positionOf(node) != nullptr && (sizeOf(node, "width").fill || sizeOf(node, "height").fill)) {
+                // The common MedUI conformance case pins this declaration to MEDUI-E051. Keep the
+                // shared diagnostic even though the failure is detected before axis resolution.
                 report(Code::LayoutOverflow,
                        positionFieldPosition(node),
                        std::format("component '{}': position requires fixed width and height; "
@@ -396,10 +406,11 @@ private:
     bool validateUniqueIds() {
         std::map<std::string_view, ast::Position> seen;
         for (const ResolvedNode& node : result_.nodes) {
-            const auto [previous, inserted] = seen.emplace(node.id, node.source.position);
+            const ast::Position idPosition  = idFieldPosition(node.source);
+            const auto [previous, inserted] = seen.emplace(node.id, idPosition);
             if (!inserted) {
                 report(Code::DuplicateNodeId,
-                       node.source.position,
+                       idPosition,
                        std::format("resolved node id '{}' is already used at line {}, column {}", node.id, previous->second.line, previous->second.column));
                 return false;
             }

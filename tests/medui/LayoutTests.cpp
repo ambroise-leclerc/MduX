@@ -371,27 +371,33 @@ const mdux::spec::Register positionedOverlapIsRejected{
             .Execute();
     }};
 
-const mdux::spec::Register syntheticIdsAreRechecked{"Synthetic Row background IDs participate in uniqueness", "evidence-unit", [] {
-                                                        return speclab::Test("medui-layout-synthetic-id-uniqueness")
-                                                            .Given("an authored id colliding with <row-id>-background", [] {})
-                                                            .When("the Row background Panel is synthesized", [] {})
-                                                            .Then("MEDUI-E014 rejects the duplicate resolved id",
-                                                                  [] {
-                                                                      mdux::spec::Checks checks;
-                                                                      const std::string  source = sourceWithBody(
-                                                                          "    Row { id: topbar; height: 20px; background: Theme.Colors.TopbarBackground; "
-                                                                           "Label { id: title; width: Fill; height: 20px; text: t(\"STR-TITLE\"); "
-                                                                           "color: Theme.Colors.Title; } }\n"
-                                                                           "    Label { id: topbar-background; width: Fill; height: 20px; "
-                                                                           "text: t(\"STR-OTHER\"); color: Theme.Colors.Title; }\n");
-                                                                      const md::LayoutResult result = layout(source, 100, 100);
-                                                                      checks.expect(find(result, md::Code::DuplicateNodeId) != nullptr,
-                                                                                    "MEDUI-E014 is reported after synthesis");
-                                                                      checks.expect(!result.ok(), "the colliding flat node set is rejected");
-                                                                      checks.raise();
-                                                                  })
-                                                            .Execute();
-                                                    }};
+const mdux::spec::Register syntheticIdsAreRechecked{
+    "Synthetic Row background IDs participate in uniqueness",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-layout-synthetic-id-uniqueness")
+            .Given("an authored id colliding with <row-id>-background", [] {})
+            .When("the Row background Panel is synthesized", [] {})
+            .Then("MEDUI-E014 rejects the duplicate resolved id",
+                  [] {
+                      mdux::spec::Checks     checks;
+                      const std::string      source     = sourceWithBody("    Row { id: topbar; height: 20px; background: Theme.Colors.TopbarBackground; "
+                                                                         "Label { id: title; width: Fill; height: 20px; text: t(\"STR-TITLE\"); "
+                                                                         "color: Theme.Colors.Title; } }\n"
+                                                                         "    Label { id: topbar-background; width: Fill; height: 20px; "
+                                                                         "text: t(\"STR-OTHER\"); color: Theme.Colors.Title; }\n");
+                      const md::LayoutResult result     = layout(source, 100, 100);
+                      const cli::Diagnostic* diagnostic = find(result, md::Code::DuplicateNodeId);
+                      checks.expect(diagnostic != nullptr, "MEDUI-E014 is reported after synthesis");
+                      if (diagnostic != nullptr) {
+                          checks.expect(diagnostic->line == 5 && diagnostic->column == 13,
+                                        std::format("the authored colliding id is 5:13, got {}:{}", diagnostic->line, diagnostic->column));
+                      }
+                      checks.expect(!result.ok(), "the colliding flat node set is rejected");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register nestedRowInvariantIsChecked{
     "The solver checks the parser's single-Row-level invariant",
