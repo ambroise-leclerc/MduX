@@ -55,7 +55,9 @@ Screen NeuroSense500 {
 }
 ```
 
-- Sizes are `Npx` or `Fill`. `position: Xpx, Ypx` takes a node out of flow at exact pixel coords.
+- Sizes are `Npx` or `Fill`. `position: Xpx, Ypx` takes a node out of flow at exact absolute
+  surface coordinates. A top-level positioned node must remain inside the padded content box; a
+  positioned Row child must remain inside that Row's already-resolved absolute band.
 - **One property per line.** The sibling implementation parses a component body line by line and
   splits each on its first `:`, so `width: 512px; height: 512px;` on one line is read as a width of
   `512px; height: 512px` and rejected. This example previously showed that form; it was condensed

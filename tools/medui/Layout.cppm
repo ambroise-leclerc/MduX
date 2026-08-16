@@ -1,6 +1,6 @@
 /**
- * @file Layout.cppm
  * @brief Integer-only build-time layout resolution for `.medui` screens.
+ * @file Layout.cppm
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
@@ -53,7 +53,8 @@ struct ResolvedNode {
     bool        synthetic{false};
 };
 
-/// Flat nodes and any diagnostic that prevented a complete layout.
+/// Flat nodes and any diagnostic that prevented a complete layout. `nodes` is empty whenever a
+/// diagnostic is present, so a caller cannot accidentally consume a partial screen.
 struct LayoutResult {
     std::int64_t                              surfaceWidth{0};
     std::int64_t                              surfaceHeight{0};
@@ -68,10 +69,14 @@ struct LayoutResult {
 /**
  * @brief Resolves a semantically-valid screen to flat absolute rectangles.
  *
- * The algorithm uses integer arithmetic only. Flow overflow, a `Fill` that resolves to no space,
- * containment failures, and positioned overlaps are diagnostics; dimensions are never clamped.
- * Positioned nodes are removed from flow. A Row contributes one vertical flow item and its
- * children are resolved horizontally in the same single pass.
+ * The algorithm uses integer arithmetic only. Multiple `Fill` items receive equal integer shares;
+ * an indivisible trailing remainder stays unused, matching the TrustSC reference behavior. Flow
+ * overflow, a `Fill` that resolves to no space, containment failures, and positioned overlaps are
+ * diagnostics; dimensions are never clamped.
+ * Positioned nodes are removed from flow. Their coordinates are absolute surface coordinates;
+ * top-level nodes must remain inside the padded content box, and Row children inside the Row's
+ * already-resolved absolute band. A Row contributes one vertical flow item and its children are
+ * resolved horizontally in the same single pass.
  *
  * The parser already rejects nested Row. Because the AST is public and can be built directly,
  * this function checks that invariant and throws `std::logic_error` if a caller bypassed the

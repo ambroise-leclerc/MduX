@@ -1,6 +1,6 @@
 /**
- * @file LayoutTests.cpp
  * @brief BDD scenarios for bounded integer `.medui` layout (issue #194).
+ * @file LayoutTests.cpp
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
@@ -26,6 +26,7 @@ static_assert(std::integral<decltype(md::LayoutRect::y)>);
 static_assert(std::integral<decltype(md::LayoutRect::width)>);
 static_assert(std::integral<decltype(md::LayoutRect::height)>);
 
+/// Reads one real authoring fixture from the repository corpus.
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
@@ -38,6 +39,7 @@ static_assert(std::integral<decltype(md::LayoutRect::height)>);
     return buffer.str();
 }
 
+/// Parses and resolves a test source against explicit build dimensions.
 [[nodiscard]] md::LayoutResult layout(std::string_view source, std::int64_t width, std::int64_t height) {
     md::ParseResult parsed = md::parse(source, "layout.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
@@ -46,6 +48,7 @@ static_assert(std::integral<decltype(md::LayoutRect::height)>);
     return md::resolveLayout(*parsed.screen, "layout.medui", {.surfaceWidth = width, .surfaceHeight = height});
 }
 
+/// Finds one registered diagnostic in a layout result.
 [[nodiscard]] const cli::Diagnostic* find(const md::LayoutResult& result, md::Code code) {
     const std::string_view wanted = md::id(code);
     const auto             found  = std::ranges::find_if(result.diagnostics, [wanted](const cli::Diagnostic& diagnostic) {
@@ -54,6 +57,7 @@ static_assert(std::integral<decltype(md::LayoutRect::height)>);
     return found == result.diagnostics.end() ? nullptr : &*found;
 }
 
+/// Wraps component text in a minimal 100x100 Vertical screen by default.
 [[nodiscard]] std::string sourceWithBody(std::string_view body, std::int64_t width = 100, std::int64_t height = 100) {
     return std::format("Screen Test {{\n"
                        "    layout: Vertical {{ spacing: 0px; padding: 0px; }}\n"
@@ -130,6 +134,144 @@ const mdux::spec::Register positionedNodesLeaveFlow{"An explicitly positioned no
                                                             .Execute();
                                                     }};
 
+const mdux::spec::Register positionedNodeMustFitSurface{"A positioned node must remain inside the content box", "evidence-unit", [] {
+                                                            return speclab::Test("medui-layout-positioned-surface-containment")
+                                                                .Given("a 20px node at 81px,80px on a 100px square surface", [] {})
+                                                                .When("the positioned rectangle is checked", [] {})
+                                                                .Then("MEDUI-E052 is fail-closed with no resolved nodes",
+                                                                      [] {
+                                                                          mdux::spec::Checks checks;
+                                                                          const std::string  source = sourceWithBody(
+                                                                              "    Label { id: outside; width: 20px; height: 20px; "
+                                                                               "position: 81px, 80px; text: t(\"STR-OUTSIDE\"); "
+                                                                               "color: Theme.Colors.Title; }\n");
+                                                                          const md::LayoutResult result = layout(source, 100, 100);
+                                                                          checks.expect(find(result, md::Code::SurfaceExceeded) != nullptr,
+                                                                                        "MEDUI-E052 is reported");
+                                                                          checks.expect(!result.ok() && result.nodes.empty(),
+                                                                                        "the rejected screen exposes no partial layout");
+                                                                          checks.raise();
+                                                                      })
+                                                                .Execute();
+                                                        }};
+
+const mdux::spec::Register positionedNodeMustHaveArea{"A positioned node cannot have a zero fixed dimension", "evidence-unit", [] {
+                                                          return speclab::Test("medui-layout-positioned-positive-size")
+                                                              .Given("a positioned node with width 0px", [] {})
+                                                              .When("dimension preflight runs", [] {})
+                                                              .Then("MEDUI-E051 rejects the degenerate rectangle",
+                                                                    [] {
+                                                                        mdux::spec::Checks checks;
+                                                                        const std::string  source = sourceWithBody(
+                                                                            "    Label { id: ghost; width: 0px; height: 20px; "
+                                                                             "position: 10px, 10px; text: t(\"STR-GHOST\"); "
+                                                                             "color: Theme.Colors.Title; }\n");
+                                                                        const md::LayoutResult result = layout(source, 100, 100);
+                                                                        checks.expect(find(result, md::Code::LayoutOverflow) != nullptr,
+                                                                                      "MEDUI-E051 is reported");
+                                                                        checks.expect(!result.ok() && result.nodes.empty(),
+                                                                                      "no zero-area rectangle is emitted");
+                                                                        checks.raise();
+                                                                    })
+                                                              .Execute();
+                                                      }};
+
+const mdux::spec::Register rowPositionsAreSurfaceAbsolute{"A positioned Row child uses absolute surface coordinates", "evidence-unit", [] {
+                                                              return speclab::Test("medui-layout-row-position-absolute")
+                                                                  .Given("padding and a preceding flow item place a Row at y=35", [] {})
+                                                                  .When("a Row child is positioned at the Row's absolute origin", [] {})
+                                                                  .Then(
+                                                                      "the authored 10,35 coordinates are preserved",
+                                                                      [] {
+                                                                          mdux::spec::Checks     checks;
+                                                                          const std::string      source = "Screen Test {\n"
+                                                                                                          "    layout: Vertical { spacing: 5px; padding: 10px; }\n"
+                                                                                                          "    surface: 100px, 100px;\n"
+                                                                                                          "    Label { id: before; width: Fill; height: 20px; "
+                                                                                                          "text: t(\"STR-BEFORE\"); color: Theme.Colors.Title; }\n"
+                                                                                                          "    Row { id: row; height: 20px; Label { id: pinned; "
+                                                                                                          "width: 20px; height: 20px; position: 10px, 35px; "
+                                                                                                          "text: t(\"STR-PINNED\"); color: Theme.Colors.Title; } }\n"
+                                                                                                          "}\n";
+                                                                          const md::LayoutResult result = layout(source, 100, 100);
+                                                                          checks.expect(result.ok(), "the absolute Row position is contained");
+                                                                          checks.expect(result.nodes.size() == 2, "the Row itself is flattened away");
+                                                                          if (result.nodes.size() == 2) {
+                                                                              checks.expect(result.nodes[1].bounds == md::LayoutRect{10, 35, 20, 20},
+                                                                                            "the Row child keeps absolute surface coordinates");
+                                                                          }
+                                                                          checks.raise();
+                                                                      })
+                                                                  .Execute();
+                                                          }};
+
+const mdux::spec::Register paddingMustLeaveContent{"Padding exactly half the surface is rejected", "evidence-unit", [] {
+                                                       return speclab::Test("medui-layout-padding-content-box")
+                                                           .Given("an empty 100px square screen with padding 50px", [] {})
+                                                           .When("the padded content box is validated", [] {})
+                                                           .Then("MEDUI-E052 reports the zero-sized box at the layout",
+                                                                 [] {
+                                                                     mdux::spec::Checks     checks;
+                                                                     const std::string      source = "Screen Test {\n"
+                                                                                                     "    layout: Vertical { spacing: 0px; padding: 50px; }\n"
+                                                                                                     "    surface: 100px, 100px;\n"
+                                                                                                     "}\n";
+                                                                     const md::LayoutResult result = layout(source, 100, 100);
+                                                                     checks.expect(find(result, md::Code::SurfaceExceeded) != nullptr,
+                                                                                   "MEDUI-E052 is reported");
+                                                                     checks.expect(!result.ok() && result.nodes.empty(),
+                                                                                   "a zero-sized content box is not accepted");
+                                                                     checks.raise();
+                                                                 })
+                                                           .Execute();
+                                                   }};
+
+const mdux::spec::Register surfacePinMustMatchBuild{"An authored surface pin must match the build surface", "evidence-unit", [] {
+                                                        return speclab::Test("medui-layout-surface-pin")
+                                                            .Given("a source declaring 100x100 and a build selecting 101x100", [] {})
+                                                            .When("surface validation runs", [] {})
+                                                            .Then("MEDUI-E052 rejects the mismatch",
+                                                                  [] {
+                                                                      mdux::spec::Checks     checks;
+                                                                      const std::string      source = sourceWithBody("");
+                                                                      const md::LayoutResult result = layout(source, 101, 100);
+                                                                      checks.expect(find(result, md::Code::SurfaceExceeded) != nullptr,
+                                                                                    "MEDUI-E052 is reported");
+                                                                      checks.expect(!result.ok() && result.nodes.empty(),
+                                                                                    "the mismatched build cannot consume a layout");
+                                                                      checks.raise();
+                                                                  })
+                                                            .Execute();
+                                                    }};
+
+const mdux::spec::Register fillSharesMatchReference{
+    "Fill uses equal integer shares like the reference implementation",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-layout-fill-equal-shares")
+            .Given("two Fill children sharing a 101px Row", [] {})
+            .When("the indivisible remainder is resolved", [] {})
+            .Then("both receive 50px and the final pixel remains unused",
+                  [] {
+                      mdux::spec::Checks     checks;
+                      const std::string      source = sourceWithBody("    Row { id: row; height: 20px; "
+                                                                     "Label { id: first; width: Fill; height: 20px; "
+                                                                     "text: t(\"STR-FIRST\"); color: Theme.Colors.Title; } "
+                                                                     "Label { id: second; width: Fill; height: 20px; "
+                                                                     "text: t(\"STR-SECOND\"); color: Theme.Colors.Title; } }\n",
+                                                                101,
+                                                                100);
+                      const md::LayoutResult result = layout(source, 101, 100);
+                      checks.expect(result.ok() && result.nodes.size() == 2, "the Row resolves to two leaves");
+                      if (result.nodes.size() == 2) {
+                          checks.expect(result.nodes[0].bounds == md::LayoutRect{0, 0, 50, 20}, "the first Fill receives the equal integer share");
+                          checks.expect(result.nodes[1].bounds == md::LayoutRect{50, 0, 50, 20}, "the second Fill receives the same share");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register positionedFillIsRejected{"A positioned component cannot use Fill", "evidence-unit", [] {
                                                         return speclab::Test("medui-layout-positioned-fill")
                                                             .Given("a component whose exact position contradicts a Fill width", [] {})
@@ -167,11 +309,13 @@ const mdux::spec::Register wideRowChildIsRejected{"A Row child wider than its pa
                                                                 [] {
                                                                     mdux::spec::Checks checks;
                                                                     const std::string  source = sourceWithBody(
-                                                                        "    Row { id: row; height: 20px; Label { id: title; width: 101px; "
+                                                                        "    Row { id: row; height: 20px; background: Theme.Colors.TopbarBackground; "
+                                                                         "Label { id: title; width: 101px; "
                                                                          "height: 20px; text: t(\"STR-TITLE\"); color: Theme.Colors.Title; } }\n");
                                                                     const md::LayoutResult result = layout(source, 100, 100);
                                                                     checks.expect(find(result, md::Code::LayoutOverflow) != nullptr, "MEDUI-E051 is reported");
-                                                                    checks.expect(result.nodes.empty(), "no child rectangle is emitted");
+                                                                    checks.expect(result.nodes.empty(),
+                                                                                  "the failed Row returns neither its Panel nor a child rectangle");
                                                                     checks.raise();
                                                                 })
                                                           .Execute();
@@ -198,26 +342,34 @@ const mdux::spec::Register fillWithoutRoomIsRejected{"Fill with no remaining pix
                                                              .Execute();
                                                      }};
 
-const mdux::spec::Register positionedOverlapIsRejected{"A positioned component cannot overlap a flow component", "evidence-unit", [] {
-                                                           return speclab::Test("medui-layout-positioned-overlap")
-                                                               .Given("a positioned rectangle crossing an ordinary flow rectangle", [] {})
-                                                               .When("the flat layout is checked", [] {})
-                                                               .Then("MEDUI-E051 rejects the overlap",
-                                                                     [] {
-                                                                         mdux::spec::Checks checks;
-                                                                         const std::string  source = sourceWithBody(
-                                                                             "    Label { id: flow; width: Fill; height: 30px; text: t(\"STR-FLOW\"); "
-                                                                             "color: Theme.Colors.Title; }\n"
-                                                                             "    Label { id: pinned; width: 20px; height: 20px; position: 10px, 10px; "
-                                                                             "text: t(\"STR-PINNED\"); color: Theme.Colors.Title; }\n");
-                                                                         const md::LayoutResult result = layout(source, 100, 100);
-                                                                         checks.expect(find(result, md::Code::LayoutOverflow) != nullptr,
-                                                                                       "MEDUI-E051 is reported");
-                                                                         checks.expect(!result.ok(), "overlap is not accepted as a compiled layout");
-                                                                         checks.raise();
-                                                                     })
-                                                               .Execute();
-                                                       }};
+const mdux::spec::Register positionedOverlapIsRejected{
+    "An authored Panel name cannot bypass positioned overlap checks",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-layout-positioned-overlap")
+            .Given("a directly-built AST naming an overlapping positioned leaf Panel", [] {})
+            .When("the flat layout is checked", [] {})
+            .Then("MEDUI-E051 rejects the overlap",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const std::string  source = sourceWithBody("    Label { id: flow; width: Fill; height: 30px; text: t(\"STR-FLOW\"); "
+                                                                 "color: Theme.Colors.Title; }\n"
+                                                                 "    Label { id: pinned; width: 20px; height: 20px; position: 10px, 10px; "
+                                                                 "text: t(\"STR-PINNED\"); color: Theme.Colors.Title; }\n");
+                      md::ParseResult    parsed = md::parse(source, "layout.medui");
+                      if (!parsed.screen || parsed.screen->nodes.size() != 2) {
+                          checks.expect(false, "the overlap fixture parses to two nodes");
+                          checks.raise();
+                          return;
+                      }
+                      parsed.screen->nodes[1].component = "Panel";
+                      const md::LayoutResult result     = md::resolveLayout(*parsed.screen, "layout.medui", {.surfaceWidth = 100, .surfaceHeight = 100});
+                      checks.expect(find(result, md::Code::LayoutOverflow) != nullptr, "MEDUI-E051 is reported");
+                      checks.expect(!result.ok(), "overlap is not accepted as a compiled layout");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register syntheticIdsAreRechecked{"Synthetic Row background IDs participate in uniqueness", "evidence-unit", [] {
                                                         return speclab::Test("medui-layout-synthetic-id-uniqueness")
@@ -228,10 +380,10 @@ const mdux::spec::Register syntheticIdsAreRechecked{"Synthetic Row background ID
                                                                       mdux::spec::Checks checks;
                                                                       const std::string  source = sourceWithBody(
                                                                           "    Row { id: topbar; height: 20px; background: Theme.Colors.TopbarBackground; "
-                                                                          "Label { id: title; width: Fill; height: 20px; text: t(\"STR-TITLE\"); "
-                                                                          "color: Theme.Colors.Title; } }\n"
-                                                                          "    Label { id: topbar-background; width: Fill; height: 20px; "
-                                                                          "text: t(\"STR-OTHER\"); color: Theme.Colors.Title; }\n");
+                                                                           "Label { id: title; width: Fill; height: 20px; text: t(\"STR-TITLE\"); "
+                                                                           "color: Theme.Colors.Title; } }\n"
+                                                                           "    Label { id: topbar-background; width: Fill; height: 20px; "
+                                                                           "text: t(\"STR-OTHER\"); color: Theme.Colors.Title; }\n");
                                                                       const md::LayoutResult result = layout(source, 100, 100);
                                                                       checks.expect(find(result, md::Code::DuplicateNodeId) != nullptr,
                                                                                     "MEDUI-E014 is reported after synthesis");

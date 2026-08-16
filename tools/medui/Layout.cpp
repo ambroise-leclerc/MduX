@@ -1,6 +1,6 @@
 /**
- * @file Layout.cpp
  * @brief Integer-only Vertical/Row layout resolution.
+ * @file Layout.cpp
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
@@ -18,16 +18,19 @@ namespace mdux::tools::medui {
 
 namespace {
 
+/// Finds a named field on one component.
 [[nodiscard]] const ast::Field* fieldFor(const ast::Node& node, std::string_view name) noexcept {
     const auto found = std::ranges::find(node.fields, name, &ast::Field::name);
     return found == node.fields.end() ? nullptr : &*found;
 }
 
+/// Finds a named field in an arbitrary field list.
 [[nodiscard]] const ast::Field* fieldFor(std::span<const ast::Field> fields, std::string_view name) noexcept {
     const auto found = std::ranges::find(fields, name, &ast::Field::name);
     return found == fields.end() ? nullptr : &*found;
 }
 
+/// Returns a field value, failing loudly if semantic validation was bypassed.
 [[nodiscard]] const ast::Value& valueOf(const ast::Field& field) {
     if (field.value == nullptr) {
         throw std::logic_error(std::format("layout received null value for field '{}'", field.name));
@@ -35,6 +38,7 @@ namespace {
     return *field.value;
 }
 
+/// Returns a validated component identifier.
 [[nodiscard]] std::string idOf(const ast::Node& node) {
     const ast::Field* field = fieldFor(node, "id");
     if (field == nullptr || field->value == nullptr || field->value->kind != ast::ValueKind::Identifier || field->value->text.empty()) {
@@ -43,6 +47,7 @@ namespace {
     return field->value->text;
 }
 
+/// Returns a validated size field.
 [[nodiscard]] const ast::Size& sizeOf(const ast::Node& node, std::string_view name) {
     const ast::Field* field = fieldFor(node, name);
     if (field == nullptr || field->value == nullptr || field->value->kind != ast::ValueKind::Size) {
@@ -51,6 +56,7 @@ namespace {
     return field->value->size;
 }
 
+/// Returns an optional validated position field.
 [[nodiscard]] const ast::Point* positionOf(const ast::Node& node) {
     const ast::Field* field = fieldFor(node, "position");
     if (field == nullptr) {
@@ -62,6 +68,7 @@ namespace {
     return &field->value->point;
 }
 
+/// Returns the source position used for a positioned-node diagnostic.
 [[nodiscard]] ast::Position positionFieldPosition(const ast::Node& node) noexcept {
     if (const ast::Field* field = fieldFor(node, "position")) {
         return field->namePosition;
@@ -69,6 +76,7 @@ namespace {
     return node.position;
 }
 
+/// Tests complete rectangle containment without overflow-prone edge addition.
 [[nodiscard]] bool contains(LayoutRect outer, LayoutRect inner) noexcept {
     if (inner.x < outer.x || inner.y < outer.y || inner.width < 0 || inner.height < 0) {
         return false;
@@ -78,22 +86,29 @@ namespace {
     return relativeX <= outer.width && relativeY <= outer.height && inner.width <= outer.width - relativeX && inner.height <= outer.height - relativeY;
 }
 
+/// Tests strict AABB overlap; touching edges are legal adjacency.
 [[nodiscard]] bool overlaps(LayoutRect first, LayoutRect second) noexcept {
     // All accepted rectangles are non-negative and surface-contained, so these additions cannot
     // overflow. Shared edges are adjacency, not overlap.
     return first.x < second.x + second.width && second.x < first.x + first.width && first.y < second.y + second.height && second.y < first.y + first.height;
 }
 
+/// One fail-closed, integer-only layout pass.
 class Solver {
 public:
+    /// Captures the diagnostic path and build-selected surface.
     Solver(std::string file, LayoutInputs inputs)
         : file_{std::move(file)},
           inputs_{inputs},
           result_{.surfaceWidth = inputs.surfaceWidth, .surfaceHeight = inputs.surfaceHeight, .nodes = {}, .diagnostics = {}} {}
 
+    /// Resolves one semantically valid screen, returning no nodes on any diagnostic.
     [[nodiscard]] LayoutResult run(const ast::Screen& screen) {
         assertSingleRowLevel(screen);
         if (!preflightPositionedFill(screen.nodes)) {
+            return std::move(result_);
+        }
+        if (!preflightPositiveDimensions(screen.nodes)) {
             return std::move(result_);
         }
         if (!readSurface(screen) || !readLayout(screen)) {
@@ -161,6 +176,7 @@ public:
     }
 
 private:
+    /// Enforces the parser's one-level Row invariant for directly-built ASTs too.
     void assertSingleRowLevel(const ast::Screen& screen) const {
         for (const ast::Node& node : screen.nodes) {
             if (node.component != "Row" && !node.children.empty()) {
@@ -174,6 +190,7 @@ private:
         }
     }
 
+    /// Rejects the contradictory out-of-flow `position` plus `Fill` combination.
     bool preflightPositionedFill(std::span<const ast::Node> nodes) {
         for (const ast::Node& node : nodes) {
             if (positionOf(node) != nullptr && (sizeOf(node, "width").fill || sizeOf(node, "height").fill)) {
@@ -191,6 +208,30 @@ private:
         return true;
     }
 
+    /// Rejects zero-sized fixed component dimensions before any rectangle is emitted.
+    bool preflightPositiveDimensions(std::span<const ast::Node> nodes) {
+        for (const ast::Node& node : nodes) {
+            const auto check = [&](std::string_view name) {
+                const ast::Size& size = sizeOf(node, name);
+                if (!size.fill && size.pixels <= 0) {
+                    report(Code::LayoutOverflow, size.position, std::format("component '{}' {} must be greater than zero", idOf(node), name));
+                    return false;
+                }
+                return true;
+            };
+
+            if (node.component == "Row") {
+                if (!check("height") || !preflightPositiveDimensions(node.children)) {
+                    return false;
+                }
+            } else if (!check("width") || !check("height")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Validates build dimensions and an optional authored surface pin.
     bool readSurface(const ast::Screen& screen) {
         if (inputs_.surfaceWidth <= 0 || inputs_.surfaceHeight <= 0 || inputs_.surfaceWidth > std::numeric_limits<std::int32_t>::max()
             || inputs_.surfaceHeight > std::numeric_limits<std::int32_t>::max()) {
@@ -210,6 +251,7 @@ private:
         return true;
     }
 
+    /// Reads Vertical layout configuration and rejects an empty padded content box.
     bool readLayout(const ast::Screen& screen) {
         if (screen.layoutKind != "Vertical") {
             report(Code::ForbiddenConstruct,
@@ -235,13 +277,14 @@ private:
         if (!readPixel("spacing", 0, spacing_) || !readPixel("padding", 0, padding_)) {
             return false;
         }
-        if (padding_ > inputs_.surfaceWidth / 2 || padding_ > inputs_.surfaceHeight / 2) {
+        if (padding_ >= inputs_.surfaceWidth - padding_ || padding_ >= inputs_.surfaceHeight - padding_) {
             report(Code::SurfaceExceeded, screen.layoutPosition, "layout padding leaves no surface content box");
             return false;
         }
         return true;
     }
 
+    /// Resolves fixed and Fill sizes using TrustSC's equal-share rule; any remainder stays unused.
     [[nodiscard]] std::optional<std::vector<std::int64_t>>
     resolveAxis(std::span<const ast::Size> dimensions, std::int64_t available, std::int64_t spacing, ast::Position position, std::string_view context) {
         const std::int64_t gaps = dimensions.empty() ? 0 : static_cast<std::int64_t>(dimensions.size() - 1);
@@ -278,6 +321,7 @@ private:
         return result;
     }
 
+    /// Resolves one Row to an optional Panel followed by its flat leaf children.
     bool resolveRow(const ast::Node& row, LayoutRect bounds) {
         const std::string rowId      = idOf(row);
         std::int64_t      rowSpacing = 0;
@@ -333,6 +377,7 @@ private:
         return true;
     }
 
+    /// Returns a positioned node's fixed size after preflight validation.
     [[nodiscard]] std::int64_t fixedSize(const ast::Node& node, std::string_view name) const {
         const ast::Size& size = sizeOf(node, name);
         if (size.fill) {
@@ -341,11 +386,13 @@ private:
         return size.pixels;
     }
 
+    /// Appends an owned authored leaf to the flat result.
     void appendLeaf(const ast::Node& node, LayoutRect bounds, bool positioned) {
         result_.nodes.push_back(
             ResolvedNode{.id = idOf(node), .component = node.component, .bounds = bounds, .source = node, .positioned = positioned, .synthetic = false});
     }
 
+    /// Rechecks identifiers after synthetic background nodes have been added.
     bool validateUniqueIds() {
         std::map<std::string_view, ast::Position> seen;
         for (const ResolvedNode& node : result_.nodes) {
@@ -360,12 +407,13 @@ private:
         return true;
     }
 
+    /// Rejects overlap involving a positioned node; synthetic backgrounds are underlays.
     bool validatePositionedOverlap() {
         for (std::size_t first = 0; first < result_.nodes.size(); ++first) {
             for (std::size_t second = first + 1; second < result_.nodes.size(); ++second) {
                 const ResolvedNode& a = result_.nodes[first];
                 const ResolvedNode& b = result_.nodes[second];
-                if (a.component == "Panel" || b.component == "Panel" || (!a.positioned && !b.positioned) || !overlaps(a.bounds, b.bounds)) {
+                if (a.synthetic || b.synthetic || (!a.positioned && !b.positioned) || !overlaps(a.bounds, b.bounds)) {
                     continue;
                 }
                 const ResolvedNode& positioned = a.positioned ? a : b;
@@ -379,7 +427,9 @@ private:
         return true;
     }
 
+    /// Records one finding and discards every partial rectangle produced before it.
     void report(Code code, ast::Position position, std::string message) {
+        result_.nodes.clear();
         result_.diagnostics.push_back(diagnose(code, file_, position.line, position.column, std::move(message)));
     }
 
@@ -392,6 +442,7 @@ private:
 
 }  // namespace
 
+/// Implements the public layout-module entry point.
 LayoutResult resolveLayout(const ast::Screen& screen, std::string file, LayoutInputs inputs) {
     return Solver{std::move(file), inputs}.run(screen);
 }

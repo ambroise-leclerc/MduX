@@ -1,6 +1,6 @@
 /**
- * @file SharedConformanceTests.cpp
  * @brief The pinned `Compliatory/MedUI` conformance cases, run against this parser.
+ * @file SharedConformanceTests.cpp
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
@@ -32,6 +32,7 @@ import mdux.core.result;
 import mdux.evidence.json;
 import mdux.text.schema;
 import mdux.tools.cli;
+import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.parser;
@@ -534,6 +535,32 @@ void checkComponentDictionary(const std::filesystem::path& checkout, mdux::spec:
     return joined;
 }
 
+/// Collects authored external names so layout cases can pass the semantic shape gate without
+/// inventing theme or locale failures that belong to the semantics phase.
+void collectLayoutSemanticNames(const md::ast::Node& node, std::set<std::string>& themeTokens, std::set<std::string>& textKeys) {
+    const auto collectValue = [&](auto&& self, const md::ast::Value& value) -> void {
+        if (value.kind == md::ast::ValueKind::ColorToken) {
+            themeTokens.insert(value.text);
+        } else if (value.kind == md::ast::ValueKind::TextKey) {
+            textKeys.insert(value.text);
+        }
+        for (const std::shared_ptr<md::ast::Value>& element : value.list) {
+            if (element != nullptr) {
+                self(self, *element);
+            }
+        }
+    };
+
+    for (const md::ast::Field& field : node.fields) {
+        if (field.value != nullptr) {
+            collectValue(collectValue, *field.value);
+        }
+    }
+    for (const md::ast::Node& child : node.children) {
+        collectLayoutSemanticNames(child, themeTokens, textKeys);
+    }
+}
+
 /// `spec/diagnostics.md`, "Positions in conformance cases": a pinned position is matched as far as
 /// the declared precision goes, and reporting more than was declared fails. The declaration is
 /// checked rather than tolerated, so precision cannot move in either direction without a manifest
@@ -600,11 +627,45 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
         md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = packages});
         diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
     }
-    if (item.phase == "layout" && parsed.screen) {
-        const std::int64_t width    = parsed.screen->surface ? parsed.screen->surface->x : 800;
-        const std::int64_t height   = parsed.screen->surface ? parsed.screen->surface->y : 600;
-        md::LayoutResult   resolved = md::resolveLayout(*parsed.screen, file, {.surfaceWidth = width, .surfaceHeight = height});
-        diagnostics.insert(diagnostics.end(), std::make_move_iterator(resolved.diagnostics.begin()), std::make_move_iterator(resolved.diagnostics.end()));
+    if (item.phase == "layout" && parsed.screen && diagnostics.empty()) {
+        std::set<std::string> themeTokenStorage;
+        std::set<std::string> textKeyStorage;
+        for (const md::ast::Node& node : parsed.screen->nodes) {
+            collectLayoutSemanticNames(node, themeTokenStorage, textKeyStorage);
+        }
+
+        std::vector<std::string_view> themeTokens;
+        themeTokens.reserve(themeTokenStorage.size());
+        for (const std::string& token : themeTokenStorage) {
+            themeTokens.push_back(token);
+        }
+
+        mdux::text::TextPackage textPackage;
+        textPackage.header.id   = "shared-layout-semantic-gate";
+        textPackage.atlasId     = "shared-layout-atlas";
+        textPackage.locale      = "shared-layout-locale";
+        textPackage.sidecarPath = "runs.bin";
+        for (const std::string& key : textKeyStorage) {
+            textPackage.runs.push_back(mdux::text::TextRun{.id = key, .byteOffset = 0, .byteLength = 0, .sha256 = {}});
+        }
+        const std::array textPackages{textPackage};
+
+        md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = textPackages});
+        diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
+
+        if (diagnostics.empty()) {
+            // The shared schema has no build-surface input. Use a declared surface when present;
+            // otherwise pass the honest "unspecified" sentinel. Preflight findings such as
+            // positioned Fill remain observable, while a case that needs actual resolution must
+            // declare dimensions rather than inherit a local 800x600 invention.
+            md::LayoutInputs inputs{};
+            if (parsed.screen->surface) {
+                inputs.surfaceWidth  = parsed.screen->surface->x;
+                inputs.surfaceHeight = parsed.screen->surface->y;
+            }
+            md::LayoutResult resolved = md::resolveLayout(*parsed.screen, file, inputs);
+            diagnostics.insert(diagnostics.end(), std::make_move_iterator(resolved.diagnostics.begin()), std::make_move_iterator(resolved.diagnostics.end()));
+        }
     }
 
     const bool accepted = parsed.screen.has_value() && diagnostics.empty();
