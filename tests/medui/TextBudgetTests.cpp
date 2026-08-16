@@ -1,0 +1,490 @@
+/**
+ * @brief BDD scenarios for text-budget and dynamic-charset validation (issue #195).
+ * @file TextBudgetTests.cpp
+ *
+ * @compliance ADR-004 Trust zones in C++ (host tools zone)
+ * @compliance ADR-010 No on-device text shaping
+ * @compliance ADR-011 The deterministic `.medui` compile boundary
+ *
+ * The fixture font and the per-locale text packages are built here rather than read from
+ * `generated/`, and that is a deliberate difference from the evidence suites. A committed package
+ * pins one set of real translations; these scenarios need a *pair* of locales whose widths differ
+ * by a known number of pixels, so that "the widest approved translation is what the budget is
+ * measured against" is checkable by arithmetic rather than by whichever German string happens to be
+ * in the corpus today.
+ *
+ * The font is still a real `mdux::font::FontPackage` and passes `validate()`; the runs are still
+ * real v1 records decoded by the same `mdux::text::draw::decodeRecord()` the device draws with.
+ * What is synthetic is the vocabulary, not the format.
+ */
+
+import std;
+import speclab;
+import mdux.core.result;
+import mdux.font.schema;
+import mdux.text.schema;
+import mdux.tools.cli;
+import mdux.tools.medui.diagnostics;
+import mdux.tools.medui.layout;
+import mdux.tools.medui.parser;
+import mdux.tools.medui.textbudget;
+
+#include "../framework/SpecLabBridge.hpp"
+
+namespace {
+
+namespace md   = mdux::tools::medui;
+namespace cli  = mdux::tools::cli;
+namespace font = mdux::font;
+namespace text = mdux::text;
+
+/// Every glyph in the fixture font is this size, so an extent is countable by hand.
+constexpr std::uint32_t glyphWidth  = 8;
+constexpr std::uint32_t glyphHeight = 10;
+
+/// The pen step the fixture runs are baked at. Not the font's advance: a baker chooses positions,
+/// and this suite chooses a round number so that a run of n glyphs is `(n - 1) * 10 + 8` wide.
+constexpr std::int16_t penStep = 10;
+
+/// The baseline every fixture run sits on. With `bitmapOriginY == glyphHeight`, ink runs from y 0.
+constexpr std::int16_t baseline = 10;
+
+/// Package indices into the fixture font's glyph table, which is sorted by code point.
+constexpr std::uint16_t spaceIndex  = 0;   ///< U+0020, blank: an advance and no coverage
+constexpr std::uint16_t letterIndex = 12;  ///< U+0041 'A'
+
+/**
+ * @brief The fixture font: a blank space, the ten digits, `:`, and A-C, all 8x10.
+ *
+ * The digits share one advance width because `validate()` requires it - the tabular-figure rule
+ * from #161 - and this font is built to pass that check rather than around it.
+ */
+[[nodiscard]] font::FontPackage fixtureFont() {
+    font::FontPackage package;
+    package.id         = "fixture-ui";
+    package.unitsPerEm = 1000;
+    package.pixelSize  = 10;
+    package.locales    = {"en-US", "de-DE"};
+    package.atlas =
+        font::AtlasMetrics{.path = "atlas.bin", .width = 64, .height = 64, .byteLength = 64 * 64, .sha256 = std::string(64, 'a'), .occupancyPercent = 50};
+
+    const auto append = [&package](char32_t codePoint, bool blank) {
+        const auto slot = static_cast<std::uint32_t>(package.glyphs.size());
+        package.glyphs.push_back(font::GlyphRecord{.codePoint       = codePoint,
+                                                   .glyphIndex      = static_cast<std::uint16_t>(slot + 1),
+                                                   .advanceWidth    = 500,
+                                                   .leftSideBearing = 0,
+                                                   .x               = (slot % 8) * glyphWidth,
+                                                   .y               = (slot / 8) * glyphHeight,
+                                                   .width           = blank ? 0 : glyphWidth,
+                                                   .height          = blank ? 0 : glyphHeight,
+                                                   .bitmapOriginX   = 0,
+                                                   .bitmapOriginY   = blank ? 0 : static_cast<std::int32_t>(glyphHeight)});
+    };
+
+    append(U' ', true);
+    for (char32_t digit = U'0'; digit <= U'9'; ++digit) {
+        append(digit, false);
+    }
+    append(U':', false);
+    for (char32_t letter = U'A'; letter <= U'C'; ++letter) {
+        append(letter, false);
+    }
+
+    package.restrictedCharset = {
+        font::CharsetRange{.first = U' ', .last = U' '},
+        font::CharsetRange{.first = U'0', .last = U':'},
+        font::CharsetRange{.first = U'A', .last = U'C'}
+    };
+    return package;
+}
+
+/// Appends one little-endian v1 run record: package glyph index, pen x, baseline y.
+void appendRecord(std::vector<std::byte>& bytes, std::uint16_t packageIndex, std::int16_t x, std::int16_t y) {
+    const auto emit16 = [&bytes](std::uint16_t value) {
+        bytes.push_back(static_cast<std::byte>(value & 0xFFu));
+        bytes.push_back(static_cast<std::byte>((value >> 8) & 0xFFu));
+    };
+    emit16(packageIndex);
+    emit16(static_cast<std::uint16_t>(x));
+    emit16(static_cast<std::uint16_t>(y));
+}
+
+/// Bakes one run: the given glyphs, one `penStep` apart, on the fixture baseline.
+[[nodiscard]] std::vector<std::byte> bakeRun(std::span<const std::uint16_t> glyphs) {
+    std::vector<std::byte> bytes;
+    for (std::size_t index = 0; index < glyphs.size(); ++index) {
+        appendRecord(bytes, glyphs[index], static_cast<std::int16_t>(static_cast<std::int64_t>(index) * penStep), baseline);
+    }
+    return bytes;
+}
+
+/// One approved locale's package and the sidecar its runs address, kept together so a test can
+/// hand `checkTextBudgets()` a `LocaleText` without managing two lifetimes.
+struct Locale {
+    text::TextPackage      package;
+    std::vector<std::byte> sidecar;
+
+    [[nodiscard]] md::LocaleText view() const noexcept {
+        return md::LocaleText{.package = &package, .sidecar = sidecar};
+    }
+};
+
+/// Builds one locale's text package from `key -> run bytes`, concatenating the sidecar in order.
+///
+/// Only the header's id is set: `TextPackage` already defaults its `kind` and `schemaVersion`, and
+/// restating them here would be a second opinion about a format this suite does not own.
+[[nodiscard]] Locale bakeLocale(std::string locale, std::span<const std::pair<std::string, std::vector<std::byte>>> runs) {
+    Locale built;
+    built.package.header.id   = std::format("fixture-{}", locale);
+    built.package.atlasId     = "fixture-ui";
+    built.package.locale      = std::move(locale);
+    built.package.sidecarPath = "runs.bin";
+
+    for (const auto& [key, bytes] : runs) {
+        built.package.runs.push_back(text::TextRun{.id = key, .byteOffset = built.sidecar.size(), .byteLength = bytes.size(), .sha256 = {}});
+        built.sidecar.insert(built.sidecar.end(), bytes.begin(), bytes.end());
+    }
+    built.package.sidecarByteLength = built.sidecar.size();
+    return built;
+}
+
+/// One locale whose single key is `count` copies of 'A'.
+[[nodiscard]] Locale letterLocale(std::string locale, std::string key, std::size_t count) {
+    const std::vector<std::uint16_t>                                    glyphs(count, letterIndex);
+    const std::array<std::pair<std::string, std::vector<std::byte>>, 1> runs{
+        std::pair{std::move(key), bakeRun(glyphs)}
+    };
+    return bakeLocale(std::move(locale), runs);
+}
+
+/// Wraps a component body in a screen whose declared surface matches the build surface.
+[[nodiscard]] std::string screenWith(std::string_view body) {
+    return std::format("Screen Test {{\n"
+                       "    layout: Vertical {{ spacing: 0px; padding: 0px; }}\n"
+                       "    surface: 200px, 100px;\n"
+                       "{}"
+                       "}}\n",
+                       body);
+}
+
+/// One `Label` of the given box, carrying one text key.
+[[nodiscard]] std::string labelScreen(std::int64_t width, std::int64_t height, std::string_view key) {
+    return screenWith(std::format("    Label {{ id: title; width: {}px; height: {}px; text: t(\"{}\"); "
+                                  "color: Theme.Colors.Title; }}\n",
+                                  width,
+                                  height,
+                                  key));
+}
+
+/// Parses and resolves a screen against the 200x100 build surface these scenarios declare.
+[[nodiscard]] md::LayoutResult layoutOf(std::string_view source) {
+    md::ParseResult parsed = md::parse(source, "budget.medui");
+    if (!parsed.screen || !parsed.diagnostics.empty()) {
+        throw speclab::core::AssertionFailure("text budget test source did not parse", std::source_location::current());
+    }
+    md::LayoutResult resolved = md::resolveLayout(*parsed.screen, "budget.medui", {.surfaceWidth = 200, .surfaceHeight = 100});
+    if (!resolved.ok()) {
+        throw speclab::core::AssertionFailure("text budget test source did not resolve", std::source_location::current());
+    }
+    return resolved;
+}
+
+/// Finds one registered diagnostic in a budget result.
+[[nodiscard]] const cli::Diagnostic* find(const md::TextBudgetResult& result, md::Code code) {
+    const std::string_view wanted = md::id(code);
+    const auto             found  = std::ranges::find_if(result.diagnostics, [wanted](const cli::Diagnostic& diagnostic) {
+        return diagnostic.code == wanted;
+    });
+    return found == result.diagnostics.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] bool mentions(const cli::Diagnostic* diagnostic, std::string_view fragment) {
+    return diagnostic != nullptr && diagnostic->message.find(fragment) != std::string::npos;
+}
+
+// The governed dynamic-text table these scenarios resolve `format:` and `charset:` against. The
+// ranges are namespace-scope so the spans in a `DynamicTextRule` outlive the call that reads them.
+constexpr std::array digitsAndColon{
+    font::CharsetRange{.first = U'0', .last = U':'}
+};
+constexpr std::array digitsAndZone{
+    font::CharsetRange{.first = U'0', .last = U':'},
+    font::CharsetRange{.first = U'Z', .last = U'Z'}
+};
+
+}  // namespace
+
+const mdux::spec::Register widestTranslationDrivesTheBudget{
+    "The budget is measured against the widest approved translation, not the authoring one",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-widest-locale")
+            .Given("a 40px Label whose en-US run is 28px and whose de-DE run is 58px", [] {})
+            .When("the resolved screen is checked against both approved locales", [] {})
+            .Then("MEDUI-E050 names de-DE, the key, the required width and the available one",
+                  [] {
+                      mdux::spec::Checks                  checks;
+                      const font::FontPackage             fontPackage = fixtureFont();
+                      const Locale                        english     = letterLocale("en-US", "STR-TITLE", 3);
+                      const Locale                        german      = letterLocale("de-DE", "STR-TITLE", 6);
+                      const std::array<md::LocaleText, 2> locales{english.view(), german.view()};
+
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(labelScreen(40, 20, "STR-TITLE")),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::TextBudgetExceeded);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(result.diagnostics.size() == 1, std::format("only the failing locale is reported, got {}", result.diagnostics.size()));
+                      checks.expect(mentions(reported, "de-DE"), "the diagnostic names the locale");
+                      checks.expect(mentions(reported, "STR-TITLE"), "the diagnostic names the text key");
+                      checks.expect(mentions(reported, "58px"), "the diagnostic names the required width");
+                      checks.expect(mentions(reported, "40px"), "the diagnostic names the available width");
+                      checks.expect(result.measurements.empty(), "no measurement survives a failed budget");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register fittingScreenReportsItsWorstCase{
+    "A screen that fits every locale reports the worst case for the emitter to budget",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-worst-case-measurement")
+            .Given("a 100px Label whose widest approved translation is 58px", [] {})
+            .When("the resolved screen is checked", [] {})
+            .Then("it compiles and the measurement names de-DE with the per-axis maximum",
+                  [] {
+                      mdux::spec::Checks                  checks;
+                      const font::FontPackage             fontPackage = fixtureFont();
+                      const Locale                        english     = letterLocale("en-US", "STR-TITLE", 3);
+                      const Locale                        german      = letterLocale("de-DE", "STR-TITLE", 6);
+                      const std::array<md::LocaleText, 2> locales{english.view(), german.view()};
+
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(labelScreen(100, 20, "STR-TITLE")),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                      checks.expect(result.ok(), "the screen compiles");
+                      checks.expect(result.measurements.size() == 1, std::format("one text field is measured, got {}", result.measurements.size()));
+                      if (result.measurements.size() == 1) {
+                          const md::TextMeasurement& measured = result.measurements.front();
+                          checks.expect(measured.nodeId == "title", "the measurement names the node");
+                          checks.expect(measured.field == "text", "the measurement names the field");
+                          checks.expect(measured.textKey == "STR-TITLE", "the measurement names the key");
+                          checks.expect(measured.locale == "de-DE", "the widest locale is recorded");
+                          checks.expect(measured.extent == md::TextExtent{58, 10},
+                                        std::format("the extent is 58x10, got {}x{}", measured.extent.width, measured.extent.height));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register blankGlyphsAreNotInk{"A leading blank glyph does not widen the measured extent", "evidence-unit", [] {
+                                                    return speclab::Test("medui-textbudget-blank-glyphs-skipped")
+                                                        .Given("a run that opens with a space at the pen origin and three letters after it", [] {})
+                                                        .When("a 30px Label carrying that run is measured", [] {})
+                                                        .Then("the ink measures 28px and the box is accepted",
+                                                              [] {
+                                                                  mdux::spec::Checks      checks;
+                                                                  const font::FontPackage fontPackage = fixtureFont();
+
+                                                                  // Records at x = 0, 10, 20, 30: a blank space, then three letters. Counting
+                                                                  // the space as ink would measure from x 0 and make this 38px, which a 30px
+                                                                  // box would reject - so the acceptance below is the assertion.
+                                                                  const std::array<std::uint16_t, 4> glyphs{spaceIndex, letterIndex, letterIndex, letterIndex};
+                                                                  const std::array<std::pair<std::string, std::vector<std::byte>>, 1> runs{
+                                                                      std::pair{std::string{"STR-TITLE"}, bakeRun(glyphs)}
+                                                                  };
+                                                                  const Locale                        english = bakeLocale("en-US", runs);
+                                                                  const std::array<md::LocaleText, 1> locales{english.view()};
+
+                                                                  const md::TextBudgetResult result = md::checkTextBudgets(
+                                                                      layoutOf(labelScreen(30, 20, "STR-TITLE")),
+                                                                      "budget.medui",
+                                                                      {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                                                                  checks.expect(result.ok(), "the screen compiles");
+                                                                  checks.expect(result.measurements.size() == 1, "the field is measured");
+                                                                  if (result.measurements.size() == 1) {
+                                                                      checks.expect(result.measurements.front().extent == md::TextExtent{28, 10},
+                                                                                    std::format("the ink is 28x10, got {}x{}",
+                                                                                                result.measurements.front().extent.width,
+                                                                                                result.measurements.front().extent.height));
+                                                                  }
+                                                                  checks.raise();
+                                                              })
+                                                        .Execute();
+                                                }};
+
+const mdux::spec::Register heightIsBudgetedToo{"A box shorter than its translation is rejected on the vertical axis", "evidence-unit", [] {
+                                                   return speclab::Test("medui-textbudget-height-exceeded")
+                                                       .Given("a Label 8px tall carrying a run whose ink is 10px tall", [] {})
+                                                       .When("the resolved screen is checked", [] {})
+                                                       .Then("MEDUI-E050 names the height it needs and the height it has",
+                                                             [] {
+                                                                 mdux::spec::Checks                  checks;
+                                                                 const font::FontPackage             fontPackage = fixtureFont();
+                                                                 const Locale                        english     = letterLocale("en-US", "STR-TITLE", 2);
+                                                                 const std::array<md::LocaleText, 1> locales{english.view()};
+
+                                                                 const md::TextBudgetResult result = md::checkTextBudgets(
+                                                                     layoutOf(labelScreen(100, 8, "STR-TITLE")),
+                                                                     "budget.medui",
+                                                                     {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                                                                 const cli::Diagnostic* reported = find(result, md::Code::TextBudgetExceeded);
+                                                                 checks.expect(!result.ok(), "the screen is rejected");
+                                                                 checks.expect(mentions(reported, "height"), "the diagnostic names the axis that failed");
+                                                                 checks.expect(mentions(reported, "10px"), "the diagnostic names the required height");
+                                                                 checks.expect(mentions(reported, "8px"), "the diagnostic names the available height");
+                                                                 checks.raise();
+                                                             })
+                                                       .Execute();
+                                               }};
+
+const mdux::spec::Register dynamicTextCannotEscapeTheCharset{
+    "A format that can produce an unbaked character is MEDUI-E053",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-charset-escape")
+            .Given("a Clock whose format can emit U+005A, which the font package does not hold", [] {})
+            .When("the format is resolved against the governed dynamic-text table", [] {})
+            .Then("MEDUI-E053 names the escaping code point",
+                  [] {
+                      mdux::spec::Checks                       checks;
+                      const font::FontPackage                  fontPackage = fixtureFont();
+                      const std::array<md::DynamicTextRule, 1> table{
+                          md::DynamicTextRule{.name = "HH_MM_TZ", .produces = digitsAndZone}
+                      };
+
+                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM_TZ; }\n");
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = {}, .dynamicText = table});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::CharsetEscape);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(mentions(reported, "HH_MM_TZ"), "the diagnostic names the dynamic-text source");
+                      checks.expect(mentions(reported, "U+005A"), "the diagnostic names the code point that escapes");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register unresolvedDynamicTextFailsClosed{
+    "A dynamic-text source with no governed entry fails closed",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-unbounded-dynamic-source")
+            .Given("a Clock naming a format the governed table does not define", [] {})
+            .When("the format is resolved", [] {})
+            .Then("MEDUI-E053 says what it produces is not bounded, rather than passing it over",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+
+                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n");
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = {}, .dynamicText = {}});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::CharsetEscape);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(mentions(reported, "HH_MM"), "the diagnostic names the unresolved source");
+                      checks.expect(mentions(reported, "not bounded"), "the diagnostic says why it cannot pass");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register boundedDynamicTextIsAccepted{
+    "A format inside the restricted charset compiles, and an unnamed charset is not an error",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-charset-accepted")
+            .Given("a Clock producing digits and a colon, and a TextInput with no charset field", [] {})
+            .When("the screen is checked against the font package's restricted charset", [] {})
+            .Then("neither component is reported",
+                  [] {
+                      mdux::spec::Checks                       checks;
+                      const font::FontPackage                  fontPackage = fixtureFont();
+                      const std::array<md::DynamicTextRule, 1> table{
+                          md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
+                      };
+
+                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n"
+                                                                     "    TextInput { id: entry; width: 100px; height: 20px; source: \"OPERATOR_NOTE\"; "
+                                                                     "max_length: 16; color: Theme.Colors.Title; }\n");
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = {}, .dynamicText = table});
+
+                      checks.expect(result.ok(), std::format("the screen compiles, got {} diagnostics", result.diagnostics.size()));
+                      checks.expect(result.measurements.empty(), "a screen with no text key measures nothing");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register bypassedGatesThrow{"A miswired stage throws rather than emitting a diagnostic an author cannot act on", "evidence-unit", [] {
+                                                  return speclab::Test("medui-textbudget-gates-throw")
+                                                      .Given("a call with no font package, and a locale missing the key semantic analysis admitted", [] {})
+                                                      .When("the budget check runs", [] {})
+                                                      .Then("both are std::logic_error",
+                                                            [] {
+                                                                mdux::spec::Checks      checks;
+                                                                const font::FontPackage fontPackage = fixtureFont();
+                                                                const md::LayoutResult  resolved    = layoutOf(labelScreen(100, 20, "STR-TITLE"));
+
+                                                                bool threwWithoutFont = false;
+                                                                try {
+                                                                    [[maybe_unused]] const md::TextBudgetResult ignored = md::checkTextBudgets(
+                                                                        resolved,
+                                                                        "budget.medui",
+                                                                        {.font = nullptr, .locales = {}, .dynamicText = {}});
+                                                                } catch (const std::logic_error&) {
+                                                                    threwWithoutFont = true;
+                                                                }
+                                                                checks.expect(threwWithoutFont, "a null font package is a wiring error, not a diagnostic");
+
+                                                                const Locale                        other = letterLocale("en-US", "STR-OTHER", 3);
+                                                                const std::array<md::LocaleText, 1> locales{other.view()};
+                                                                bool                                threwWithoutRun = false;
+                                                                try {
+                                                                    [[maybe_unused]] const md::TextBudgetResult ignored = md::checkTextBudgets(
+                                                                        resolved,
+                                                                        "budget.medui",
+                                                                        {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+                                                                } catch (const std::logic_error&) {
+                                                                    threwWithoutRun = true;
+                                                                }
+                                                                checks.expect(threwWithoutRun, "an unmeasurable key means analyze() was bypassed");
+                                                                checks.raise();
+                                                            })
+                                                      .Execute();
+                                              }};
+
+const mdux::spec::Register fixturePackagesAreRealArtifacts{
+    "The fixture font and text packages satisfy their own schemas",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-fixtures-validate")
+            .Given("the synthetic font package and one baked locale", [] {})
+            .When("each is validated by the module that owns its format", [] {})
+            .Then("both pass, so the measurements above are taken from legal artifacts",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+                      const Locale            english     = letterLocale("en-US", "STR-TITLE", 3);
+
+                      checks.expect(fontPackage.validate().has_value(), "the fixture font is a valid font package");
+                      checks.expect(english.package.validate().has_value(), "the fixture locale is a valid text package");
+                      checks.expect(fontPackage.permits(U'A') && !fontPackage.permits(U'Z'),
+                                    "the restricted charset holds the letters the runs use and not the one they must not");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

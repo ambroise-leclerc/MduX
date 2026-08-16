@@ -674,19 +674,25 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
-# .medui compiler host-tools suite (issues #191, #192, #193, #194)
+# .medui compiler host-tools suite (issues #191, #192, #193, #194, #195)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
 # completeness, uniqueness, identifier shape, ordering against the retired list, and the envelope
 # diagnose() produces - and the lexer and parser (#192), whose rejection cases assert the code and
 # the position rather than the message, since #191 published the codes as the contract and
 # messages are explicitly rewordable.
+#
+# TextBudgetTests (#195) builds its own font and text packages rather than reading generated/: the
+# widest-approved-translation rule is only checkable when two locales differ by a width the test
+# chose. The packages are still validated by the schema modules that own their formats, so the
+# measurements are taken from artifacts that would be legal on disk.
 add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
     medui/ParserTests.cpp
     medui/SemanticTests.cpp
     medui/LayoutTests.cpp
+    medui/TextBudgetTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
