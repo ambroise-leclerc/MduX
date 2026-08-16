@@ -359,6 +359,16 @@ const mdux::spec::Register outOfRangeIntegerRejected{
                                             d->message.contains("represent"),
                                         "the diagnostic explains the integer range failure");
                       }
+                      bool installed = false;
+                      if (r.screen && !r.screen->nodes.empty()) {
+                          installed = std::ranges::any_of(
+                              r.screen->nodes.front().fields,
+                              [](const md::ast::Field& field) {
+                                  return field.name == "max_length";
+                              });
+                      }
+                      checks.expect(!installed,
+                                    "the malformed max_length is not installed in the AST");
                       checks.raise();
                   })
             .Execute();
