@@ -355,8 +355,9 @@ const mdux::spec::Register outOfRangeIntegerRejected{
                           checks.expect(d->line == 2 && d->column == 29,
                                         std::format("at the number, 2:29, got {}:{}",
                                                     d->line, d->column));
-                          checks.expect(d->message.contains("cannot represent"),
-                                        "the diagnostic explains the range failure");
+                          checks.expect(d->message.contains("integer") &&
+                                            d->message.contains("represent"),
+                                        "the diagnostic explains the integer range failure");
                       }
                       checks.raise();
                   })
