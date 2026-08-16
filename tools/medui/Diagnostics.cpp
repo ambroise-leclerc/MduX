@@ -26,7 +26,7 @@ using cli::Severity;
 // Numbers are assigned in blocks, with gaps left inside each block on purpose: a new grammar rule
 // should land next to the grammar rules rather than at the end of the table, and it can only do
 // that if its block has room. The blocks are documented on the enum in Diagnostics.cppm.
-constexpr std::array<CodeInfo, 22> table{{
+constexpr std::array<CodeInfo, 23> table{{
     {Code::RecipeUnreadable, "MEDUI-E000", Severity::Error,
      "the recipe file could not be opened",
      "check the path passed on the command line, and that the file is readable"},
@@ -81,6 +81,9 @@ constexpr std::array<CodeInfo, 22> table{{
      "a text key exists but is missing from at least one approved locale",
      "add the translation, or remove the locale from the recipe's approved list. A key present in "
      "one locale and absent in another is a screen that renders blank on a shipped device"},
+    {Code::FieldValueKind, "MEDUI-E033", Severity::Error,
+     "a field value has the wrong semantic kind",
+     "use the value form assigned to this field in the shared component model"},
 
     {Code::TextBudgetExceeded, "MEDUI-E050", Severity::Error,
      "a component's bounds cannot contain the widest approved translation",

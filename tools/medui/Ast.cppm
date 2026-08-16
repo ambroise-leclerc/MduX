@@ -59,9 +59,10 @@ enum class ValueKind : std::uint8_t {
     Point,       ///< `1392px, 80px`
     String,      ///< `"REQ-NS-001"` - a literal, which most fields must not accept (#193)
     TextKey,     ///< `t("STR-KEY")`
+    ImageRef,    ///< `img("IMAGE-ID")`
     ColorToken,  ///< `Theme.Colors.ScoreDigits`, carried unresolved
     Identifier,  ///< `Vertical`, `sedation-index`
-    Number,      ///< a bare integer, e.g. `spacing: 8` without a unit
+    Number,      ///< a bare integer, e.g. `max_length: 16`
     List,        ///< `[Bounds, ColorHash]`
 };
 
@@ -80,7 +81,7 @@ struct Value {
 
     Size size{};                       ///< kind == Size
     Point point{};                     ///< kind == Point
-    std::string text;                  ///< String, TextKey, ColorToken (the token name), Identifier
+    std::string text;                  ///< String, TextKey, ImageRef, ColorToken, Identifier
     std::int64_t number{0};            ///< Number
     std::vector<std::shared_ptr<Value>> list;  ///< List
 };

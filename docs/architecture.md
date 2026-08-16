@@ -98,7 +98,7 @@ performs no checking and confers no compliance.
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
-| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191) and parser (#192) are implemented, while emitters (#197) and `mdux-meduic` (#198) land on this same target |
+| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), and component/theme/locale semantic analyzer (#193) are implemented, while emitters (#197) and `mdux-meduic` (#198) land on this same target |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
@@ -242,7 +242,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | the replacement for the retired HTML/CSS path |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | parsing and semantic validation are implemented; layout, packaging, and emission remain |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
 | `constexpr` ML package emitter | [#153](https://github.com/ambroise-leclerc/MduX/issues/153) | would remove the startup JSON parse |

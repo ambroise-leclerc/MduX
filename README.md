@@ -144,6 +144,7 @@ Derived from the targets and tests that build on `develop`.
 | **Host tools** (never linked into a device target) | | |
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
 | `mdux-mlbake` | Implemented | safetensors import, golden generation, byte-verified model packages |
+| `MduXMeduiLib` | Partial | `.medui` parsing and semantic validation; layout, packaging, and emission remain ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
@@ -151,7 +152,6 @@ Derived from the targets and tests that build on `develop`.
 | Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
 | **Not started** | | |
 | Text and glyph rendering | Planned | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) |
-| `.medui` compiler | Planned | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) |
 | Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
 
 The HTML/CSS path that earlier revisions described was **deleted** by
