@@ -271,8 +271,8 @@ endif()
 # governed, which is also what stops a governed target linking it - mdux_verify_trust_zones()
 # reports that at configure time.
 #
-# At S4 (#193) this is the diagnostic registry (#191), lexer, AST, parser and semantic analyzer.
-# The emitters are #197, and the mdux-meduic executable with its mdux_compile_screen()
+# At S5 (#194) this is the diagnostic registry (#191), lexer, AST, parser, semantic analyzer and
+# integer-only bounded layout solver. The emitters are #197, and the mdux-meduic executable with its mdux_compile_screen()
 # registration is #198 - so there is still no add_executable() here and no bake call site. Every
 # later stage adds sources to this target rather than inventing another.
 add_library(MduXMeduiLib)
@@ -288,11 +288,13 @@ target_sources(MduXMeduiLib
             medui/Ast.cppm
             medui/Parser.cppm
             medui/Semantic.cppm
+            medui/Layout.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
         medui/Parser.cpp
         medui/Semantic.cpp
+        medui/Layout.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
