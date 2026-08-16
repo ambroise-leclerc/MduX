@@ -19,10 +19,11 @@
  *   and must be backed by a case that really executed. Claiming a phase with no adapter fails
  *   here instead of passing quietly.
  *
- * Syntax and semantics are observable: `md::parse` answers syntax acceptance, and `md::analyze`
- * checks the portable theme-token and per-locale key views in semantic case inputs. Claiming
- * `layout` or `safety` still needs the solver (#194) and golden pass (#196), so a claim to either
- * is rejected below rather than silently evaluated by a stage that cannot see it.
+ * Syntax, semantics and layout are observable: `md::parse` answers syntax acceptance,
+ * `md::analyze` checks the portable theme-token and per-locale key views in semantic case inputs,
+ * and `md::resolveLayout` runs the integer-only bounded solver. Claiming `safety` still needs the
+ * golden pass (#196), so that claim is rejected below rather than silently evaluated by a stage
+ * that cannot see it.
  */
 
 import std;
@@ -32,6 +33,7 @@ import mdux.evidence.json;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.diagnostics;
+import mdux.tools.medui.layout;
 import mdux.tools.medui.parser;
 import mdux.tools.medui.semantic;
 import mdux.tools.toml;
@@ -47,7 +49,7 @@ namespace toml = mdux::tools::toml;
 
 /// Phases this file can genuinely observe. Anything else in `capabilities` is a claim with no
 /// adapter behind it.
-constexpr std::array<std::string_view, 2> runnableCapabilities{"syntax", "semantics"};
+constexpr std::array<std::string_view, 3> runnableCapabilities{"syntax", "semantics", "layout"};
 
 [[noreturn]] void fail(std::string message, std::source_location where = std::source_location::current()) {
     throw speclab::core::AssertionFailure(std::move(message), where);
@@ -597,6 +599,12 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
 
         md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = packages});
         diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
+    }
+    if (item.phase == "layout" && parsed.screen) {
+        const std::int64_t width    = parsed.screen->surface ? parsed.screen->surface->x : 800;
+        const std::int64_t height   = parsed.screen->surface ? parsed.screen->surface->y : 600;
+        md::LayoutResult   resolved = md::resolveLayout(*parsed.screen, file, {.surfaceWidth = width, .surfaceHeight = height});
+        diagnostics.insert(diagnostics.end(), std::make_move_iterator(resolved.diagnostics.begin()), std::make_move_iterator(resolved.diagnostics.end()));
     }
 
     const bool accepted = parsed.screen.has_value() && diagnostics.empty();

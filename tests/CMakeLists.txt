@@ -674,7 +674,7 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
-# .medui compiler host-tools suite (issues #191, #192, #193)
+# .medui compiler host-tools suite (issues #191, #192, #193, #194)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
 # completeness, uniqueness, identifier shape, ordering against the retired list, and the envelope
@@ -686,6 +686,7 @@ add_executable(medui_tools_spec
     medui/DiagnosticsTests.cpp
     medui/ParserTests.cpp
     medui/SemanticTests.cpp
+    medui/LayoutTests.cpp
     medui/SharedConformanceTests.cpp
 )
 

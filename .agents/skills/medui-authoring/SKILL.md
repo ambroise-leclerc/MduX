@@ -10,13 +10,14 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: parsing and semantic validation are implemented; emission and runtime are not
+## Status: parsing, semantic validation, and bounded layout are implemented; emission and runtime are not
 
-**A `.medui` lexer, AST, parser and semantic analyzer exist** in the host-tools zone
-(`tools/medui/`). The diagnostic codes they emit are registered as `MEDUI-E###` (#191). The parser
-rejects structural violations (#192); the analyzer checks the closed component dictionary, each
-field's value domain, theme-token names, and text-key presence across every approved locale (#193).
-It does not substitute resolved values.
+**A `.medui` lexer, AST, parser, semantic analyzer, and integer-only bounded layout solver exist**
+in the host-tools zone (`tools/medui/`). The diagnostic codes they emit are registered as
+`MEDUI-E###` (#191). The parser rejects structural violations (#192); the analyzer checks the
+closed component dictionary, each field's value domain, theme-token names, and text-key presence
+across every approved locale (#193); and the solver flattens Vertical/Row layout to absolute
+rectangles without floating-point arithmetic (#194). The AST keeps names unresolved.
 
 **There is still no compiler, no emitter and no runtime.** The HTML/CSS path that used
 to stand in for one - `UiFileWatcher::loadContent()`, which sniffed a file extension and stored
@@ -106,8 +107,8 @@ verifier checks against. Rules:
 ## Checking a file without a full build
 
 `mdux-medui-check path/to/screen.medui` (issue #200) will validate a single file and print
-diagnostics — once it exists. The parser and analyzer it will call already detect syntax errors,
-structural violations, unknown dictionary/theme names, hardcoded text in localizable fields,
-wrong field value domains, and incomplete locale keys; what is missing is the command that exposes
-them. Until it lands, review a `.medui` file by hand against this grammar and the component table
-above.
+diagnostics — once it exists. The parser, analyzer, and solver it will call already detect syntax
+errors, structural violations, unknown dictionary/theme names, hardcoded text in localizable
+fields, wrong field value domains, incomplete locale keys, and layout overflow; what is missing is
+the command that exposes them. Until it lands, review a `.medui` file by hand against this grammar
+and the component table above.
