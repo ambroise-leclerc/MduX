@@ -191,6 +191,13 @@ private:
 
         TextExtent  worst{};
         std::string widestLocale;
+        // An explicit "nothing measured yet" flag rather than `widestLocale.empty()`. The tag would
+        // read as a sentinel only for as long as no approved locale has an empty one - and this
+        // stage takes packages by pointer without re-validating them, so an unvalidated package
+        // with an empty `locale` would make every later locale overwrite the widest measurement
+        // with a narrower one. Under-reporting the worst case is the one direction a budget check
+        // must not fail in.
+        bool measured{false};
 
         for (const LocaleText& locale : inputs_.locales) {
             const TextExtent extent = measure(locale, value.text);
@@ -216,11 +223,12 @@ private:
                                    node.bounds.height));
             }
 
-            if (widestLocale.empty() || extent.width > worst.width) {
+            if (!measured || extent.width > worst.width) {
                 worst.width  = extent.width;
                 widestLocale = locale.package->locale;
             }
             worst.height = std::max(worst.height, extent.height);
+            measured     = true;
         }
 
         measurements_.push_back(
@@ -276,20 +284,32 @@ private:
         // One diagnostic per field rather than per code point: a charset that escapes usually
         // escapes over a whole range, and an author fixes the range rather than each character.
         //
-        // The loop counts in `std::uint32_t` and stops at the last Unicode scalar value. A supplied
+        // The walk counts in `std::uint32_t` and stops at the last Unicode scalar value. A supplied
         // range is not `FontPackage::validate()`'d, so `last` may be anything a `char32_t` holds -
-        // and `point <= last` with `last` at the type's maximum never terminates.
+        // and `point <= last` with `last` at the type's maximum never terminates. A descending
+        // range produces nothing and is skipped rather than reported: what a `.medui` author wrote
+        // is a name, and the shape of the table behind it is not theirs to fix.
         constexpr std::uint32_t lastScalarValue = 0x10FFFF;
         for (const mdux::font::CharsetRange& range : found->produces) {
-            const std::uint32_t first = range.first;
             const std::uint32_t last  = std::min<std::uint32_t>(range.last, lastScalarValue);
-            for (std::uint32_t point = first; point <= last; ++point) {
+            std::uint32_t       point = range.first;
+
+            while (point <= last) {
                 if (!inputs_.font->permits(static_cast<char32_t>(point))) {
                     report(Code::CharsetEscape,
                            value.position,
                            std::format("'{}' can produce U+{:04X}, which font package '{}' cannot draw", value.text, point, inputs_.font->id));
                     return;
                 }
+                // `permits()` decides; this only chooses the next point worth asking about. A
+                // produced range covering the whole plane would otherwise cost a million binary
+                // searches per field, where the answer changes only at a charset-range edge.
+                const auto covering = std::ranges::find_if(inputs_.font->restrictedCharset, [point](const mdux::font::CharsetRange& admitted) {
+                    return admitted.contains(static_cast<char32_t>(point));
+                });
+                // `permits()` just said yes, so a covering range exists; stepping by one anyway
+                // keeps the loop finite rather than trusting two implementations to agree.
+                point = covering == inputs_.font->restrictedCharset.end() ? point + 1 : static_cast<std::uint32_t>(covering->last) + 1;
             }
         }
     }

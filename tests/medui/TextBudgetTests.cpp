@@ -213,6 +213,11 @@ constexpr std::array digitsAndZone{
     font::CharsetRange{.first = U'Z', .last = U'Z'}
 };
 
+/// U+0030..U+0041: the digits and the colon, then the gap the fixture font does not hold, then 'A'.
+constexpr std::array digitsThroughLetter{
+    font::CharsetRange{.first = U'0', .last = U'A'}
+};
+
 }  // namespace
 
 const mdux::spec::Register widestTranslationDrivesTheBudget{
@@ -277,6 +282,71 @@ const mdux::spec::Register fittingScreenReportsItsWorstCase{
                           checks.expect(measured.extent == md::TextExtent{58, 10},
                                         std::format("the extent is 58x10, got {}x{}", measured.extent.width, measured.extent.height));
                       }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register worstCaseSurvivesAnUnnamedLocale{
+    "The widest measurement is not lost to a locale whose tag is empty",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-worst-case-not-overwritten")
+            .Given("a 58px translation in a package with an empty locale tag, then a 28px en-US one", [] {})
+            .When("both are measured for the same key", [] {})
+            .Then("the recorded worst case is still 58px",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+
+                      // An empty tag is invalid - `TextPackage::validate()` rejects it - and this
+                      // stage takes packages by pointer without re-validating, so the tag must not
+                      // double as the "nothing measured yet" sentinel. If it did, the narrower
+                      // en-US measurement below would overwrite the wider one, and the compiler
+                      // would certify a budget too small for a translation it had just measured.
+                      const Locale                        unnamed = letterLocale("", "STR-TITLE", 6);
+                      const Locale                        english = letterLocale("en-US", "STR-TITLE", 3);
+                      const std::array<md::LocaleText, 2> locales{unnamed.view(), english.view()};
+
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(labelScreen(100, 20, "STR-TITLE")),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                      checks.expect(result.ok(), "the screen compiles");
+                      checks.expect(result.measurements.size() == 1, "the field is measured");
+                      if (result.measurements.size() == 1) {
+                          checks.expect(result.measurements.front().extent.width == 58,
+                                        std::format("the worst case is 58px, got {}px", result.measurements.front().extent.width));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register charsetWalkCrossesRangeBoundaries{
+    "A produced range spanning a gap in the charset is caught at the gap",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-charset-gap")
+            .Given("a source producing U+0030..U+0041, which the font holds either side of a gap", [] {})
+            .When("the produced range is walked against the restricted charset", [] {})
+            .Then("MEDUI-E053 names U+003B, the first code point in the gap",
+                  [] {
+                      mdux::spec::Checks                       checks;
+                      const font::FontPackage                  fontPackage = fixtureFont();
+                      const std::array<md::DynamicTextRule, 1> table{
+                          md::DynamicTextRule{.name = "DIGITS_TO_A", .produces = digitsThroughLetter}
+                      };
+
+                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: DIGITS_TO_A; }\n");
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = {}, .dynamicText = table});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::CharsetEscape);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(mentions(reported, "U+003B"), "the walk stops at the first code point the charset omits");
+                      checks.expect(result.diagnostics.size() == 1, std::format("one diagnostic per field, got {}", result.diagnostics.size()));
                       checks.raise();
                   })
             .Execute();
