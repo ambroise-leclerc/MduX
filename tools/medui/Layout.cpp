@@ -87,7 +87,9 @@ namespace {
 class Solver {
 public:
     Solver(std::string file, LayoutInputs inputs)
-        : file_{std::move(file)}, inputs_{inputs}, result_{.surfaceWidth = inputs.surfaceWidth, .surfaceHeight = inputs.surfaceHeight} {}
+        : file_{std::move(file)},
+          inputs_{inputs},
+          result_{.surfaceWidth = inputs.surfaceWidth, .surfaceHeight = inputs.surfaceHeight, .nodes = {}, .diagnostics = {}} {}
 
     [[nodiscard]] LayoutResult run(const ast::Screen& screen) {
         assertSingleRowLevel(screen);
