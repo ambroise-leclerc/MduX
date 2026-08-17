@@ -46,6 +46,19 @@
  * survives the widest approved translation. That is what #195 measures, and why the budget below
  * cannot be derived from the node count.
  *
+ * ## The colour table lives here, and its contents do not
+ *
+ * ADR-011 puts the *resolution* of `Theme.Colors.<Token>` on the device, as a bounded scan of a
+ * governed table - TrustSC's `THEME_COLORS` and `resolve_color_token()` are the reference, and both
+ * live in its governed crate. So `ThemeColor` and `resolveColorToken()` are here, beside the package
+ * that carries the names: a consumer holding this schema holds the whole device-side contract, and
+ * #199 inherits a resolver rather than writing a second one.
+ *
+ * What is deliberately *not* here is a palette. Which colours a device shows is a clinical and
+ * regulatory decision belonging to the product, exactly as the theme names semantic analysis
+ * validates against are an input rather than a constant (#193). MduX owns the representation and the
+ * lookup; the table is supplied.
+ *
  * ## What `validate()` checks, and what it deliberately does not
  *
  * It checks what a consumer is entitled to assume without looking: an identified screen, a positive
@@ -66,6 +79,7 @@ export module mdux.medui.schema;
 
 import std;
 import mdux.core.result;
+import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.report;
 
@@ -115,6 +129,102 @@ enum class SchemaError : std::uint8_t {
             return "the vertex budget exceeds what a 16-bit index can address";
     }
     return "unknown schema error";
+}
+
+/**
+ * @brief One entry of the governed colour table: a name a screen may carry, and what it resolves to.
+ *
+ * The device side of ADR-011's boundary. A compiled screen carries `Theme.Colors.<Token>` as a
+ * *name*, and the runtime turns it into a colour by scanning a table like this one - a bounded scan
+ * over fixed data, which is neither parsing nor unbounded work, and therefore not what the compile
+ * boundary exists to keep off a device. TrustSC reached this arrangement first: `THEME_COLORS` and
+ * `resolve_color_token()` live in its governed `trustsc-ui` crate, and this is the same shape.
+ */
+struct ThemeColor {
+    std::string_view       token;  ///< the full name, e.g. `Theme.Colors.ScoreDigits`
+    mdux::core::ColorRgba8 value{};
+
+    [[nodiscard]] constexpr bool operator==(const ThemeColor&) const noexcept = default;
+};
+
+enum class ThemeError : std::uint8_t {
+    MalformedToken,  ///< the name is not of the form `Theme.Colors.<Token>`
+    UnknownToken,    ///< well-formed, but the governed table does not define it
+};
+
+[[nodiscard]] constexpr std::string_view describe(ThemeError error) noexcept {
+    switch (error) {
+        case ThemeError::MalformedToken:
+            return "the colour is not a Theme.Colors.<Token> name";
+        case ThemeError::UnknownToken:
+            return "the governed colour table does not define this token";
+    }
+    return "unknown theme error";
+}
+
+/**
+ * @brief Whether `token` has the shape a colour name must have.
+ *
+ * The prefix, then a non-empty suffix of the characters an identifier may contain - ASCII letters,
+ * digits, `_` and `-` - with `.` admitted between segments, because the parser builds a dotted path
+ * and a product may legitimately name `Theme.Colors.Status.Ok`. No empty segment: a trailing dot or
+ * a `..` names nothing.
+ *
+ * Shape is not existence. A well-formed token may still be absent from a product's table, which is
+ * what `resolveColorToken()` reports and what the compiler already checks against the theme names it
+ * was given (#193). Keeping the two separate is what lets `validate()` reject a malformed name
+ * without holding a table it was never handed.
+ */
+[[nodiscard]] constexpr bool isColorToken(std::string_view token) noexcept {
+    if (!token.starts_with(colorTokenPrefix) || token.size() == colorTokenPrefix.size()) {
+        return false;
+    }
+
+    bool segmentEmpty = true;
+    for (const char character : token.substr(colorTokenPrefix.size())) {
+        if (character == '.') {
+            if (segmentEmpty) {
+                return false;
+            }
+            segmentEmpty = true;
+            continue;
+        }
+        const bool admitted = (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9')
+                              || character == '_' || character == '-';
+        if (!admitted) {
+            return false;
+        }
+        segmentEmpty = false;
+    }
+    return !segmentEmpty;
+}
+
+/**
+ * @brief Resolves a name a compiled screen carries against a product's governed colour table.
+ *
+ * A bounded scan with a `Result` on miss - never an allocation, never a throw, as ADR-011 requires
+ * and as `mdux-governed-lint` and `governed.noThrow.symbolScan` hold this module to. Linear rather
+ * than a binary search: a palette holds tens of entries, and requiring the table to be sorted would
+ * add an invariant a product's generated table could silently break, in exchange for a saving no
+ * frame would notice.
+ *
+ * **The table's contents are the product's, not this library's.** MduX defines the representation
+ * and the lookup; a palette is a clinical and regulatory decision belonging to the device it ships
+ * on, exactly as the theme names semantic analysis validates against are an input rather than a
+ * constant (#193). So there is no default table here to inherit, and a caller supplying an empty one
+ * gets `UnknownToken` for every name rather than a colour nobody approved.
+ */
+[[nodiscard]] constexpr mdux::core::Result<mdux::core::ColorRgba8, ThemeError> resolveColorToken(std::span<const ThemeColor> table,
+                                                                                                 std::string_view            token) noexcept {
+    if (!isColorToken(token)) {
+        return mdux::core::err(ThemeError::MalformedToken);
+    }
+    for (const ThemeColor& entry : table) {
+        if (entry.token == token) {
+            return entry.value;
+        }
+    }
+    return mdux::core::err(ThemeError::UnknownToken);
 }
 
 /**
@@ -230,10 +340,11 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        // The prefix alone is not a name: `Theme.Colors.` names nothing the governed table could
-        // resolve, so a screen carrying it would validate here and fail its colour lookup on the
-        // device - which is the one direction this check exists to prevent.
-        if (!node.colorToken.empty() && (!node.colorToken.starts_with(colorTokenPrefix) || node.colorToken.size() == colorTokenPrefix.size())) {
+        // The same shape rule the resolver applies, so a screen that validates here cannot fail the
+        // device lookup for a reason `validate()` could have seen. `Theme.Colors.` names nothing and
+        // `Theme.Colors.#` is not a name at all; both would otherwise pass the generated
+        // `static_assert` and fail only where nobody is watching.
+        if (!node.colorToken.empty() && !isColorToken(node.colorToken)) {
             return err(SchemaError::MalformedColorToken);
         }
     }

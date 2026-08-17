@@ -16,6 +16,7 @@
 import std;
 import speclab;
 import mdux.core.result;
+import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.report;
 import mdux.medui.schema;
@@ -66,6 +67,17 @@ constexpr ms::ScreenPackage constPackage{
 static_assert(constPackage.validate().has_value(), "the reference screen must validate at compile time");
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
+
+// The governed table a product supplies. Two entries are enough to tell a hit from a miss, and
+// `constexpr` so the resolution below happens at compile time rather than at start-up.
+constexpr std::array<ms::ThemeColor, 2> constTheme{
+    ms::ThemeColor{      .token = "Theme.Colors.Title",   .value = {.r = 12, .g = 24, .b = 36, .a = 255}},
+    ms::ThemeColor{.token = "Theme.Colors.ScoreDigits", .value = {.r = 33, .g = 184, .b = 107, .a = 255}}
+};
+
+static_assert(ms::resolveColorToken(constTheme, "Theme.Colors.ScoreDigits").has_value(), "a name the table defines resolves at compile time");
+static_assert(ms::resolveColorToken(constTheme, "Theme.Colors.ScoreDigits").value() == mdux::core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255},
+              "and resolves to the colour the table carries");
 
 // ---------------------------------------------------------------------------
 // A mutable equivalent, so each rejection can change exactly one field
@@ -304,6 +316,72 @@ const mdux::spec::Register sizingIsNotThisModulesClaim{
                       tiny.budget = mdux::draw::DrawBudget{.maxVertices = 4, .maxIndices = 6, .maxCommands = 1};
                       checks.expect(!errorOf(tiny).has_value(),
                                     std::format("an undersized budget is not this module's to refuse, got {}", describe(errorOf(tiny))));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register colourTokensResolveAgainstAGovernedTable{
+    "A carried name resolves against the product's table, and a miss is a Result rather than a guess",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-colour-resolution")
+            .Given("a two-entry governed colour table", [] {})
+            .When("a defined name, an undefined one, and two malformed ones are resolved", [] {})
+            .Then("each answers with the colour or with the error that says which kind of failure it is",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const auto hit = ms::resolveColorToken(constTheme, "Theme.Colors.Title");
+                      checks.expect(hit.has_value() && *hit == mdux::core::ColorRgba8{.r = 12, .g = 24, .b = 36, .a = 255},
+                                    "a defined name resolves to its colour");
+
+                      // A miss is not a colour. ADR-011 keeps the lookup bounded and fallible on
+                      // purpose: a fallback tint would render something nobody approved, which is
+                      // the failure mode a governed table exists to prevent.
+                      const auto miss = ms::resolveColorToken(constTheme, "Theme.Colors.Undefined");
+                      checks.expect(!miss.has_value() && miss.error() == ms::ThemeError::UnknownToken,
+                                    "a name the table does not define is a miss, not a default");
+
+                      const auto malformed = ms::resolveColorToken(constTheme, "Theme.Colors.#");
+                      checks.expect(!malformed.has_value() && malformed.error() == ms::ThemeError::MalformedToken,
+                                    "a name that is not a name is distinguished from one that is merely absent");
+
+                      const auto value = ms::resolveColorToken(constTheme, "#21B86B");
+                      checks.expect(!value.has_value() && value.error() == ms::ThemeError::MalformedToken, "a colour value is refused where a name belongs");
+
+                      checks.expect(!ms::resolveColorToken({}, "Theme.Colors.Title").has_value(),
+                                    "an empty table answers every name with a miss rather than a colour nobody approved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register tokenShapeMatchesWhatTheParserAccepts{
+    "The shape rule admits what the language can write, and refuses what it cannot",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-colour-shape")
+            .Given("names the parser produces and names it cannot", [] {})
+            .When("each is checked for shape", [] {})
+            .Then("the rule tracks the grammar rather than a stricter guess at it",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The parser builds a dotted path from identifier tokens, and an identifier
+                      // may contain digits, `_` and `-`. A stricter rule here would reject screens
+                      // the compiler accepted, which is the worse direction to be wrong in.
+                      checks.expect(ms::isColorToken("Theme.Colors.ScoreDigits"), "the ordinary form");
+                      checks.expect(ms::isColorToken("Theme.Colors.Status-Ok"), "a hyphenated name");
+                      checks.expect(ms::isColorToken("Theme.Colors.Alarm_2"), "digits and an underscore");
+                      checks.expect(ms::isColorToken("Theme.Colors.Status.Ok"), "a nested path, which the parser can produce");
+
+                      checks.expect(!ms::isColorToken("Theme.Colors."), "the bare prefix names nothing");
+                      checks.expect(!ms::isColorToken("Theme.Colors.Status."), "a trailing dot leaves an empty segment");
+                      checks.expect(!ms::isColorToken("Theme.Colors..Ok"), "so does a doubled one");
+                      checks.expect(!ms::isColorToken("Theme.Colors.#"), "punctuation is not an identifier character");
+                      checks.expect(!ms::isColorToken("Palette.Title"), "another prefix is another table");
+                      checks.expect(!ms::isColorToken(""), "and nothing at all is not a name");
                       checks.raise();
                   })
             .Execute();
