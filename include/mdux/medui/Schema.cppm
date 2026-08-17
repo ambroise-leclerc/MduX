@@ -74,7 +74,8 @@ export namespace mdux::medui {
 /// The `<kind>` component of `generated/<kind>/<id>/`, and the value of a package's `kind` member.
 inline constexpr std::string_view packageKind = "screen";
 
-/// The prefix every colour a node draws with must carry. The package holds names, never values.
+/// The prefix every colour a node draws with must carry, and which it must carry *something* after:
+/// the package holds names, never values, and `Theme.Colors.` on its own is not a name.
 inline constexpr std::string_view colorTokenPrefix = "Theme.Colors.";
 
 enum class SchemaError : std::uint8_t {
@@ -229,7 +230,10 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        if (!node.colorToken.empty() && !node.colorToken.starts_with(colorTokenPrefix)) {
+        // The prefix alone is not a name: `Theme.Colors.` names nothing the governed table could
+        // resolve, so a screen carrying it would validate here and fail its colour lookup on the
+        // device - which is the one direction this check exists to prevent.
+        if (!node.colorToken.empty() && (!node.colorToken.starts_with(colorTokenPrefix) || node.colorToken.size() == colorTokenPrefix.size())) {
             return err(SchemaError::MalformedColorToken);
         }
     }

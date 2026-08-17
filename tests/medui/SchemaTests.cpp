@@ -218,30 +218,40 @@ const mdux::spec::Register surfaceMustHaveExtent{"A surface with no extent conta
                                                          .Execute();
                                                  }};
 
-const mdux::spec::Register coloursAreNamesNotValues{"A colour a node draws with is a governed name, never a value", "evidence-unit", [] {
-                                                        return speclab::Test("medui-schema-colour-tokens")
-                                                            .Given("the reference screen", [] {})
-                                                            .When("a node carries an RGBA literal where its token belongs, and another carries none", [] {})
-                                                            .Then("the literal is refused and the absent one is not",
-                                                                  [] {
-                                                                      mdux::spec::Checks checks;
+const mdux::spec::Register coloursAreNamesNotValues{
+    "A colour a node draws with is a governed name, never a value",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-colour-tokens")
+            .Given("the reference screen", [] {})
+            .When("a node carries an RGBA literal where its token belongs, and another carries none", [] {})
+            .Then("the literal is refused and the absent one is not",
+                  [] {
+                      mdux::spec::Checks checks;
 
-                                                                      // ADR-011 keeps values off the device side of the boundary: a package that
-                                                                      // carried `[33, 184, 107, 255]` would have performed the substitution the
-                                                                      // governed table exists to perform, and a reviewer would read numbers.
-                                                                      Fixture literal;
-                                                                      literal.nodes[1].colorToken = "#21B86B";
-                                                                      checks.expect(
-                                                                          errorOf(literal) == ms::SchemaError::MalformedColorToken,
-                                                                          std::format("a colour value is refused, got {}", describe(errorOf(literal))));
+                      // ADR-011 keeps values off the device side of the boundary: a package that
+                      // carried `[33, 184, 107, 255]` would have performed the substitution the
+                      // governed table exists to perform, and a reviewer would read numbers.
+                      Fixture literal;
+                      literal.nodes[1].colorToken = "#21B86B";
+                      checks.expect(errorOf(literal) == ms::SchemaError::MalformedColorToken,
+                                    std::format("a colour value is refused, got {}", describe(errorOf(literal))));
 
-                                                                      Fixture untinted;
-                                                                      untinted.nodes[1].colorToken = {};
-                                                                      checks.expect(!errorOf(untinted).has_value(), "a node that declares no tint is legal");
-                                                                      checks.raise();
-                                                                  })
-                                                            .Execute();
-                                                    }};
+                      // The prefix on its own resolves to nothing in the
+                      // governed table, so a screen carrying it would validate
+                      // at compile time and fail its lookup on the device.
+                      Fixture bare;
+                      bare.nodes[1].colorToken = ms::colorTokenPrefix;
+                      checks.expect(errorOf(bare) == ms::SchemaError::MalformedColorToken,
+                                    std::format("a bare Theme.Colors. prefix names nothing and is refused, got {}", describe(errorOf(bare))));
+
+                      Fixture untinted;
+                      untinted.nodes[1].colorToken = {};
+                      checks.expect(!errorOf(untinted).has_value(), "a node that declares no tint is legal");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register budgetMustBeIndexableAndNonEmpty{
     "The budget must be addressable, and must not be empty for a screen that draws",
