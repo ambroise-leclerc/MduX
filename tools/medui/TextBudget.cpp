@@ -134,6 +134,7 @@ public:
         if (inputs_.font == nullptr) {
             throw std::logic_error("text budget requires the font package the approved locales were baked into");
         }
+        checkLocaleWiring();
     }
 
     /// Checks one resolved screen, returning no measurements on any diagnostic.
@@ -148,6 +149,65 @@ public:
     }
 
 private:
+    /**
+     * @brief Checks the supplied locales against the set the font package approves, once.
+     *
+     * A budget is a claim about the *worst* approved translation, so the set it was measured over
+     * has to be the approved one. Accepting a subset would let a caller hand over the locale it was
+     * looking at and receive a screen certified against a set nobody approved - and the omitted
+     * translation is precisely the one that overflows, because a locale nobody measured is a locale
+     * nobody sized for.
+     *
+     * Each package's own wiring is checked here too, rather than at the point some key happens to
+     * be measured: identity against the font, and a sidecar whose size is the one the package
+     * declares. A truncated sidecar that still contains the first run would otherwise measure that
+     * run and mismeasure everything after it, which is the failure this check exists to make loud.
+     */
+    void checkLocaleWiring() const {
+        std::vector<std::string_view> supplied;
+        supplied.reserve(inputs_.locales.size());
+
+        for (const LocaleText& locale : inputs_.locales) {
+            if (locale.package == nullptr) {
+                throw std::logic_error("text budget received an approved locale with no text package");
+            }
+            const std::string_view tag = locale.package->locale;
+
+            if (locale.package->atlasId != inputs_.font->id) {
+                throw std::logic_error(
+                    std::format("locale '{}' was baked against font package '{}', not '{}'", tag, locale.package->atlasId, inputs_.font->id));
+            }
+            if (locale.sidecar.size() != locale.package->sidecarByteLength) {
+                throw std::logic_error(std::format("locale '{}' declares a {}-byte sidecar and was given {} bytes",
+                                                   tag,
+                                                   locale.package->sidecarByteLength,
+                                                   locale.sidecar.size()));
+            }
+            if (std::ranges::any_of(supplied, [tag](std::string_view seen) {
+                    return seen == tag;
+                })) {
+                throw std::logic_error(std::format("locale '{}' was supplied twice", tag));
+            }
+            if (!std::ranges::any_of(inputs_.font->locales, [tag](std::string_view approved) {
+                    return approved == tag;
+                })) {
+                throw std::logic_error(std::format("locale '{}' is not approved by font package '{}'", tag, inputs_.font->id));
+            }
+            supplied.push_back(tag);
+        }
+
+        for (const std::string& approved : inputs_.font->locales) {
+            if (!std::ranges::any_of(supplied, [&approved](std::string_view seen) {
+                    return seen == approved;
+                })) {
+                throw std::logic_error(std::format("font package '{}' approves locale '{}', which was not supplied; a "
+                                                   "budget measured over a subset of the approved locales is not a budget",
+                                                   inputs_.font->id,
+                                                   approved));
+            }
+        }
+    }
+
     void report(Code code, ast::Position position, std::string message) {
         diagnostics_.push_back(diagnose(code, file_, position.line, position.column, std::move(message)));
     }
@@ -236,15 +296,10 @@ private:
     }
 
     /// Measures one key against one locale's committed package.
+    ///
+    /// The package's identity, and that its sidecar is whole, were settled by `checkLocaleWiring()`
+    /// before any node was read. What is left here is the range this key actually names.
     [[nodiscard]] TextExtent measure(const LocaleText& locale, std::string_view key) const {
-        if (locale.package == nullptr) {
-            throw std::logic_error("text budget received an approved locale with no text package");
-        }
-        if (locale.package->atlasId != inputs_.font->id) {
-            throw std::logic_error(
-                std::format("locale '{}' was baked against font package '{}', not '{}'", locale.package->locale, locale.package->atlasId, inputs_.font->id));
-        }
-
         const mdux::text::TextRun* run = locale.package->find(key);
         if (run == nullptr) {
             throw std::logic_error(std::format("text key '{}' has no run in approved locale '{}'; semantic analysis is a required gate before the budget check",
@@ -284,11 +339,11 @@ private:
         // One diagnostic per field rather than per code point: a charset that escapes usually
         // escapes over a whole range, and an author fixes the range rather than each character.
         //
-        // The walk counts in `std::uint32_t` and stops at the last Unicode scalar value. A supplied
-        // range is not `FontPackage::validate()`'d, so `last` may be anything a `char32_t` holds -
-        // and `point <= last` with `last` at the type's maximum never terminates. A descending
-        // range produces nothing and is skipped rather than reported: what a `.medui` author wrote
-        // is a name, and the shape of the table behind it is not theirs to fix.
+        // The walk counts in `std::uint32_t` because a supplied range is not
+        // `FontPackage::validate()`'d - `last` may be anything a `char32_t` holds, and `point <=
+        // last` with `last` at the type's maximum never terminates. A descending range produces
+        // nothing and is skipped rather than reported: what a `.medui` author wrote is a name, and
+        // the shape of the table behind it is not theirs to fix.
         constexpr std::uint32_t lastScalarValue = 0x10FFFF;
         for (const mdux::font::CharsetRange& range : found->produces) {
             const std::uint32_t last  = std::min<std::uint32_t>(range.last, lastScalarValue);
@@ -310,6 +365,18 @@ private:
                 // `permits()` just said yes, so a covering range exists; stepping by one anyway
                 // keeps the loop finite rather than trusting two implementations to agree.
                 point = covering == inputs_.font->restrictedCharset.end() ? point + 1 : static_cast<std::uint32_t>(covering->last) + 1;
+            }
+
+            // A range reaching past the last Unicode scalar value is reported rather than clamped.
+            // Clamping was the first revision's behaviour and it was wrong in the quiet direction:
+            // the table would be claiming code points that are not characters at all, and the stage
+            // would have measured the part it recognised and said nothing about the rest.
+            if (range.first <= range.last && range.last > lastScalarValue) {
+                const std::uint32_t offending = std::max<std::uint32_t>(range.first, lastScalarValue + 1);
+                report(Code::CharsetEscape,
+                       value.position,
+                       std::format("'{}' can produce U+{:04X}, which is not a Unicode scalar value", value.text, offending));
+                return;
             }
         }
     }

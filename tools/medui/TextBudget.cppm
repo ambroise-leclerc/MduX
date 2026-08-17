@@ -23,9 +23,10 @@
  * So the screen a device holds is one rectangle per node for all locales, and the rectangle has to
  * be the one that survives the worst translation. German and Finnish routinely run half again the
  * length of English; a box sized against the authoring locale renders a clipped word on a shipped
- * device, in a language the author does not read, on a screen nobody re-reviewed. That is a
- * usability failure IEC 62366-1 asks to be controlled, and ADR-011's answer is to make it fail to
- * compile rather than to mitigate it downstream.
+ * device, in a language the author does not read, on a screen nobody re-reviewed. This project
+ * treats that as a usability risk to be controlled at build time, and ADR-011's answer is to make
+ * it fail to compile rather than to mitigate it downstream. Where that decision sits against the
+ * standards corpus is ADR-011's to record, not this module's to assert.
  *
  * ## What "measure" means here, and what it does not
  *
@@ -107,7 +108,12 @@ export namespace mdux::tools::medui {
  *
  * The package and the sidecar are separate because that is how they are committed - `package.json`
  * beside `runs.bin` - and the caller is what reads them. `sidecar` must be the whole file: run
- * ranges are absolute offsets into it, exactly as `TextPackage::validate()` checked them.
+ * ranges are absolute offsets into it, exactly as `TextPackage::validate()` checked them, and
+ * `checkTextBudgets()` refuses a span whose size is not the package's own `sidecarByteLength`.
+ *
+ * Refusing on the *whole* length rather than on each run's end is the difference between a check
+ * that holds and one that happens to hold: a truncated sidecar whose first run survives the cut
+ * would measure that run correctly and mismeasure - or silently skip - every run after it.
  */
 struct LocaleText {
     const mdux::text::TextPackage* package{nullptr};
@@ -136,8 +142,14 @@ struct DynamicTextRule {
  *
  * `font` is the committed font package the approved locales were baked into, and it is required:
  * there is no measurement without metrics, and a defaulted one would be a second metrics path.
- * `locales` carries every approved locale, because the budget is the worst of them and a caller
- * that passed one locale would be certifying a screen nobody checked.
+ *
+ * `locales` must be *exactly* the set the font package approves - one entry per tag in
+ * `FontPackage::locales`, none missing, none repeated, none outside it - and that is checked rather
+ * than assumed. A budget is a claim about the worst approved translation, so a caller that supplied
+ * only the locale it happened to be looking at would get a screen certified against a set nobody
+ * approved: the omitted German or Finnish translation is exactly the one that overflows, and it
+ * would overflow on a device with the compiler's blessing. Requiring the whole set makes that
+ * particular silence impossible.
  */
 struct TextBudgetInputs {
     const mdux::font::FontPackage*   font{nullptr};
@@ -194,11 +206,15 @@ struct TextBudgetResult {
  * author reading top to bottom reads them in the order they were written.
  *
  * The stage assumes its gates: `analyze()` has accepted the screen, so every text key resolves in
- * every approved locale, and `resolveLayout()` has produced these bounds. A key with no run, a
- * sidecar shorter than its package declares, a text package baked against a different font, or a
- * record naming a glyph outside the package all mean a caller wired the stages together wrongly
- * rather than an author writing a bad screen, and each throws `std::logic_error` rather than being
- * reported as a diagnostic an author cannot act on.
+ * every approved locale, and `resolveLayout()` has produced these bounds. An approved locale that
+ * was not supplied, a supplied locale the font package does not approve, a duplicate locale, a
+ * sidecar whose size is not the one its package declares, a key with no run, a text package baked
+ * against a different font, or a record naming a glyph outside the package all mean a caller wired
+ * the stages together wrongly rather than an author writing a bad screen, and each throws
+ * `std::logic_error` rather than being reported as a diagnostic an author cannot act on.
+ *
+ * The locale, sidecar, font-identity and duplicate checks run once, before any node is looked at,
+ * so a miswired call fails on the wiring rather than on whichever screen happened to have text.
  *
  * @throws std::logic_error if `inputs.font` is null, or if any gate above was bypassed.
  */
