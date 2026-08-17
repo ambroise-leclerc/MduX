@@ -720,6 +720,51 @@ const mdux::spec::Register incompleteApprovedSetIsRefused{
             .Execute();
     }};
 
+const mdux::spec::Register unwalkableFontCharsetIsRefused{
+    "A font package whose charset table cannot be walked is refused rather than walked",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-font-charset-walkable")
+            .Given("a font package with a charset range ending at the type maximum, and one that descends", [] {})
+            .When("a screen naming a dynamic-text source is checked against each", [] {})
+            .Then("both are std::logic_error, and the walk cannot loop",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // Without the up-front check this scenario would hang rather than fail: the
+                      // walk advances to `covering->last + 1`, which wraps to zero for a range
+                      // ending at the type maximum and selects the same range forever. A hang is
+                      // the one failure a test cannot report, which is why the check is up front
+                      // rather than a guard inside the loop.
+                      font::FontPackage wrapping = fixtureFont();
+                      wrapping.restrictedCharset.push_back(font::CharsetRange{.first = U'X', .last = static_cast<char32_t>(0xFFFFFFFF)});
+
+                      font::FontPackage descending = fixtureFont();
+                      descending.restrictedCharset.push_back(font::CharsetRange{.first = U'Y', .last = U'X'});
+
+                      const ApprovedText                       approved = approvedText("STR-UNUSED", 1, 1);
+                      const auto                               locales  = approved.views();
+                      const std::array<md::DynamicTextRule, 1> table{
+                          md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
+                      };
+                      const md::LayoutResult resolved = layoutOf(screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n"));
+
+                      const auto check = [&](const font::FontPackage& fontPackage) {
+                          return throwsWiringError([&] {
+                              [[maybe_unused]] const md::TextBudgetResult ignored =
+                                  md::checkTextBudgets(resolved, "budget.medui", {.font = &fontPackage, .locales = locales, .dynamicText = table});
+                          });
+                      };
+
+                      checks.expect(check(wrapping), "a charset range past the last Unicode scalar value is refused");
+                      checks.expect(check(descending), "a descending charset range is refused");
+                      checks.expect(!wrapping.validate().has_value() && !descending.validate().has_value(),
+                                    "FontPackage::validate() rejects both too - this stage guards the packages it is handed unvalidated");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register malformedPackagesAreWiringErrors{
     "A miswired stage throws rather than emitting a diagnostic an author cannot act on",
     "evidence-unit",

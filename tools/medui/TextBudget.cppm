@@ -209,7 +209,8 @@ struct TextBudgetResult {
  * every approved locale, and `resolveLayout()` has produced these bounds. An approved locale that
  * was not supplied, a supplied locale the font package does not approve, a duplicate locale, a
  * sidecar whose size is not the one its package declares, a key with no run, a text package baked
- * against a different font, or a record naming a glyph outside the package all mean a caller wired
+ * against a different font, a font package whose restricted charset descends or reaches past the
+ * last Unicode scalar value, or a record naming a glyph outside the package all mean a caller wired
  * the stages together wrongly rather than an author writing a bad screen, and each throws
  * `std::logic_error` rather than being reported as a diagnostic an author cannot act on.
  *

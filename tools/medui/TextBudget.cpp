@@ -134,6 +134,7 @@ public:
         if (inputs_.font == nullptr) {
             throw std::logic_error("text budget requires the font package the approved locales were baked into");
         }
+        checkFontCharset();
         checkLocaleWiring();
     }
 
@@ -149,6 +150,39 @@ public:
     }
 
 private:
+    /**
+     * @brief Checks that the font package's own charset table is walkable, once.
+     *
+     * The charset walk in `checkDynamicText()` advances by jumping to the end of the range that
+     * admitted a code point. That is only a *step* if the range ends somewhere below the type's
+     * maximum: a range ending at `0xFFFFFFFF` would make `last + 1` wrap to zero and select the same
+     * range forever, so a malformed table would hang the compiler rather than fail it.
+     *
+     * `FontPackage::validate()` rejects such a range, but this stage takes the package by pointer
+     * and never re-validates it - the same reason the produced ranges are treated as untrusted.
+     * Trusting one table while distrusting the other was the inconsistency this check removes.
+     *
+     * Only what the walk relies on is checked: an ascending range that stops at a Unicode scalar
+     * value. Sortedness, overlap and glyph coverage belong to `validate()` and are not restated
+     * here, because a second partial copy of that contract is worse than none.
+     */
+    void checkFontCharset() const {
+        constexpr std::uint32_t lastScalarValue = 0x10FFFF;
+        for (const mdux::font::CharsetRange& range : inputs_.font->restrictedCharset) {
+            if (range.last < range.first) {
+                throw std::logic_error(std::format("font package '{}' declares a charset range from U+{:04X} down to U+{:04X}",
+                                                   inputs_.font->id,
+                                                   static_cast<std::uint32_t>(range.first),
+                                                   static_cast<std::uint32_t>(range.last)));
+            }
+            if (static_cast<std::uint32_t>(range.last) > lastScalarValue) {
+                throw std::logic_error(std::format("font package '{}' declares a charset range ending at U+{:04X}, past the last Unicode scalar value",
+                                                   inputs_.font->id,
+                                                   static_cast<std::uint32_t>(range.last)));
+            }
+        }
+    }
+
     /**
      * @brief Checks the supplied locales against the set the font package approves, once.
      *
@@ -362,8 +396,11 @@ private:
                 const auto covering = std::ranges::find_if(inputs_.font->restrictedCharset, [point](const mdux::font::CharsetRange& admitted) {
                     return admitted.contains(static_cast<char32_t>(point));
                 });
-                // `permits()` just said yes, so a covering range exists; stepping by one anyway
-                // keeps the loop finite rather than trusting two implementations to agree.
+                // The step is strictly forward, and both branches are bounded: `checkFontCharset()`
+                // has established that every charset range ends at a scalar value, so `last + 1`
+                // cannot wrap, and `point` is itself bounded by `last` above. `permits()` just said
+                // yes, so a covering range exists; stepping by one where it does not keeps the walk
+                // finite rather than trusting two lookups to agree.
                 point = covering == inputs_.font->restrictedCharset.end() ? point + 1 : static_cast<std::uint32_t>(covering->last) + 1;
             }
 
