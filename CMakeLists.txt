@@ -197,6 +197,7 @@ target_sources(MduXCore
             include/mdux/font/Schema.cppm
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
+            include/mdux/medui/Schema.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp

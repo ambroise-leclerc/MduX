@@ -68,6 +68,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.schema` | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
+| `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
 
 `mdux.core.result` is a naming alias over `std::expected`, not a reimplementation
 ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)).
