@@ -59,6 +59,33 @@ constexpr std::array dynamicFields{
 }
 
 /**
+ * @brief The first code point in an ascending range that is not a Unicode scalar value, if any.
+ *
+ * Two shapes are not characters and cannot be drawn by anything: the surrogate block U+D800..U+DFFF,
+ * which exists only to encode other code points in UTF-16, and anything past U+10FFFF. The lowest
+ * one a range names is returned, so the diagnostic points at the first offending code point rather
+ * than at whichever rule happened to be tested first.
+ *
+ * `range` is assumed ascending; a descending range names nothing and is the caller's to skip.
+ */
+[[nodiscard]] std::optional<std::uint32_t> firstNonScalar(mdux::font::CharsetRange range) noexcept {
+    constexpr std::uint32_t firstSurrogate  = 0xD800;
+    constexpr std::uint32_t lastSurrogate   = 0xDFFF;
+    constexpr std::uint32_t lastScalarValue = 0x10FFFF;
+
+    const auto first = static_cast<std::uint32_t>(range.first);
+    const auto last  = static_cast<std::uint32_t>(range.last);
+
+    if (first <= lastSurrogate && last >= firstSurrogate) {
+        return std::max(first, firstSurrogate);
+    }
+    if (last > lastScalarValue) {
+        return std::max(first, lastScalarValue + 1);
+    }
+    return std::nullopt;
+}
+
+/**
  * @brief Measures the ink one baked run paints.
  *
  * The decode is `mdux::text::draw::decodeRecord()` and the placement arithmetic is
@@ -373,15 +400,34 @@ private:
         // One diagnostic per field rather than per code point: a charset that escapes usually
         // escapes over a whole range, and an author fixes the range rather than each character.
         //
-        // The walk counts in `std::uint32_t` because a supplied range is not
-        // `FontPackage::validate()`'d - `last` may be anything a `char32_t` holds, and `point <=
-        // last` with `last` at the type's maximum never terminates. A descending range produces
-        // nothing and is skipped rather than reported: what a `.medui` author wrote is a name, and
-        // the shape of the table behind it is not theirs to fix.
-        constexpr std::uint32_t lastScalarValue = 0x10FFFF;
+        // The walk counts in `std::uint32_t` rather than `char32_t` because a supplied range is not
+        // `FontPackage::validate()`'d: `last` may be anything the type holds, and `point <= last`
+        // with `last` at the type's maximum would never terminate. `firstNonScalar()` below bounds
+        // every range that reaches the walk to U+10FFFF, so the counting type is now belt as well as
+        // braces - and it stays, because the bound is one edit away from being someone else's
+        // assumption. A descending range produces nothing and is skipped rather than reported: what
+        // a `.medui` author wrote is a name, and the shape of the table behind it is not theirs to
+        // fix.
         for (const mdux::font::CharsetRange& range : found->produces) {
-            const std::uint32_t last  = std::min<std::uint32_t>(range.last, lastScalarValue);
-            std::uint32_t       point = range.first;
+            if (range.last < range.first) {
+                continue;
+            }
+
+            // A range that names something which is not a character is reported before it is
+            // walked, and reported as what it is. Two shapes qualify: a code point past U+10FFFF,
+            // and the surrogate block, which exists only to encode other code points in UTF-16 and
+            // is not a scalar value either. Asking `permits()` about those would be asking the
+            // wrong question - a font package cannot draw them whatever its table claims, and a
+            // package whose table did claim them would answer yes.
+            if (const auto offending = firstNonScalar(range)) {
+                report(Code::CharsetEscape,
+                       value.position,
+                       std::format("'{}' can produce U+{:04X}, which is not a Unicode scalar value", value.text, *offending));
+                return;
+            }
+
+            const auto    last  = static_cast<std::uint32_t>(range.last);
+            std::uint32_t point = static_cast<std::uint32_t>(range.first);
 
             while (point <= last) {
                 if (!inputs_.font->permits(static_cast<char32_t>(point))) {
@@ -402,18 +448,6 @@ private:
                 // yes, so a covering range exists; stepping by one where it does not keeps the walk
                 // finite rather than trusting two lookups to agree.
                 point = covering == inputs_.font->restrictedCharset.end() ? point + 1 : static_cast<std::uint32_t>(covering->last) + 1;
-            }
-
-            // A range reaching past the last Unicode scalar value is reported rather than clamped.
-            // Clamping was the first revision's behaviour and it was wrong in the quiet direction:
-            // the table would be claiming code points that are not characters at all, and the stage
-            // would have measured the part it recognised and said nothing about the rest.
-            if (range.first <= range.last && range.last > lastScalarValue) {
-                const std::uint32_t offending = std::max<std::uint32_t>(range.first, lastScalarValue + 1);
-                report(Code::CharsetEscape,
-                       value.position,
-                       std::format("'{}' can produce U+{:04X}, which is not a Unicode scalar value", value.text, offending));
-                return;
             }
         }
     }

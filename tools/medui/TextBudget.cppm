@@ -62,6 +62,11 @@
  * `charset:` on `TextInput`) is checked against the governed table in `TextBudgetInputs`, and every
  * code point that table says the name can produce must be one the font package can draw.
  *
+ * A produced range that names something which is not a character - the surrogate block, or anything
+ * past U+10FFFF - is `MEDUI-E053` before the font package is consulted at all. Nothing can draw a
+ * non-character, so `permits()` is the wrong question to ask about one, and a package whose table
+ * claimed such a code point would answer yes.
+ *
  * A name absent from the table is `MEDUI-E053` too, and that is a deliberate fail-closed reading:
  * "this name does not resolve" means the compiler cannot bound what it produces, which is
  * indistinguishable, from here, from a name that produces something unbakeable. The alternative -

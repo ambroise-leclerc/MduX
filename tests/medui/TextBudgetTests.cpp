@@ -274,6 +274,11 @@ constexpr std::array beyondUnicode{
     font::CharsetRange{.first = static_cast<char32_t>(0x110000), .last = static_cast<char32_t>(0x110000)}
 };
 
+/// U+D7FF..U+E000: a range whose ends are real characters but which spans the surrogate block.
+constexpr std::array acrossSurrogates{
+    font::CharsetRange{.first = static_cast<char32_t>(0xD7FF), .last = static_cast<char32_t>(0xE000)}
+};
+
 }  // namespace
 
 const mdux::spec::Register widestTranslationDrivesTheBudget{
@@ -590,32 +595,39 @@ const mdux::spec::Register charsetWalkCrossesRangeBoundaries{
             .Execute();
     }};
 
-const mdux::spec::Register rangesBeyondUnicodeAreReported{
-    "A produced range reaching past the last Unicode scalar value is reported, not clamped",
+const mdux::spec::Register nonScalarRangesAreReported{
+    "A produced range naming something that is not a character is reported, never asked about",
     "evidence-unit",
     [] {
         return speclab::Test("medui-textbudget-charset-beyond-unicode")
-            .Given("a governed entry declaring U+110000, which is not a character", [] {})
-            .When("the entry is walked", [] {})
-            .Then("MEDUI-E053 says so rather than silently measuring only the part that is",
+            .Given("governed entries declaring U+110000, and one spanning the surrogate block", [] {})
+            .When("each entry is checked", [] {})
+            .Then("MEDUI-E053 names the first non-character in each, rather than measuring around it",
                   [] {
-                      mdux::spec::Checks                       checks;
-                      const font::FontPackage                  fontPackage = fixtureFont();
-                      const ApprovedText                       approved    = approvedText("STR-UNUSED", 1, 1);
-                      const auto                               locales     = approved.views();
-                      const std::array<md::DynamicTextRule, 1> table{
-                          md::DynamicTextRule{.name = "OUT_OF_RANGE", .produces = beyondUnicode}
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+                      const ApprovedText      approved    = approvedText("STR-UNUSED", 1, 1);
+                      const auto              locales     = approved.views();
+
+                      const auto reportFor = [&](std::string_view name, std::span<const font::CharsetRange> produces) {
+                          const std::array<md::DynamicTextRule, 1> table{
+                              md::DynamicTextRule{.name = name, .produces = produces}
+                          };
+                          const std::string source = screenWith(std::format("    Clock {{ id: now; width: 100px; height: 20px; format: {}; }}\n", name));
+                          return md::checkTextBudgets(layoutOf(source), "budget.medui", {.font = &fontPackage, .locales = locales, .dynamicText = table});
                       };
 
-                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: OUT_OF_RANGE; }\n");
-                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
-                                                                               "budget.medui",
-                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = table});
+                      const md::TextBudgetResult beyond = reportFor("OUT_OF_RANGE", beyondUnicode);
+                      checks.expect(!beyond.ok(), "the out-of-range entry is rejected");
+                      checks.expect(mentions(find(beyond, md::Code::CharsetEscape), "U+110000"), "the diagnostic names the offending code point");
+                      checks.expect(mentions(find(beyond, md::Code::CharsetEscape), "not a Unicode scalar value"), "and says what is wrong with it");
 
-                      const cli::Diagnostic* reported = find(result, md::Code::CharsetEscape);
-                      checks.expect(!result.ok(), "the screen is rejected");
-                      checks.expect(mentions(reported, "U+110000"), "the diagnostic names the offending code point");
-                      checks.expect(mentions(reported, "not a Unicode scalar value"), "and says what is wrong with it");
+                      // U+D7FF and U+E000 are real characters, so a check that compared only the
+                      // ends would pass this range - and the font package is never consulted, since
+                      // a surrogate is not something any package can draw whatever its table says.
+                      const md::TextBudgetResult surrogates = reportFor("SURROGATE_SPAN", acrossSurrogates);
+                      checks.expect(!surrogates.ok(), "the surrogate-spanning entry is rejected");
+                      checks.expect(mentions(find(surrogates, md::Code::CharsetEscape), "U+D800"), "the diagnostic names the first surrogate");
                       checks.raise();
                   })
             .Execute();
