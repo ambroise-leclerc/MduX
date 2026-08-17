@@ -25,7 +25,19 @@
  * - a node matching both emits exactly **one** entry, with the two check lists merged and
  *   deduplicated - never two entries for one node;
  * - a `@safety_critical` node with no `requirement:` is an error (`MEDUI-E070`), because a
- *   safety-critical node that cannot be traced is the thing the annotation exists to prevent.
+ *   safety-critical node that cannot be traced is the thing the annotation exists to prevent. An
+ *   *empty* requirement is the same error: `requirement:` is a `String` field and the semantic
+ *   domain accepts `""`, so presence alone would let an untraceable node through the rule written
+ *   to stop it.
+ *
+ * One consequence of the pinned component model, stated because it is easy to read the predicate as
+ * promising otherwise: **only a component the dictionary gives a `requirement:` can be
+ * safety-critical.** That is `CriticalButton`, `Button`, `NumericDisplay`, `StatusIndicator` and
+ * `TextInput`. `Row` takes only `id`, `height`, `spacing` and `background`; `Label`, `Clock`,
+ * `Image`, `SignalTrace` and `VulkanViewport` take no requirement either - so an annotation on any
+ * of them always fails the rule above. That is the shared contract's answer rather than this
+ * compiler's, and the diagnostic says so instead of asking an author to add a field the language
+ * would then reject.
  *
  * The consequence worth stating: the file's content is *exactly determined* by the screen. That is
  * what lets #197's consistency test compare sets rather than resolve references - it applies this
@@ -63,6 +75,11 @@
  * deduplicated so that one screen has one serialisation - `goldens.json` is byte-compared across
  * toolchains like every other committed artifact, and a set whose order depended on which rule
  * selected the node first would not survive that.
+ *
+ * The two members are halves of one claim, which is why a `ColorHash` check is *refused* for a node
+ * with no single declared colour token rather than emitted beside an absent `color_token`. A
+ * verifier asked to compare a tint has to be told which tint; a reference that asked without saying
+ * would be one #16 could only skip.
  *
  * ## What a golden pins for dynamic content, and what it must not
  *
@@ -129,9 +146,13 @@ struct SafetyResult {
 /**
  * @brief Checks the `@safety_critical` annotation rules on a parsed screen.
  *
- * Reports `MEDUI-E070` for an annotated node with no `requirement:`, at the annotation, and
- * `MEDUI-E071` for a `cv_check` naming a verification outside the closed set, at the offending
- * name. Diagnostics accumulate in source order.
+ * Reports, all at the position of the offending token and in source order:
+ *
+ * - `MEDUI-E070` for an annotated node whose `requirement:` is absent, blank, or unavailable to the
+ *   component at all, at the annotation;
+ * - `MEDUI-E071` for a `cv_check` naming a verification outside the closed set, and for a
+ *   `ColorHash` on a node whose expected tint cannot be derived, at the offending name;
+ * - `MEDUI-E033` for a `cv_check` value that is not a name.
  *
  * Deliberately AST-level: see the module comment for why the shared contract requires these two
  * codes to be reportable without a resolved layout.
@@ -152,11 +173,9 @@ struct SafetyResult {
  * that is not a name, or a name outside the closed set - means it was bypassed, and throws
  * `std::logic_error` rather than emitting a golden nobody can verify.
  *
- * One corner the shared contract does not pin: an annotated `Row` contributes the entry for its
- * background, since that rectangle is the Row's resolved band and the only thing it paints. A Row
- * with no `background:` paints nothing and so contributes no entry - the annotation belongs on the
- * content in that case, and a golden over an unpainted container is not something a verifier could
- * check.
+ * Only authored nodes are described. The solver's one synthetic node is a Row's background, and a
+ * Row can be neither annotated nor positioned, so it is never selected - see the interface comment
+ * above for why a container cannot be safety-critical at all.
  *
  * @throws std::logic_error if the annotation gate was bypassed.
  */

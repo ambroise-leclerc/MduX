@@ -73,8 +73,9 @@ Three decisions from that programme apply repository-wide:
 Waves 1 to 4 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0, v0.5.0). Wave 4 was the font
 and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#15`), in progress:
 seven of its twelve children have landed, taking a screen from source to a bounded, budgeted,
-golden-annotated set of rectangles. The emitters (`#197`), the CMake integration (`#198`) and the
-runtime (`#199`) are what remain.
+golden-annotated set of rectangles. Five remain — the emitters (`#197`), the CMake integration and
+`mdux-meduic` (`#198`), the allocation-free screen runtime (`#199`), `mdux-medui-check` (`#200`) and
+the first end-to-end screen (`#201`).
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.

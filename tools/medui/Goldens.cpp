@@ -63,6 +63,29 @@ constexpr std::string_view cvCheckArgument = "cv_check";
     return nullptr;
 }
 
+/// Whether the component dictionary gives this component a `requirement:` field at all.
+///
+/// `Row` does not have one, and the dictionary is the pinned shared contract rather than something
+/// this compiler may extend - so a container cannot carry `@safety_critical`, and the diagnostic
+/// should say that rather than asking an author to add a field the language will then reject.
+[[nodiscard]] bool admitsRequirement(const ast::Node& node) noexcept {
+    const std::span<const ComponentRule> dictionary = componentDictionary();
+    const auto                           component  = std::ranges::find(dictionary, node.component, &ComponentRule::name);
+    if (component == dictionary.end()) {
+        return false;
+    }
+    return std::ranges::any_of(component->fields, [](const FieldRule& rule) {
+        return rule.name == "requirement";
+    });
+}
+
+/// Whether `text` carries anything a requirement identifier could be. Blank is not traceable.
+[[nodiscard]] bool isBlank(std::string_view text) noexcept {
+    return std::ranges::all_of(text, [](unsigned char character) {
+        return std::isspace(character) != 0;
+    });
+}
+
 /// The text a golden pins, or empty when the node draws none - or draws one that varies.
 ///
 /// Only a single static key qualifies. A list-valued field such as `StatusIndicator`'s `states:` is
@@ -170,11 +193,8 @@ private:
     void validateAnnotation(const ast::Node& node, const ast::Annotation& annotation) {
         // Reported at the annotation rather than at the node: the annotation is the claim that
         // needs a requirement behind it, and the shared case pins that position.
-        if (fieldFor(node, "requirement") == nullptr) {
-            report(Code::SafetyCriticalWithoutRequirement,
-                   annotation.position,
-                   std::format("component '{}' is annotated @safety_critical but declares no requirement", node.component));
-        }
+        validateRequirement(node, annotation);
+        validateColorHashIsDerivable(node, annotation);
 
         const ast::Field* argument = argumentFor(annotation, cvCheckArgument);
         if (argument == nullptr || argument->value == nullptr) {
@@ -189,6 +209,89 @@ private:
             return;
         }
         validateCheckValue(*argument->value);
+    }
+
+    /**
+     * @brief Requires something to trace the annotation to, not merely a field that exists.
+     *
+     * Presence alone was the first revision's rule and it was too weak: `requirement:` is a
+     * `String` field, `Semantic.cpp`'s domain check accepts every quoted string including `""`, and
+     * a safety-critical node whose requirement is the empty string is exactly the untraceable node
+     * this rule exists to prevent. A blank value therefore reports `MEDUI-E070` as an absent one
+     * does - the code means "carries no requirement", and an empty string carries none.
+     *
+     * The rule is enforced here rather than by tightening `FieldDomain::String`, because the
+     * traceability requirement belongs to the annotation. `template:` and `source:` are the same
+     * domain and are not the same claim.
+     */
+    void validateRequirement(const ast::Node& node, const ast::Annotation& annotation) {
+        const ast::Field* requirement = fieldFor(node, "requirement");
+        if (requirement != nullptr && requirement->value != nullptr && requirement->value->kind == ast::ValueKind::String
+            && !isBlank(requirement->value->text)) {
+            return;
+        }
+
+        // A container cannot satisfy this rule at all: the pinned dictionary gives `Row` no
+        // `requirement:`, so saying "add requirement:" would send an author to a field the language
+        // then rejects as unknown. Say what is actually wrong instead.
+        if (!admitsRequirement(node)) {
+            report(Code::SafetyCriticalWithoutRequirement,
+                   annotation.position,
+                   std::format("component '{}' takes no requirement in the shared component model, so it cannot be "
+                               "@safety_critical; annotate the content it contains instead",
+                               node.component));
+            return;
+        }
+        report(Code::SafetyCriticalWithoutRequirement,
+               annotation.position,
+               requirement == nullptr ? std::format("component '{}' is annotated @safety_critical but declares no requirement", node.component)
+                                      : std::format("component '{}' is annotated @safety_critical but its requirement is empty", node.component));
+    }
+
+    /**
+     * @brief Refuses a `ColorHash` check on a node whose expected tint cannot be derived.
+     *
+     * `cv_checks` and `color_token` are two halves of one claim: a verifier asked for `ColorHash`
+     * reads the token to know what tint to expect. A `StatusIndicator` declares `colors:` as a list,
+     * one per state, and a `Clock`, `Image` or `VulkanViewport` declares none at all - so a golden
+     * over either would ask for a check with nothing to check it against.
+     *
+     * Rejecting is the fail-closed reading, and it is a decision this issue has to take rather than
+     * defer, because the reference shape is frozen here for #16 and #197. The alternative - carrying
+     * a per-state list of expected tints - is a genuine extension of the shape, and one both
+     * consumers would have to agree to; it belongs with the components that would need it (#17),
+     * not with a stage inventing a field ahead of them.
+     */
+    void validateColorHashIsDerivable(const ast::Node& node, const ast::Annotation& annotation) {
+        const ast::Field* argument = argumentFor(annotation, cvCheckArgument);
+        if (argument == nullptr || argument->value == nullptr || !colorTokenOf(node).empty()) {
+            return;
+        }
+
+        const auto namesColorHash = [](const ast::Value& value) {
+            return value.kind == ast::ValueKind::Identifier && parseCvCheck(value.text) == CvCheck::ColorHash;
+        };
+
+        const ast::Value* offending = nullptr;
+        if (argument->value->kind == ast::ValueKind::List) {
+            for (const std::shared_ptr<ast::Value>& element : argument->value->list) {
+                if (element != nullptr && namesColorHash(*element)) {
+                    offending = element.get();
+                    break;
+                }
+            }
+        } else if (namesColorHash(*argument->value)) {
+            offending = argument->value.get();
+        }
+
+        if (offending != nullptr) {
+            report(Code::UnknownCvCheck,
+                   offending->position,
+                   std::format("{} needs one declared colour token to compare against, and component '{}' declares "
+                               "none that a golden could pin",
+                               spell(CvCheck::ColorHash),
+                               node.component));
+        }
     }
 
     void validateCheckValue(const ast::Value& value) {
@@ -243,6 +346,15 @@ std::vector<GoldenReference> collectGoldens(const LayoutResult& layout) {
     std::vector<GoldenReference> references;
 
     for (const ResolvedNode& node : layout.nodes) {
+        // Goldens describe authored nodes. The only synthetic node the solver produces is a Row's
+        // background, and a Row cannot be annotated - the pinned dictionary gives it no
+        // `requirement:`, so `validateSafetyAnnotations()` rejects the annotation before layout runs
+        // - nor positioned, since `position:` is not one of its fields either. Skipping it states
+        // that rather than leaving a reader to derive it from two other files.
+        if (node.synthetic) {
+            continue;
+        }
+
         std::vector<CvCheck> checks;
 
         const bool annotated = std::ranges::any_of(node.source.annotations, isSafetyCritical);

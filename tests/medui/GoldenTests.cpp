@@ -15,12 +15,14 @@
 
 import std;
 import speclab;
+import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.parser;
+import mdux.tools.medui.semantic;
 
 #include "../framework/SpecLabBridge.hpp"
 
@@ -274,30 +276,143 @@ const mdux::spec::Register annotationWithoutChecksStillPinsBounds{
             .Execute();
     }};
 
-const mdux::spec::Register rowBackgroundCarriesItsAnnotation{
-    "An annotated Row is pinned through the background it paints",
+const mdux::spec::Register annotatedContainerIsRejected{
+    "A component the dictionary gives no requirement cannot be safety-critical",
     "evidence-unit",
     [] {
-        return speclab::Test("medui-goldens-row-background")
-            .Given("a Row carrying @safety_critical and a background", [] {})
-            .When("the golden set is derived", [] {})
-            .Then("the synthetic background entry carries the Row's band and its tint",
+        return speclab::Test("medui-goldens-annotated-row")
+            .Given("a Row carrying @safety_critical - Label, Clock and Image are in the same position", [] {})
+            .When("the annotation rules are validated", [] {})
+            .Then("MEDUI-E070 explains that the component takes no requirement at all",
                   [] {
                       mdux::spec::Checks checks;
-                      const std::string  source = screenWith(
-                          "    @safety_critical(cv_check: [Bounds])\n"
-                           "    Row { id: topbar; height: 40px; background: Theme.Colors.Title;\n"
-                           "        Label { id: title; width: Fill; height: 40px; text: t(\"STR-TITLE\"); color: Theme.Colors.Title; }\n"
-                           "    }\n");
-                      const auto references = md::collectGoldens(layoutOf(source, 200, 100));
 
-                      const md::GoldenReference* background = find(references, "topbar-background");
-                      checks.expect(background != nullptr, "the Row's painted band is what carries the annotation");
-                      if (background != nullptr) {
-                          checks.expect(background->bounds == md::LayoutRect{0, 0, 200, 40}, "the band is the Row's resolved rectangle");
-                          checks.expect(background->colorToken == "Theme.Colors.Title", "the background token is the tint to verify");
-                      }
-                      checks.expect(find(references, "title") == nullptr, "an unannotated, unpositioned child is not pinned");
+                      // The pinned component model gives Row only id, height, spacing and
+                      // background. It can therefore never carry a requirement:, so it can never
+                      // satisfy the annotation rule - which makes an annotated Row a screen that
+                      // does not compile rather than a golden over a container. An earlier revision
+                      // of this suite pinned the opposite behaviour by reaching collectGoldens()
+                      // without validating first; that path is unreachable in a real driver.
+                      //
+                      // Row is the clearest case rather than the only one: Label, Clock, Image,
+                      // SignalTrace and VulkanViewport take no requirement either, so the same
+                      // diagnostic answers an annotation on any of them.
+                      const std::string source = screenWith(
+                          "    @safety_critical(cv_check: [Bounds])\n"
+                          "    Row { id: topbar; height: 40px; background: Theme.Colors.Title;\n"
+                          "        Label { id: title; width: Fill; height: 40px; text: t(\"STR-TITLE\"); color: Theme.Colors.Title; }\n"
+                          "    }\n");
+                      const md::ast::Screen  screen = parseOrFail(source);
+                      const md::SafetyResult result = md::validateSafetyAnnotations(screen, "goldens.medui");
+
+                      const cli::Diagnostic* reported = find(result, md::Code::SafetyCriticalWithoutRequirement);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(reported != nullptr, "MEDUI-E070 is reported");
+                      checks.expect(reported != nullptr && reported->message.find("takes no requirement") != std::string::npos,
+                                    "the diagnostic names the real problem rather than asking for a field Row cannot have");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register onlyAuthoredNodesArePinned{"A Row's synthetic background is not a golden of its own", "evidence-unit", [] {
+                                                          return speclab::Test("medui-goldens-synthetic-nodes")
+                                                              .Given("a Row with a background and one positioned child", [] {})
+                                                              .When("the golden set is derived", [] {})
+                                                              .Then("the child is pinned and the synthetic background is not",
+                                                                    [] {
+                                                                        mdux::spec::Checks checks;
+                                                                        const std::string  source = screenWith(
+                                                                            "    Row { id: topbar; height: 40px; background: Theme.Colors.Title;\n"
+                                                                             "        Label { id: title; width: 60px; height: 20px; position: 10px, 10px; "
+                                                                             "text: t(\"STR-TITLE\"); color: Theme.Colors.Title; }\n"
+                                                                             "    }\n");
+                                                                        const auto references = md::collectGoldens(layoutOf(source, 200, 100));
+
+                                                                        checks.expect(find(references, "topbar-background") == nullptr,
+                                                                                      "a synthetic node describes nothing an author wrote");
+                                                                        checks.expect(find(references, "title") != nullptr, "the positioned child is pinned");
+                                                                        checks.expect(references.size() == 1,
+                                                                                      std::format("exactly one entry, got {}", references.size()));
+                                                                        checks.raise();
+                                                                    })
+                                                              .Execute();
+                                                      }};
+
+const mdux::spec::Register blankRequirementIsNotTraceable{
+    "An empty requirement is no requirement, through the full analyze then validate order",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-goldens-blank-requirement")
+            .Given("a @safety_critical Button whose requirement is the empty string", [] {})
+            .When("semantic analysis accepts it and the annotation rules run", [] {})
+            .Then("MEDUI-E070 rejects it anyway, because there is nothing to trace",
+                  [] {
+                      mdux::spec::Checks    checks;
+                      const md::ast::Screen screen = parseOrFail(screenWith("    @safety_critical(cv_check: [Bounds])\n"
+                                                                            "    Button { id: action; width: 100px; height: 40px; label: t(\"STR-ACTION\"); "
+                                                                            "color: Theme.Colors.PrimaryAction; source: \"ACTION\"; requirement: \"\"; }\n"));
+
+                      // The gap this covers is that `requirement:` is a String field and the
+                      // semantic domain accepts every quoted string, `""` included - so the
+                      // analyze step below really does pass, and the safety rule is the only thing
+                      // standing between an empty requirement and a golden.
+                      const std::array<std::string_view, 1> themeTokens{"Theme.Colors.PrimaryAction"};
+                      mdux::text::TextPackage               package;
+                      package.header.id   = "goldens-en-US";
+                      package.atlasId     = "goldens-atlas";
+                      package.locale      = "en-US";
+                      package.sidecarPath = "runs.bin";
+                      package.runs.push_back(mdux::text::TextRun{.id = "STR-ACTION", .byteOffset = 0, .byteLength = 0, .sha256 = {}});
+                      const std::array textPackages{package};
+
+                      const md::SemanticResult semantic = md::analyze(screen,
+                                                                      "goldens.medui",
+                                                                      md::SemanticInputs{.themeTokens = themeTokens, .textPackages = textPackages});
+                      checks.expect(semantic.ok(),
+                                    std::format("semantic analysis accepts the empty requirement, got {} diagnostics", semantic.diagnostics.size()));
+
+                      const md::SafetyResult safety   = md::validateSafetyAnnotations(screen, "goldens.medui");
+                      const cli::Diagnostic* reported = find(safety, md::Code::SafetyCriticalWithoutRequirement);
+                      checks.expect(!safety.ok(), "the safety rule rejects it");
+                      checks.expect(reported != nullptr && reported->message.find("empty") != std::string::npos,
+                                    "the diagnostic says the requirement is empty rather than absent");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register colorHashNeedsATintToCompare{
+    "ColorHash is refused where no single declared tint exists",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-goldens-colorhash-needs-a-tint")
+            .Given("an annotated StatusIndicator whose colors: is a list, and a Clock with no colour", [] {})
+            .When("each annotation is validated", [] {})
+            .Then("MEDUI-E071 refuses the check rather than pinning one with nothing to compare against",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const md::ast::Screen indicator = parseOrFail(
+                          screenWith("    @safety_critical(cv_check: [Bounds, ColorHash])\n"
+                                     "    StatusIndicator { id: state; width: 120px; height: 40px; requirement: \"REQ-1\"; "
+                                     "source: \"STATE\"; states: [t(\"STR-OK\"), t(\"STR-ALARM\")]; "
+                                     "colors: [Theme.Colors.Title, Theme.Colors.ScoreDigits]; }\n"));
+                      const md::SafetyResult indicatorResult = md::validateSafetyAnnotations(indicator, "goldens.medui");
+                      const cli::Diagnostic* refused         = find(indicatorResult, md::Code::UnknownCvCheck);
+                      checks.expect(!indicatorResult.ok(), "a per-state tint is not one a golden can pin");
+                      checks.expect(refused != nullptr && refused->message.find("ColorHash") != std::string::npos, "the diagnostic names the check it refuses");
+
+                      const md::ast::Screen clock = parseOrFail(screenWith("    @safety_critical(cv_check: [ColorHash])\n"
+                                                                           "    Clock { id: now; width: 100px; height: 40px; format: HH_MM; }\n"));
+                      checks.expect(find(md::validateSafetyAnnotations(clock, "goldens.medui"), md::Code::UnknownCvCheck) != nullptr,
+                                    "a component with no colour field cannot be tint-checked either");
+
+                      // The control: a single declared token is exactly what ColorHash needs, and
+                      // the accepted fixture leans on that for both `action` and `score`.
+                      const md::ast::Screen  button       = parseOrFail(annotatedButton("@safety_critical(cv_check: [ColorHash])"));
+                      const md::SafetyResult buttonResult = md::validateSafetyAnnotations(button, "goldens.medui");
+                      checks.expect(buttonResult.ok(), std::format("one declared tint is enough, got {} diagnostics", buttonResult.diagnostics.size()));
                       checks.raise();
                   })
             .Execute();
