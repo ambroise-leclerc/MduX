@@ -1,0 +1,66 @@
+// Every rule ADR-011 fixes for golden references, in one screen a reviewer can read.
+//
+//   action  @safety_critical only          -> one entry, the checks the annotation names
+//   pinned  position: only                 -> one entry, an automatic Bounds
+//   score   annotated *and* positioned     -> exactly one entry, checks merged and deduplicated
+//   state   dynamic content                -> bounds and nothing that varies: no text, no tint
+//   plain   neither                        -> no entry at all
+//
+// Deliberately not a Label for `action`: the dictionary gives Label no `requirement:` field, and a
+// @safety_critical node must carry one. Button, NumericDisplay and StatusIndicator are the
+// components where an annotation and a requirement can coexist.
+Screen Goldens {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 400px, 300px;
+
+    @safety_critical(cv_check: [ColorHash])
+    Button {
+        id: action;
+        width: 200px;
+        height: 40px;
+        label: t("STR-ACTION");
+        color: Theme.Colors.PrimaryAction;
+        source: "ACTION";
+        requirement: "REQ-G-001";
+    }
+
+    Label {
+        id: pinned;
+        width: 100px;
+        height: 40px;
+        position: 250px, 0px;
+        text: t("STR-PINNED");
+        color: Theme.Colors.Title;
+    }
+
+    @safety_critical(cv_check: [Bounds, ColorHash])
+    NumericDisplay {
+        id: score;
+        width: 120px;
+        height: 60px;
+        position: 250px, 60px;
+        requirement: "REQ-G-002";
+        template: "TPL-SCORE";
+        source: "SCORE";
+        color: Theme.Colors.ScoreDigits;
+    }
+
+    StatusIndicator {
+        id: state;
+        width: 120px;
+        height: 40px;
+        position: 250px, 140px;
+        requirement: "REQ-G-003";
+        source: "STATE";
+        states: [t("STR-OK"), t("STR-ALARM")];
+        colors: [Theme.Colors.Title, Theme.Colors.ScoreDigits];
+    }
+
+    Label {
+        id: plain;
+        width: 100px;
+        height: 40px;
+        text: t("STR-PLAIN");
+        color: Theme.Colors.Title;
+    }
+}

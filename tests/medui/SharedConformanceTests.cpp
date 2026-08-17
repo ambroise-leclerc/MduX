@@ -19,11 +19,15 @@
  *   and must be backed by a case that really executed. Claiming a phase with no adapter fails
  *   here instead of passing quietly.
  *
- * Syntax, semantics and layout are observable: `md::parse` answers syntax acceptance,
+ * Syntax, semantics, layout and safety are observable: `md::parse` answers syntax acceptance,
  * `md::analyze` checks the portable theme-token and per-locale key views in semantic case inputs,
- * and `md::resolveLayout` runs the integer-only bounded solver. Claiming `safety` still needs the
- * golden pass (#196), so that claim is rejected below rather than silently evaluated by a stage
- * that cannot see it.
+ * `md::resolveLayout` runs the integer-only bounded solver, and `md::validateSafetyAnnotations`
+ * applies the `@safety_critical` rules (#196).
+ *
+ * The safety adapter deliberately does not run semantic analysis first. Those rules are decidable
+ * from source alone, the shared case schema carries no inputs for a safety case, and a screen that
+ * declares no `surface:` - as `MEDUI-CASE-SAFETY-MISSING-REQUIREMENT` does not - cannot reach the
+ * solver at all. Running analyze would add theme and locale findings the case never claimed.
  */
 
 import std;
@@ -34,6 +38,7 @@ import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
+import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.parser;
 import mdux.tools.medui.semantic;
@@ -50,7 +55,7 @@ namespace toml = mdux::tools::toml;
 
 /// Phases this file can genuinely observe. Anything else in `capabilities` is a claim with no
 /// adapter behind it.
-constexpr std::array<std::string_view, 3> runnableCapabilities{"syntax", "semantics", "layout"};
+constexpr std::array<std::string_view, 4> runnableCapabilities{"syntax", "semantics", "layout", "safety"};
 
 [[noreturn]] void fail(std::string message, std::source_location where = std::source_location::current()) {
     throw speclab::core::AssertionFailure(std::move(message), where);
@@ -666,6 +671,11 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
             md::LayoutResult resolved = md::resolveLayout(*parsed.screen, file, inputs);
             diagnostics.insert(diagnostics.end(), std::make_move_iterator(resolved.diagnostics.begin()), std::make_move_iterator(resolved.diagnostics.end()));
         }
+    }
+
+    if (item.phase == "safety" && parsed.screen) {
+        md::SafetyResult safety = md::validateSafetyAnnotations(*parsed.screen, file);
+        diagnostics.insert(diagnostics.end(), std::make_move_iterator(safety.diagnostics.begin()), std::make_move_iterator(safety.diagnostics.end()));
     }
 
     const bool accepted = parsed.screen.has_value() && diagnostics.empty();

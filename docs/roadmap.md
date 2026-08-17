@@ -1,7 +1,7 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 16 August 2026
-> Verified against `develop` @ `d3efe11` · 16 August 2026 · `#15` current through `#195`
+> Backlog · ambroise-leclerc/MduX · updated 17 August 2026
+> Verified against `develop` @ `163371b` · 17 August 2026 · `#15` current through `#196`
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
@@ -9,10 +9,11 @@ backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draw
 pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
 what the build actually produces. Track C's authoring story is what remains: #14 closed
 Wave 4 with the font and text pipeline, and #15 is underway in Wave 5 with the compiler
-that generates the screens it draws. Six of its twelve children have landed — the ADRs,
-the diagnostic registry, the front end, semantic analysis, bounded layout, and per-locale text
-budgets — so the compiler now reads a `.medui` file, resolves it to a bounded box tree, and refuses
-a box that cannot hold its widest approved translation. #196 is next.
+that generates the screens it draws. Seven of its twelve children have landed — the ADRs,
+the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
+and golden references — so the compiler now reads a `.medui` file, resolves it to a bounded box
+tree, refuses a box that cannot hold its widest approved translation, and says where safety-critical
+content must appear. #197 is next: the emitters that write all of it down.
 
 | Metric | Count |
 |---|---|
@@ -25,13 +26,13 @@ a box that cannot hold its widest approved translation. #196 is next.
 
 ### Where the two diverge
 
-Re-verified against `develop` on 16 August 2026. Eight of the nine rows have closed since
+Re-verified against `develop` on 17 August 2026. Eight of the nine rows have closed since
 this table was first written; the one that remains is the `.medui` authoring story, which is
 the whole of Track C.
 
 | Area | MduX today | TrustSC today |
 |---|---|---|
-| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler's front end has landed — lexer, parser, AST, semantic analysis, bounded layout and per-locale text budgets, all host-only and conformance-tested against the shared MedUI spec. What is still ahead is the back end: goldens, the emitters, and the runtime that consumes them. | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
+| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler's front end has landed — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec. What is still ahead is the back end: the emitters, and the runtime that consumes them. | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
 | Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Five artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
@@ -56,7 +57,7 @@ Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · in progress        #15 (S1–S6 done · S7 next)
+Wave 5 · in progress        #15 (S1–S7 done · S8 next)
 Wave 6                      #16  #17
 ```
 
@@ -236,14 +237,15 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 6/12**
+#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 7/12**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
 Rust shares types across the crate boundary; C++ can do better.
 
 The front end is in the tree and conformance-tested against the shared MedUI spec
-(`medui-conformance.toml`, capabilities `syntax`, `semantics`, `layout`). ADR-011 and
+(`medui-conformance.toml`, capabilities `syntax`, `semantics`, `layout`, `safety` — the last claimed
+with #196, which is what made the pinned `MEDUI-E070` case executable rather than skipped). ADR-011 and
 ADR-012 were amended by #203 before any code depended on them: the compiled screen is
 locale-free, so the per-locale text stays in the text package — which is why S6 measures every
 approved locale and reserves the worst of them, rather than sizing a box to the locale its author
@@ -255,8 +257,8 @@ happened to read.
 - #193 S4 Theme tokens and locale-checked strings · _closed_
 - #194 S5 Bounded layout and `Row` flattening · _closed (PR #212)_
 - #195 S6 Text-budget validation against every approved locale · _closed_
-- #196 S7 Golden references for safety-critical nodes · **next**
-- #197 S8 Canonical package and C++ emitters
+- #196 S7 Golden references for safety-critical nodes · _closed_
+- #197 S8 Canonical package and C++ emitters · **next**
 - #198 S9 CMake integration and the `mdux-meduic` host tool
 - #199 S10 Allocation-free screen runtime
 - #200 S11 `mdux-medui-check`
@@ -366,6 +368,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Verified at `develop` @ `d3efe11` · 16 August 2026_
-_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 6/12) · no enforcement gaps outstanding_
+_Verified at `develop` @ `163371b` · 17 August 2026_
+_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 7/12) · no enforcement gaps outstanding_
 _All epics on GitHub_

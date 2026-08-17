@@ -1,0 +1,20 @@
+// A @safety_critical node with nothing to trace it to. MEDUI-E070, reported at the annotation
+// rather than at the node: the annotation is the claim that needs a requirement behind it.
+//
+// `requirement:` is optional on Button, so nothing earlier in the compiler objects - which is the
+// point. Without this rule a safety-critical node could ship with no requirement at all, and the
+// annotation would be decoration.
+Screen Unsafe {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 200px, 100px;
+
+    @safety_critical(cv_check: [Bounds])
+    Button {
+        id: action;
+        width: 100px;
+        height: 40px;
+        label: t("STR-ACTION");
+        color: Theme.Colors.PrimaryAction;
+        source: "ACTION";
+    }
+}

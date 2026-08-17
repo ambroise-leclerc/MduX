@@ -674,7 +674,7 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
-# .medui compiler host-tools suite (issues #191, #192, #193, #194, #195)
+# .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
 # completeness, uniqueness, identifier shape, ordering against the retired list, and the envelope
@@ -686,6 +686,10 @@ mdux_discover_tests(text_tools_spec)
 # widest-approved-translation rule is only checkable when two locales differ by a width the test
 # chose. The packages are still validated by the schema modules that own their formats, so the
 # measurements are taken from artifacts that would be legal on disk.
+#
+# GoldenTests (#196) reads tests/medui/fixtures/accepted-goldens.medui, which carries every rule
+# ADR-011 fixes for golden references in one screen - including the node that matches both rules and
+# must therefore appear exactly once.
 add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
@@ -693,6 +697,7 @@ add_executable(medui_tools_spec
     medui/SemanticTests.cpp
     medui/LayoutTests.cpp
     medui/TextBudgetTests.cpp
+    medui/GoldenTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
