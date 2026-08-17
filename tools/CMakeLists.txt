@@ -271,10 +271,15 @@ endif()
 # governed, which is also what stops a governed target linking it - mdux_verify_trust_zones()
 # reports that at configure time.
 #
-# At S5 (#194) this is the diagnostic registry (#191), lexer, AST, parser, semantic analyzer and
-# integer-only bounded layout solver. The emitters are #197, and the mdux-meduic executable with its mdux_compile_screen()
-# registration is #198 - so there is still no add_executable() here and no bake call site. Every
-# later stage adds sources to this target rather than inventing another.
+# At S6 (#195) this is the diagnostic registry (#191), lexer, AST, parser, semantic analyzer,
+# integer-only bounded layout solver, and the text-budget check that measures a resolved box against
+# the widest approved translation. The emitters are #197, and the mdux-meduic executable with its
+# mdux_compile_screen() registration is #198 - so there is still no add_executable() here and no
+# bake call site. Every later stage adds sources to this target rather than inventing another.
+#
+# The budget stage reaches mdux.text.draw and mdux.font.schema through MduX::ToolsCommon's link to
+# MduX::Core: it decodes committed run records with the same decoder the device draws them with, so
+# the byte-order and baseline contracts have one implementation rather than a host copy of one.
 add_library(MduXMeduiLib)
 add_library(MduX::MeduiLib ALIAS MduXMeduiLib)
 
@@ -289,12 +294,14 @@ target_sources(MduXMeduiLib
             medui/Parser.cppm
             medui/Semantic.cppm
             medui/Layout.cppm
+            medui/TextBudget.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
         medui/Parser.cpp
         medui/Semantic.cpp
         medui/Layout.cpp
+        medui/TextBudget.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)

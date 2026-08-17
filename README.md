@@ -144,7 +144,7 @@ Derived from the targets and tests that build on `develop`.
 | **Host tools** (never linked into a device target) | | |
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
 | `mdux-mlbake` | Implemented | safetensors import, golden generation, byte-verified model packages |
-| `MduXMeduiLib` | Partial | `.medui` parsing, semantic validation, and integer-only bounded layout; packaging and emission remain ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
+| `MduXMeduiLib` | Partial | `.medui` parsing, semantic validation, integer-only bounded layout, and per-locale text budgets; packaging and emission remain ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
