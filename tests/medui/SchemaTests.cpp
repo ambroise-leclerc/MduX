@@ -350,8 +350,13 @@ const mdux::spec::Register colourTokensResolveAgainstAGovernedTable{
                       const auto value = ms::resolveColorToken(constTheme, "#21B86B");
                       checks.expect(!value.has_value() && value.error() == ms::ThemeError::MalformedToken, "a colour value is refused where a name belongs");
 
-                      checks.expect(!ms::resolveColorToken({}, "Theme.Colors.Title").has_value(),
-                                    "an empty table answers every name with a miss rather than a colour nobody approved");
+                      // The error matters as much as the failure: a well-formed name against an
+                      // empty table is *absent*, not malformed. Asserting only `!has_value()` would
+                      // pass if the resolver ever confused the two, which is the distinction this
+                      // scenario exists to draw.
+                      const auto emptyTable = ms::resolveColorToken({}, "Theme.Colors.Title");
+                      checks.expect(!emptyTable.has_value() && emptyTable.error() == ms::ThemeError::UnknownToken,
+                                    "an empty table answers a well-formed name with a miss, not a colour nobody approved");
                       checks.raise();
                   })
             .Execute();
