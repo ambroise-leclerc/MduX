@@ -674,6 +674,41 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
+# Governed compiled-screen schema (issue #197)
+#
+# Links MduX::Core only, and deliberately not MduX::MeduiLib. `mdux.medui.schema` is the one type a
+# device holds, so a scenario that needed the parser or the solver to build one would mean the
+# trust-zone boundary had moved - the same argument that keeps ml_spec apart from ml_tools_spec.
+#
+# The file's centre of gravity is a namespace-scope static_assert rather than a scenario: ADR-012
+# decision 3 puts `static_assert(package.validate().has_value())` in every generated screen, so
+# compile-time validation is a promise the device build depends on, and one no runtime test can
+# make on its behalf.
+add_executable(medui_spec
+    medui/MeduiSpecMain.cpp
+    medui/SchemaTests.cpp
+)
+
+target_link_libraries(medui_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(medui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(medui_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(medui_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(medui_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(medui_spec)
+
 # .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
