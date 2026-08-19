@@ -13,7 +13,7 @@
  *
  * ## Why this stage exists at all
  *
- * A compiled screen is locale-free (ADR-011, as amended by #203): it carries `text_key` rather than
+ * A compiled screen is locale-free (ADR-011, as amended by #203): it carries `textKey` rather than
  * glyph runs, and the device joins the two for the locale it is running. That amendment moved the
  * *substitution* to the device and deliberately left this check behind:
  *

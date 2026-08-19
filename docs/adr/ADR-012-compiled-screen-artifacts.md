@@ -81,6 +81,12 @@ device performs the substitution by a bounded lookup in a governed table. Carryi
 values is also what makes the package readable in a diff: a reviewer sees
 `Theme.Colors.ScoreDigits`, not `[33, 184, 107, 255]`.
 
+**All three files spell their members in camelCase**, as every other committed MduX package does
+(`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
+`goldens.json`, whose entry ADR-011 originally spelled in snake_case; that amendment explains why it
+does not. One directory, one vocabulary, and #16's verifier - which reads two of these three files -
+carries one set of member names rather than two.
+
 Canonical JSON throughout, written through `mdux.evidence.json`. Registered via
 `mdux_bake_artifact()`, so each screen gets a build-tree bake, an `-update` target and an
 `evidence.screen.<id>` byte-comparison test on both toolchain legs. Two consequences of registering

@@ -64,20 +64,27 @@
  * one-to-one onto the canonical JSON:
  *
  * ```json
- * { "node_id": "sedation-index",
+ * { "nodeId": "sedation-index",
  *   "bounds": { "x": 1392, "y": 80, "width": 512, "height": 512 },
- *   "text_key": "STR-SEDATION-LABEL",
- *   "color_token": "Theme.Colors.ScoreDigits",
- *   "cv_checks": ["Bounds", "ColorHash"] }
+ *   "textKey": "STR-SEDATION-LABEL",
+ *   "colorToken": "Theme.Colors.ScoreDigits",
+ *   "cvChecks": ["Bounds", "ColorHash"] }
  * ```
  *
- * `text_key` and `color_token` are omitted when the node has none. `cv_checks` is sorted and
+ * The C++ members and the JSON members are now the same words, which is worth one line because they
+ * were not: an earlier revision spelled the file `node_id`, `text_key`, `color_token`, `cv_checks`,
+ * transcribed from TrustSC's Rust identifiers. TrustSC emits no screen JSON at all - its compiled
+ * screen is generated Rust - so nothing was being matched, while every other committed MduX package
+ * is camelCase. ADR-011 records the amendment; the effect here is that a reader has one vocabulary
+ * for the struct, the file and the verifier that reads it.
+ *
+ * `textKey` and `colorToken` are omitted when the node has none. `cvChecks` is sorted and
  * deduplicated so that one screen has one serialisation - `goldens.json` is byte-compared across
  * toolchains like every other committed artifact, and a set whose order depended on which rule
  * selected the node first would not survive that.
  *
  * The two members are halves of one claim, which is why a `ColorHash` check is *refused* for a node
- * with no single declared colour token rather than emitted beside an absent `color_token`. A
+ * with no single declared colour token rather than emitted beside an absent `colorToken`. A
  * verifier asked to compare a tint has to be told which tint; a reference that asked without saying
  * would be one #16 could only skip.
  *
@@ -86,7 +93,7 @@
  * A `NumericDisplay`, `Clock`, `SignalTrace` or `StatusIndicator` shows a value that changes. The
  * golden pins **where** that content appears and **in what tint**, never what the value is: pinning
  * a live number would make the verifier fail whenever the demonstrator changed, which trains a team
- * to ignore it. So `text_key` is filled only from a field whose value is a single static key, and a
+ * to ignore it. So `textKey` is filled only from a field whose value is a single static key, and a
  * list-valued field such as `StatusIndicator`'s `states:` leaves it empty - the state shown is
  * exactly the varying part.
  */
@@ -104,7 +111,7 @@ export namespace mdux::tools::medui {
 /**
  * @brief A verification #16's driver performs against a rendered frame.
  *
- * The closed set the shared language defines. Order is the serialisation order: `cv_checks` is
+ * The closed set the shared language defines. Order is the serialisation order: `cvChecks` is
  * sorted by this enumeration so that a screen has one canonical form.
  */
 enum class CvCheck : std::uint8_t {
