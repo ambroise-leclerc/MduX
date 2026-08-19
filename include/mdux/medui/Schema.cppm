@@ -104,6 +104,10 @@ enum class SchemaError : std::uint8_t {
     BoundsOutsideSurface,      ///< a rectangle the declared surface does not contain
     MalformedColorToken,       ///< a colour that is not a `Theme.Colors.<Token>` name
     UnknownColorToken,         ///< a well-formed name the governed table does not define
+    EmptyRequiredName,         ///< a spec field the component dictionary requires is empty
+    NoStates,                  ///< a status indicator that can show nothing
+    StateColorCountMismatch,   ///< per-state tints that do not pair one-to-one with the states
+    NonPositiveMaxLength,      ///< a text input that can hold no character
     EmptyBudget,               ///< a screen with nodes whose budget can hold no primitive
     BudgetExceedsIndexWidth,   ///< more vertices than a 16-bit index can address
 };
@@ -128,6 +132,14 @@ enum class SchemaError : std::uint8_t {
             return "a colour is not a Theme.Colors.<Token> name";
         case SchemaError::UnknownColorToken:
             return "a colour names a token the governed table does not define";
+        case SchemaError::EmptyRequiredName:
+            return "a name the component dictionary requires is empty";
+        case SchemaError::NoStates:
+            return "a status indicator declares no state to show";
+        case SchemaError::StateColorCountMismatch:
+            return "per-state colours do not pair one-to-one with the states";
+        case SchemaError::NonPositiveMaxLength:
+            return "a text input accepts no character";
         case SchemaError::EmptyBudget:
             return "the screen has nodes and a budget that can hold no primitive";
         case SchemaError::BudgetExceedsIndexWidth:
@@ -277,26 +289,225 @@ struct NodeRect {
 };
 
 /**
- * @brief One compiled node: what it draws, where, and what it is traced to.
+ * @brief What one component needs the device to know about it, one type per component.
  *
- * `textKey` and `colorToken` are the validated *names* ADR-011 carries rather than the values they
- * resolve to - the compiler has already proved the key exists in every approved locale (#193) and
- * that the token is in the governed table, so the device performs a bounded lookup and no parse.
+ * The dictionary is closed and each entry admits a different set of fields, so a single record with
+ * every field on it would carry a `format` for a `Label` and a `stateKeys` for a `Clock`. An earlier
+ * revision of this module did exactly that, and it was worse than untidy: it was **lossy**. A flat
+ * node had nowhere to put a `Clock`'s format, a `NumericDisplay`'s template and source, a
+ * `StatusIndicator`'s state keys and per-state tints, a `CriticalButton`'s `on_press`, or a
+ * `VulkanViewport`'s stream - so a device holding the package could not have rendered four of the
+ * eleven components at all.
  *
- * `requirement` is empty for a node that declares none, and non-empty for every node that is
- * safety-critical, because #196 refuses the annotation without it. Carrying it here is what makes
- * the requirement-to-node mapping diffable in a committed artifact.
+ * Every field is a **validated name**, never a resolved value, exactly as `colorToken` is. The
+ * compiler has already proved each one resolves - keys against every approved locale (#193), colour
+ * tokens against the governed table, named values against the tables a build supplies (#195) - so
+ * the device performs bounded lookups and no parsing.
+ *
+ * One consequence worth stating because it diverges from the sibling: `format`, `charset` and
+ * `onPress` stay `std::string_view` rather than becoming enumerations. TrustSC closes those sets in
+ * its own crate (`ClockFormat`, `SystemEvent`); MduX settled in #195 that such named values resolve
+ * against tables a *product* supplies, so closing them here would make this library authoritative
+ * over a set it does not own. The package therefore carries names throughout, which is also the one
+ * rule a reader has to remember about it.
+ */
+struct PanelSpec {
+    std::string_view colorToken;  ///< the Row background that produced this synthetic node
+
+    [[nodiscard]] constexpr bool operator==(const PanelSpec&) const noexcept = default;
+};
+
+struct LabelSpec {
+    std::string_view textKey;
+    std::string_view colorToken;
+
+    [[nodiscard]] constexpr bool operator==(const LabelSpec&) const noexcept = default;
+};
+
+struct ClockSpec {
+    std::string_view format;  ///< a named value the build's governed table defines
+
+    [[nodiscard]] constexpr bool operator==(const ClockSpec&) const noexcept = default;
+};
+
+struct ImageSpec {
+    std::string_view source;  ///< the baked image package's id, from `img("ID")`
+
+    [[nodiscard]] constexpr bool operator==(const ImageSpec&) const noexcept = default;
+};
+
+struct VulkanViewportSpec {
+    std::string_view streamSource;
+
+    [[nodiscard]] constexpr bool operator==(const VulkanViewportSpec&) const noexcept = default;
+};
+
+struct SignalTraceSpec {
+    std::string_view streamSource;
+    std::string_view colorToken;
+
+    [[nodiscard]] constexpr bool operator==(const SignalTraceSpec&) const noexcept = default;
+};
+
+struct ButtonSpec {
+    std::string_view labelKey;
+    std::string_view colorToken;
+    std::string_view source;
+    std::string_view requirement;  ///< optional on a Button; empty when it declares none
+
+    [[nodiscard]] constexpr bool operator==(const ButtonSpec&) const noexcept = default;
+};
+
+struct CriticalButtonSpec {
+    std::string_view requirement;  ///< required by the dictionary, and by #196's annotation rule
+    std::string_view labelKey;
+    std::string_view colorToken;
+    std::string_view onPress;
+
+    [[nodiscard]] constexpr bool operator==(const CriticalButtonSpec&) const noexcept = default;
+};
+
+struct NumericDisplaySpec {
+    std::string_view requirement;
+    std::string_view templateId;  ///< `template:` in the source; `template` is a keyword here
+    std::string_view source;
+    std::string_view colorToken;
+
+    [[nodiscard]] constexpr bool operator==(const NumericDisplaySpec&) const noexcept = default;
+};
+
+/**
+ * @brief A status indicator's states, and the tint each one shows.
+ *
+ * `stateKeys` and `colorTokens` are parallel spans over storage the generated translation unit owns.
+ * `colorTokens` is either empty - the component declares no per-state tint - or exactly as long as
+ * `stateKeys`, which `validate()` enforces, because a shorter list would leave a state with no tint
+ * and no way to say which.
+ *
+ * This is where per-state colour belongs, and settling it here answers the question #196 left open:
+ * a golden reference pins one tint, so it refuses `ColorHash` on a node whose tint varies. The
+ * variation lives in the node, not in the expectation.
+ */
+struct StatusIndicatorSpec {
+    std::string_view                  requirement;
+    std::string_view                  source;
+    std::span<const std::string_view> stateKeys;
+    std::span<const std::string_view> colorTokens;
+
+    [[nodiscard]] constexpr bool operator==(const StatusIndicatorSpec& other) const noexcept {
+        return requirement == other.requirement && source == other.source && std::ranges::equal(stateKeys, other.stateKeys)
+               && std::ranges::equal(colorTokens, other.colorTokens);
+    }
+};
+
+struct TextInputSpec {
+    std::string_view source;
+    std::string_view colorToken;
+    std::int64_t     maxLength{0};
+    std::string_view charset;      ///< empty when the component narrows nothing
+    std::string_view requirement;  ///< optional on a TextInput
+
+    [[nodiscard]] constexpr bool operator==(const TextInputSpec&) const noexcept = default;
+};
+
+/**
+ * @brief The payload of one compiled node: exactly one component's spec.
+ *
+ * `std::variant` rather than a hand-rolled union, and accessed only through `std::holds_alternative`
+ * and `std::get_if`. Both are `noexcept` and `constexpr`; `std::get` is deliberately never used
+ * anywhere in this module or its consumers, because it throws on the wrong alternative and ADR-005
+ * does not allow a governed type to have a throwing accessor as its natural spelling.
+ *
+ * The alternative order is *not* a wire contract. Nothing serialises the index: the emitter writes
+ * the component's dictionary name, which `kindName()` returns, so an alternative may be added
+ * without renumbering an artifact.
+ */
+using NodePayload = std::variant<PanelSpec,
+                                 LabelSpec,
+                                 ClockSpec,
+                                 ImageSpec,
+                                 VulkanViewportSpec,
+                                 SignalTraceSpec,
+                                 ButtonSpec,
+                                 CriticalButtonSpec,
+                                 NumericDisplaySpec,
+                                 StatusIndicatorSpec,
+                                 TextInputSpec>;
+
+/**
+ * @brief One compiled node: where it is, and everything the device needs to draw it.
+ *
+ * `id` and `bounds` are common to every component because a golden reference, a requirement trace
+ * and the layout solver all address a node the same way. Everything else is the component's own.
  */
 struct CompiledNode {
     std::string_view id;
-    std::string_view component;    ///< the dictionary name, e.g. `Label`
     NodeRect         bounds{};
-    std::string_view textKey;      ///< empty when the node draws no static text
-    std::string_view colorToken;   ///< empty when the node declares no tint
-    std::string_view requirement;  ///< empty when the node declares none
+    NodePayload      payload{PanelSpec{}};
 
     [[nodiscard]] constexpr bool operator==(const CompiledNode&) const noexcept = default;
 };
+
+/// The dictionary name of a node's component, e.g. `Label`. The spelling an emitter writes and a
+/// reader recognises; see `NodePayload` for why the variant's index is not that spelling.
+[[nodiscard]] constexpr std::string_view kindName(const CompiledNode& node) noexcept {
+    if (std::holds_alternative<PanelSpec>(node.payload)) {
+        return "Panel";
+    }
+    if (std::holds_alternative<LabelSpec>(node.payload)) {
+        return "Label";
+    }
+    if (std::holds_alternative<ClockSpec>(node.payload)) {
+        return "Clock";
+    }
+    if (std::holds_alternative<ImageSpec>(node.payload)) {
+        return "Image";
+    }
+    if (std::holds_alternative<VulkanViewportSpec>(node.payload)) {
+        return "VulkanViewport";
+    }
+    if (std::holds_alternative<SignalTraceSpec>(node.payload)) {
+        return "SignalTrace";
+    }
+    if (std::holds_alternative<ButtonSpec>(node.payload)) {
+        return "Button";
+    }
+    if (std::holds_alternative<CriticalButtonSpec>(node.payload)) {
+        return "CriticalButton";
+    }
+    if (std::holds_alternative<NumericDisplaySpec>(node.payload)) {
+        return "NumericDisplay";
+    }
+    if (std::holds_alternative<StatusIndicatorSpec>(node.payload)) {
+        return "StatusIndicator";
+    }
+    return "TextInput";
+}
+
+/**
+ * @brief The requirement a node is traced to, or empty when it declares none.
+ *
+ * Five components can carry one, and #196 refuses `@safety_critical` without it - so this is the
+ * function a traceability export walks rather than a field every node pretends to have.
+ */
+[[nodiscard]] constexpr std::string_view requirementOf(const CompiledNode& node) noexcept {
+    if (const auto* spec = std::get_if<ButtonSpec>(&node.payload)) {
+        return spec->requirement;
+    }
+    if (const auto* spec = std::get_if<CriticalButtonSpec>(&node.payload)) {
+        return spec->requirement;
+    }
+    if (const auto* spec = std::get_if<NumericDisplaySpec>(&node.payload)) {
+        return spec->requirement;
+    }
+    if (const auto* spec = std::get_if<StatusIndicatorSpec>(&node.payload)) {
+        return spec->requirement;
+    }
+    if (const auto* spec = std::get_if<TextInputSpec>(&node.payload)) {
+        return spec->requirement;
+    }
+    return {};
+}
 
 /**
  * @brief A whole compiled screen as generated code exposes it and the runtime consumes it.
@@ -341,6 +552,147 @@ struct ScreenPackage {
     return right <= width && bottom <= height;
 }
 
+/**
+ * @brief Checks one colour name through the resolver the device will use.
+ *
+ * The resolver rather than the shape rule alone, so a screen that validates cannot fail the device
+ * lookup for any reason `validate()` could have seen. The two errors stay apart because they are
+ * different people's defects: a malformed name is the emitter's, and an unknown one is a screen
+ * compiled against a palette this build does not have.
+ */
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> checkColor(std::string_view token) noexcept {
+    if (token.empty()) {
+        return {};
+    }
+    const auto resolved = resolveColorToken(token);
+    if (resolved.has_value()) {
+        return {};
+    }
+    return mdux::core::err(resolved.error() == ThemeError::MalformedToken ? SchemaError::MalformedColorToken : SchemaError::UnknownColorToken);
+}
+
+/// Requires a colour the dictionary marks required: present, and resolving through the table.
+///
+/// Worth separating from `checkColor()`, which permits an absent one. The dictionary makes `color`
+/// required on `Label`, `Button`, `CriticalButton`, `SignalTrace`, `NumericDisplay` and `TextInput`,
+/// and optional nowhere except `StatusIndicator`'s per-state list - a distinction the flat node this
+/// replaces could not express, since one shared field cannot be required for some components and
+/// absent for others.
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> requireColor(std::string_view token) noexcept;
+
+/// Requires a name the dictionary marks required.
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> require(std::string_view name) noexcept {
+    return name.empty() ? mdux::core::ResultVoid<SchemaError>{mdux::core::err(SchemaError::EmptyRequiredName)} : mdux::core::ResultVoid<SchemaError>{};
+}
+
+/**
+ * @brief Checks one node's payload against what its component's dictionary entry requires.
+ *
+ * Only what the dictionary already fixes, and nothing this module invents on its own: a name a
+ * component must declare is non-empty, every colour resolves, a status indicator has states to show,
+ * and its per-state tints - if it declares any - pair one-to-one with them.
+ *
+ * Optional fields are checked when present and ignored when empty, because "absent" is a legal
+ * value the dictionary allows for `requirement` on a `Button` or `charset` on a `TextInput`.
+ */
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> requireColor(std::string_view token) noexcept {
+    if (const auto named = require(token); !named.has_value()) {
+        return named;
+    }
+    return checkColor(token);
+}
+
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> validatePayload(const NodePayload& payload) noexcept {
+    if (const auto* spec = std::get_if<PanelSpec>(&payload)) {
+        // A Panel exists because a Row declared a background, so it always has one.
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<LabelSpec>(&payload)) {
+        if (const auto named = require(spec->textKey); !named.has_value()) {
+            return named;
+        }
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<ClockSpec>(&payload)) {
+        return require(spec->format);
+    }
+    if (const auto* spec = std::get_if<ImageSpec>(&payload)) {
+        return require(spec->source);
+    }
+    if (const auto* spec = std::get_if<VulkanViewportSpec>(&payload)) {
+        return require(spec->streamSource);
+    }
+    if (const auto* spec = std::get_if<SignalTraceSpec>(&payload)) {
+        if (const auto named = require(spec->streamSource); !named.has_value()) {
+            return named;
+        }
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<ButtonSpec>(&payload)) {
+        if (const auto named = require(spec->labelKey); !named.has_value()) {
+            return named;
+        }
+        if (const auto named = require(spec->source); !named.has_value()) {
+            return named;
+        }
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<CriticalButtonSpec>(&payload)) {
+        for (const std::string_view name : {spec->requirement, spec->labelKey, spec->onPress}) {
+            if (const auto named = require(name); !named.has_value()) {
+                return named;
+            }
+        }
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<NumericDisplaySpec>(&payload)) {
+        for (const std::string_view name : {spec->requirement, spec->templateId, spec->source}) {
+            if (const auto named = require(name); !named.has_value()) {
+                return named;
+            }
+        }
+        return requireColor(spec->colorToken);
+    }
+    if (const auto* spec = std::get_if<StatusIndicatorSpec>(&payload)) {
+        for (const std::string_view name : {spec->requirement, spec->source}) {
+            if (const auto named = require(name); !named.has_value()) {
+                return named;
+            }
+        }
+        if (spec->stateKeys.empty()) {
+            return mdux::core::err(SchemaError::NoStates);
+        }
+        for (const std::string_view key : spec->stateKeys) {
+            if (const auto named = require(key); !named.has_value()) {
+                return named;
+            }
+        }
+        // Empty is legal - the component declares no per-state tint. Anything else has to pair with
+        // the states one for one, because a shorter list leaves a state with no tint and no way to
+        // say which state that is.
+        if (!spec->colorTokens.empty() && spec->colorTokens.size() != spec->stateKeys.size()) {
+            return mdux::core::err(SchemaError::StateColorCountMismatch);
+        }
+        for (const std::string_view token : spec->colorTokens) {
+            if (const auto colour = requireColor(token); !colour.has_value()) {
+                return colour;
+            }
+        }
+        return {};
+    }
+    const auto* spec = std::get_if<TextInputSpec>(&payload);
+    if (spec == nullptr) {
+        return {};
+    }
+    if (const auto named = require(spec->source); !named.has_value()) {
+        return named;
+    }
+    if (spec->maxLength <= 0) {
+        return mdux::core::err(SchemaError::NonPositiveMaxLength);
+    }
+    return requireColor(spec->colorToken);
+}
+
 constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const noexcept {
     using mdux::core::err;
 
@@ -373,21 +725,8 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        // The resolver itself, rather than the shape rule alone, so a screen that validates here
-        // cannot fail the device lookup for any reason `validate()` could have seen. Shape was all
-        // this could check while the palette was a caller's input; now that the governed table is
-        // the approved source of token existence, a name absent from it is as certain a defect as a
-        // name that is not a name - and both would otherwise pass the generated `static_assert` and
-        // fail where nobody is watching.
-        //
-        // The two are kept apart because they are different people's defects: a malformed name is
-        // the emitter's, and an unknown one is a screen compiled against a palette this build does
-        // not have.
-        if (!node.colorToken.empty()) {
-            const auto resolved = resolveColorToken(node.colorToken);
-            if (!resolved.has_value()) {
-                return err(resolved.error() == ThemeError::MalformedToken ? SchemaError::MalformedColorToken : SchemaError::UnknownColorToken);
-            }
+        if (const auto payload = validatePayload(node.payload); !payload.has_value()) {
+            return payload;
         }
     }
 

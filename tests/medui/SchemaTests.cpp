@@ -31,24 +31,14 @@ namespace ms = mdux::medui;
 // ---------------------------------------------------------------------------
 
 constexpr std::array<ms::CompiledNode, 3> constNodes{
-    ms::CompiledNode{.id          = "topbar-background",
-                     .component   = "Panel",
-                     .bounds      = {0, 0, 400, 40},
-                     .textKey     = {},
-                     .colorToken  = "Theme.Colors.TopbarBackground",
-                     .requirement = {}          },
-    ms::CompiledNode{            .id          = "title",
-                     .component   = "Label",
-                     .bounds      = {8, 8, 200, 24},
-                     .textKey     = "STR-TITLE",
-                     .colorToken  = "Theme.Colors.Title",
-                     .requirement = {}          },
-    ms::CompiledNode{            .id          = "score",
-                     .component   = "NumericDisplay",
-                     .bounds      = {250, 60, 120, 60},
-                     .textKey     = {},
-                     .colorToken  = "Theme.Colors.ScoreDigits",
-                     .requirement = "REQ-NS-001"}
+    ms::CompiledNode{.id = "topbar-background",.bounds = {0, 0, 400, 40},.payload = ms::PanelSpec{.colorToken = "Theme.Colors.TopbarBackground"}                                                                          },
+    ms::CompiledNode{            .id = "title", .bounds = {8, 8, 200, 24}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}},
+    ms::CompiledNode{       .id      = "score",
+                     .bounds  = {250, 60, 120, 60},
+                     .payload = ms::NumericDisplaySpec{.requirement = "REQ-NS-001",
+                     .templateId  = "TPL-SEDATION-INDEX-160",
+                     .source      = "SEDATION_INDEX",
+                     .colorToken  = "Theme.Colors.ScoreDigits"}                                                                                                }
 };
 
 constexpr ms::ScreenPackage constPackage{
@@ -66,6 +56,10 @@ constexpr ms::ScreenPackage constPackage{
 static_assert(constPackage.validate().has_value(), "the reference screen must validate at compile time");
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
+static_assert(ms::kindName(constNodes[1]) == "Label", "a node names its component at compile time");
+static_assert(std::get_if<ms::LabelSpec>(&constNodes[1].payload) != nullptr, "and its payload is reachable without std::get");
+static_assert(ms::requirementOf(constNodes[2]) == "REQ-NS-001", "a traced node yields its requirement");
+static_assert(ms::requirementOf(constNodes[1]).empty(), "and an untraced one yields nothing rather than a placeholder");
 
 /**
  * @brief The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
@@ -259,7 +253,7 @@ const mdux::spec::Register coloursAreNamesNotValues{
                       // carried `[33, 184, 107, 255]` would have performed the substitution the
                       // governed table exists to perform, and a reviewer would read numbers.
                       Fixture literal;
-                      literal.nodes[1].colorToken = "#21B86B";
+                      literal.nodes[1].payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "#21B86B"};
                       checks.expect(errorOf(literal) == ms::SchemaError::MalformedColorToken,
                                     std::format("a colour value is refused, got {}", describe(errorOf(literal))));
 
@@ -267,7 +261,7 @@ const mdux::spec::Register coloursAreNamesNotValues{
                       // governed table, so a screen carrying it would validate
                       // at compile time and fail its lookup on the device.
                       Fixture bare;
-                      bare.nodes[1].colorToken = ms::colorTokenPrefix;
+                      bare.nodes[1].payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = ms::colorTokenPrefix};
                       checks.expect(errorOf(bare) == ms::SchemaError::MalformedColorToken,
                                     std::format("a bare Theme.Colors. prefix names nothing and is refused, got {}", describe(errorOf(bare))));
 
@@ -276,13 +270,17 @@ const mdux::spec::Register coloursAreNamesNotValues{
                       // shape alone accepted it, and the generated `static_assert` would have
                       // certified a screen whose colour lookup then fails on the device.
                       Fixture undefined;
-                      undefined.nodes[1].colorToken = "Theme.Colors.DoesNotExist";
+                      undefined.nodes[1].payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.DoesNotExist"};
                       checks.expect(errorOf(undefined) == ms::SchemaError::UnknownColorToken,
                                     std::format("a name the governed table does not define is refused, got {}", describe(errorOf(undefined))));
 
+                      // The typed payload makes this checkable where the flat node could not: the
+                      // dictionary makes `color` required on a Label, and one shared field cannot be
+                      // required for some components and absent for others.
                       Fixture untinted;
-                      untinted.nodes[1].colorToken = {};
-                      checks.expect(!errorOf(untinted).has_value(), "a node that declares no tint is legal");
+                      untinted.nodes[1].payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = {}};
+                      checks.expect(errorOf(untinted) == ms::SchemaError::EmptyRequiredName,
+                                    std::format("a Label with no tint is refused, got {}", describe(errorOf(untinted))));
                       checks.raise();
                   })
             .Execute();
@@ -427,6 +425,118 @@ const mdux::spec::Register tokenShapeMatchesWhatTheParserAccepts{
                       checks.expect(!ms::isColorToken("Theme.Colors.#"), "punctuation is not an identifier character");
                       checks.expect(!ms::isColorToken("Palette.Title"), "another prefix is another table");
                       checks.expect(!ms::isColorToken(""), "and nothing at all is not a name");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register everyComponentNamesItself{
+    "Every payload names its component, and only the traced ones carry a requirement",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-payload-kinds")
+            .Given("one node of each of the eleven kinds", [] {})
+            .When("each is asked for its component name and its requirement", [] {})
+            .Then("the names are the dictionary's, and an untraced component yields nothing",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const std::array<std::string_view, 2>                              states{"STR-OK", "STR-ALARM"};
+                      const std::array<std::pair<ms::NodePayload, std::string_view>, 11> cases{
+                          std::pair{          ms::NodePayload{ms::PanelSpec{}},           std::string_view{"Panel"}},
+                          std::pair{          ms::NodePayload{ms::LabelSpec{}},           std::string_view{"Label"}},
+                          std::pair{          ms::NodePayload{ms::ClockSpec{}},           std::string_view{"Clock"}},
+                          std::pair{          ms::NodePayload{ms::ImageSpec{}},           std::string_view{"Image"}},
+                          std::pair{ ms::NodePayload{ms::VulkanViewportSpec{}},  std::string_view{"VulkanViewport"}},
+                          std::pair{    ms::NodePayload{ms::SignalTraceSpec{}},     std::string_view{"SignalTrace"}},
+                          std::pair{         ms::NodePayload{ms::ButtonSpec{}},          std::string_view{"Button"}},
+                          std::pair{ ms::NodePayload{ms::CriticalButtonSpec{}},  std::string_view{"CriticalButton"}},
+                          std::pair{ ms::NodePayload{ms::NumericDisplaySpec{}},  std::string_view{"NumericDisplay"}},
+                          std::pair{ms::NodePayload{ms::StatusIndicatorSpec{}}, std::string_view{"StatusIndicator"}},
+                          std::pair{      ms::NodePayload{ms::TextInputSpec{}},       std::string_view{"TextInput"}}
+                      };
+
+                      bool everyKindNamed = true;
+                      for (const auto& [payload, expected] : cases) {
+                          const ms::CompiledNode node{
+                              .id      = "n",
+                              .bounds  = {0, 0, 1, 1},
+                              .payload = payload
+                          };
+                          everyKindNamed = everyKindNamed && ms::kindName(node) == expected;
+                      }
+                      checks.expect(everyKindNamed, "every alternative names its component");
+                      checks.expect(cases.size() == std::variant_size_v<ms::NodePayload>,
+                                    "and the case list covers every alternative, so a new one cannot be added unnoticed");
+
+                      // Five components can be traced; the rest carry no requirement field at all,
+                      // which is the distinction the flat node had to fake with an empty string.
+                      const ms::CompiledNode traced{
+                          .id      = "score",
+                          .bounds  = {                     0,                 0,                   1,                 1},
+                          .payload = ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "STATE", .stateKeys = states, .colorTokens = {}}
+                      };
+                      const ms::CompiledNode untraced{
+                          .id      = "now",
+                          .bounds  = {0, 0, 1, 1},
+                          .payload = ms::ClockSpec{.format = "HH_MM"}
+                      };
+                      checks.expect(ms::requirementOf(traced) == "REQ-1", "a status indicator yields its requirement");
+                      checks.expect(ms::requirementOf(untraced).empty(), "a clock has none to yield");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register statesAndTheirTintsPairUp{
+    "A status indicator must have states, and per-state tints must pair with them",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-status-states")
+            .Given("a status indicator with two states", [] {})
+            .When("its states are emptied, and its tint list given the wrong length", [] {})
+            .Then("each is refused, while no tints at all is legal",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const std::array<std::string_view, 2> states{"STR-OK", "STR-ALARM"};
+                      const std::array<std::string_view, 2> tints{"Theme.Colors.Nominal", "Theme.Colors.Fault"};
+                      const std::array<std::string_view, 1> oneTint{"Theme.Colors.Nominal"};
+
+                      const auto packageWith = [](std::span<const ms::CompiledNode> storage) {
+                          return ms::ScreenPackage{
+                              .id            = "screen",
+                              .schemaVersion = mdux::evidence::kSchemaVersion,
+                              .surfaceWidth  = 400,
+                              .surfaceHeight = 300,
+                              .nodes         = storage,
+                              .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                          };
+                      };
+
+                      const auto errorFor = [&](ms::NodePayload payload) -> std::optional<ms::SchemaError> {
+                          const std::array<ms::CompiledNode, 1> nodes{
+                              ms::CompiledNode{.id = "state", .bounds = {0, 0, 120, 40}, .payload = std::move(payload)}
+                          };
+                          const auto result = packageWith(nodes).validate();
+                          return result.has_value() ? std::nullopt : std::optional{result.error()};
+                      };
+
+                      checks.expect(
+                          !errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = tints}).has_value(),
+                          "two states and two tints validate");
+                      checks.expect(
+                          !errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = {}}).has_value(),
+                          "and declaring no tint at all is legal");
+                      checks.expect(errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = {}, .colorTokens = {}})
+                                        == ms::SchemaError::NoStates,
+                                    "an indicator that can show nothing is refused");
+
+                      // The failure this pairing rule exists for: one tint short leaves a state with
+                      // no colour and no way to say which state that is.
+                      checks.expect(errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = oneTint})
+                                        == ms::SchemaError::StateColorCountMismatch,
+                                    "a short tint list is refused rather than padded");
                       checks.raise();
                   })
             .Execute();

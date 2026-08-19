@@ -129,6 +129,13 @@ is, *how much* it may draw, and *which* validated token and key it draws with. T
 vertices is a bounded table lookup followed by arithmetic over a known bound, which is exactly what
 a governed, allocation-free runtime can do.
 
+**A node's payload is typed per component.** The package carries one spec type per dictionary entry
+behind a `std::variant`, not a single record with every field on it. The flat form was tried first
+and was lossy: it had nowhere to put a `Clock`'s format, a `NumericDisplay`'s template and source, a
+`StatusIndicator`'s state keys and per-state tints, a `CriticalButton`'s `on_press`, or a
+`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Every
+field remains a validated *name* rather than a resolved value, which keeps the boundary ADR-011 fixes.
+
 ### 3. Generated C++ is emitted, never committed
 
 `<binary>/mdux_generated/screen/<identifier>.cppm` and `.hpp`, produced from the committed
@@ -151,6 +158,21 @@ They have a different consumer (#16's verifier, not the runtime), a different li
 different review audience — a reviewer checking that a safety-critical node's expected bounds
 changed deliberately should not have to find that hunk inside the whole screen. A separate file also
 gets its own digest in `report.json`, so a goldens-only change is visible as one.
+
+**This is a deliberate divergence from TrustSC, recorded as one.** Its `CompiledScreenPackage`
+carries `golden_references` as a field, and `trustsc-ui-verify::verify_frame()` walks them straight
+out of the compiled screen; the field is not feature-gated, so a shipped binary carries expectations
+only a verifier reads. MduX keeps them outside the package for the reasons above — the runtime never
+reads them, the review audience differs, and the sidecar gets its own digest — and pays for that with
+a verifier that opens two files instead of walking one structure. That is a driver-shaped cost, not
+an evidence-shaped one, and it is the trade this decision accepts knowingly rather than by omission.
+
+**The consistency test is an acceptance criterion for the baker and for #16**, not an aspiration.
+Neither file alone can carry it: applying ADR-011's predicate to the compiled nodes yields exactly
+the id set `goldens.json` must contain, so the check is a set comparison across the pair, and #198 is
+the first place both files exist at once. Until then it has no home — #197's text assigns it to #196,
+this ADR's consequences assign it to #197, and #196 necessarily shipped without it because no package
+existed to compare against.
 
 ### 5. One recipe per screen, under `recipes/screen/<id>.toml`
 
