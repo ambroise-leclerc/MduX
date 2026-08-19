@@ -264,7 +264,17 @@ human should read.
 ### Risks
 - **The package grows to carry things the runtime does not need**, because it is the convenient
   place to put them. *Mitigation*: the rule to apply is that `package.json` holds what the runtime
-  reads; anything read only by a tool belongs in a sidecar, as the goldens do.
+  reads, plus exactly one named exception; anything else read only by a tool belongs in a sidecar,
+  as the goldens do.
+
+  **The exception is `NodeProvenance`, and it is bounded on purpose.** Decision 4 admits two
+  booleans per node that the runtime never reads, because the golden-completeness check cannot be
+  written without them and no sidecar can carry them — a file cannot supply the input that proves
+  that same file is complete. Naming it here rather than leaving it as an unremarked contradiction
+  is what stops a later reader applying the general rule and deleting the check's only input. The
+  test for a further exception is the one decision 4 applies: it has to be a check that is otherwise
+  *impossible*, not one that would merely be more convenient, and it has to cost bits rather than
+  lists.
 - **A regenerated screen differs on a second toolchain** despite the integer-only layout rule.
   *Mitigation*: `evidence.screen.<id>` runs on both legs, which is the check that would catch it;
   ADR-011's integer-only rule is what makes it expected to pass.
