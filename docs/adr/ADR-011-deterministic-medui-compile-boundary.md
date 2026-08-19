@@ -111,7 +111,7 @@ parity programme's direction is MduX moving toward it.
 
 **A compiled screen is locale-free.** It carries no locale field and no glyph runs. Per-locale
 glyph runs stay in the text package where ADR-010 already put them, and the two are joined on device
-by looking each node's `text_key` up for the running locale. TrustSC does exactly this in
+by looking each node's `textKey` up for the running locale. TrustSC does exactly this in
 `ScreenTextLayout::from_screen(screen, package, locale)`.
 
 The consequence that decides it: **adding an approved locale touches no screen artifact at all.**
@@ -137,8 +137,32 @@ and `governed.noThrow.symbolScan` hold the runtime to that.
 the `medui-authoring` skill, stated here because ADR-012 depends on the same predicate: a
 `@safety_critical` node emits an entry, and **any** node with an explicit `position:` emits a
 `Bounds` entry whether annotated or not, because a declared position is a safety-relevant claim by
-itself. A node matching both rules emits exactly one merged entry with deduplicated `cv_checks`,
+itself. A node matching both rules emits exactly one merged entry with deduplicated `cvChecks`,
 never two. #196 implements this and ADR-012's `goldens.json` carries the result.
+
+**Amended: the emitted members are `nodeId`, `bounds`, `textKey`, `colorToken`, `cvChecks`.** An
+earlier revision of this ADR spelled them `node_id`, `text_key`, `color_token` and `cv_checks`, and
+that spelling was a transcription of TrustSC's *Rust identifiers* rather than a decision about a file
+format. Two facts settle it the other way, and both were checked rather than assumed:
+
+- **TrustSC emits no screen JSON at all.** Its `CompiledScreenPackage` derives `Clone, Copy, Debug,
+  Eq, PartialEq` and no `Serialize`, and its repository holds no `generated/screens/*/package.json` —
+  a compiled screen there is generated Rust source. There is therefore no sibling file for these
+  member names to match, and no parity is given up by choosing them freely.
+- **Every committed MduX package is camelCase** — `byteLength`, `occupancyPercent`, `advanceWidth`,
+  `codePoint` — across the three kinds that have committed artifacts today: font, shader and model
+  (`generated/font/`, `generated/shader/`, `generated/model/`). The text pipeline uses the same
+  convention in `mdux.text.schema` and `mdux-textbake`, but commits no package, so it is implemented
+  machinery rather than evidence and is named here as such. The repository's own tooling schema
+  (`fixHint`, `filesChecked`) is camelCase too. A screen directory holding `package.json`,
+  `report.json` and `goldens.json` in two conventions would make #16's verifier, which reads two of
+  the three, carry two vocabularies for no gain.
+
+The parity that *is* achievable here is the field vocabulary and the file structure, and both are
+unaffected: the same five facts per entry, under names a C++ reader spells the way this repository
+spells every other artifact. Decided before the first bake deliberately, because renaming a member
+of a committed, byte-compared artifact afterwards is a `schemaVersion` bump and a rebake of every
+screen.
 
 Concretely:
 

@@ -251,7 +251,7 @@ private:
     /**
      * @brief Refuses a `ColorHash` check on a node whose expected tint cannot be derived.
      *
-     * `cv_checks` and `color_token` are two halves of one claim: a verifier asked for `ColorHash`
+     * `cvChecks` and `colorToken` are two halves of one claim: a verifier asked for `ColorHash`
      * reads the token to know what tint to expect. A `StatusIndicator` declares `colors:` as a list,
      * one per state, and a `Clock`, `Image` or `VulkanViewport` declares none at all - so a golden
      * over either would ask for a check with nothing to check it against.

@@ -97,7 +97,7 @@ Screen NeuroSense500 {
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 
 `@safety_critical(cv_check: [Bounds, ColorHash])` on the line before a component emits a golden
-reference (`node_id`, `bounds`, `text_key?`, `color_token?`, `cv_checks`) that the rendered-truth
+reference (`nodeId`, `bounds`, `textKey?`, `colorToken?`, `cvChecks`) that the rendered-truth
 verifier checks against. Rules:
 
 - **A safety-critical component must carry an explicit `requirement:`.** If you're annotating a
@@ -105,7 +105,7 @@ verifier checks against. Rules:
   annotation or the missing requirement.
 - **Any node with an explicit `position:` gets an automatic `Bounds` golden reference**, even
   without `@safety_critical` — a declared position is a safety-relevant claim by itself.
-- **A node with both gets exactly one merged entry** (deduplicated `cv_checks`), never two.
+- **A node with both gets exactly one merged entry** (deduplicated `cvChecks`), never two.
 - Dynamic content (`NumericDisplay`, `StatusIndicator`, `Clock`, `SignalTrace`) pins its *bounds*
   and *color* but never its varying value — the golden reference says **where** critical content
   must appear and in what tint, not what the live number is.
