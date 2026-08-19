@@ -314,67 +314,71 @@ struct NodeRect {
  * over a set it does not own. The package therefore carries names throughout, which is also the one
  * rule a reader has to remember about it.
  */
+// Every spec member carries a default initialiser. `-Wmissing-field-initializers` is an error in
+// this tree, and the emitter (#197) writes these initialisers from a screen - a type whose optional
+// fields still have to be spelled out at every site is a trap for generated code, and an empty name
+// is what "absent" means for all of them anyway.
 struct PanelSpec {
-    std::string_view colorToken;  ///< the Row background that produced this synthetic node
+    std::string_view colorToken{};  ///< the Row background that produced this synthetic node
 
     [[nodiscard]] constexpr bool operator==(const PanelSpec&) const noexcept = default;
 };
 
 struct LabelSpec {
-    std::string_view textKey;
-    std::string_view colorToken;
+    std::string_view textKey{};
+    std::string_view colorToken{};
 
     [[nodiscard]] constexpr bool operator==(const LabelSpec&) const noexcept = default;
 };
 
 struct ClockSpec {
-    std::string_view format;  ///< a named value the build's governed table defines
+    std::string_view format{};  ///< a named value the build's governed table defines
 
     [[nodiscard]] constexpr bool operator==(const ClockSpec&) const noexcept = default;
 };
 
 struct ImageSpec {
-    std::string_view source;  ///< the baked image package's id, from `img("ID")`
+    std::string_view source{};  ///< the baked image package's id, from `img("ID")`
 
     [[nodiscard]] constexpr bool operator==(const ImageSpec&) const noexcept = default;
 };
 
 struct VulkanViewportSpec {
-    std::string_view streamSource;
+    std::string_view streamSource{};
 
     [[nodiscard]] constexpr bool operator==(const VulkanViewportSpec&) const noexcept = default;
 };
 
 struct SignalTraceSpec {
-    std::string_view streamSource;
-    std::string_view colorToken;
+    std::string_view streamSource{};
+    std::string_view colorToken{};
 
     [[nodiscard]] constexpr bool operator==(const SignalTraceSpec&) const noexcept = default;
 };
 
 struct ButtonSpec {
-    std::string_view labelKey;
-    std::string_view colorToken;
-    std::string_view source;
-    std::string_view requirement;  ///< optional on a Button; empty when it declares none
+    std::string_view labelKey{};
+    std::string_view colorToken{};
+    std::string_view source{};
+    std::string_view requirement{};  ///< optional on a Button; empty when it declares none
 
     [[nodiscard]] constexpr bool operator==(const ButtonSpec&) const noexcept = default;
 };
 
 struct CriticalButtonSpec {
-    std::string_view requirement;  ///< required by the dictionary, and by #196's annotation rule
-    std::string_view labelKey;
-    std::string_view colorToken;
-    std::string_view onPress;
+    std::string_view requirement{};  ///< required by the dictionary, and by #196's annotation rule
+    std::string_view labelKey{};
+    std::string_view colorToken{};
+    std::string_view onPress{};
 
     [[nodiscard]] constexpr bool operator==(const CriticalButtonSpec&) const noexcept = default;
 };
 
 struct NumericDisplaySpec {
-    std::string_view requirement;
-    std::string_view templateId;  ///< `template:` in the source; `template` is a keyword here
-    std::string_view source;
-    std::string_view colorToken;
+    std::string_view requirement{};
+    std::string_view templateId{};  ///< `template:` in the source; `template` is a keyword here
+    std::string_view source{};
+    std::string_view colorToken{};
 
     [[nodiscard]] constexpr bool operator==(const NumericDisplaySpec&) const noexcept = default;
 };
@@ -392,10 +396,10 @@ struct NumericDisplaySpec {
  * variation lives in the node, not in the expectation.
  */
 struct StatusIndicatorSpec {
-    std::string_view                  requirement;
-    std::string_view                  source;
-    std::span<const std::string_view> stateKeys;
-    std::span<const std::string_view> colorTokens;
+    std::string_view                  requirement{};
+    std::string_view                  source{};
+    std::span<const std::string_view> stateKeys{};
+    std::span<const std::string_view> colorTokens{};
 
     [[nodiscard]] constexpr bool operator==(const StatusIndicatorSpec& other) const noexcept {
         return requirement == other.requirement && source == other.source && std::ranges::equal(stateKeys, other.stateKeys)
@@ -404,11 +408,11 @@ struct StatusIndicatorSpec {
 };
 
 struct TextInputSpec {
-    std::string_view source;
-    std::string_view colorToken;
+    std::string_view source{};
+    std::string_view colorToken{};
     std::int64_t     maxLength{0};
-    std::string_view charset;      ///< empty when the component narrows nothing
-    std::string_view requirement;  ///< optional on a TextInput
+    std::string_view charset{};      ///< empty when the component narrows nothing
+    std::string_view requirement{};  ///< optional on a TextInput
 
     [[nodiscard]] constexpr bool operator==(const TextInputSpec&) const noexcept = default;
 };
@@ -477,7 +481,7 @@ struct NodeProvenance {
  * the provenance is what the golden predicate needs and resolution would otherwise have thrown away.
  */
 struct CompiledNode {
-    std::string_view id;
+    std::string_view id{};
     NodeRect         bounds{};
     NodePayload      payload{PanelSpec{}};
     NodeProvenance   provenance{};
