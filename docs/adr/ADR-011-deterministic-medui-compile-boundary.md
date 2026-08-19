@@ -150,8 +150,11 @@ format. Two facts settle it the other way, and both were checked rather than ass
   a compiled screen there is generated Rust source. There is therefore no sibling file for these
   member names to match, and no parity is given up by choosing them freely.
 - **Every committed MduX package is camelCase** — `byteLength`, `occupancyPercent`, `advanceWidth`,
-  `codePoint` — across the font, text, shader and model kinds, and so is the repository's own
-  tooling schema (`fixHint`, `filesChecked`). A screen directory holding `package.json`,
+  `codePoint` — across the three kinds that have committed artifacts today: font, shader and model
+  (`generated/font/`, `generated/shader/`, `generated/model/`). The text pipeline uses the same
+  convention in `mdux.text.schema` and `mdux-textbake`, but commits no package, so it is implemented
+  machinery rather than evidence and is named here as such. The repository's own tooling schema
+  (`fixHint`, `filesChecked`) is camelCase too. A screen directory holding `package.json`,
   `report.json` and `goldens.json` in two conventions would make #16's verifier, which reads two of
   the three, carry two vocabularies for no gain.
 

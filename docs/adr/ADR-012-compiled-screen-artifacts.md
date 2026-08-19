@@ -81,8 +81,8 @@ device performs the substitution by a bounded lookup in a governed table. Carryi
 values is also what makes the package readable in a diff: a reviewer sees
 `Theme.Colors.ScoreDigits`, not `[33, 184, 107, 255]`.
 
-**All three files spell their members in camelCase**, as every other committed MduX package does
-(`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
+**All three files spell their members in camelCase**, as the committed font, shader and model
+packages do (`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
 `goldens.json`, whose entry ADR-011 originally spelled in snake_case; that amendment explains why it
 does not. One directory, one vocabulary, and #16's verifier - which reads two of these three files -
 carries one set of member names rather than two.

@@ -64,19 +64,25 @@
  * one-to-one onto the canonical JSON:
  *
  * ```json
- * { "nodeId": "sedation-index",
- *   "bounds": { "x": 1392, "y": 80, "width": 512, "height": 512 },
- *   "textKey": "STR-SEDATION-LABEL",
+ * { "bounds": { "height": 512, "width": 512, "x": 1392, "y": 80 },
  *   "colorToken": "Theme.Colors.ScoreDigits",
- *   "cvChecks": ["Bounds", "ColorHash"] }
+ *   "cvChecks": ["Bounds", "ColorHash"],
+ *   "nodeId": "sedation-index",
+ *   "textKey": "STR-SEDATION-LABEL" }
  * ```
  *
  * The C++ members and the JSON members are now the same words, which is worth one line because they
  * were not: an earlier revision spelled the file `node_id`, `text_key`, `color_token`, `cv_checks`,
  * transcribed from TrustSC's Rust identifiers. TrustSC emits no screen JSON at all - its compiled
- * screen is generated Rust - so nothing was being matched, while every other committed MduX package
- * is camelCase. ADR-011 records the amendment; the effect here is that a reader has one vocabulary
- * for the struct, the file and the verifier that reads it.
+ * screen is generated Rust - so nothing was being matched, while every package this repository has
+ * committed is camelCase. ADR-011 records the amendment; the effect here is that a reader has one
+ * vocabulary for the struct, the file and the verifier that reads it.
+ *
+ * The example is in the byte order the file actually has. `mdux.evidence.json` sorts every object's
+ * members lexicographically by UTF-8 code unit, nested objects included, so `bounds` reads
+ * `height, width, x, y` rather than the order a reader would write by hand. Object order is
+ * semantically irrelevant in JSON and deliberately relevant here: `goldens.json` is byte-compared
+ * across toolchains, so an example in a different order would be describing a file that cannot exist.
  *
  * `textKey` and `colorToken` are omitted when the node has none. `cvChecks` is sorted and
  * deduplicated so that one screen has one serialisation - `goldens.json` is byte-compared across
