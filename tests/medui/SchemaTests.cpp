@@ -16,7 +16,6 @@
 import std;
 import speclab;
 import mdux.core.result;
-import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.report;
 import mdux.medui.schema;
@@ -36,7 +35,7 @@ constexpr std::array<ms::CompiledNode, 3> constNodes{
                      .component   = "Panel",
                      .bounds      = {0, 0, 400, 40},
                      .textKey     = {},
-                     .colorToken  = "Theme.Colors.Surface",
+                     .colorToken  = "Theme.Colors.TopbarBackground",
                      .requirement = {}          },
     ms::CompiledNode{            .id          = "title",
                      .component   = "Label",
@@ -68,16 +67,31 @@ static_assert(constPackage.validate().has_value(), "the reference screen must va
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
 
-// The governed table a product supplies. Two entries are enough to tell a hit from a miss, and
-// `constexpr` so the resolution below happens at compile time rather than at start-up.
-constexpr std::array<ms::ThemeColor, 2> constTheme{
-    ms::ThemeColor{      .token = "Theme.Colors.Title",   .value = {.r = 12, .g = 24, .b = 36, .a = 255}},
-    ms::ThemeColor{.token = "Theme.Colors.ScoreDigits", .value = {.r = 33, .g = 184, .b = 107, .a = 255}}
+/**
+ * @brief The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
+ *
+ * A second copy of data the module already holds, which this suite would normally refuse - and the
+ * exception is the point. The parity claim is that a token renders the same colour in both projects,
+ * so a check reading `themeColors` for both its input and its expectation would stay green while an
+ * entry drifted, which is the one failure this table exists to prevent. Compared against a
+ * transcription, a drift has to survive two edits in two files to go unnoticed.
+ */
+constexpr std::array<ms::ThemeColor, 8> expectedPalette{
+    ms::ThemeColor{.token = "Theme.Colors.TopbarBackground", .value = {0.82F, 0.84F, 0.86F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Title", .value = {0.10F, 0.12F, 0.16F, 1.0F}},
+    ms::ThemeColor{     .token = "Theme.Colors.ScoreDigits", .value = {0.13F, 0.72F, 0.42F, 1.0F}},
+    ms::ThemeColor{         .token = "Theme.Colors.Nominal", .value = {0.13F, 0.72F, 0.42F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Alert", .value = {0.95F, 0.65F, 0.15F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Fault", .value = {0.86F, 0.20F, 0.18F, 1.0F}},
+    ms::ThemeColor{         .token = "Theme.Colors.Neutral", .value = {0.62F, 0.66F, 0.70F, 1.0F}},
+    ms::ThemeColor{   .token = "Theme.Colors.PrimaryAction", .value = {0.16F, 0.44F, 0.86F, 1.0F}}
 };
 
-static_assert(ms::resolveColorToken(constTheme, "Theme.Colors.ScoreDigits").has_value(), "a name the table defines resolves at compile time");
-static_assert(ms::resolveColorToken(constTheme, "Theme.Colors.ScoreDigits").value() == mdux::core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255},
-              "and resolves to the colour the table carries");
+// The governed table is the module's own, so there is no fixture to build here - only the promise
+// that a name resolves at compile time, which is what generated code and #16's verifier both rest on.
+static_assert(ms::resolveColorToken("Theme.Colors.ScoreDigits").has_value(), "a name the governed table defines resolves at compile time");
+static_assert(ms::resolveColorToken("Theme.Colors.ScoreDigits").value() == std::array<float, 4>{0.13F, 0.72F, 0.42F, 1.0F},
+              "and resolves to the colour TrustSC's THEME_COLORS carries for it");
 
 // ---------------------------------------------------------------------------
 // A mutable equivalent, so each rejection can change exactly one field
@@ -257,6 +271,15 @@ const mdux::spec::Register coloursAreNamesNotValues{
                       checks.expect(errorOf(bare) == ms::SchemaError::MalformedColorToken,
                                     std::format("a bare Theme.Colors. prefix names nothing and is refused, got {}", describe(errorOf(bare))));
 
+                      // The case the governed table makes checkable, and the reason this is worth
+                      // a rejection rather than a device-time miss: the name is well-formed, so
+                      // shape alone accepted it, and the generated `static_assert` would have
+                      // certified a screen whose colour lookup then fails on the device.
+                      Fixture undefined;
+                      undefined.nodes[1].colorToken = "Theme.Colors.DoesNotExist";
+                      checks.expect(errorOf(undefined) == ms::SchemaError::UnknownColorToken,
+                                    std::format("a name the governed table does not define is refused, got {}", describe(errorOf(undefined))));
+
                       Fixture untinted;
                       untinted.nodes[1].colorToken = {};
                       checks.expect(!errorOf(untinted).has_value(), "a node that declares no tint is legal");
@@ -321,42 +344,59 @@ const mdux::spec::Register sizingIsNotThisModulesClaim{
             .Execute();
     }};
 
-const mdux::spec::Register colourTokensResolveAgainstAGovernedTable{
-    "A carried name resolves against the product's table, and a miss is a Result rather than a guess",
+const mdux::spec::Register colourTokensResolveAgainstTheGovernedTable{
+    "Every governed token resolves, and everything else is refused with the error that fits",
     "evidence-unit",
     [] {
         return speclab::Test("medui-schema-colour-resolution")
-            .Given("a two-entry governed colour table", [] {})
-            .When("a defined name, an undefined one, and two malformed ones are resolved", [] {})
-            .Then("each answers with the colour or with the error that says which kind of failure it is",
+            .Given("the governed token to RGBA table", [] {})
+            .When("every entry, an undefined name and two malformed ones are resolved", [] {})
+            .Then("each answers with its colour or with the error that says whose defect it is",
                   [] {
                       mdux::spec::Checks checks;
 
-                      const auto hit = ms::resolveColorToken(constTheme, "Theme.Colors.Title");
-                      checks.expect(hit.has_value() && *hit == mdux::core::ColorRgba8{.r = 12, .g = 24, .b = 36, .a = 255},
-                                    "a defined name resolves to its colour");
+                      // The shape of TrustSC's own
+                      // `theme_color_table_resolves_every_entry_and_rejects_unknown_tokens`: walk
+                      // the table rather than spot-check it, so an entry that stops resolving -
+                      // a malformed token added to the table, say - fails here rather than on a
+                      // device.
+                      // Two different claims, and the second is the parity one. The first says the
+                      // resolver reaches every entry the table holds - a malformed token added to
+                      // the table would fail `isColorToken()` and be unreachable, and this catches
+                      // it. The second says the table holds what TrustSC holds, which reading the
+                      // table for both sides could never show.
+                      bool everyEntryResolves = true;
+                      for (const ms::ThemeColor& entry : ms::themeColors) {
+                          const auto resolved = ms::resolveColorToken(entry.token);
+                          everyEntryResolves  = everyEntryResolves && resolved.has_value() && *resolved == entry.value;
+                      }
+                      checks.expect(everyEntryResolves, "the resolver reaches every entry the table holds");
+
+                      checks.expect(ms::themeColors.size() == expectedPalette.size(),
+                                    std::format("the table carries TrustSC's eight entries, got {}", ms::themeColors.size()));
+                      checks.expect(std::ranges::equal(ms::themeColors, expectedPalette), "and carries them token for token, value for value");
+
+                      bool everyExpectedTokenResolves = true;
+                      for (const ms::ThemeColor& expected : expectedPalette) {
+                          const auto resolved        = ms::resolveColorToken(expected.token);
+                          everyExpectedTokenResolves = everyExpectedTokenResolves && resolved.has_value() && *resolved == expected.value;
+                      }
+                      checks.expect(everyExpectedTokenResolves, "and every name TrustSC defines resolves here to the colour it defines");
 
                       // A miss is not a colour. ADR-011 keeps the lookup bounded and fallible on
-                      // purpose: a fallback tint would render something nobody approved, which is
-                      // the failure mode a governed table exists to prevent.
-                      const auto miss = ms::resolveColorToken(constTheme, "Theme.Colors.Undefined");
+                      // purpose: a fallback tint would render something nobody approved.
+                      const auto miss = ms::resolveColorToken("Theme.Colors.DoesNotExist");
                       checks.expect(!miss.has_value() && miss.error() == ms::ThemeError::UnknownToken,
                                     "a name the table does not define is a miss, not a default");
 
-                      const auto malformed = ms::resolveColorToken(constTheme, "Theme.Colors.#");
+                      // The error matters as much as the failure: a malformed name is an emitter
+                      // defect, while an absent one is a screen compiled against another palette.
+                      const auto malformed = ms::resolveColorToken("Theme.Colors.#");
                       checks.expect(!malformed.has_value() && malformed.error() == ms::ThemeError::MalformedToken,
                                     "a name that is not a name is distinguished from one that is merely absent");
 
-                      const auto value = ms::resolveColorToken(constTheme, "#21B86B");
+                      const auto value = ms::resolveColorToken("#21B86B");
                       checks.expect(!value.has_value() && value.error() == ms::ThemeError::MalformedToken, "a colour value is refused where a name belongs");
-
-                      // The error matters as much as the failure: a well-formed name against an
-                      // empty table is *absent*, not malformed. Asserting only `!has_value()` would
-                      // pass if the resolver ever confused the two, which is the distinction this
-                      // scenario exists to draw.
-                      const auto emptyTable = ms::resolveColorToken({}, "Theme.Colors.Title");
-                      checks.expect(!emptyTable.has_value() && emptyTable.error() == ms::ThemeError::UnknownToken,
-                                    "an empty table answers a well-formed name with a miss, not a colour nobody approved");
                       checks.raise();
                   })
             .Execute();
