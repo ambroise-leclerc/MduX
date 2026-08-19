@@ -57,7 +57,12 @@ static_assert(constPackage.validate().has_value(), "the reference screen must va
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
 static_assert(ms::kindName(constNodes[1]) == "Label", "a node names its component at compile time");
-static_assert(std::get_if<ms::LabelSpec>(&constNodes[1].payload) != nullptr, "and its payload is reachable without std::get");
+// `holds_alternative` for the claim, and a field read for the value. An earlier revision asserted
+// `get_if(...) != nullptr`, which GCC rejected under -Waddress and was right to: for a variant whose
+// alternative is known at compile time, the pointer can never be null, so the assertion asserted
+// nothing.
+static_assert(std::holds_alternative<ms::LabelSpec>(constNodes[1].payload), "a node's payload is its own component's type");
+static_assert(std::get_if<ms::LabelSpec>(&constNodes[1].payload)->textKey == "STR-TITLE", "and its fields are readable at compile time, without std::get");
 static_assert(ms::requirementOf(constNodes[2]) == "REQ-NS-001", "a traced node yields its requirement");
 static_assert(ms::requirementOf(constNodes[1]).empty(), "and an untraced one yields nothing rather than a placeholder");
 
