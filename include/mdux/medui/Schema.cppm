@@ -104,6 +104,7 @@ enum class SchemaError : std::uint8_t {
     BoundsOutsideSurface,      ///< a rectangle the declared surface does not contain
     MalformedColorToken,       ///< a colour that is not a `Theme.Colors.<Token>` name
     UnknownColorToken,         ///< a well-formed name the governed table does not define
+    UnknownPayload,            ///< a payload this module cannot name, or one left valueless
     EmptyRequiredName,         ///< a spec field the component dictionary requires is empty
     NoStates,                  ///< a status indicator that can show nothing
     StateColorCountMismatch,   ///< per-state tints that do not pair one-to-one with the states
@@ -132,6 +133,8 @@ enum class SchemaError : std::uint8_t {
             return "a colour is not a Theme.Colors.<Token> name";
         case SchemaError::UnknownColorToken:
             return "a colour names a token the governed table does not define";
+        case SchemaError::UnknownPayload:
+            return "a node carries a payload this module cannot name";
         case SchemaError::EmptyRequiredName:
             return "a name the component dictionary requires is empty";
         case SchemaError::NoStates:
@@ -435,15 +438,49 @@ using NodePayload = std::variant<PanelSpec,
                                  TextInputSpec>;
 
 /**
- * @brief One compiled node: where it is, and everything the device needs to draw it.
+ * @brief Why ADR-011's golden predicate selects a node, carried because compilation erases it.
+ *
+ * The predicate reads two facts about the *source*: whether the node carried `@safety_critical`,
+ * and whether its `position:` was written explicitly. Resolution destroys both - every compiled
+ * node ends up with bounds, and `requirement` is mandatory on `CriticalButton`, `NumericDisplay`
+ * and `StatusIndicator` whether or not anyone annotated them, so it is not a proxy for the
+ * annotation either.
+ *
+ * Without these two bits, the consistency check ADR-012 requires cannot be performed: a reader
+ * holding `package.json` and `goldens.json` could see that every listed golden resolves to a node,
+ * and still not know whether a node that *should* have a golden is missing one - the dangerous
+ * direction, and the whole reason that check compares sets rather than resolving references.
+ *
+ * Two booleans of device storage for a property the runtime never reads is a real cost, and it is
+ * the same trade ADR-012 decision 4 refused for the goldens themselves. The difference is size and
+ * consequence: an entire expectation list against two bits, and a check that is otherwise
+ * impossible against one that is merely more convenient.
+ */
+struct NodeProvenance {
+    bool safetyCritical{false};  ///< the source carried `@safety_critical`
+    bool positioned{false};      ///< the source wrote an explicit `position:`
+
+    [[nodiscard]] constexpr bool operator==(const NodeProvenance&) const noexcept = default;
+
+    /// Whether ADR-011's predicate selects this node for a golden reference.
+    [[nodiscard]] constexpr bool selectsGolden() const noexcept {
+        return safetyCritical || positioned;
+    }
+};
+
+/**
+ * @brief One compiled node: where it is, everything the device needs to draw it, and why a verifier
+ *        would look at it.
  *
  * `id` and `bounds` are common to every component because a golden reference, a requirement trace
- * and the layout solver all address a node the same way. Everything else is the component's own.
+ * and the layout solver all address a node the same way. The payload is the component's own, and
+ * the provenance is what the golden predicate needs and resolution would otherwise have thrown away.
  */
 struct CompiledNode {
     std::string_view id;
     NodeRect         bounds{};
     NodePayload      payload{PanelSpec{}};
+    NodeProvenance   provenance{};
 
     [[nodiscard]] constexpr bool operator==(const CompiledNode&) const noexcept = default;
 };
@@ -481,8 +518,19 @@ struct CompiledNode {
     if (std::holds_alternative<StatusIndicatorSpec>(node.payload)) {
         return "StatusIndicator";
     }
-    return "TextInput";
+    if (std::holds_alternative<TextInputSpec>(node.payload)) {
+        return "TextInput";
+    }
+    // An alternative this function does not know, or a valueless payload. Named as nothing rather
+    // than as the last kind checked: labelling an unknown component `TextInput` is how a package
+    // acquires a plausible wrong answer, and `validate()` refuses the same case outright.
+    return {};
 }
+
+// Adding an alternative to `NodePayload` without teaching `kindName()` and `validatePayload()` about
+// it would leave a node that names itself nothing and fails validation - which is fail-closed, but
+// only discovered at run time. This makes it a build failure at the point of the change instead.
+static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added or removed: update kindName() and validatePayload() to match");
 
 /**
  * @brief The requirement a node is traced to, or empty when it declares none.
@@ -680,9 +728,15 @@ struct ScreenPackage {
         }
         return {};
     }
+    // Fail closed. An earlier revision returned success here, which made this a fail-open contract:
+    // a payload left valueless by an exceptional emplacement, or an alternative added without
+    // teaching this function about it, would have been accepted as a valid node by the one function
+    // consumers are entitled to trust. `std::visit` would give exhaustiveness, but it throws on a
+    // valueless variant, which ADR-005 does not allow here - so the residual case is named instead,
+    // and the `static_assert` above turns "an alternative was added" into a build failure.
     const auto* spec = std::get_if<TextInputSpec>(&payload);
     if (spec == nullptr) {
-        return {};
+        return mdux::core::err(SchemaError::UnknownPayload);
     }
     if (const auto named = require(spec->source); !named.has_value()) {
         return named;

@@ -167,12 +167,29 @@ reads them, the review audience differs, and the sidecar gets its own digest —
 a verifier that opens two files instead of walking one structure. That is a driver-shaped cost, not
 an evidence-shaped one, and it is the trade this decision accepts knowingly rather than by omission.
 
-**The consistency test is an acceptance criterion for the baker and for #16**, not an aspiration.
-Neither file alone can carry it: applying ADR-011's predicate to the compiled nodes yields exactly
-the id set `goldens.json` must contain, so the check is a set comparison across the pair, and #198 is
-the first place both files exist at once. Until then it has no home — #197's text assigns it to #196,
-this ADR's consequences assign it to #197, and #196 necessarily shipped without it because no package
-existed to compare against.
+**The consistency test is an acceptance criterion for #198's baker**, not an aspiration, and #16
+derives its expectations the same way rather than trusting the sidecar to be complete.
+
+It needs something the package must therefore carry. ADR-011's predicate reads two facts about the
+*source* — whether a node was annotated `@safety_critical`, and whether its `position:` was explicit
+— and compilation erases both: every compiled node has resolved bounds, and `requirement` is
+mandatory on `CriticalButton`, `NumericDisplay` and `StatusIndicator` whether or not anyone
+annotated them, so it is not a proxy for the annotation. Without those two facts a checker can
+confirm that every listed golden resolves to a node and still not see the failure that matters: a
+node that should have a golden and does not.
+
+So each compiled node carries `NodeProvenance { safetyCritical, positioned }` — two booleans the
+runtime never reads, for a check that is otherwise impossible. That is the same trade this decision
+refused for the goldens themselves, and it is granted here because the sizes and the consequences
+differ: an entire expectation list against two bits, and a check that could not be written at all
+against one that would merely have been more convenient.
+
+**One owner: #198.** It is the first stage where both files exist at once, so it is the first place
+the test can run. #197's issue text assigned the cross-check to #196 and an earlier revision of this
+ADR assigned it to #197; #196 necessarily shipped without it, because no package existed to compare
+a golden set against. Three owners for a safety-relevant criterion is how a requirement is lost at a
+handoff, so the other two references are corrected rather than left to be reconciled by whoever
+notices.
 
 ### 5. One recipe per screen, under `recipes/screen/<id>.toml`
 
@@ -233,7 +250,7 @@ human should read.
   nothing in the format prevents them diverging. The check cannot live in the governed
   `validate()`: decision 4 puts the goldens outside the schema precisely because the runtime never
   reads them, so the `static_assert` in §3 sees only `package.json` and has no ids to compare
-  against. The mitigation is host-side — the baker writes both files from one AST, and #197 owns
+  against. The mitigation is host-side — the baker writes both files from one AST, and #198 owns
   the test.
 
   That test compares **sets, not references**. Applying ADR-011's predicate to the nodes in

@@ -30,15 +30,21 @@ namespace ms = mdux::medui;
 // Compile-time evidence for the constexpr claim
 // ---------------------------------------------------------------------------
 
+// Payloads named separately, so the node list stays one line per node. Inline, clang-format's
+// alignment of long designated initialisers pads the block into something no reviewer can scan -
+// the formatter is satisfied and the reader is not, which is the wrong trade in a fixture whose
+// job is to be read.
+constexpr ms::PanelSpec          topbarPanel{.colorToken = "Theme.Colors.TopbarBackground"};
+constexpr ms::LabelSpec          titleLabel{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"};
+constexpr ms::NumericDisplaySpec scoreDisplay{.requirement = "REQ-NS-001",
+                                              .templateId  = "TPL-SEDATION-INDEX-160",
+                                              .source      = "SEDATION_INDEX",
+                                              .colorToken  = "Theme.Colors.ScoreDigits"};
+
 constexpr std::array<ms::CompiledNode, 3> constNodes{
-    ms::CompiledNode{.id = "topbar-background",.bounds = {0, 0, 400, 40},.payload = ms::PanelSpec{.colorToken = "Theme.Colors.TopbarBackground"}                                                                          },
-    ms::CompiledNode{            .id = "title", .bounds = {8, 8, 200, 24}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}},
-    ms::CompiledNode{       .id      = "score",
-                     .bounds  = {250, 60, 120, 60},
-                     .payload = ms::NumericDisplaySpec{.requirement = "REQ-NS-001",
-                     .templateId  = "TPL-SEDATION-INDEX-160",
-                     .source      = "SEDATION_INDEX",
-                     .colorToken  = "Theme.Colors.ScoreDigits"}                                                                                                }
+    ms::CompiledNode{.id = "topbar-background", .bounds = {0, 0, 400, 40}, .payload = topbarPanel},
+    ms::CompiledNode{.id = "title", .bounds = {8, 8, 200, 24}, .payload = titleLabel},
+    ms::CompiledNode{.id = "score", .bounds = {250, 60, 120, 60}, .payload = scoreDisplay, .provenance = {.safetyCritical = true, .positioned = true}}
 };
 
 constexpr ms::ScreenPackage constPackage{
@@ -542,6 +548,81 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
                       checks.expect(errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = oneTint})
                                         == ms::SchemaError::StateColorCountMismatch,
                                     "a short tint list is refused rather than padded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register provenanceSurvivesCompilation{
+    "A node keeps why a verifier would look at it, which resolution would otherwise erase",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-golden-provenance")
+            .Given("an annotated and positioned node, and one that is neither", [] {})
+            .When("the golden predicate is applied to the compiled nodes", [] {})
+            .Then("the set it selects is derivable from the package alone",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The check ADR-012 requires needs both facts, and neither survives layout on
+                      // its own: every compiled node has bounds, and `requirement` is mandatory on
+                      // three components whether or not anyone annotated them - so it cannot stand
+                      // in for the annotation.
+                      checks.expect(constNodes[2].provenance.selectsGolden(), "an annotated, positioned node is selected");
+                      checks.expect(!constNodes[1].provenance.selectsGolden(), "a plain label is not");
+                      checks.expect(!ms::requirementOf(constNodes[2]).empty() && !constNodes[1].provenance.safetyCritical,
+                                    "and a requirement is not a proxy for the annotation");
+
+                      const ms::NodeProvenance positionedOnly{.safetyCritical = false, .positioned = true};
+                      const ms::NodeProvenance annotatedOnly{.safetyCritical = true, .positioned = false};
+                      checks.expect(positionedOnly.selectsGolden() && annotatedOnly.selectsGolden(), "either rule alone selects a node, as ADR-011 says");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register unknownPayloadsAreRefused{
+    "A payload this module cannot name is refused rather than accepted",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-unknown-payload")
+            .Given("the closed set of payload alternatives", [] {})
+            .When("a node is validated and asked for its component name", [] {})
+            .Then("every alternative names itself, and the residual case fails closed",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // Exhaustiveness is a build failure rather than a test: `variant_size_v` is
+                      // static_asserted in the module, so an alternative added without teaching
+                      // kindName() and validatePayload() about it stops the build at the change.
+                      // What a test can still show is that no alternative is silently misnamed.
+                      checks.expect(std::variant_size_v<ms::NodePayload> == 11, "the alternative set is the eleven components");
+
+                      const ms::CompiledNode textInput{
+                          .id      = "entry",
+                          .bounds  = {0, 0, 100, 20},
+                          .payload = ms::TextInputSpec{.source = "NOTE", .colorToken = "Theme.Colors.Title", .maxLength = 16}
+                      };
+                      checks.expect(ms::kindName(textInput) == "TextInput",
+                                    "the last alternative is named because it is that alternative, not because it is last");
+
+                      const ms::CompiledNode noSource{
+                          .id      = "entry",
+                          .bounds  = {0, 0, 100, 20},
+                          .payload = ms::TextInputSpec{.source = {}, .colorToken = "Theme.Colors.Title", .maxLength = 16}
+                      };
+                      const std::array<ms::CompiledNode, 1> nodes{noSource};
+                      const ms::ScreenPackage               package{
+                                        .id            = "screen",
+                                        .schemaVersion = mdux::evidence::kSchemaVersion,
+                                        .surfaceWidth  = 400,
+                                        .surfaceHeight = 300,
+                                        .nodes         = nodes,
+                                        .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                      };
+                      const auto result = package.validate();
+                      checks.expect(!result.has_value() && result.error() == ms::SchemaError::EmptyRequiredName,
+                                    "and a required name it does declare is still enforced");
                       checks.raise();
                   })
             .Execute();
