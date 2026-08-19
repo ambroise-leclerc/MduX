@@ -67,6 +67,24 @@ static_assert(constPackage.validate().has_value(), "the reference screen must va
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
 
+/// The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
+///
+/// A second copy of data the module already holds, which this suite would normally refuse - and the
+/// exception is the point. The parity claim is that a token renders the same colour in both
+/// projects, so a check reading `themeColors` for both its input and its expectation would stay
+/// green while an entry drifted, which is the one failure this table exists to prevent. Compared
+/// against a transcription, a drift has to survive two edits in two files to go unnoticed.
+constexpr std::array<ms::ThemeColor, 8> expectedPalette{
+    ms::ThemeColor{.token = "Theme.Colors.TopbarBackground", .value = {0.82F, 0.84F, 0.86F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Title", .value = {0.10F, 0.12F, 0.16F, 1.0F}},
+    ms::ThemeColor{     .token = "Theme.Colors.ScoreDigits", .value = {0.13F, 0.72F, 0.42F, 1.0F}},
+    ms::ThemeColor{         .token = "Theme.Colors.Nominal", .value = {0.13F, 0.72F, 0.42F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Alert", .value = {0.95F, 0.65F, 0.15F, 1.0F}},
+    ms::ThemeColor{           .token = "Theme.Colors.Fault", .value = {0.86F, 0.20F, 0.18F, 1.0F}},
+    ms::ThemeColor{         .token = "Theme.Colors.Neutral", .value = {0.62F, 0.66F, 0.70F, 1.0F}},
+    ms::ThemeColor{   .token = "Theme.Colors.PrimaryAction", .value = {0.16F, 0.44F, 0.86F, 1.0F}}
+};
+
 // The governed table is the module's own, so there is no fixture to build here - only the promise
 // that a name resolves at compile time, which is what generated code and #16's verifier both rest on.
 static_assert(ms::resolveColorToken("Theme.Colors.ScoreDigits").has_value(), "a name the governed table defines resolves at compile time");
@@ -331,13 +349,28 @@ const mdux::spec::Register colourTokensResolveAgainstTheGovernedTable{
                       // the table rather than spot-check it, so an entry that stops resolving -
                       // a malformed token added to the table, say - fails here rather than on a
                       // device.
+                      // Two different claims, and the second is the parity one. The first says the
+                      // resolver reaches every entry the table holds - a malformed token added to
+                      // the table would fail `isColorToken()` and be unreachable, and this catches
+                      // it. The second says the table holds what TrustSC holds, which reading the
+                      // table for both sides could never show.
                       bool everyEntryResolves = true;
                       for (const ms::ThemeColor& entry : ms::themeColors) {
                           const auto resolved = ms::resolveColorToken(entry.token);
                           everyEntryResolves  = everyEntryResolves && resolved.has_value() && *resolved == entry.value;
                       }
-                      checks.expect(everyEntryResolves, "every governed entry resolves to its own colour");
-                      checks.expect(ms::themeColors.size() == 8, std::format("the table carries TrustSC's eight entries, got {}", ms::themeColors.size()));
+                      checks.expect(everyEntryResolves, "the resolver reaches every entry the table holds");
+
+                      checks.expect(ms::themeColors.size() == expectedPalette.size(),
+                                    std::format("the table carries TrustSC's eight entries, got {}", ms::themeColors.size()));
+                      checks.expect(std::ranges::equal(ms::themeColors, expectedPalette), "and carries them token for token, value for value");
+
+                      bool everyExpectedTokenResolves = true;
+                      for (const ms::ThemeColor& expected : expectedPalette) {
+                          const auto resolved        = ms::resolveColorToken(expected.token);
+                          everyExpectedTokenResolves = everyExpectedTokenResolves && resolved.has_value() && *resolved == expected.value;
+                      }
+                      checks.expect(everyExpectedTokenResolves, "and every name TrustSC defines resolves here to the colour it defines");
 
                       // A miss is not a colour. ADR-011 keeps the lookup bounded and fallible on
                       // purpose: a fallback tint would render something nobody approved.
