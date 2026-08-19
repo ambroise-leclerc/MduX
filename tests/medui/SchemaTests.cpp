@@ -67,13 +67,15 @@ static_assert(constPackage.validate().has_value(), "the reference screen must va
 static_assert(constPackage.find("score") != nullptr, "find() resolves a node at compile time");
 static_assert(constPackage.find("absent") == nullptr, "find() answers a miss without a runtime lookup");
 
-/// The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
-///
-/// A second copy of data the module already holds, which this suite would normally refuse - and the
-/// exception is the point. The parity claim is that a token renders the same colour in both
-/// projects, so a check reading `themeColors` for both its input and its expectation would stay
-/// green while an entry drifted, which is the one failure this table exists to prevent. Compared
-/// against a transcription, a drift has to survive two edits in two files to go unnoticed.
+/**
+ * @brief The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
+ *
+ * A second copy of data the module already holds, which this suite would normally refuse - and the
+ * exception is the point. The parity claim is that a token renders the same colour in both projects,
+ * so a check reading `themeColors` for both its input and its expectation would stay green while an
+ * entry drifted, which is the one failure this table exists to prevent. Compared against a
+ * transcription, a drift has to survive two edits in two files to go unnoticed.
+ */
 constexpr std::array<ms::ThemeColor, 8> expectedPalette{
     ms::ThemeColor{.token = "Theme.Colors.TopbarBackground", .value = {0.82F, 0.84F, 0.86F, 1.0F}},
     ms::ThemeColor{           .token = "Theme.Colors.Title", .value = {0.10F, 0.12F, 0.16F, 1.0F}},
@@ -268,6 +270,15 @@ const mdux::spec::Register coloursAreNamesNotValues{
                       bare.nodes[1].colorToken = ms::colorTokenPrefix;
                       checks.expect(errorOf(bare) == ms::SchemaError::MalformedColorToken,
                                     std::format("a bare Theme.Colors. prefix names nothing and is refused, got {}", describe(errorOf(bare))));
+
+                      // The case the governed table makes checkable, and the reason this is worth
+                      // a rejection rather than a device-time miss: the name is well-formed, so
+                      // shape alone accepted it, and the generated `static_assert` would have
+                      // certified a screen whose colour lookup then fails on the device.
+                      Fixture undefined;
+                      undefined.nodes[1].colorToken = "Theme.Colors.DoesNotExist";
+                      checks.expect(errorOf(undefined) == ms::SchemaError::UnknownColorToken,
+                                    std::format("a name the governed table does not define is refused, got {}", describe(errorOf(undefined))));
 
                       Fixture untinted;
                       untinted.nodes[1].colorToken = {};

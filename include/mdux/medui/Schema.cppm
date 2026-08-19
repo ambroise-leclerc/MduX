@@ -65,8 +65,8 @@
  * ## What `validate()` checks, and what it deliberately does not
  *
  * It checks what a consumer is entitled to assume without looking: an identified screen, a positive
- * surface, nodes with unique ids and rectangles that lie inside that surface, colour tokens that are
- * names rather than values, and a budget the index width can address.
+ * surface, nodes with unique ids and rectangles that lie inside that surface, colour tokens the
+ * governed table actually defines, and a budget the index width can address.
  *
  * It does **not** check that the budget is large enough for what the screen draws. That number is
  * not derivable from anything here: a `Label` draws one rectangle per glyph of the widest approved
@@ -103,6 +103,7 @@ enum class SchemaError : std::uint8_t {
     DegenerateBounds,          ///< a rectangle with no extent, which `DrawList` refuses to record
     BoundsOutsideSurface,      ///< a rectangle the declared surface does not contain
     MalformedColorToken,       ///< a colour that is not a `Theme.Colors.<Token>` name
+    UnknownColorToken,         ///< a well-formed name the governed table does not define
     EmptyBudget,               ///< a screen with nodes whose budget can hold no primitive
     BudgetExceedsIndexWidth,   ///< more vertices than a 16-bit index can address
 };
@@ -125,6 +126,8 @@ enum class SchemaError : std::uint8_t {
             return "a node's rectangle leaves the declared surface";
         case SchemaError::MalformedColorToken:
             return "a colour is not a Theme.Colors.<Token> name";
+        case SchemaError::UnknownColorToken:
+            return "a colour names a token the governed table does not define";
         case SchemaError::EmptyBudget:
             return "the screen has nodes and a budget that can hold no primitive";
         case SchemaError::BudgetExceedsIndexWidth:
@@ -370,12 +373,21 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        // The same shape rule the resolver applies, so a screen that validates here cannot fail the
-        // device lookup for a reason `validate()` could have seen. `Theme.Colors.` names nothing and
-        // `Theme.Colors.#` is not a name at all; both would otherwise pass the generated
-        // `static_assert` and fail only where nobody is watching.
-        if (!node.colorToken.empty() && !isColorToken(node.colorToken)) {
-            return err(SchemaError::MalformedColorToken);
+        // The resolver itself, rather than the shape rule alone, so a screen that validates here
+        // cannot fail the device lookup for any reason `validate()` could have seen. Shape was all
+        // this could check while the palette was a caller's input; now that the governed table is
+        // the approved source of token existence, a name absent from it is as certain a defect as a
+        // name that is not a name - and both would otherwise pass the generated `static_assert` and
+        // fail where nobody is watching.
+        //
+        // The two are kept apart because they are different people's defects: a malformed name is
+        // the emitter's, and an unknown one is a screen compiled against a palette this build does
+        // not have.
+        if (!node.colorToken.empty()) {
+            const auto resolved = resolveColorToken(node.colorToken);
+            if (!resolved.has_value()) {
+                return err(resolved.error() == ThemeError::MalformedToken ? SchemaError::MalformedColorToken : SchemaError::UnknownColorToken);
+            }
         }
     }
 
