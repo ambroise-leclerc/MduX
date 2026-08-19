@@ -82,7 +82,6 @@ export module mdux.medui.schema;
 
 import std;
 import mdux.core.result;
-import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.report;
 
