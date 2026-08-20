@@ -490,7 +490,7 @@ const mdux::spec::Register everyComponentNamesItself{
                       const ms::CompiledNode untraced{
                           .id      = "now",
                           .bounds  = {0, 0, 1, 1},
-                          .payload = ms::ClockSpec{.format = "HH_MM"}
+                          .payload = ms::ClockSpec{.format = ms::ClockFormat::TimeSeconds}
                       };
                       checks.expect(ms::requirementOf(traced) == "REQ-1", "a status indicator yields its requirement");
                       checks.expect(ms::requirementOf(untraced).empty(), "a clock has none to yield");
@@ -595,6 +595,38 @@ const mdux::spec::Register unknownPayloadsAreRefused{
                       const auto result = package.validate();
                       checks.expect(!result.has_value() && result.error() == ms::SchemaError::EmptyRequiredName,
                                     "and a required name it does declare is still enforced");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register closedSetsCannotHoldAnUnknownValue{
+    "A clock format and a system event are closed sets, spelled one way",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-closed-sets")
+            .Given("the two sets this library owns rather than resolves", [] {})
+            .When("each value is spelled and read back, and an unknown name is read", [] {})
+            .Then("the round trip is exact and the unknown name is refused",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // Closed here rather than resolved against a product table, unlike `charset` -
+                      // which TrustSC leaves open too. The gain is not type safety alone: a closed
+                      // format is one the compiler can *measure*, because it knows `TimeSeconds`
+                      // renders `HH:MM:SS`, where an open name could only be looked up.
+                      for (const ms::ClockFormat format : {ms::ClockFormat::TimeSeconds, ms::ClockFormat::DateTimeSeconds}) {
+                          checks.expect(ms::parseClockFormat(ms::spell(format)) == format, std::format("'{}' reads back as itself", ms::spell(format)));
+                      }
+                      for (const ms::SystemEvent event : {ms::SystemEvent::NoOp, ms::SystemEvent::TriggerHalt}) {
+                          checks.expect(ms::parseSystemEvent(ms::spell(event)) == event, std::format("'{}' reads back as itself", ms::spell(event)));
+                      }
+
+                      checks.expect(!ms::parseClockFormat("HH_MM").has_value(), "a spelling the set does not define is refused rather than guessed at");
+                      checks.expect(!ms::parseSystemEvent("SystemEvent.NoOp").has_value(),
+                                    "and the package carries the bare enumerator, not the source's dotted path");
+                      checks.expect(ms::spell(ms::ClockFormat::TimeSeconds) != ms::spell(ms::ClockFormat::DateTimeSeconds),
+                                    "the two formats are distinguishable in an artifact");
                       checks.raise();
                   })
             .Execute();
