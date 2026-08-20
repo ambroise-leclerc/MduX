@@ -167,29 +167,26 @@ reads them, the review audience differs, and the sidecar gets its own digest —
 a verifier that opens two files instead of walking one structure. That is a driver-shaped cost, not
 an evidence-shaped one, and it is the trade this decision accepts knowingly rather than by omission.
 
-**The consistency test is an acceptance criterion for #198's baker**, not an aspiration, and #16
-derives its expectations the same way rather than trusting the sidecar to be complete.
+**Completeness is guaranteed by construction, not by comparing the two files.** The predicate has
+one implementation - `collectGoldens()` (#196) - and the baker applies it once, in the same pass that
+writes the compiled nodes. That is TrustSC's arrangement: its DSL compiler pushes a golden at the
+moment it compiles a selected node, from the AST it already holds, and the guard is a set of unit
+tests over known screens rather than a check over the emitted artifact.
 
-It needs something the package must therefore carry. ADR-011's predicate reads two facts about the
-*source* — whether a node was annotated `@safety_critical`, and whether its `position:` was explicit
-— and compilation erases both: every compiled node has resolved bounds, and `requirement` is
-mandatory on `CriticalButton`, `NumericDisplay` and `StatusIndicator` whether or not anyone
-annotated them, so it is not a proxy for the annotation. Without those two facts a checker can
-confirm that every listed golden resolves to a node and still not see the failure that matters: a
-node that should have a golden and does not.
+An earlier revision of this decision required an artifact-level set comparison instead, and carried
+`NodeProvenance { safetyCritical, positioned }` in every compiled node so the expected id set could be
+re-derived from `package.json`. Both are withdrawn, for two reasons that point the same way:
 
-So each compiled node carries `NodeProvenance { safetyCritical, positioned }` — two booleans the
-runtime never reads, for a check that is otherwise impossible. That is the same trade this decision
-refused for the goldens themselves, and it is granted here because the sizes and the consequences
-differ: an entire expectation list against two bits, and a check that could not be written at all
-against one that would merely have been more convenient.
+- **It could not catch the failure that matters.** Both files come from one AST in one pass, so a
+  comparison between them detects two writers disagreeing, never a predicate that is wrong. The
+  tests that *do* catch a wrong predicate already exist, with the predicate, in #196.
+- **It put data on a device that only a tool reads**, which is what this decision refuses two
+  paragraphs above. Two booleans is a small breach of a rule, and a rule breached for something small
+  is how the next thing gets in.
 
-**One owner: #198.** It is the first stage where both files exist at once, so it is the first place
-the test can run. #197's issue text assigned the cross-check to #196 and an earlier revision of this
-ADR assigned it to #197; #196 necessarily shipped without it, because no package existed to compare
-a golden set against. Three owners for a safety-relevant criterion is how a requirement is lost at a
-handoff, so the other two references are corrected rather than left to be reconciled by whoever
-notices.
+What replaces the check is a constraint on the baker (#198): **it must call `collectGoldens()`, not
+re-apply the predicate.** A second implementation is the only way the two files can disagree once
+they are written in one pass, and it is the thing a reviewer should refuse.
 
 ### 5. One recipe per screen, under `recipes/screen/<id>.toml`
 
@@ -253,28 +250,21 @@ human should read.
   against. The mitigation is host-side — the baker writes both files from one AST, and #198 owns
   the test.
 
-  That test compares **sets, not references**. Applying ADR-011's predicate to the nodes in
-  `package.json` yields exactly the ids `goldens.json` must contain, so the test derives that set
-  and requires equality: an id in the goldens with no node behind it fails, and — the direction
-  that matters more — a node the predicate selects with no golden fails too. Checking only that
-  listed ids resolve would accept the dangerous case silently, since a safety-critical node whose
-  golden was dropped looks exactly like a screen with fewer safety-critical nodes. #16's verifier
-  derives its expectations the same way rather than trusting the file to be complete.
+  The mitigation is structural rather than a comparison: one implementation of ADR-011's predicate,
+  called once, in the pass that writes both files. An earlier revision of this ADR required the baker
+  to derive the expected id set from `package.json` and assert set equality with `goldens.json`, and
+  decision 4 records why that was withdrawn — it cannot see a wrong predicate, and it needed
+  provenance on the device that only a tool would read. #16 derives its expectations from
+  `goldens.json` itself; what it must never do is re-apply the predicate, since a second
+  implementation is precisely what would let the two disagree.
 
 ### Risks
 - **The package grows to carry things the runtime does not need**, because it is the convenient
   place to put them. *Mitigation*: the rule to apply is that `package.json` holds what the runtime
-  reads, plus exactly one named exception; anything else read only by a tool belongs in a sidecar,
-  as the goldens do.
+  reads; anything read only by a tool belongs in a sidecar, as the goldens do. Decision 4 records one
+  attempt to breach this rule - two booleans of golden provenance - and why it was withdrawn rather
+  than granted an exception.
 
-  **The exception is `NodeProvenance`, and it is bounded on purpose.** Decision 4 admits two
-  booleans per node that the runtime never reads, because the golden-completeness check cannot be
-  written without them and no sidecar can carry them — a file cannot supply the input that proves
-  that same file is complete. Naming it here rather than leaving it as an unremarked contradiction
-  is what stops a later reader applying the general rule and deleting the check's only input. The
-  test for a further exception is the one decision 4 applies: it has to be a check that is otherwise
-  *impossible*, not one that would merely be more convenient, and it has to cost bits rather than
-  lists.
 - **A regenerated screen differs on a second toolchain** despite the integer-only layout rule.
   *Mitigation*: `evidence.screen.<id>` runs on both legs, which is the check that would catch it;
   ADR-011's integer-only rule is what makes it expected to pass.

@@ -42,9 +42,9 @@ constexpr ms::NumericDisplaySpec scoreDisplay{.requirement = "REQ-NS-001",
                                               .colorToken  = "Theme.Colors.ScoreDigits"};
 
 constexpr std::array<ms::CompiledNode, 3> constNodes{
-    ms::CompiledNode{.id = "topbar-background", .bounds = {0, 0, 400, 40}, .payload = topbarPanel},
-    ms::CompiledNode{.id = "title", .bounds = {8, 8, 200, 24}, .payload = titleLabel},
-    ms::CompiledNode{.id = "score", .bounds = {250, 60, 120, 60}, .payload = scoreDisplay, .provenance = {.safetyCritical = true, .positioned = true}}
+    ms::CompiledNode{.id = "topbar-background",    .bounds = {0, 0, 400, 40},  .payload = topbarPanel},
+    ms::CompiledNode{            .id = "title",    .bounds = {8, 8, 200, 24},   .payload = titleLabel},
+    ms::CompiledNode{            .id = "score", .bounds = {250, 60, 120, 60}, .payload = scoreDisplay}
 };
 
 constexpr ms::ScreenPackage constPackage{
@@ -548,34 +548,6 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
                       checks.expect(errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = oneTint})
                                         == ms::SchemaError::StateColorCountMismatch,
                                     "a short tint list is refused rather than padded");
-                      checks.raise();
-                  })
-            .Execute();
-    }};
-
-const mdux::spec::Register provenanceSurvivesCompilation{
-    "A node keeps why a verifier would look at it, which resolution would otherwise erase",
-    "evidence-unit",
-    [] {
-        return speclab::Test("medui-schema-golden-provenance")
-            .Given("an annotated and positioned node, and one that is neither", [] {})
-            .When("the golden predicate is applied to the compiled nodes", [] {})
-            .Then("the set it selects is derivable from the package alone",
-                  [] {
-                      mdux::spec::Checks checks;
-
-                      // The check ADR-012 requires needs both facts, and neither survives layout on
-                      // its own: every compiled node has bounds, and `requirement` is mandatory on
-                      // three components whether or not anyone annotated them - so it cannot stand
-                      // in for the annotation.
-                      checks.expect(constNodes[2].provenance.selectsGolden(), "an annotated, positioned node is selected");
-                      checks.expect(!constNodes[1].provenance.selectsGolden(), "a plain label is not");
-                      checks.expect(!ms::requirementOf(constNodes[2]).empty() && !constNodes[1].provenance.safetyCritical,
-                                    "and a requirement is not a proxy for the annotation");
-
-                      const ms::NodeProvenance positionedOnly{.safetyCritical = false, .positioned = true};
-                      const ms::NodeProvenance annotatedOnly{.safetyCritical = true, .positioned = false};
-                      checks.expect(positionedOnly.selectsGolden() && annotatedOnly.selectsGolden(), "either rule alone selects a node, as ADR-011 says");
                       checks.raise();
                   })
             .Execute();
