@@ -725,6 +725,11 @@ mdux_discover_tests(medui_spec)
 # GoldenTests (#196) reads tests/medui/fixtures/accepted-goldens.medui, which carries every rule
 # ADR-011 fixes for golden references in one screen - including the node that matches both rules and
 # must therefore appear exactly once.
+#
+# PackageTests (#197) reads tests/medui/fixtures/accepted-every-component.medui, a screen carrying
+# all eleven compiled payloads, and round-trips it through canonical JSON. The writer and the reader
+# spell each member name separately, so the scenario executes both directions over one screen rather
+# than asserting either half - the shape of parity check this repository has got wrong before.
 add_executable(medui_tools_spec
     medui/MeduiToolsSpecMain.cpp
     medui/DiagnosticsTests.cpp
@@ -733,6 +738,7 @@ add_executable(medui_tools_spec
     medui/LayoutTests.cpp
     medui/TextBudgetTests.cpp
     medui/GoldenTests.cpp
+    medui/PackageTests.cpp
     medui/SharedConformanceTests.cpp
 )
 

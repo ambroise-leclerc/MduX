@@ -1,0 +1,108 @@
+// One screen carrying all eleven compiled payloads, for the package round trip (#197).
+//
+// Every component in the dictionary appears once, and the Row declares a background so the solver
+// synthesises the eleventh payload - a Panel, which an author cannot write. A round trip over this
+// screen therefore executes every branch of the writer and every branch of the reader, which is
+// what keeps the two halves of the file format in step: an assertion on either alone could not.
+//
+// Optional fields are declared where they change the emitted shape: `requirement:` on the Button
+// and the TextInput, `charset:` on the TextInput, and `colors:` on the StatusIndicator, so the
+// round trip covers a spec whose optional names are present as well as one where they are absent.
+Screen EveryComponent {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 800px, 700px;
+
+    Row {
+        id: topbar;
+        height: 64px;
+        background: Theme.Colors.TopbarBackground;
+
+        Label {
+            id: title;
+            width: Fill;
+            height: 64px;
+            text: t("STR-TITLE");
+            color: Theme.Colors.Title;
+        }
+    }
+
+    Clock {
+        id: wall-clock;
+        width: 200px;
+        height: 40px;
+        format: TimeSeconds;
+    }
+
+    Image {
+        id: logo;
+        width: 120px;
+        height: 60px;
+        source: img("IMG-LOGO");
+    }
+
+    VulkanViewport {
+        id: endoscope;
+        width: 640px;
+        height: 200px;
+        stream_source: "ENDOSCOPE";
+    }
+
+    SignalTrace {
+        id: ecg;
+        width: 640px;
+        height: 100px;
+        stream_source: "ECG_LEAD_II";
+        color: Theme.Colors.Nominal;
+    }
+
+    Button {
+        id: freeze;
+        width: 160px;
+        height: 40px;
+        label: t("STR-FREEZE");
+        color: Theme.Colors.PrimaryAction;
+        source: "FREEZE";
+        requirement: "REQ-EC-001";
+    }
+
+    CriticalButton {
+        id: halt;
+        requirement: "REQ-EC-002";
+        width: 160px;
+        height: 40px;
+        label: t("STR-HALT");
+        color: Theme.Colors.Fault;
+        on_press: TriggerHalt;
+    }
+
+    NumericDisplay {
+        id: sedation-index;
+        width: 200px;
+        height: 60px;
+        requirement: "REQ-EC-003";
+        template: "TPL-SEDATION-INDEX-160";
+        source: "SEDATION_INDEX";
+        color: Theme.Colors.ScoreDigits;
+    }
+
+    StatusIndicator {
+        id: state;
+        width: 200px;
+        height: 40px;
+        requirement: "REQ-EC-004";
+        source: "STATE";
+        states: [t("STR-OK"), t("STR-ALARM")];
+        colors: [Theme.Colors.Nominal, Theme.Colors.Alert];
+    }
+
+    TextInput {
+        id: patient-id;
+        width: 240px;
+        height: 40px;
+        source: "PATIENT_ID";
+        max_length: 16;
+        color: Theme.Colors.Neutral;
+        charset: Ascii;
+        requirement: "REQ-EC-005";
+    }
+}

@@ -271,12 +271,17 @@ endif()
 # governed, which is also what stops a governed target linking it - mdux_verify_trust_zones()
 # reports that at configure time.
 #
-# At S7 (#196) this is the diagnostic registry (#191), lexer, AST, parser, semantic analyzer,
+# At S8 (#197) this is the diagnostic registry (#191), lexer, AST, parser, semantic analyzer,
 # integer-only bounded layout solver, the text-budget check that measures a resolved box against the
-# widest approved translation (#195), and the golden references that say where safety-critical
-# content must appear. The emitters are #197, and the mdux-meduic executable with its
+# widest approved translation (#195), the golden references that say where safety-critical content
+# must appear (#196), and the compiled-screen document with the canonical JSON it is committed as.
+# The C++ emitters are the second half of #197, and the mdux-meduic executable with its
 # mdux_compile_screen() registration is #198 - so there is still no add_executable() here and no
 # bake call site. Every later stage adds sources to this target rather than inventing another.
+#
+# The package stage reaches mdux.evidence.json and mdux.medui.schema through MduX::ToolsCommon's
+# link to MduX::Core, which is what the acceptance criterion on #197 asks for: the host compiler and
+# the device runtime import one definition of a compiled screen rather than two that can drift.
 #
 # The budget stage reaches mdux.text.draw and mdux.font.schema through MduX::ToolsCommon's link to
 # MduX::Core: it decodes committed run records with the same decoder the device draws them with, so
@@ -297,6 +302,7 @@ target_sources(MduXMeduiLib
             medui/Layout.cppm
             medui/TextBudget.cppm
             medui/Goldens.cppm
+            medui/Package.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
@@ -305,6 +311,7 @@ target_sources(MduXMeduiLib
         medui/Layout.cpp
         medui/TextBudget.cpp
         medui/Goldens.cpp
+        medui/Package.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
