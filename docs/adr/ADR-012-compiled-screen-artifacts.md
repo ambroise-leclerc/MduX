@@ -129,6 +129,13 @@ is, *how much* it may draw, and *which* validated token and key it draws with. T
 vertices is a bounded table lookup followed by arithmetic over a known bound, which is exactly what
 a governed, allocation-free runtime can do.
 
+**A node's payload is typed per component.** The package carries one spec type per dictionary entry
+behind a `std::variant`, not a single record with every field on it. The flat form was tried first
+and was lossy: it had nowhere to put a `Clock`'s format, a `NumericDisplay`'s template and source, a
+`StatusIndicator`'s state keys and per-state tints, a `CriticalButton`'s `on_press`, or a
+`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Every
+field remains a validated *name* rather than a resolved value, which keeps the boundary ADR-011 fixes.
+
 ### 3. Generated C++ is emitted, never committed
 
 `<binary>/mdux_generated/screen/<identifier>.cppm` and `.hpp`, produced from the committed
@@ -151,6 +158,35 @@ They have a different consumer (#16's verifier, not the runtime), a different li
 different review audience — a reviewer checking that a safety-critical node's expected bounds
 changed deliberately should not have to find that hunk inside the whole screen. A separate file also
 gets its own digest in `report.json`, so a goldens-only change is visible as one.
+
+**This is a deliberate divergence from TrustSC, recorded as one.** Its `CompiledScreenPackage`
+carries `golden_references` as a field, and `trustsc-ui-verify::verify_frame()` walks them straight
+out of the compiled screen; the field is not feature-gated, so a shipped binary carries expectations
+only a verifier reads. MduX keeps them outside the package for the reasons above — the runtime never
+reads them, the review audience differs, and the sidecar gets its own digest — and pays for that with
+a verifier that opens two files instead of walking one structure. That is a driver-shaped cost, not
+an evidence-shaped one, and it is the trade this decision accepts knowingly rather than by omission.
+
+**Completeness is guaranteed by construction, not by comparing the two files.** The predicate has
+one implementation - `collectGoldens()` (#196) - and the baker applies it once, in the same pass that
+writes the compiled nodes. That is TrustSC's arrangement: its DSL compiler pushes a golden at the
+moment it compiles a selected node, from the AST it already holds, and the guard is a set of unit
+tests over known screens rather than a check over the emitted artifact.
+
+An earlier revision of this decision required an artifact-level set comparison instead, and carried
+`NodeProvenance { safetyCritical, positioned }` in every compiled node so the expected id set could be
+re-derived from `package.json`. Both are withdrawn, for two reasons that point the same way:
+
+- **It could not catch the failure that matters.** Both files come from one AST in one pass, so a
+  comparison between them detects two writers disagreeing, never a predicate that is wrong. The
+  tests that *do* catch a wrong predicate already exist, with the predicate, in #196.
+- **It put data on a device that only a tool reads**, which is what this decision refuses two
+  paragraphs above. Two booleans is a small breach of a rule, and a rule breached for something small
+  is how the next thing gets in.
+
+What replaces the check is a constraint on the baker (#198): **it must call `collectGoldens()`, not
+re-apply the predicate.** A second implementation is the only way the two files can disagree once
+they are written in one pass, and it is the thing a reviewer should refuse.
 
 ### 5. One recipe per screen, under `recipes/screen/<id>.toml`
 
@@ -211,21 +247,24 @@ human should read.
   nothing in the format prevents them diverging. The check cannot live in the governed
   `validate()`: decision 4 puts the goldens outside the schema precisely because the runtime never
   reads them, so the `static_assert` in §3 sees only `package.json` and has no ids to compare
-  against. The mitigation is host-side — the baker writes both files from one AST, and #197 owns
+  against. The mitigation is host-side — the baker writes both files from one AST, and #198 owns
   the test.
 
-  That test compares **sets, not references**. Applying ADR-011's predicate to the nodes in
-  `package.json` yields exactly the ids `goldens.json` must contain, so the test derives that set
-  and requires equality: an id in the goldens with no node behind it fails, and — the direction
-  that matters more — a node the predicate selects with no golden fails too. Checking only that
-  listed ids resolve would accept the dangerous case silently, since a safety-critical node whose
-  golden was dropped looks exactly like a screen with fewer safety-critical nodes. #16's verifier
-  derives its expectations the same way rather than trusting the file to be complete.
+  The mitigation is structural rather than a comparison: one implementation of ADR-011's predicate,
+  called once, in the pass that writes both files. An earlier revision of this ADR required the baker
+  to derive the expected id set from `package.json` and assert set equality with `goldens.json`, and
+  decision 4 records why that was withdrawn — it cannot see a wrong predicate, and it needed
+  provenance on the device that only a tool would read. #16 derives its expectations from
+  `goldens.json` itself; what it must never do is re-apply the predicate, since a second
+  implementation is precisely what would let the two disagree.
 
 ### Risks
 - **The package grows to carry things the runtime does not need**, because it is the convenient
   place to put them. *Mitigation*: the rule to apply is that `package.json` holds what the runtime
-  reads; anything read only by a tool belongs in a sidecar, as the goldens do.
+  reads; anything read only by a tool belongs in a sidecar, as the goldens do. Decision 4 records one
+  attempt to breach this rule - two booleans of golden provenance - and why it was withdrawn rather
+  than granted an exception.
+
 - **A regenerated screen differs on a second toolchain** despite the integer-only layout rule.
   *Mitigation*: `evidence.screen.<id>` runs on both legs, which is the check that would catch it;
   ADR-011's integer-only rule is what makes it expected to pass.
