@@ -308,76 +308,20 @@ struct NodeRect {
  * the device performs bounded lookups and no parsing.
  *
  * One consequence worth stating because it diverges from the sibling: `format`, `charset` and
- * `onPress` stay `std::string_view` rather than becoming enumerations. TrustSC closes those sets in
- * its own crate (`ClockFormat`, `SystemEvent`); MduX settled in #195 that such named values resolve
- * against tables a *product* supplies, so closing them here would make this library authoritative
- * over a set it does not own. The package therefore carries names throughout, which is also the one
- * rule a reader has to remember about it.
- */
-/**
- * @brief The wall-clock renderings a screen may ask a `Clock` for.
+ * `onPress` stay `std::string_view` rather than becoming enumerations. TrustSC closes two of those
+ * three in its own crate (`ClockFormat`, `SystemEvent`) and leaves the third - a text input's glyph
+ * set - open, so the divergence is real and narrower than it looks.
  *
- * Closed, and this library's to own, which is a deliberate exception to the rule that named values
- * resolve against tables a product supplies (#195). TrustSC closes the same set in its governed
- * crate, and the parity criterion decides it; what makes the exception defensible on its own terms
- * is that a closed set lets the *compiler* know what a clock renders - `TimeSeconds` is `HH:MM:SS`,
- * eight glyphs of known width - and therefore lets it measure a clock against its bounds. An open
- * name cannot be measured, only looked up.
- *
- * `charset` on a `TextInput` deliberately stays a name: TrustSC leaves its equivalent
- * (`glyph_set_id`) open too, because a glyph set is a product's to define.
+ * Closing them here was tried and withdrawn, and the reason is worth recording so the next attempt
+ * starts from it: the implemented front end accepts any identifier for `format:` and `on_press:`,
+ * #195's budget stage resolves a clock format through a product-supplied table, and the fixtures
+ * across three suites write names no two-value enumeration can hold. Closing the set in this module
+ * alone would leave the canonical type unable to represent a screen the compiler accepts. Doing it
+ * properly needs the semantic domains, the budget rule, the fixtures, the authoring skill and a
+ * diagnostic code for "a named value outside a closed set" - which the shared contract does not
+ * define today - to move together. That is a coordinated change with its own issue, not a paragraph
+ * of this one.
  */
-enum class ClockFormat : std::uint8_t {
-    TimeSeconds,      ///< `HH:MM:SS`
-    DateTimeSeconds,  ///< `YYYY-MM-DD HH:MM:SS`
-};
-
-/**
- * @brief What a `CriticalButton` asks the platform to do when it is pressed.
- *
- * Two members, and deliberately not a product's list of actions: a screen that could name any event
- * could name one nothing implements, and the press of a critical button is the worst place to find
- * that out. A product's own actions reach the device through `source:` and the realtime path, not
- * through this.
- */
-enum class SystemEvent : std::uint8_t {
-    NoOp,
-    TriggerHalt,
-};
-
-/// The spelling the emitter writes and a reader recognises, e.g. `TimeSeconds`.
-[[nodiscard]] constexpr std::string_view spell(ClockFormat format) noexcept {
-    return format == ClockFormat::TimeSeconds ? "TimeSeconds" : "DateTimeSeconds";
-}
-
-/// The spelling the emitter writes, e.g. `NoOp`. A `.medui` source writes `SystemEvent.NoOp`; that
-/// mapping is the compiler's, and the package carries the bare enumerator.
-[[nodiscard]] constexpr std::string_view spell(SystemEvent event) noexcept {
-    return event == SystemEvent::NoOp ? "NoOp" : "TriggerHalt";
-}
-
-/// The format `name` spells, or nothing when it is not one of the closed set.
-[[nodiscard]] constexpr std::optional<ClockFormat> parseClockFormat(std::string_view name) noexcept {
-    if (name == spell(ClockFormat::TimeSeconds)) {
-        return ClockFormat::TimeSeconds;
-    }
-    if (name == spell(ClockFormat::DateTimeSeconds)) {
-        return ClockFormat::DateTimeSeconds;
-    }
-    return std::nullopt;
-}
-
-/// The event `name` spells, or nothing when it is not one of the closed set.
-[[nodiscard]] constexpr std::optional<SystemEvent> parseSystemEvent(std::string_view name) noexcept {
-    if (name == spell(SystemEvent::NoOp)) {
-        return SystemEvent::NoOp;
-    }
-    if (name == spell(SystemEvent::TriggerHalt)) {
-        return SystemEvent::TriggerHalt;
-    }
-    return std::nullopt;
-}
-
 // Every spec member carries a default initialiser. `-Wmissing-field-initializers` is an error in
 // this tree, and the emitter (#197) writes these initialisers from a screen - a type whose optional
 // fields still have to be spelled out at every site is a trap for generated code, and an empty name
@@ -396,7 +340,7 @@ struct LabelSpec {
 };
 
 struct ClockSpec {
-    ClockFormat format{};
+    std::string_view format{};  ///< a named value the build's governed table defines
 
     [[nodiscard]] constexpr bool operator==(const ClockSpec&) const noexcept = default;
 };
@@ -433,7 +377,7 @@ struct CriticalButtonSpec {
     std::string_view requirement{};  ///< required by the dictionary, and by #196's annotation rule
     std::string_view labelKey{};
     std::string_view colorToken{};
-    SystemEvent      onPress{};
+    std::string_view onPress{};
 
     [[nodiscard]] constexpr bool operator==(const CriticalButtonSpec&) const noexcept = default;
 };
@@ -702,10 +646,8 @@ struct ScreenPackage {
         }
         return requireColor(spec->colorToken);
     }
-    if (std::holds_alternative<ClockSpec>(payload)) {
-        // Nothing to check. `format` is a closed enumeration, so an unrepresentable value cannot be
-        // built - which is most of the argument for closing it rather than carrying a name.
-        return {};
+    if (const auto* spec = std::get_if<ClockSpec>(&payload)) {
+        return require(spec->format);
     }
     if (const auto* spec = std::get_if<ImageSpec>(&payload)) {
         return require(spec->source);
@@ -729,7 +671,7 @@ struct ScreenPackage {
         return requireColor(spec->colorToken);
     }
     if (const auto* spec = std::get_if<CriticalButtonSpec>(&payload)) {
-        for (const std::string_view name : {spec->requirement, spec->labelKey}) {
+        for (const std::string_view name : {spec->requirement, spec->labelKey, spec->onPress}) {
             if (const auto named = require(name); !named.has_value()) {
                 return named;
             }
