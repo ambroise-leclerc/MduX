@@ -454,3 +454,52 @@ const mdux::spec::Register aReservedIdentifierIsRefused{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register aProvenanceCommentCannotBeEnded{
+    "An id carrying a newline cannot end the provenance comment",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-emit-comment-escapes")
+            .Given("a package whose id contains a control character", [] {})
+            .When("it is rendered", [] {})
+            .Then("the id appears escaped inside the comment, on one line",
+                  [] {
+                      mdux::spec::Checks checks;
+                      TemporaryDirectory scratch{"mdux-screenemit-comment"};
+                      std::error_code    code;
+                      std::filesystem::create_directories(scratch.path(), code);
+
+                      // The schema asks only that an id be non-empty, and canonical JSON carries a
+                      // control character as an escape, so this package is valid on both counts. A
+                      // `//` comment ends at a newline, so an unescaped id would have closed the
+                      // provenance comment and left `namespace` as generated source.
+                      std::string       edited = fixture("empty-screen-package.json");
+                      const std::size_t at     = edited.find("\"empty-screen\"");
+                      checks.expect(at != std::string::npos, "the fixture carries its id");
+                      if (at != std::string::npos) {
+                          edited.replace(at, std::string_view{"\"empty-screen\""}.size(), "\"a\\nnamespace\"");
+                      }
+                      const std::filesystem::path path = scratch.path() / "package.json";
+                      std::ofstream               out{path, std::ios::binary | std::ios::trunc};
+                      out.write(edited.data(), static_cast<std::streamsize>(edited.size()));
+                      out.close();
+
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   outputs = md::renderScreen(path, diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, "a package with a control character in its id renders");
+                          checks.raise();
+                          return;
+                      }
+
+                      const std::size_t marker = outputs->moduleSource.find("// Screen: ");
+                      checks.expect(marker != std::string::npos, "the provenance comment names the screen");
+                      if (marker != std::string::npos) {
+                          const std::size_t lineEnd = outputs->moduleSource.find('\n', marker);
+                          const std::string line    = outputs->moduleSource.substr(marker, lineEnd - marker);
+                          checks.expect(line == "// Screen: a\\nnamespace", std::format("the whole id stays on the comment line, got '{}'", line));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
