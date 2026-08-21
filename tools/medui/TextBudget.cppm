@@ -104,6 +104,7 @@ import std;
 import mdux.font.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
+import mdux.tools.medui.ast;
 import mdux.tools.medui.layout;
 
 export namespace mdux::tools::medui {
