@@ -72,6 +72,44 @@ static_assert(std::get_if<ms::LabelSpec>(&constNodes[1].payload)->textKey == "ST
 static_assert(ms::requirementOf(constNodes[2]) == "REQ-NS-001", "a traced node yields its requirement");
 static_assert(ms::requirementOf(constNodes[1]).empty(), "and an untraced one yields nothing rather than a placeholder");
 
+}  // namespace
+
+/**
+ * @brief The same promise, in the shape generated code actually has.
+ *
+ * Deliberately **not** in the anonymous namespace above, and this is the whole point of the block:
+ * the defect it pins needs an `inline` variable with *external* linkage, and an `inline constexpr`
+ * in an anonymous namespace does not reproduce it. A pin written next to its neighbours would have
+ * asserted nothing while looking like it asserted something.
+ *
+ * What it holds: GCC 16.1 under `-fsanitize=undefined` refused `std::get_if` over a subobject of an
+ * `inline` variable as a constant expression, so a generated screen's own
+ * `static_assert(screen.validate().has_value())` failed to compile on the sanitizer leg alone. The
+ * schema answers it by taking payloads by value; this is what stops a later simplification back to a
+ * reference from breaking that leg again, without waiting for the emitter's output to notice.
+ */
+namespace mdux::test::medui::inlinescreen {
+
+inline constexpr std::array<ms::CompiledNode, 1> inlineNodes{
+    ms::CompiledNode{.id = "title", .bounds = {0, 0, 200, 40}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}}
+};
+
+inline constexpr ms::ScreenPackage inlinePackage{
+    .id            = "inline-screen",
+    .schemaVersion = mdux::evidence::kSchemaVersion,
+    .surfaceWidth  = 200,
+    .surfaceHeight = 100,
+    .nodes         = inlineNodes,
+    .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+};
+
+static_assert(inlinePackage.validate().has_value(), "an inline constexpr screen validates at compile time, as generated code is");
+static_assert(ms::requirementOf(inlineNodes[0]).empty(), "and a traceability walk over one is constant-evaluable too");
+
+}  // namespace mdux::test::medui::inlinescreen
+
+namespace {
+
 /**
  * @brief The palette transcribed from TrustSC's `THEME_COLORS`, by hand and independently.
  *

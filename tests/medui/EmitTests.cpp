@@ -148,8 +148,14 @@ const mdux::spec::Register bothHalvesOfTheFilenameRuleAgree{
                               continue;
                           }
                           const std::string id       = line.substr(0, tab);
-                          const std::string fromMake = line.substr(tab + 1);
-                          const std::string fromCpp  = md::identifierForScreen(id);
+                          std::string       fromMake = line.substr(tab + 1);
+                          // CMake's file(WRITE) writes CRLF on Windows, and getline strips only the
+                          // newline. Without this the parity check fails on the MSVC leg alone, on a
+                          // carriage return rather than on a disagreement about the rule.
+                          if (!fromMake.empty() && fromMake.back() == '\r') {
+                              fromMake.pop_back();
+                          }
+                          const std::string fromCpp = md::identifierForScreen(id);
                           checks.expect(fromCpp == fromMake, std::format("id '{}': CMake says '{}', C++ says '{}'", id, fromMake, fromCpp));
                           ++compared;
                       }
