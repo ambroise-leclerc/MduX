@@ -125,19 +125,24 @@ const mdux::spec::Register everyRecipeKnobIsRequired{
                       // not appear in report.json, so a later change to that default would leave
                       // every report looking unchanged.
                       const std::string complete = fixture("textless-screen.toml");
-                      for (const std::string_view knob : {"id ", "source ", "surfaceWidth ", "maxVertices ", "maxIndices "}) {
+                      for (const std::string_view knob : {"id", "source", "surfaceWidth", "maxVertices", "maxIndices"}) {
+                          // Anchored to the start of a line, which is not fussiness: an unanchored
+                          // search for "id" finds "did" in the recipe's own commentary first, and
+                          // then this scenario deletes half a comment and asserts that a recipe
+                          // which is still complete was refused. It passed for four knobs and failed
+                          // for the one where the comment happened to come first.
                           std::string       broken = complete;
-                          const std::size_t at     = broken.find(knob);
+                          const std::size_t at     = broken.find("\n" + std::string{knob});
                           if (at == std::string::npos) {
-                              checks.expect(false, std::format("the fixture declares {}", knob));
+                              checks.expect(false, std::format("the fixture declares {} at the start of a line", knob));
                               continue;
                           }
-                          const std::size_t lineEnd = broken.find('\n', at);
+                          const std::size_t lineEnd = broken.find('\n', at + 1);
                           broken.erase(at, lineEnd - at);
 
                           std::vector<cli::Diagnostic> refused;
                           const auto                   parsed = md::parseRecipe(broken, "recipe.toml", refused);
-                          checks.expect(!parsed.has_value(), std::format("a recipe without {}is refused", knob));
+                          checks.expect(!parsed.has_value(), std::format("a recipe without {} is refused", knob));
                           checks.expect(firstCode(refused) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(refused)));
                       }
 
