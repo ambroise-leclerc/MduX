@@ -1,6 +1,6 @@
 /**
- * @brief The pinned `Compliatory/MedUI` conformance cases, run against this parser.
  * @file SharedConformanceTests.cpp
+ * @brief The pinned `Compliatory/MedUI` conformance cases, run against this parser.
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

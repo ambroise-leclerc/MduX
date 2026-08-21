@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for the compiled-screen document and its canonical JSON (issue #197).
  * @file PackageTests.cpp
+ * @brief BDD scenarios for the compiled-screen document and its canonical JSON (issue #197).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-007 Evidence pipeline doctrine (canonical form, byte-identity)

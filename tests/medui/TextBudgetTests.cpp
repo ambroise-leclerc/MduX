@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for text-budget and dynamic-charset validation (issue #195).
  * @file TextBudgetTests.cpp
+ * @brief BDD scenarios for text-budget and dynamic-charset validation (issue #195).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-010 No on-device text shaping

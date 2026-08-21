@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for the screen emitter (issue #197).
  * @file EmitTests.cpp
+ * @brief BDD scenarios for the screen emitter (issue #197).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-007 Evidence pipeline doctrine
