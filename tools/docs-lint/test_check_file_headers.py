@@ -43,6 +43,18 @@ class CheckFileHeadersTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertIn("@brief before @file", findings[0])
 
+    def test_rejects_a_block_opening_with_another_tag(self) -> None:
+        # A block whose first tag is not @file but which still has both, in the right order relative
+        # to each other. CONTRIBUTING says to *open* with @file, so this is its own finding rather
+        # than a variant of the ordering one - and without this case that branch was never executed.
+        moved = CONFORMING.replace(
+            " * @file Widget.cppm\n",
+            " * @compliance ADR-004 Trust zones in C++\n * @file Widget.cppm\n",
+        )
+        findings = check("Widget.cppm", moved)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("opens with @compliance", findings[0])
+
     def test_rejects_a_missing_file_tag(self) -> None:
         # The case with teeth: without @file the block documents whatever declaration follows it,
         # silently and with no Doxygen warning.
@@ -92,6 +104,12 @@ class CheckFileHeadersTests(unittest.TestCase):
             (root / "tests" / "_deps" / "vendor" / "Vendor.cpp").write_text("no block here", encoding="utf-8")
             (root / "tests" / "fixtures").mkdir(parents=True)
             (root / "tests" / "fixtures" / "Fixture.cpp").write_text("no block here either", encoding="utf-8")
+
+            # `.h` is deliberately absent from the suffix list: CONTRIBUTING fixes this project's
+            # extensions as .hpp, .cpp and .cppm, so a `.h` in the tree is a naming violation rather
+            # than a file this lint should be asking for Doxygen blocks in - and treating it as a
+            # source would quietly bless it.
+            (root / "src" / "legacy.h").write_text("no block here", encoding="utf-8")
 
             collected = [path.name for path in headers.collect_sources(root, [])]
             self.assertEqual(collected, ["Widget.cpp"])

@@ -45,6 +45,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# The extensions CONTRIBUTING.md declares this project uses: `.hpp` for headers, `.cpp` for sources,
+# `.cppm` for module interfaces. `.h` is deliberately not here - a `.h` in this tree would be a
+# naming violation, and listing it would quietly bless it as a project extension while asking a
+# vendored C header for a Doxygen block it has no reason to carry.
 SOURCE_SUFFIXES = (".cpp", ".cppm", ".hpp")
 
 # Where MduX's own C++ lives. `_deps` holds fetched dependencies and `build*` holds build trees;
