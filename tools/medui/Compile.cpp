@@ -468,8 +468,7 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
  * list would certify a screen against a set nobody approved - and the missing German or Finnish
  * string is exactly the one that overflows the box.
  */
-[[nodiscard]] bool checkLocaleWiring(const Recipe&                  recipe,
-                                     const mdux::font::FontPackage& font,
+[[nodiscard]] bool checkLocaleWiring(const mdux::font::FontPackage& font,
                                      std::span<const LoadedLocale>  locales,
                                      std::string_view               recipePath,
                                      std::vector<cli::Diagnostic>&  diagnostics) {
