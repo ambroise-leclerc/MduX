@@ -11,6 +11,9 @@
 # without the check.
 
 [package]
+# The slug and the screen name are the same word: `Screen TextlessScreen` compiles as
+# `textless-screen`. The compiler checks that pairing, because a slug naming one screen while the
+# package inside names another would leave every later consumer following one of the two.
 id            = "textless-screen"
 source        = "tests/medui/fixtures/accepted-textless.medui"
 # The panel this screen is drawn for. Declared here rather than taken from the source, so a screen

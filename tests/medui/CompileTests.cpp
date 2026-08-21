@@ -427,11 +427,11 @@ const mdux::spec::Register theSlugAndTheScreenNameAreOneScreen{
                       checks.expect(!outputs.has_value(), "an id naming another screen is refused");
                       checks.expect(firstCode(diagnostics) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(diagnostics)));
 
-                      // Hyphenation is the author's, the word is not: `Textless` may be spelled
-                      // `textless` and nothing else.
+                      // Hyphenation is the author's, the word is not: `TextlessScreen` may be
+                      // spelled `textless-screen` or `textlessscreen`, and nothing else.
                       std::vector<cli::Diagnostic> accepted;
                       md::Recipe                   renamed = textlessRecipe(accepted);
-                      renamed.id                           = "textless";
+                      renamed.id                           = "textlessscreen";
                       const auto compiled                  = md::run(renamed, "recipe.toml", asBytes(recipeText), repoRoot(), accepted);
                       checks.expect(compiled.has_value(), std::format("a differently hyphenated slug compiles, first diagnostic '{}'", firstCode(accepted)));
                       checks.raise();

@@ -8,7 +8,7 @@
 // The SignalTrace is positioned, which is the other half of what this fixture is for: an explicitly
 // positioned node is pinned by a golden reference, so `goldens.json` carries one entry rather than
 // being empty and proving nothing.
-Screen Textless {
+Screen TextlessScreen {
     layout: Vertical { spacing: 0px; padding: 0px; }
     surface: 400px, 300px;
 
