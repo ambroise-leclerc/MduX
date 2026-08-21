@@ -417,7 +417,10 @@ const mdux::spec::Register aBypassedGateIsARefusalNotADiagnostic{
                   [] {
                       mdux::spec::Checks checks;
                       md::LayoutResult   unresolved;
-                      unresolved.diagnostics.push_back(cli::Diagnostic{.file = "package.medui", .code = "MEDUI-E051"});
+                      cli::Diagnostic    overflow;
+                      overflow.file = "package.medui";
+                      overflow.code = "MEDUI-E051";
+                      unresolved.diagnostics.push_back(std::move(overflow));
 
                       bool threw = false;
                       try {
