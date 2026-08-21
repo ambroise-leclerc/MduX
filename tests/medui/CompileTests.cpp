@@ -91,6 +91,23 @@ private:
     std::filesystem::path path_;
 };
 
+/// One shell command line, spelled the way the platform's shell will actually read it.
+///
+/// `cmd.exe` strips the outer pair of quotes when a command line begins with one, so a quoted
+/// program path arrives mangled unless the whole line is wrapped in a second pair - and it reads a
+/// leading `/` as a switch, so the path needs native separators. Getting this wrong does not make a
+/// scenario fail honestly: the process never starts, the exit status is non-zero for the wrong
+/// reason, and only an assertion on what the process printed notices.
+[[nodiscard]] std::string shellCommand(std::string_view program, std::string_view arguments) {
+#ifdef _WIN32
+    std::string native{program};
+    std::ranges::replace(native, '/', '\\');
+    return std::format(R"(""{}" {}")", native, arguments);
+#else
+    return std::format(R"("{}" {})", program, arguments);
+#endif
+}
+
 [[nodiscard]] std::string contentsOf(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
     if (!in) {
@@ -513,48 +530,51 @@ const mdux::spec::Register anInvertedDynamicRangeIsRefused{
             .Execute();
     }};
 
-const mdux::spec::Register theExecutableFailsLikeATool{"A malformed recipe makes the executable exit with an envelope, not a crash", "evidence-unit", [] {
-                                                           return speclab::Test("medui-compile-cli")
-                                                               .Given("mdux-meduic and a recipe naming a screen that does not exist", [] {})
-                                                               .When("it is run with --format=json", [] {})
-                                                               .Then("it exits non-zero having printed a diagnostic envelope",
-                                                                     [] {
-                                                                         mdux::spec::Checks checks;
-                                                                         TemporaryDirectory scratch{"mdux-meduic-cli"};
+const mdux::spec::Register theExecutableFailsLikeATool{
+    "A malformed recipe makes the executable exit with an envelope, not a crash",
+    "evidence-unit",  // the one scenario here that spawns mdux-meduic rather than calling into it
+    [] {
+        return speclab::Test("medui-compile-cli")
+            .Given("mdux-meduic and a recipe naming a screen that does not exist", [] {})
+            .When("it is run with --format=json", [] {})
+            .Then("it exits non-zero having printed a diagnostic envelope",
+                  [] {
+                      mdux::spec::Checks checks;
+                      TemporaryDirectory scratch{"mdux-meduic-cli"};
 
-                                                                         // The one scenario that spawns the process rather than calling into the
-                                                                         // library. Everything else here drives the calls, which says more when it
-                                                                         // fails - but nothing at call level can show that `main()` renders an envelope
-                                                                         // and returns a status rather than letting an exception reach the terminate
-                                                                         // handler, and that is exactly the behaviour an author sees first.
-                                                                         const std::filesystem::path recipe = scratch.path() / "recipe.toml";
-                                                                         std::ofstream               out{recipe, std::ios::binary | std::ios::trunc};
-                                                                         out << "[package]\n"
-                                                                                "id = \"missing-screen\"\n"
-                                                                                "source = \"tests/medui/fixtures/no-such-screen.medui\"\n"
-                                                                                "surfaceWidth = 400\n"
-                                                                                "surfaceHeight = 300\n"
-                                                                                "[budget]\n"
-                                                                                "maxVertices = 64\n"
-                                                                                "maxIndices = 96\n"
-                                                                                "maxCommands = 8\n";
-                                                                         out.close();
+                      // The one scenario that spawns the process rather than calling into the
+                      // library. Everything else here drives the calls, which says more when it
+                      // fails - but nothing at call level can show that `main()` renders an envelope
+                      // and returns a status rather than letting an exception reach the terminate
+                      // handler, and that is exactly the behaviour an author sees first.
+                      const std::filesystem::path recipe = scratch.path() / "recipe.toml";
+                      std::ofstream               out{recipe, std::ios::binary | std::ios::trunc};
+                      out << "[package]\n"
+                             "id = \"missing-screen\"\n"
+                             "source = \"tests/medui/fixtures/no-such-screen.medui\"\n"
+                             "surfaceWidth = 400\n"
+                             "surfaceHeight = 300\n"
+                             "[budget]\n"
+                             "maxVertices = 64\n"
+                             "maxIndices = 96\n"
+                             "maxCommands = 8\n";
+                      out.close();
 
-                                                                         const std::filesystem::path log = scratch.path() / "stdout.txt";
-                                                                         const std::string command = std::format(R"("{}" bake "{}" "{}" --format=json > "{}")",
-                                                                                                                 MDUX_MEDUIC_PATH,
-                                                                                                                 recipe.generic_string(),
-                                                                                                                 (scratch.path() / "out").generic_string(),
-                                                                                                                 log.generic_string());
-                                                                         const int         status  = std::system(command.c_str());
-                                                                         checks.expect(status != 0, "a malformed recipe exits non-zero");
+                      const std::filesystem::path log       = scratch.path() / "stdout.txt";
+                      const std::string           arguments = std::format(R"(bake "{}" "{}" --format=json > "{}")",
+                                                                recipe.generic_string(),
+                                                                (scratch.path() / "out").generic_string(),
+                                                                log.generic_string());
+                      const int                   status    = std::system(shellCommand(MDUX_MEDUIC_PATH, arguments).c_str());
+                      checks.expect(status != 0, "a malformed recipe exits non-zero");
 
-                                                                         const std::string envelope = contentsOf(log);
-                                                                         checks.expect(envelope.contains("mdux-meduic"), "the envelope names the tool");
-                                                                         checks.expect(
-                                                                             envelope.contains("MEDUI-E003"),
-                                                                             std::format("and carries the unreadable-source code, got:\n{}", envelope));
-                                                                         checks.raise();
-                                                                     })
-                                                               .Execute();
-                                                       }};
+                      const std::string envelope = contentsOf(log);
+                      // Asserted before the contents: an empty log means the process never ran, and the
+                      // status above was non-zero for a reason that has nothing to do with the recipe.
+                      checks.expect(!envelope.empty(), "the compiler ran and printed something");
+                      checks.expect(envelope.contains("mdux-meduic"), "the envelope names the tool");
+                      checks.expect(envelope.contains("MEDUI-E003"), std::format("and carries the unreadable-source code, got:\n{}", envelope));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
