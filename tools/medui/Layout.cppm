@@ -1,6 +1,6 @@
 /**
- * @brief Integer-only build-time layout resolution for `.medui` screens.
  * @file Layout.cppm
+ * @brief Integer-only build-time layout resolution for `.medui` screens.
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

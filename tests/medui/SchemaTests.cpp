@@ -1,6 +1,6 @@
 /**
- * @brief Scenarios for the governed compiled-screen schema (issue #197).
  * @file SchemaTests.cpp
+ * @brief Scenarios for the governed compiled-screen schema (issue #197).
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for the generated screen, in both emitted forms (issue #197).
  * @file GeneratedScreenTests.cpp
+ * @brief BDD scenarios for the generated screen, in both emitted forms (issue #197).
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: this suite links MduX::Core only)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

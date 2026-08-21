@@ -1,6 +1,6 @@
 /**
- * @brief Integer-only Vertical/Row layout resolution.
  * @file Layout.cpp
+ * @brief Integer-only Vertical/Row layout resolution.
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

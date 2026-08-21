@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for golden references on safety-critical nodes (issue #196).
  * @file GoldenTests.cpp
+ * @brief BDD scenarios for golden references on safety-critical nodes (issue #196).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary

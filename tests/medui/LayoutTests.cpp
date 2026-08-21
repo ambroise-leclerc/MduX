@@ -1,6 +1,6 @@
 /**
- * @brief BDD scenarios for bounded integer `.medui` layout (issue #194).
  * @file LayoutTests.cpp
+ * @brief BDD scenarios for bounded integer `.medui` layout (issue #194).
  *
  * @compliance ADR-004 Trust zones in C++ (host tools zone)
  * @compliance ADR-011 The deterministic `.medui` compile boundary
