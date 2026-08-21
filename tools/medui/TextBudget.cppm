@@ -157,10 +157,14 @@ struct DynamicTextRule {
  * would overflow on a device with the compiler's blessing. Requiring the whole set makes that
  * particular silence impossible.
  */
+// Every member carries a default initialiser. `-Wmissing-field-initializers` is an error in this
+// tree, so a type whose optional members still have to be spelled at every call site is a trap - and
+// an omitted `dynamicText` is fail-closed anyway: a name with no rule behind it is `MEDUI-E053`
+// rather than a name silently accepted.
 struct TextBudgetInputs {
     const mdux::font::FontPackage*   font{nullptr};
-    std::span<const LocaleText>      locales;
-    std::span<const DynamicTextRule> dynamicText;
+    std::span<const LocaleText>      locales{};
+    std::span<const DynamicTextRule> dynamicText{};
 };
 
 /// The ink one baked run paints, in surface pixels.

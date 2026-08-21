@@ -53,12 +53,33 @@ export module mdux.tools.medui.compile;
 import std;
 import mdux.draw;
 import mdux.evidence.json;
+import mdux.font.schema;
 import mdux.tools.cli;
 
 export namespace mdux::tools::medui {
 
 /// The tool name that appears in every diagnostic and in `report.json`.
 inline constexpr std::string_view compilerToolName = "mdux-meduic";
+
+/**
+ * @brief One named dynamic-text source from the recipe, and every code point it can produce.
+ *
+ * The governed table an author's `format: TimeSeconds` or `charset: Ascii` resolves against. It is a
+ * recipe input rather than a compiler constant for the reason `DynamicTextRule` gives: the names
+ * belong to a product's governed tables, and a compiler shipping its own list would be authoritative
+ * about a set it does not own.
+ *
+ * Spelled as parallel arrays because `mdux.tools.toml` implements a subset with no array-of-tables
+ * support - the same shape `recipes/font/dejavu-ui.toml` uses for its charset, and the same
+ * length-mismatch check.
+ *
+ * Owning its ranges rather than viewing them: a `DynamicTextRule` is a view, and the storage it
+ * views has to outlive the compile that uses it.
+ */
+struct DynamicText {
+    std::string                           name;
+    std::vector<mdux::font::CharsetRange> produces;
+};
 
 /**
  * @brief A parsed and resolved screen recipe.
@@ -79,6 +100,7 @@ struct Recipe {
     mdux::draw::DrawBudget   budget{};
     std::string              fontPackage;   ///< committed font package.json, or empty
     std::vector<std::string> textPackages;  ///< committed text package.json, one per approved locale
+    std::vector<DynamicText> dynamicText;   ///< the product's governed dynamic-text table
 
     /// The fully resolved options, as `report.json` records them.
     [[nodiscard]] evidence::json::Value toOptions() const;

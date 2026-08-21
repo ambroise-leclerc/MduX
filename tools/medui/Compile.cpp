@@ -110,8 +110,28 @@ evidence::json::Value Recipe::toOptions() const {
         packages.push_back(Value::string(package));
     }
 
+    // The table as resolved, so a report shows what a compile was actually checked against rather
+    // than the name of a table whose contents nobody can see.
+    std::vector<Value> dynamic;
+    dynamic.reserve(dynamicText.size());
+    for (const DynamicText& rule : dynamicText) {
+        std::vector<Value> ranges;
+        ranges.reserve(rule.produces.size());
+        for (const mdux::font::CharsetRange& range : rule.produces) {
+            Value entry = Value::emptyObject();
+            put(entry, "first", Value::unsignedInteger(static_cast<std::uint64_t>(range.first)));
+            put(entry, "last", Value::unsignedInteger(static_cast<std::uint64_t>(range.last)));
+            ranges.push_back(std::move(entry));
+        }
+        Value named = Value::emptyObject();
+        put(named, "name", Value::string(rule.name));
+        put(named, "produces", Value::array(std::move(ranges)));
+        dynamic.push_back(std::move(named));
+    }
+
     Value options = Value::emptyObject();
     put(options, "budget", std::move(budgetValue));
+    put(options, "dynamicText", Value::array(std::move(dynamic)));
     put(options, "fontPackage", Value::string(fontPackage));
     put(options, "source", Value::string(source));
     put(options, "surfaceHeight", Value::integer(surfaceHeight));
@@ -219,6 +239,64 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                    error.what(),
                    "[text] needs 'fontPackage' and a 'packages' array, one committed text package per approved locale");
             return std::nullopt;
+        }
+    }
+
+    // The governed dynamic-text table. Optional as a table for the same reason [text] is: a screen
+    // with no `format:` and no `charset:` has no name to resolve, and the budget stage refuses an
+    // unknown name rather than accepting one, so an absent table is fail-closed.
+    if (const toml::Table* dynamicTable = document.table("dynamicText"); dynamicTable != nullptr) {
+        std::vector<std::string>  names;
+        std::vector<std::int64_t> firstPoints;
+        std::vector<std::int64_t> lastPoints;
+        std::size_t               namesLine = 0;
+        try {
+            const toml::Value& namesValue = dynamicTable->require("names");
+            namesLine                     = namesValue.line();
+            names                         = namesValue.asStringArray();
+            firstPoints                   = dynamicTable->require("firstCodePoints").asIntegerArray();
+            lastPoints                    = dynamicTable->require("lastCodePoints").asIntegerArray();
+        } catch (const toml::TomlError& error) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   error.line(),
+                   error.what(),
+                   "[dynamicText] needs parallel 'names', 'firstCodePoints' and 'lastCodePoints' arrays");
+            return std::nullopt;
+        }
+
+        if (names.size() != firstPoints.size() || names.size() != lastPoints.size()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   namesLine,
+                   std::format("[dynamicText] names has {} entries, firstCodePoints {} and lastCodePoints {}",
+                               names.size(),
+                               firstPoints.size(),
+                               lastPoints.size()),
+                   "the arrays are positional: entry N of each describes rule N");
+            return std::nullopt;
+        }
+
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            const std::int64_t first = firstPoints[index];
+            const std::int64_t last  = lastPoints[index];
+            // Bounded here rather than left to the walk: the budget stage refuses a range outside
+            // Unicode, but a recipe naming one should be told which entry it was rather than which
+            // glyph the walk stopped at.
+            if (first < 0 || last < 0 || first > 0x10FFFF || last > 0x10FFFF) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[dynamicText] entry '{}' names the range {}..{}, which is outside Unicode", names[index], first, last));
+                return std::nullopt;
+            }
+            DynamicText rule;
+            rule.name = names[index];
+            rule.produces.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
+            recipe.dynamicText.push_back(std::move(rule));
         }
     }
 
@@ -398,7 +476,13 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             localeTexts.push_back(LocaleText{.package = &locale.package, .sidecar = locale.sidecar});
         }
 
-        const TextBudgetResult budgets = checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts});
+        std::vector<DynamicTextRule> dynamicRules;
+        dynamicRules.reserve(recipe.dynamicText.size());
+        for (const DynamicText& rule : recipe.dynamicText) {
+            dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
+        }
+
+        const TextBudgetResult budgets = checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts, .dynamicText = dynamicRules});
         if (!budgets.diagnostics.empty()) {
             diagnostics.insert(diagnostics.end(), budgets.diagnostics.begin(), budgets.diagnostics.end());
             return std::nullopt;

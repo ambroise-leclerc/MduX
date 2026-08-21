@@ -316,3 +316,69 @@ const mdux::spec::Register writingAndVerifyingAgree{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register theGovernedDynamicTextTableIsARecipeInput{
+    "The governed dynamic-text table comes from the recipe, not from the compiler",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-dynamic-text")
+            .Given("a recipe declaring what each named dynamic-text source can produce", [] {})
+            .When("it is parsed", [] {})
+            .Then("the rules resolve, and a malformed table is refused rather than half-read",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+
+                      // The names belong to a product's governed tables. A compiler shipping its own
+                      // list would be authoritative about a set it does not own - the same argument
+                      // that keeps the theme tokens and the approved locales out of the language.
+                      const std::string recipeText = "[package]\n"
+                                                     "id = \"clock\"\n"
+                                                     "source = \"tests/medui/fixtures/accepted-textless.medui\"\n"
+                                                     "surfaceWidth = 400\n"
+                                                     "surfaceHeight = 300\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 64\n"
+                                                     "maxIndices = 96\n"
+                                                     "maxCommands = 8\n"
+                                                     "[dynamicText]\n"
+                                                     "names = [\"TimeSeconds\", \"Ascii\"]\n"
+                                                     "firstCodePoints = [48, 32]\n"
+                                                     "lastCodePoints = [58, 126]\n";
+
+                      const auto recipe = md::parseRecipe(recipeText, "recipe.toml", diagnostics);
+                      checks.expect(recipe.has_value(), std::format("the recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                      if (recipe.has_value()) {
+                          checks.expect(recipe->dynamicText.size() == 2, std::format("two rules, got {}", recipe->dynamicText.size()));
+                          if (recipe->dynamicText.size() == 2) {
+                              checks.expect(recipe->dynamicText[0].name == "TimeSeconds", "the first rule's name");
+                              checks.expect(recipe->dynamicText[0].produces.size() == 1 && recipe->dynamicText[0].produces[0].first == U'0'
+                                                && recipe->dynamicText[0].produces[0].last == U':',
+                                            "and the range a clock's digits and separator occupy");
+                          }
+                      }
+
+                      // Parallel arrays, so a length mismatch is a diagnostic rather than a silent
+                      // truncation to the shortest - the same rule the font recipe's charset has.
+                      std::vector<cli::Diagnostic> mismatched;
+                      const auto                   ragged = md::parseRecipe(std::string{recipeText}.replace(recipeText.find("lastCodePoints = [58, 126]"),
+                                                                                          std::string_view{"lastCodePoints = [58, 126]"}.size(),
+                                                                                          "lastCodePoints = [58]"),
+                                                          "recipe.toml",
+                                                          mismatched);
+                      checks.expect(!ragged.has_value(), "a ragged dynamic-text table is refused");
+                      checks.expect(firstCode(mismatched) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(mismatched)));
+
+                      // A range outside Unicode is named at the entry rather than left for the
+                      // charset walk to stop on.
+                      std::vector<cli::Diagnostic> outside;
+                      const auto                   beyond = md::parseRecipe(std::string{recipeText}.replace(recipeText.find("lastCodePoints = [58, 126]"),
+                                                                                          std::string_view{"lastCodePoints = [58, 126]"}.size(),
+                                                                                          "lastCodePoints = [58, 2000000]"),
+                                                          "recipe.toml",
+                                                          outside);
+                      checks.expect(!beyond.has_value(), "a range outside Unicode is refused");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
