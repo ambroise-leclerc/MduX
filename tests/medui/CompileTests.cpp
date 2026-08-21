@@ -18,6 +18,7 @@
 
 import std;
 import speclab;
+import mdux.draw;
 import mdux.evidence.report;
 import mdux.medui.schema;
 import mdux.tools.cli;
