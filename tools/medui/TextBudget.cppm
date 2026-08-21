@@ -226,4 +226,18 @@ struct TextBudgetResult {
  */
 [[nodiscard]] TextBudgetResult checkTextBudgets(const LayoutResult& layout, std::string file, TextBudgetInputs inputs);
 
+/**
+ * @brief Whether this screen has anything for the budget stage to measure.
+ *
+ * True when the screen carries a text key, or a field whose value names a dynamic-text source -
+ * `Clock`'s `format:` and `TextInput`'s `charset:`, the two the table in this module's
+ * implementation lists. Both are things `checkTextBudgets()` checks and nothing else does.
+ *
+ * Exported so a compiler driver can decide whether a recipe *must* supply a font package and its
+ * approved locales, rather than deciding by inspecting the screen itself. The list of dynamic-text
+ * fields would otherwise exist in two places, and the second copy is the one that would go stale the
+ * day a third field joins them.
+ */
+[[nodiscard]] bool needsTextBudget(const ast::Screen& screen);
+
 }  // namespace mdux::tools::medui

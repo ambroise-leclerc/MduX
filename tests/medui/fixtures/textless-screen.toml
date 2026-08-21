@@ -1,0 +1,26 @@
+# The recipe the compiler-driver scenarios compile (#198).
+#
+# A fixture rather than a registered artifact: `mdux_compile_screen()` and the first committed screen
+# under generated/screen/ are the second half of #198. What this file is for is the driver's own
+# contract - every knob required, no defaults - so a scenario can point `run()` at something an
+# author could actually have written.
+#
+# There is no [text] table, and that is the interesting part: the screen it names draws no text, so
+# `needsTextBudget()` answers false and the compile does not need a font package or an approved
+# locale. A screen that did draw text and left this table out is refused rather than compiled
+# without the check.
+
+[package]
+id            = "textless-screen"
+source        = "tests/medui/fixtures/accepted-textless.medui"
+# The panel this screen is drawn for. Declared here rather than taken from the source, so a screen
+# drawn for another panel is a diagnostic rather than a silently rescaled frame.
+surfaceWidth  = 400
+surfaceHeight = 300
+
+# What the runtime may draw for this screen. Declared by the product rather than computed: the cost
+# model belongs to the runtime (#199), and DrawList fails closed against these numbers at run time.
+[budget]
+maxVertices = 4096
+maxIndices  = 6144
+maxCommands = 256

@@ -464,4 +464,45 @@ TextBudgetResult checkTextBudgets(const LayoutResult& layout, std::string file, 
     return Checker{std::move(file), inputs}.run(layout);
 }
 
+
+bool needsTextBudget(const ast::Screen& screen) {
+    // Walks the authored tree rather than a resolved layout: the question is asked before layout
+    // runs, because its answer decides whether the recipe is complete enough to compile at all.
+    const auto carriesMeasurableText = [](const ast::Node& node) {
+        for (const ast::Field& field : node.fields) {
+            if (field.value == nullptr) {
+                continue;
+            }
+            if (field.value->kind == ast::ValueKind::TextKey) {
+                return true;
+            }
+            if (field.value->kind == ast::ValueKind::List) {
+                for (const std::shared_ptr<ast::Value>& element : field.value->list) {
+                    if (element != nullptr && element->kind == ast::ValueKind::TextKey) {
+                        return true;
+                    }
+                }
+            }
+            // Asked through the same predicate the measuring pass uses, so a third dynamic-text
+            // field reaches this question without anyone having to remember it.
+            if (namesDynamicText(node.component, field.name)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (const ast::Node& node : screen.nodes) {
+        if (carriesMeasurableText(node)) {
+            return true;
+        }
+        for (const ast::Node& child : node.children) {
+            if (carriesMeasurableText(child)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace mdux::tools::medui

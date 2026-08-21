@@ -773,6 +773,10 @@ mdux_discover_tests(medui_spec)
 # ADR-011 fixes for golden references in one screen - including the node that matches both rules and
 # must therefore appear exactly once.
 #
+# CompileTests (#198) drives the compiler driver as calls rather than spawning mdux-meduic: what is
+# under test is the order the stages run in, the recipe being complete for the screen it names, and
+# the three artifacts a compile produces - none of which an exit status could report on.
+#
 # EmitTests (#197) covers everything that has to hold before a compiler sees the generated source:
 # among them the two ways a valid screen used to become invalid C++ - a name carrying a control
 # character the `.medui` lexer decodes, and the empty screen the schema permits, whose node table
@@ -795,6 +799,7 @@ add_executable(medui_tools_spec
     medui/GoldenTests.cpp
     medui/PackageTests.cpp
     medui/EmitTests.cpp
+    medui/CompileTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
