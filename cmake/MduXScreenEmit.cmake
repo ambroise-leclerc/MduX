@@ -26,12 +26,14 @@ include_guard(GLOBAL)
 # `medui-screen-identifier-parity`, which runs this and the C++ side over the same ids and compares.
 # Asserting only the C++ half is how the shader pair drifted on the leading-digit rule.
 function(mdux_screen_identifier out_var package_id)
+    # Unconditionally prefixed, which is what makes the answer an identifier rather than merely
+    # identifier-shaped: `class`, `namespace`, `module` and `import` are all legal package slugs, and
+    # mapping them to themselves produced a namespace and a module name no compiler accepts. Both
+    # sides agreed on that invalid answer, so the parity test could not see it - which is why the
+    # parity id list now carries keywords. The prefix also removes the leading-digit case this
+    # function used to handle with a second rule.
     string(REGEX REPLACE "[^A-Za-z0-9]" "_" identifier "${package_id}")
-    # A C++ identifier may not start with a digit; a package id may.
-    if(identifier MATCHES "^[0-9]")
-        set(identifier "_${identifier}")
-    endif()
-    set(${out_var} "${identifier}" PARENT_SCOPE)
+    set(${out_var} "screen_${identifier}" PARENT_SCOPE)
 endfunction()
 
 # mdux_emit_screen_package(ID <id> [PACKAGE <path>] [OUT_MODULE <var>] [OUT_HEADER <var>]
@@ -86,6 +88,16 @@ function(mdux_emit_screen_package)
     endif()
 
     mdux_screen_identifier(identifier "${ARG_ID}")
+
+    # Two adjacent separators map to `__`, which is reserved to the implementation everywhere in a
+    # program. One `_` per separator keeps the mapping injective - collapsing a run would let two
+    # screens claim one filename - so the reserved case is refused rather than rewritten, here and in
+    # identifierForScreen().
+    if(identifier MATCHES "__")
+        message(FATAL_ERROR
+            "mdux_emit_screen_package: id '${ARG_ID}' maps to '${identifier}', which is a reserved "
+            "identifier. Avoid two adjacent separators in a screen id.")
+    endif()
 
     set(output_dir "${CMAKE_BINARY_DIR}/mdux_generated/screen")
     set(module_file "${output_dir}/${identifier}.cppm")

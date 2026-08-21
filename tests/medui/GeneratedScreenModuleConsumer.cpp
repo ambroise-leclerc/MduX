@@ -8,14 +8,14 @@
  */
 import std;
 import mdux.medui.schema;
-import mdux.medui.generated.every_component;
+import mdux.medui.generated.screen_every_component;
 
 #include "GeneratedScreenConsumers.hpp"
 
 namespace mdux::test::generated {
 
 mdux::medui::ScreenPackage screenFromModule() noexcept {
-    return mdux::medui::generated::every_component::package();
+    return mdux::medui::generated::screen_every_component::package();
 }
 
 }  // namespace mdux::test::generated

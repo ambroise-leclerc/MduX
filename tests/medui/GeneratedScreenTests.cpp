@@ -131,3 +131,26 @@ const mdux::spec::Register theGeneratedScreenIsTheCompiledOne{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register anEmptyScreenIsConsumable{"A screen with no nodes is generated code a consumer can hold", "evidence-unit", [] {
+                                                         return speclab::Test("medui-generated-empty-screen")
+                                                             .Given("the degenerate screen the schema permits: no nodes, empty budget", [] {})
+                                                             .When("its generated form is compiled and read", [] {})
+                                                             .Then("it holds no nodes and still validates",
+                                                                   [] {
+                                                                       mdux::spec::Checks      checks;
+                                                                       const ms::ScreenPackage screen = tg::emptyScreenFromModule();
+
+                                                                       // The compiling of GeneratedEmptyScreenConsumer.cpp is the assertion that
+                                                                       // matters here; an emitter that rendered `CompiledNode nodes[] = {}` would
+                                                                       // have failed to build rather than failed this scenario.
+                                                                       checks.expect(screen.id == "empty-screen",
+                                                                                     std::format("the screen id, got '{}'", screen.id));
+                                                                       checks.expect(screen.nodes.empty(),
+                                                                                     std::format("no nodes, got {}", screen.nodes.size()));
+                                                                       checks.expect(screen.validate().has_value(),
+                                                                                     "an empty screen with an empty budget is valid");
+                                                                       checks.raise();
+                                                                   })
+                                                             .Execute();
+                                                     }};

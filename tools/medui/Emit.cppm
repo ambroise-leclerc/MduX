@@ -84,7 +84,10 @@ struct EmitOutputs {
 [[nodiscard]] bool writeScreen(const EmitOutputs& outputs, const std::filesystem::path& outputDir, std::vector<cli::Diagnostic>& diagnostics);
 
 /**
- * @brief The C++ identifier a package id maps to: `neurosense-500` becomes `neurosense_500`.
+ * @brief The C++ identifier a package id maps to: `neurosense-500` becomes `screen_neurosense_500`.
+ *
+ * Prefixed unconditionally, because a package slug may be a keyword - `class` and `module` are both
+ * legal ids - and an identifier-shaped answer that no compiler accepts is worse than a longer one.
  *
  * Exported because the tests and the CMake integration both have to predict the generated
  * filenames. `mdux_screen_identifier()` in `cmake/MduXScreenEmit.cmake` implements the same rule,

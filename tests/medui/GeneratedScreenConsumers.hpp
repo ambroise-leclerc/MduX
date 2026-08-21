@@ -16,10 +16,14 @@
 
 namespace mdux::test::generated {
 
-/// The screen as reached through `import mdux.medui.generated.every_component;`.
+/// The screen as reached through `import mdux.medui.generated.screen_every_component;`.
 [[nodiscard]] mdux::medui::ScreenPackage screenFromModule() noexcept;
 
-/// The screen as reached through `#include "every_component.hpp"`.
+/// The screen as reached through `#include "screen_every_component.hpp"`.
 [[nodiscard]] mdux::medui::ScreenPackage screenFromHeader() noexcept;
+
+/// A screen that resolves to no nodes, which the schema permits and the emitter must render as an
+/// empty span rather than as an empty C array.
+[[nodiscard]] mdux::medui::ScreenPackage emptyScreenFromModule() noexcept;
 
 }  // namespace mdux::test::generated

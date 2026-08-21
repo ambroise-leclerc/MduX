@@ -172,56 +172,57 @@ const mdux::spec::Register bothFormsRenderFromOneScreen{
         return speclab::Test("medui-screen-emit-two-forms")
             .Given("a committed screen package", [] {})
             .When("it is rendered", [] {})
-            .Then(
-                "both outputs carry one body, one static_assert, and every payload the screen holds",
-                [] {
-                    mdux::spec::Checks           checks;
-                    std::vector<cli::Diagnostic> diagnostics;
+            .Then("both outputs carry one body, one static_assert, and every payload the screen holds",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
 
-                    const auto outputs = md::renderScreen(fixturePath("every-component-package.json"), diagnostics);
-                    checks.expect(outputs.has_value(), "a valid package renders");
-                    if (!outputs.has_value()) {
-                        checks.raise();
-                        return;
-                    }
+                      const auto outputs = md::renderScreen(fixturePath("every-component-package.json"), diagnostics);
+                      checks.expect(outputs.has_value(), "a valid package renders");
+                      if (!outputs.has_value()) {
+                          checks.raise();
+                          return;
+                      }
 
-                    checks.expect(outputs->stem == "every_component", std::format("the stem is every_component, got '{}'", outputs->stem));
-                    checks.expect(outputs->moduleName == "mdux.medui.generated.every_component", std::format("the module name, got '{}'", outputs->moduleName));
-                    checks.expect(outputs->moduleSource.contains("export module mdux.medui.generated.every_component;"), "the module form declares its module");
-                    checks.expect(outputs->headerSource.contains("#pragma once"), "the header form is include-guarded");
-                    checks.expect(!outputs->headerSource.contains("export module"), "the header form declares no module");
+                      checks.expect(outputs->stem == "screen_every_component", std::format("the stem, got '{}'", outputs->stem));
+                      checks.expect(outputs->moduleName == "mdux.medui.generated.screen_every_component",
+                                    std::format("the module name, got '{}'", outputs->moduleName));
+                      checks.expect(outputs->moduleSource.contains("export module mdux.medui.generated.screen_every_component;"),
+                                    "the module form declares its module");
+                      checks.expect(outputs->headerSource.contains("#pragma once"), "the header form is include-guarded");
+                      checks.expect(!outputs->headerSource.contains("export module"), "the header form declares no module");
 
-                    // The two outputs share one rendering of the screen, so the body has to appear
-                    // in both. Compared as a whole rather than by sampling members: a shared body
-                    // is the property that makes them impossible to disagree.
-                    const std::size_t bodyStart = outputs->moduleSource.find("namespace mdux::medui::generated::");
-                    checks.expect(bodyStart != std::string::npos, "the module form carries the generated namespace");
-                    if (bodyStart != std::string::npos) {
-                        const std::string body = outputs->moduleSource.substr(bodyStart);
-                        checks.expect(outputs->headerSource.contains(body), "both forms carry the identical body");
-                    }
+                      // The two outputs share one rendering of the screen, so the body has to appear
+                      // in both. Compared as a whole rather than by sampling members: a shared body
+                      // is the property that makes them impossible to disagree.
+                      const std::size_t bodyStart = outputs->moduleSource.find("namespace mdux::medui::generated::");
+                      checks.expect(bodyStart != std::string::npos, "the module form carries the generated namespace");
+                      if (bodyStart != std::string::npos) {
+                          const std::string body = outputs->moduleSource.substr(bodyStart);
+                          checks.expect(outputs->headerSource.contains(body), "both forms carry the identical body");
+                      }
 
-                    checks.expect(outputs->moduleSource.contains("static_assert(screen.validate().has_value()"),
-                                  "the generated screen checks itself where it is defined");
+                      checks.expect(outputs->moduleSource.contains("static_assert(screen.validate().has_value()"),
+                                    "the generated screen checks itself where it is defined");
 
-                    // All eleven payloads: what makes this an emitter rather than a renderer of
-                    // the components somebody happened to test with.
-                    for (const std::string_view spec : {"PanelSpec",
-                                                        "LabelSpec",
-                                                        "ClockSpec",
-                                                        "ImageSpec",
-                                                        "VulkanViewportSpec",
-                                                        "SignalTraceSpec",
-                                                        "ButtonSpec",
-                                                        "CriticalButtonSpec",
-                                                        "NumericDisplaySpec",
-                                                        "StatusIndicatorSpec",
-                                                        "TextInputSpec"}) {
-                        checks.expect(outputs->moduleSource.contains(spec), std::format("the rendering carries a {}", spec));
-                    }
-                    checks.expect(diagnostics.empty(), "a valid package renders without diagnostics");
-                    checks.raise();
-                })
+                      // All eleven payloads: what makes this an emitter rather than a renderer of
+                      // the components somebody happened to test with.
+                      for (const std::string_view spec : {"PanelSpec",
+                                                          "LabelSpec",
+                                                          "ClockSpec",
+                                                          "ImageSpec",
+                                                          "VulkanViewportSpec",
+                                                          "SignalTraceSpec",
+                                                          "ButtonSpec",
+                                                          "CriticalButtonSpec",
+                                                          "NumericDisplaySpec",
+                                                          "StatusIndicatorSpec",
+                                                          "TextInputSpec"}) {
+                          checks.expect(outputs->moduleSource.contains(spec), std::format("the rendering carries a {}", spec));
+                      }
+                      checks.expect(diagnostics.empty(), "a valid package renders without diagnostics");
+                      checks.raise();
+                  })
             .Execute();
     }};
 
@@ -302,8 +303,8 @@ const mdux::spec::Register writingIsIdempotent{
                       }
 
                       checks.expect(md::writeScreen(*outputs, scratch.path(), diagnostics), "the first write succeeds");
-                      const std::filesystem::path module = scratch.path() / "every_component.cppm";
-                      const std::filesystem::path header = scratch.path() / "every_component.hpp";
+                      const std::filesystem::path module = scratch.path() / "screen_every_component.cppm";
+                      const std::filesystem::path header = scratch.path() / "screen_every_component.hpp";
                       checks.expect(contentsOf(module) == outputs->moduleSource, "the module file holds the rendering");
                       checks.expect(contentsOf(header) == outputs->headerSource, "the header file holds the rendering");
 
@@ -312,6 +313,143 @@ const mdux::spec::Register writingIsIdempotent{
                       checks.expect(md::writeScreen(*outputs, scratch.path(), diagnostics), "the second write succeeds");
                       checks.expect(contentsOf(module) == outputs->moduleSource, "the second write left the module file alone");
                       checks.expect(diagnostics.empty(), "writing twice reports nothing");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aDecodedControlCharacterCannotEndTheLiteral{
+    "A name carrying a decoded control character is escaped, not embedded",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-emit-escapes")
+            .Given("a screen whose requirement contains a source-legal escaped newline", [] {})
+            .When("it is compiled and rendered", [] {})
+            .Then("the generated literal carries an escape rather than a line break",
+                  [] {
+                      mdux::spec::Checks checks;
+                      TemporaryDirectory scratch{"mdux-screenemit-escapes"};
+                      std::error_code    code;
+                      std::filesystem::create_directories(scratch.path(), code);
+
+                      // The lexer decodes `\n` inside a source string and the dictionary accepts an
+                      // unrestricted String for `requirement`, so this screen is legal, its package
+                      // is valid, and the decoded newline reaches the emitter. Rendered raw it would
+                      // end the C++ literal and let what follows be read as tokens.
+                      const std::string source = "Screen Escapes {\n"
+                                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                                 "    surface: 200px, 100px;\n"
+                                                 "\n"
+                                                 "    NumericDisplay {\n"
+                                                 "        id: score;\n"
+                                                 "        width: 200px;\n"
+                                                 "        height: 40px;\n"
+                                                 "        requirement: \"REQ\\nHALT\";\n"
+                                                 "        template: \"TPL\\tSCORE\";\n"
+                                                 "        source: \"SCORE\";\n"
+                                                 "        color: Theme.Colors.ScoreDigits;\n"
+                                                 "    }\n"
+                                                 "}\n";
+
+                      md::ParseResult parsed = md::parse(source, "escapes.medui");
+                      if (!parsed.screen || !parsed.diagnostics.empty()) {
+                          checks.expect(false, "the escaped source parses");
+                          checks.raise();
+                          return;
+                      }
+                      const md::LayoutResult layout = md::resolveLayout(*parsed.screen, "escapes.medui", {.surfaceWidth = 200, .surfaceHeight = 100});
+                      if (!layout.ok()) {
+                          checks.expect(false, "the escaped source resolves");
+                          checks.raise();
+                          return;
+                      }
+
+                      const std::string           json = md::writePackage(md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget}).package());
+                      const std::filesystem::path path = scratch.path() / "package.json";
+                      std::ofstream               out{path, std::ios::binary | std::ios::trunc};
+                      out.write(json.data(), static_cast<std::streamsize>(json.size()));
+                      out.close();
+
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   outputs = md::renderScreen(path, diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, "a screen with an escaped name renders");
+                          checks.raise();
+                          return;
+                      }
+
+                      checks.expect(outputs->moduleSource.contains("REQ\\nHALT"), "the newline is emitted as an escape");
+                      checks.expect(outputs->moduleSource.contains("TPL\\tSCORE"), "and so is the tab");
+                      checks.expect(!outputs->moduleSource.contains("REQ\nHALT"), "no decoded newline reaches the generated source");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aScreenWithNoNodesRenders{
+    "A screen that resolves to no nodes renders as an empty span",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-emit-empty")
+            .Given("the empty screen the schema permits", [] {})
+            .When("it is rendered", [] {})
+            .Then("its node table is an empty span rather than an empty array",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+
+                      const auto outputs = md::renderScreen(fixturePath("empty-screen-package.json"), diagnostics);
+                      checks.expect(outputs.has_value(), "the empty screen renders");
+                      if (!outputs.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      // `CompiledNode nodes[] = {}` cannot deduce a zero bound and is not valid C++,
+                      // so a screen validate() accepts could not be consumed in either form.
+                      // GeneratedEmptyScreenConsumer.cpp is where the compiler says so.
+                      checks.expect(outputs->moduleSource.contains("std::span<const mdux::medui::CompiledNode> nodes{}"), "the empty node table is a span");
+                      checks.expect(outputs->moduleSource.contains("static_assert(screen.validate().has_value()"), "the empty screen still checks itself");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aReservedIdentifierIsRefused{
+    "An id that maps to a reserved identifier is refused",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-emit-reserved-identifier")
+            .Given("a package whose id carries two adjacent separators", [] {})
+            .When("it is rendered", [] {})
+            .Then("the emitter refuses rather than generating a reserved name",
+                  [] {
+                      mdux::spec::Checks checks;
+                      TemporaryDirectory scratch{"mdux-screenemit-reserved"};
+                      std::error_code    code;
+                      std::filesystem::create_directories(scratch.path(), code);
+
+                      // `a--b` maps to `screen_a__b`, and `__` is reserved to the implementation
+                      // everywhere. Collapsing the run would fix the name and break injectivity, so
+                      // two screens could claim one filename; refusing keeps both properties.
+                      checks.expect(md::identifierForScreen("a--b") == "screen_a__b", "the mapping is one underscore per separator");
+                      checks.expect(md::identifierForScreen("class") == "screen_class", "a keyword id maps to a usable identifier");
+
+                      std::string       edited = fixture("empty-screen-package.json");
+                      const std::size_t at     = edited.find("\"empty-screen\"");
+                      checks.expect(at != std::string::npos, "the fixture carries its id");
+                      if (at != std::string::npos) {
+                          edited.replace(at, std::string_view{"\"empty-screen\""}.size(), "\"a--b\"");
+                      }
+                      const std::filesystem::path path = scratch.path() / "package.json";
+                      std::ofstream               out{path, std::ios::binary | std::ios::trunc};
+                      out.write(edited.data(), static_cast<std::streamsize>(edited.size()));
+                      out.close();
+
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   outputs = md::renderScreen(path, diagnostics);
+                      checks.expect(!outputs.has_value(), "a reserved identifier is refused");
+                      checks.expect(!diagnostics.empty() && diagnostics.front().code == "SCE003",
+                                    std::format("reported as SCE003, got '{}'", diagnostics.empty() ? std::string{"<none>"} : diagnostics.front().code));
                       checks.raise();
                   })
             .Execute();

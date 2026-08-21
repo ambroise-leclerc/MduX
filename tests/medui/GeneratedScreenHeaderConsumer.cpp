@@ -12,14 +12,13 @@
 import std;
 import mdux.medui.schema;
 
-#include "every_component.hpp"
-
 #include "GeneratedScreenConsumers.hpp"
+#include "screen_every_component.hpp"
 
 namespace mdux::test::generated {
 
 mdux::medui::ScreenPackage screenFromHeader() noexcept {
-    return mdux::medui::generated::every_component::package();
+    return mdux::medui::generated::screen_every_component::package();
 }
 
 }  // namespace mdux::test::generated

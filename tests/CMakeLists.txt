@@ -697,12 +697,22 @@ mdux_emit_screen_package(
     OUT_DIR MDUX_GENERATED_SCREEN_DIR
 )
 
+# The degenerate screen the schema permits: no nodes, empty budget. Emitted and compiled because an
+# empty C array is not valid C++, so this is the case where a screen validate() accepts could not be
+# consumed at all - see GeneratedEmptyScreenConsumer.cpp.
+mdux_emit_screen_package(
+    ID empty-screen
+    PACKAGE tests/medui/fixtures/empty-screen-package.json
+    OUT_MODULE MDUX_EMPTY_SCREEN_MODULE
+)
+
 add_executable(medui_spec
     medui/MeduiSpecMain.cpp
     medui/SchemaTests.cpp
     medui/GeneratedScreenTests.cpp
     medui/GeneratedScreenModuleConsumer.cpp
     medui/GeneratedScreenHeaderConsumer.cpp
+    medui/GeneratedEmptyScreenConsumer.cpp
 )
 
 # Compiling both emitted forms in one binary is #197's acceptance criterion, not incidental. It
@@ -715,9 +725,11 @@ target_sources(medui_spec
         FILE_SET generated_screen_modules
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
-            FILES ${MDUX_EVERY_COMPONENT_SCREEN_MODULE}
+            FILES
+                ${MDUX_EVERY_COMPONENT_SCREEN_MODULE}
+                ${MDUX_EMPTY_SCREEN_MODULE}
 )
-add_dependencies(medui_spec emit-screen-every-component)
+add_dependencies(medui_spec emit-screen-every-component emit-screen-empty-screen)
 
 # MduX::Core and no host-tools module: a device build reaching a compiled screen through generated
 # code links no compiler and parses nothing, and this target linking is the evidence for it.
@@ -762,6 +774,9 @@ mdux_discover_tests(medui_spec)
 # must therefore appear exactly once.
 #
 # EmitTests (#197) covers everything that has to hold before a compiler sees the generated source:
+# among them the two ways a valid screen used to become invalid C++ - a name carrying a control
+# character the `.medui` lexer decodes, and the empty screen the schema permits, whose node table
+# cannot be an empty C array.
 # that the committed fixture package is still what compiling its source produces, that both halves of
 # the filename rule agree, and that a malformed package is refused rather than rendered. The emitted
 # C++ itself is compiled and compared in medui_spec, which links MduX::Core only.
@@ -794,7 +809,12 @@ target_compile_definitions(medui_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOUR
 # compare against identifierForScreen() in the C++ emitter. Both halves are executed, for the reason
 # the shader pair had to learn: a C++ assertion cannot observe a CMake regex, so asserting one half
 # and calling it consistent with the other let the two drift on the leading-digit rule.
-set(mdux_screen_identifier_ids "every-component" "neurosense-500" "plain" "2d" "a.b-c" "already_fine" "ui.v2")
+# Keywords are in the list because they are legal package slugs: `class` and `module` map to
+# identifiers a compiler rejects unless the rule prefixes them, and both implementations agreed on
+# that invalid answer until the prefix landed.
+set(mdux_screen_identifier_ids
+    "every-component" "empty-screen" "neurosense-500" "plain" "2d" "a.b-c" "already_fine" "ui.v2"
+    "class" "namespace" "module" "import" "int")
 set(mdux_screen_identifier_lines "")
 foreach(mdux_screen_identifier_id IN LISTS mdux_screen_identifier_ids)
     mdux_screen_identifier(mdux_screen_identifier_value "${mdux_screen_identifier_id}")

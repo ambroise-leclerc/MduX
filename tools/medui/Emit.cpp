@@ -20,8 +20,9 @@ namespace ms = mdux::medui;
 
 /// Stable diagnostic codes for this tool. A malformed package reports the reader's `SCP0NN` codes
 /// instead, since the reader is the thing that found the problem and names it more precisely.
-constexpr std::string_view packageUnreadable = "SCE001";
-constexpr std::string_view outputUnwritable  = "SCE002";
+constexpr std::string_view packageUnreadable  = "SCE001";
+constexpr std::string_view outputUnwritable   = "SCE002";
+constexpr std::string_view identifierReserved = "SCE003";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::string_view code, std::string message, std::string fixHint = {}) {
     cli::Diagnostic diagnostic;
@@ -54,15 +55,50 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::st
     return bytes;
 }
 
-/// A name as a C++ string literal body. Names in a compiled screen are validated identifiers, keys
-/// and dotted tokens, so this escapes the two characters that could still end a literal early
-/// rather than pretending to be a general escaper.
+/**
+ * @brief A validated name as the body of a C++ string literal.
+ *
+ * Escapes every byte that could end the literal early or change what follows it, rather than only
+ * the two that obviously could. That is not defensiveness for its own sake: the `.medui` lexer
+ * decodes `\\n` and `\\t` inside a source string, semantic analysis accepts an unrestricted `String`
+ * for `requirement`, `source`, `stream_source` and `template`, and the schema then asks only whether
+ * a required name is non-empty. A `requirement: "REQ\\nHALT"` is therefore a legal screen whose
+ * compiled package is valid, and emitting its decoded newline raw would not merely produce an
+ * unhelpful compiler error - it would end the literal and let the rest of the value be read as C++
+ * tokens. A code generator must not have that property.
+ *
+ * Control bytes become three-digit octal escapes rather than `\\xNN`, because a hex escape is greedy:
+ * `"\\x0aBC"` is one enormous escape, while `"\\012BC"` is a newline followed by two letters. Bytes at
+ * or above 0x80 are left alone - they are continuation bytes of a name that is already valid UTF-8,
+ * and the generated file is UTF-8.
+ */
 [[nodiscard]] std::string escape(std::string_view text) {
     std::string out;
     out.reserve(text.size());
     for (const char character : text) {
-        if (character == '"' || character == '\\') {
-            out.push_back('\\');
+        const auto byte = static_cast<unsigned char>(character);
+        switch (character) {
+            case '"':
+                out += "\\\"";
+                continue;
+            case '\\':
+                out += "\\\\";
+                continue;
+            case '\n':
+                out += "\\n";
+                continue;
+            case '\r':
+                out += "\\r";
+                continue;
+            case '\t':
+                out += "\\t";
+                continue;
+            default:
+                break;
+        }
+        if (byte < 0x20 || byte == 0x7F) {
+            out += std::format("\\{:03o}", byte);
+            continue;
         }
         out.push_back(character);
     }
@@ -197,31 +233,10 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     return out;
 }
 
-/// Everything between the module or header preamble and its closing brace. One function, so the two
-/// outputs cannot describe different screens or a different contract.
-[[nodiscard]] std::string renderBody(const ms::ScreenPackage& package, std::string_view identifier) {
+/// The screen value, its compile-time check and its accessor: everything after the node table, which
+/// the empty and non-empty branches of `renderBody()` share.
+[[nodiscard]] std::string renderTail(const ms::ScreenPackage& package, std::string_view identifier) {
     std::string out;
-
-    out += std::format("namespace mdux::medui::generated::{} {{\n\n", identifier);
-
-    out += "/// The package id this screen was generated from.\n";
-    out += std::format("inline constexpr std::string_view id = {};\n\n", quoted(package.id));
-
-    out += renderStateArrays(package);
-
-    out += "/// Every node the compiler resolved, in the order the package lists them.\n";
-    out += "inline constexpr mdux::medui::CompiledNode nodes[] = {\n";
-    for (std::size_t index = 0; index < package.nodes.size(); ++index) {
-        const ms::CompiledNode& node = package.nodes[index];
-        out                         += std::format("    {{.id = {},\n", quoted(node.id));
-        out                         += std::format("     .bounds = {{.x = {}, .y = {}, .width = {}, .height = {}}},\n",
-                           node.bounds.x,
-                           node.bounds.y,
-                           node.bounds.width,
-                           node.bounds.height);
-        out                         += std::format("     .payload = {}}},\n", renderPayload(node, index));
-    }
-    out += "};\n\n";
 
     out += "/// The screen itself, in read-only memory. A device holds this and parses nothing.\n";
     out += "inline constexpr mdux::medui::ScreenPackage screen{\n";
@@ -249,6 +264,45 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     return out;
 }
 
+/// Everything between the module or header preamble and its closing brace. One function, so the two
+/// outputs cannot describe different screens or a different contract.
+[[nodiscard]] std::string renderBody(const ms::ScreenPackage& package, std::string_view identifier) {
+    std::string out;
+
+    out += std::format("namespace mdux::medui::generated::{} {{\n\n", identifier);
+
+    out += "/// The package id this screen was generated from.\n";
+    out += std::format("inline constexpr std::string_view id = {};\n\n", quoted(package.id));
+
+    out += renderStateArrays(package);
+
+    // A screen with nothing to draw is valid - `ScreenPackage::validate()` permits it, with an empty
+    // budget, and `medui-schema-budget` pins that. An empty C array is not valid C++, so the empty
+    // case is spelled as an empty span, exactly as the shader emitter spells an empty descriptor
+    // set. Both branches leave `nodes` convertible to the span `ScreenPackage` holds.
+    if (package.nodes.empty()) {
+        out += "/// This screen resolves to no nodes.\n";
+        out += "inline constexpr std::span<const mdux::medui::CompiledNode> nodes{};\n\n";
+        return out + renderTail(package, identifier);
+    }
+
+    out += "/// Every node the compiler resolved, in the order the package lists them.\n";
+    out += "inline constexpr mdux::medui::CompiledNode nodes[] = {\n";
+    for (std::size_t index = 0; index < package.nodes.size(); ++index) {
+        const ms::CompiledNode& node = package.nodes[index];
+        out                         += std::format("    {{.id = {},\n", quoted(node.id));
+        out                         += std::format("     .bounds = {{.x = {}, .y = {}, .width = {}, .height = {}}},\n",
+                           node.bounds.x,
+                           node.bounds.y,
+                           node.bounds.width,
+                           node.bounds.height);
+        out                         += std::format("     .payload = {}}},\n", renderPayload(node, index));
+    }
+    out += "};\n\n";
+
+    return out + renderTail(package, identifier);
+}
+
 [[nodiscard]] std::string preamble(std::string_view packageId, std::string_view packagePath) {
     std::string out;
     out += std::format("// Generated by {} from {}.\n", emitToolName, packagePath);
@@ -264,15 +318,17 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
 }  // namespace
 
 std::string identifierForScreen(std::string_view packageId) {
-    std::string out;
-    out.reserve(packageId.size());
+    // Unconditionally prefixed, which is what makes the result an identifier rather than merely
+    // identifier-shaped. A package id is a slug, and `class`, `namespace`, `module` and `import` are
+    // all legal slugs; mapping them to themselves produced a namespace and a module name no compiler
+    // accepts, while both implementations of the rule agreed on that invalid answer, so the parity
+    // test could not see it. The prefix also removes the leading-digit case an earlier revision
+    // handled with a second rule.
+    std::string out{"screen_"};
+    out.reserve(out.size() + packageId.size());
     for (const char character : packageId) {
         const bool alnum = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9');
         out.push_back(alnum ? character : '_');
-    }
-    // A C++ identifier may not start with a digit; a package id may.
-    if (!out.empty() && out.front() >= '0' && out.front() <= '9') {
-        out.insert(out.begin(), '_');
     }
     return out;
 }
@@ -302,7 +358,21 @@ std::optional<EmitOutputs> renderScreen(const std::filesystem::path& packagePath
     const ms::ScreenPackage package = read.document.package();
 
     EmitOutputs outputs;
-    outputs.stem       = identifierForScreen(package.id);
+    outputs.stem = identifierForScreen(package.id);
+
+    // Two adjacent separators in an id map to `__`, which is reserved to the implementation
+    // everywhere in a program. One `_` per separator keeps the mapping injective - collapsing a run
+    // would let two screens claim one filename - so the reserved case is refused rather than
+    // rewritten, and `mdux_emit_screen_package()` refuses it at configure time for the same reason.
+    if (outputs.stem.contains("__")) {
+        report(diagnostics,
+               packageDisplay,
+               identifierReserved,
+               std::format("the id '{}' maps to '{}', which is a reserved identifier", package.id, outputs.stem),
+               "avoid two adjacent separators in a screen id");
+        return std::nullopt;
+    }
+
     outputs.moduleName = "mdux.medui.generated." + outputs.stem;
 
     const std::string body = renderBody(package, outputs.stem);
