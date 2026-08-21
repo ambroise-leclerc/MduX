@@ -51,6 +51,55 @@ namespace medui = mdux::tools::medui;
     return medui::run(*recipe, recipePath, *recipeBytes, std::filesystem::current_path(), diagnostics);
 }
 
+/**
+ * @brief Runs the compile and returns the summary line, or nothing when a diagnostic was reported.
+ *
+ * The `try` is an outermost boundary for a *bug*, not for author input. Every recipe-controlled
+ * failure - a malformed slug, an unusable budget, a locale the font does not approve - is a
+ * diagnostic the driver reports, so an escaping exception means a gate was bypassed or an invariant
+ * this compiler believes in does not hold. Even then the tool has to fail like a tool: a consumer
+ * that asked for `--format=json` is entitled to an envelope, not a terminate handler's message.
+ */
+[[nodiscard]] std::string compile(const cli::Invocation& invocation, const std::string& recipePath, std::vector<cli::Diagnostic>& diagnostics) {
+    try {
+        auto outputs = produce(recipePath, diagnostics);
+        if (!outputs.has_value()) {
+            return {};
+        }
+
+        bool ok = false;
+        if (invocation.mode == cli::Mode::Bake) {
+            ok = medui::write(*outputs, invocation.bake.outputDir, diagnostics);
+        } else {
+            // The shared grammar carries two output paths and a screen has three. The goldens
+            // sidecar is not an independent fact: ADR-012 puts all three files in one directory, so
+            // it is read from beside the package rather than named a second time on a command line
+            // where the two could disagree.
+            const std::filesystem::path packagePath{invocation.verify.packagePath};
+            const std::filesystem::path goldensPath = packagePath.parent_path() / "goldens.json";
+            ok                                      = medui::verify(*outputs, packagePath, goldensPath, invocation.verify.reportPath, diagnostics);
+        }
+        if (!ok) {
+            return {};
+        }
+        return std::format("{}: OK ({} {}: {} nodes, {} golden references)",
+                           medui::compilerToolName,
+                           invocation.mode == cli::Mode::Bake ? "compiled" : "verified",
+                           outputs->screenId,
+                           outputs->nodeCount,
+                           outputs->goldenCount);
+    } catch (const std::exception& error) {
+        cli::Diagnostic internal;
+        internal.file     = recipePath;
+        internal.code     = "MEDUI-E000";
+        internal.severity = cli::Severity::Error;
+        internal.message  = std::format("the compiler stopped on an internal error: {}", error.what());
+        internal.fixHint  = "this is a defect in mdux-meduic rather than in the recipe; please report it with the recipe attached";
+        diagnostics.push_back(std::move(internal));
+        return {};
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -66,29 +115,7 @@ int main(int argc, char** argv) {
 
     const std::string& recipePath = invocation.mode == cli::Mode::Bake ? invocation.bake.recipe : invocation.verify.recipe;
 
-    std::string summary;
-    if (auto outputs = produce(recipePath, diagnostics); outputs.has_value()) {
-        bool ok = false;
-        if (invocation.mode == cli::Mode::Bake) {
-            ok = medui::write(*outputs, invocation.bake.outputDir, diagnostics);
-        } else {
-            // The shared grammar carries two output paths and a screen has three. The goldens
-            // sidecar is not an independent fact: ADR-012 puts all three files in one directory, so
-            // it is read from beside the package rather than named a second time on a command line
-            // where the two could disagree.
-            const std::filesystem::path packagePath{invocation.verify.packagePath};
-            const std::filesystem::path goldensPath = packagePath.parent_path() / "goldens.json";
-            ok                                      = medui::verify(*outputs, packagePath, goldensPath, invocation.verify.reportPath, diagnostics);
-        }
-        if (ok) {
-            summary = std::format("{}: OK ({} {}: {} nodes, {} golden references)",
-                                  medui::compilerToolName,
-                                  invocation.mode == cli::Mode::Bake ? "compiled" : "verified",
-                                  outputs->screenId,
-                                  outputs->nodeCount,
-                                  outputs->goldenCount);
-        }
-    }
+    const std::string summary = compile(invocation, recipePath, diagnostics);
 
     // Both formats go to stdout, matching every other MduX tool: an agent should not have to know
     // which stream each one uses, which is what the shared envelope exists to remove.

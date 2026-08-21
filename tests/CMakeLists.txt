@@ -810,6 +810,14 @@ target_include_directories(medui_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # and a fixture that exists only inside a test cannot be reused by the tool that checks files.
 target_compile_definitions(medui_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 
+# One scenario spawns the compiler rather than calling into it: `medui-compile-cli` is the only place
+# that can show main() rendering a diagnostic envelope and returning a status, rather than letting an
+# exception reach the terminate handler - which is the behaviour an author meets first when a recipe
+# is wrong. Everything else in this suite drives the calls, because a failing assertion then says
+# what was wrong instead of what the exit status was.
+add_dependencies(medui_tools_spec mdux-meduic)
+target_compile_definitions(medui_tools_spec PRIVATE MDUX_MEDUIC_PATH="$<TARGET_FILE:mdux-meduic>")
+
 # The build's own answers for mdux_screen_identifier(), written where EmitTests can read them and
 # compare against identifierForScreen() in the C++ emitter. Both halves are executed, for the reason
 # the shader pair had to learn: a C++ assertion cannot observe a CMake regex, so asserting one half

@@ -387,3 +387,173 @@ const mdux::spec::Register theGovernedDynamicTextTableIsARecipeInput{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register theSlugAndTheScreenNameAreOneScreen{
+    "The artifact slug and the screen name have to be the same screen",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-identity")
+            .Given("recipes whose id is malformed, and whose id names another screen", [] {})
+            .When("each is compiled", [] {})
+            .Then("both are refused before anything is written",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const std::string            recipeText = fixture("textless-screen.toml");
+
+                      // The slug names a directory, an evidence test and a generated C++ identifier.
+                      // `mdux_bake_artifact()` refuses a non-slug at configure time; a compile run
+                      // directly would otherwise write `generated/screen/Textless/`, which no
+                      // registration could ever match.
+                      for (const std::string_view bad : {"Textless", "textless_screen", "-textless"}) {
+                          std::vector<cli::Diagnostic> refused;
+                          const auto                   parsed = md::parseRecipe(std::string{recipeText}.replace(recipeText.find("\"textless-screen\""),
+                                                                                              std::string_view{"\"textless-screen\""}.size(),
+                                                                                              std::format("\"{}\"", bad)),
+                                                              "recipe.toml",
+                                                              refused);
+                          checks.expect(!parsed.has_value(), std::format("the id '{}' is refused", bad));
+                          checks.expect(firstCode(refused) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(refused)));
+                      }
+
+                      // A well-formed slug naming a different screen: the registration would place
+                      // outputs in one directory while the package inside called itself something
+                      // else, and every later consumer would follow one name with nothing to say the
+                      // other exists.
+                      md::Recipe recipe  = textlessRecipe(diagnostics);
+                      recipe.id          = "another-screen";
+                      const auto outputs = md::run(recipe, "recipe.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                      checks.expect(!outputs.has_value(), "an id naming another screen is refused");
+                      checks.expect(firstCode(diagnostics) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(diagnostics)));
+
+                      // Hyphenation is the author's, the word is not: `Textless` may be spelled
+                      // `textless` and nothing else.
+                      std::vector<cli::Diagnostic> accepted;
+                      md::Recipe                   renamed = textlessRecipe(accepted);
+                      renamed.id                           = "textless";
+                      const auto compiled                  = md::run(renamed, "recipe.toml", asBytes(recipeText), repoRoot(), accepted);
+                      checks.expect(compiled.has_value(), std::format("a differently hyphenated slug compiles, first diagnostic '{}'", firstCode(accepted)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aBudgetTheScreenCannotUseIsRefused{
+    "A budget the screen cannot use is a diagnostic, not a termination",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-budget-bounds")
+            .Given("a budget past the 16-bit index width, and an empty budget on a screen with nodes", [] {})
+            .When("each is compiled", [] {})
+            .Then("each is reported against the recipe that declared it",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const std::string  recipeText = fixture("textless-screen.toml");
+
+                      // Both of these reach `ScreenPackage::validate()` if they are not caught here,
+                      // and `buildPackage()` treats a schema failure as a compiler bug and throws -
+                      // so an author's extra digit would terminate the tool rather than produce a
+                      // report.
+                      std::vector<cli::Diagnostic> tooWide;
+                      const auto                   wide = md::parseRecipe(std::string{recipeText}.replace(recipeText.find("maxVertices = 4096"),
+                                                                                        std::string_view{"maxVertices = 4096"}.size(),
+                                                                                        "maxVertices = 70000"),
+                                                        "recipe.toml",
+                                                        tooWide);
+                      checks.expect(!wide.has_value(), "a budget past the 16-bit index width is refused");
+                      checks.expect(firstCode(tooWide) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(tooWide)));
+
+                      std::vector<cli::Diagnostic> empty;
+                      md::Recipe                   recipe = textlessRecipe(empty);
+                      recipe.budget                       = mdux::draw::DrawBudget{};
+                      const auto outputs                  = md::run(recipe, "recipe.toml", asBytes(recipeText), repoRoot(), empty);
+                      checks.expect(!outputs.has_value(), "an empty budget on a screen with nodes is refused");
+                      checks.expect(firstCode(empty) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(empty)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register anInvertedDynamicRangeIsRefused{
+    "An inverted dynamic-text range is refused rather than read as empty",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-inverted-range")
+            .Given("a governed table whose entry descends", [] {})
+            .When("the recipe is parsed", [] {})
+            .Then("it is refused, because an empty range would check nothing",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+
+                      // Fail-open is the reason this one matters. `checkDynamicText()` deliberately
+                      // skips a range with `last < first`, so an inverted entry does not narrow the
+                      // charset - it removes the check, on the table that is the governed upper bound
+                      // for what a Clock or a TextInput can put on screen.
+                      const std::string recipeText = "[package]\n"
+                                                     "id = \"textless\"\n"
+                                                     "source = \"tests/medui/fixtures/accepted-textless.medui\"\n"
+                                                     "surfaceWidth = 400\n"
+                                                     "surfaceHeight = 300\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 64\n"
+                                                     "maxIndices = 96\n"
+                                                     "maxCommands = 8\n"
+                                                     "[dynamicText]\n"
+                                                     "names = [\"TimeSeconds\"]\n"
+                                                     "firstCodePoints = [58]\n"
+                                                     "lastCodePoints = [48]\n";
+
+                      const auto parsed = md::parseRecipe(recipeText, "recipe.toml", diagnostics);
+                      checks.expect(!parsed.has_value(), "a descending range is refused");
+                      checks.expect(firstCode(diagnostics) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(diagnostics)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theExecutableFailsLikeATool{"A malformed recipe makes the executable exit with an envelope, not a crash", "evidence-unit", [] {
+                                                           return speclab::Test("medui-compile-cli")
+                                                               .Given("mdux-meduic and a recipe naming a screen that does not exist", [] {})
+                                                               .When("it is run with --format=json", [] {})
+                                                               .Then("it exits non-zero having printed a diagnostic envelope",
+                                                                     [] {
+                                                                         mdux::spec::Checks checks;
+                                                                         TemporaryDirectory scratch{"mdux-meduic-cli"};
+
+                                                                         // The one scenario that spawns the process rather than calling into the
+                                                                         // library. Everything else here drives the calls, which says more when it
+                                                                         // fails - but nothing at call level can show that `main()` renders an envelope
+                                                                         // and returns a status rather than letting an exception reach the terminate
+                                                                         // handler, and that is exactly the behaviour an author sees first.
+                                                                         const std::filesystem::path recipe = scratch.path() / "recipe.toml";
+                                                                         std::ofstream               out{recipe, std::ios::binary | std::ios::trunc};
+                                                                         out << "[package]\n"
+                                                                                "id = \"missing-screen\"\n"
+                                                                                "source = \"tests/medui/fixtures/no-such-screen.medui\"\n"
+                                                                                "surfaceWidth = 400\n"
+                                                                                "surfaceHeight = 300\n"
+                                                                                "[budget]\n"
+                                                                                "maxVertices = 64\n"
+                                                                                "maxIndices = 96\n"
+                                                                                "maxCommands = 8\n";
+                                                                         out.close();
+
+                                                                         const std::filesystem::path log = scratch.path() / "stdout.txt";
+                                                                         const std::string command = std::format(R"("{}" bake "{}" "{}" --format=json > "{}")",
+                                                                                                                 MDUX_MEDUIC_PATH,
+                                                                                                                 recipe.generic_string(),
+                                                                                                                 (scratch.path() / "out").generic_string(),
+                                                                                                                 log.generic_string());
+                                                                         const int         status  = std::system(command.c_str());
+                                                                         checks.expect(status != 0, "a malformed recipe exits non-zero");
+
+                                                                         const std::string envelope = contentsOf(log);
+                                                                         checks.expect(envelope.contains("mdux-meduic"), "the envelope names the tool");
+                                                                         checks.expect(
+                                                                             envelope.contains("MEDUI-E003"),
+                                                                             std::format("and carries the unreadable-source code, got:\n{}", envelope));
+                                                                         checks.raise();
+                                                                     })
+                                                               .Execute();
+                                                       }};

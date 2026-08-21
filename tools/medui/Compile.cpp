@@ -36,6 +36,45 @@ void report(std::vector<cli::Diagnostic>& diagnostics, Code code, std::string fi
     diagnostics.push_back(diagnose(code, std::move(file), line, 0, std::move(message), std::move(fixHint)));
 }
 
+/// Whether `id` is the lowercase slug an artifact directory, an evidence test name and a generated
+/// C++ identifier are all derived from. `mdux_bake_artifact()` enforces the same shape at configure
+/// time; this is the half that also holds when the compiler is run directly.
+[[nodiscard]] bool isArtifactSlug(std::string_view id) noexcept {
+    const auto lower = [](char c) {
+        return c >= 'a' && c <= 'z';
+    };
+    const auto digit = [](char c) {
+        return c >= '0' && c <= '9';
+    };
+    if (id.empty() || (!lower(id.front()) && !digit(id.front()))) {
+        return false;
+    }
+    return std::ranges::all_of(id, [&](char c) {
+        return lower(c) || digit(c) || c == '-';
+    });
+}
+
+/// A screen name and an artifact slug reduced to the one word they must both spell: lowercase, with
+/// every separator removed.
+///
+/// A weaker check than deriving one from the other, and deliberately so. A slug cannot be derived
+/// injectively from a screen name - a name may carry `-` and `_`, and lowercasing is not injective
+/// across case - which is why ADR-012 has the recipe *record* the mapping rather than compute it.
+/// What must not happen is the two drifting apart: `generated/screen/foo/` holding a package that
+/// calls itself `bar`. Comparing the reduced forms catches exactly that, and leaves an author free
+/// to hyphenate a slug as they like.
+[[nodiscard]] std::string reduced(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        if (c == '-' || c == '_') {
+            continue;
+        }
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return out;
+}
+
 [[nodiscard]] std::span<const std::byte> asBytes(const std::string& text) noexcept {
     return {reinterpret_cast<const std::byte*>(text.data()), text.size()};
 }
@@ -185,6 +224,20 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
         return std::nullopt;
     }
 
+    // The slug shape ADR-012 fixes, checked here rather than left to `mdux_bake_artifact()`'s
+    // FATAL_ERROR: the id names the directory, the evidence test and the emitted C++ identifier, and
+    // a compile run outside CMake would otherwise write `generated/screen/NeuroSense500/`, which no
+    // registration could ever match.
+    if (!isArtifactSlug(recipe.id)) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               std::format("the id '{}' is not a lowercase slug", recipe.id),
+               "an artifact id matches ^[a-z0-9][a-z0-9-]*$ - it names a directory, a test and a C++ identifier");
+        return std::nullopt;
+    }
+
     const toml::Table* budget = document.table("budget");
     if (budget == nullptr) {
         report(diagnostics,
@@ -198,9 +251,10 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     }
 
     try {
-        const std::int64_t vertices = budget->require("maxVertices").asInteger();
-        const std::int64_t indices  = budget->require("maxIndices").asInteger();
-        const std::int64_t commands = budget->require("maxCommands").asInteger();
+        const std::int64_t vertices   = budget->require("maxVertices").asInteger();
+        const std::int64_t indices    = budget->require("maxIndices").asInteger();
+        const std::int64_t commands   = budget->require("maxCommands").asInteger();
+        const std::size_t  budgetLine = budget->require("maxVertices").line();
         for (const std::int64_t value : {vertices, indices, commands}) {
             if (value < 0 || value > std::numeric_limits<std::uint32_t>::max()) {
                 report(diagnostics,
@@ -210,6 +264,18 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        std::format("a draw budget entry is {}, which is outside the range a budget holds", value));
                 return std::nullopt;
             }
+        }
+        // The 16-bit index bound, refused while the recipe can still be told about it. Left to
+        // `ScreenPackage::validate()` it becomes `BudgetExceedsIndexWidth` reported to a caller that
+        // treats a schema failure as a compiler bug and throws - so an author's extra digit would
+        // terminate the tool instead of producing a diagnostic.
+        if (vertices > mdux::draw::maxIndexableVertices) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   budgetLine,
+                   std::format("maxVertices is {}, and a 16-bit index cannot address more than {}", vertices, mdux::draw::maxIndexableVertices));
+            return std::nullopt;
         }
         recipe.budget = mdux::draw::DrawBudget{.maxVertices = static_cast<std::uint32_t>(vertices),
                                                .maxIndices  = static_cast<std::uint32_t>(indices),
@@ -293,6 +359,21 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        std::format("[dynamicText] entry '{}' names the range {}..{}, which is outside Unicode", names[index], first, last));
                 return std::nullopt;
             }
+            // A descending range is refused rather than read as empty, and it is the one entry here
+            // that would be fail-open if it were wrong. The budget stage deliberately skips a range
+            // with `last < first` - what an author wrote is a name, and the shape of the table behind
+            // it is not theirs to fix - so an inverted range produces *no* charset check at all for a
+            // Clock or a TextInput using that rule, while this table is the governed upper bound on
+            // what the runtime can put on screen.
+            if (first > last) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[dynamicText] entry '{}' names the descending range {}..{}", names[index], first, last),
+                       "an inverted range checks nothing, so it is refused rather than read as empty");
+                return std::nullopt;
+            }
             DynamicText rule;
             rule.name = names[index];
             rule.produces.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
@@ -374,6 +455,79 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
     return locales;
 }
 
+/**
+ * @brief The cross-package invariants `checkTextBudgets()` would otherwise throw over.
+ *
+ * Its contract is that `locales` is *exactly* the set the font approves - one entry per tag, none
+ * missing, none repeated, none outside it - and that every package addresses that font's atlas. Each
+ * of those is decided by paths an author typed into a recipe, so each is a diagnostic here rather
+ * than a `std::logic_error` from a library whose caller is supposed to be code.
+ *
+ * The omission is the dangerous one and the reason the library refuses it: a budget is a claim about
+ * the worst approved translation, so a compile checked against only the locale someone happened to
+ * list would certify a screen against a set nobody approved - and the missing German or Finnish
+ * string is exactly the one that overflows the box.
+ */
+[[nodiscard]] bool checkLocaleWiring(const Recipe&                  recipe,
+                                     const mdux::font::FontPackage& font,
+                                     std::span<const LoadedLocale>  locales,
+                                     std::string_view               recipePath,
+                                     std::vector<cli::Diagnostic>&  diagnostics) {
+    if (locales.empty()) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "this screen draws text and the recipe lists no text package",
+               "[text] needs one committed package per locale the font approves");
+        return false;
+    }
+
+    std::vector<std::string_view> seen;
+    seen.reserve(locales.size());
+    for (const LoadedLocale& locale : locales) {
+        if (locale.package.atlasId != font.id) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("the text package for '{}' was baked against the font '{}', and the recipe names '{}'",
+                               locale.package.locale,
+                               locale.package.atlasId,
+                               font.id),
+                   "a package measured against one atlas cannot be checked against another");
+            return false;
+        }
+        if (std::ranges::find(seen, std::string_view{locale.package.locale}) != seen.end()) {
+            report(diagnostics, Code::RecipeMissingMember, std::string{recipePath}, 0, std::format("the locale '{}' is listed twice", locale.package.locale));
+            return false;
+        }
+        if (std::ranges::find(font.locales, locale.package.locale) == font.locales.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("the locale '{}' is not one the font package approves", locale.package.locale));
+            return false;
+        }
+        seen.push_back(locale.package.locale);
+    }
+
+    for (const std::string& approved : font.locales) {
+        if (std::ranges::find(seen, std::string_view{approved}) == seen.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("the font approves '{}' and the recipe lists no text package for it", approved),
+                   "a budget checked against fewer locales than were approved is a claim nobody made");
+            return false;
+        }
+    }
+
+    return true;
+}
+
 }  // namespace
 
 std::optional<CompileOutputs> run(const Recipe&                 recipe,
@@ -395,12 +549,29 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     ParseResult parsed = parse(textOf(*sourceBytes), recipe.source);
     if (!parsed.diagnostics.empty() || !parsed.screen.has_value()) {
         diagnostics.insert(diagnostics.end(), parsed.diagnostics.begin(), parsed.diagnostics.end());
-        if (diagnostics.empty()) {
+        // Guarded on the parser's own diagnostics, not on the caller's vector: `diagnostics` is an
+        // out-parameter a caller may hand over already populated, and then a parse that produced
+        // neither a screen nor a reason would have returned nullopt with nothing of its own to say.
+        if (parsed.diagnostics.empty()) {
             report(diagnostics, Code::SourceUnreadable, recipe.source, 0, "the source produced no screen and no diagnostic");
         }
         return std::nullopt;
     }
     const ast::Screen& screen = *parsed.screen;
+
+    // The slug and the screen name have to be the same screen. Without this the registration can
+    // put outputs in `generated/screen/foo/` while the package inside calls itself `bar`, and every
+    // later consumer - the evidence test, the emitted identifier, a requirement trace - follows one
+    // of the two names with nothing to say the other exists.
+    if (reduced(recipe.id) != reduced(screen.name)) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               std::format("the recipe compiles 'Screen {}' as the artifact '{}', which is a different name", screen.name, recipe.id),
+               "the slug is the screen's name in lowercase; hyphenation is free, the word is not");
+        return std::nullopt;
+    }
 
     // The recipe has to be complete for *this* screen. Asked of the budget stage's own module rather
     // than answered here, so the two cannot disagree about what counts as text.
@@ -428,6 +599,14 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             return std::nullopt;
         }
         locales = std::move(*loaded);
+
+        // `checkTextBudgets()` classifies every one of these as a *caller wiring* error and throws
+        // `std::logic_error`, which is right for a library whose caller is code. Here the caller is
+        // a recipe an author wrote, so each one is diagnosed instead: a mistyped path or a forgotten
+        // locale must produce a report, not terminate the compiler.
+        if (!checkLocaleWiring(*font, locales, recipePath, diagnostics)) {
+            return std::nullopt;
+        }
     }
 
     std::vector<mdux::text::TextPackage> textPackages;
@@ -487,6 +666,21 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             diagnostics.insert(diagnostics.end(), budgets.diagnostics.begin(), budgets.diagnostics.end());
             return std::nullopt;
         }
+    }
+
+    // The budget the recipe declared has to be usable for the screen that came out of the solver.
+    // `ScreenPackage::validate()` refuses an empty budget on a screen with nodes - the first
+    // rectangle would be turned away and the frame would silently be blank - and `buildPackage()`
+    // treats a schema failure as a compiler bug and throws. So the recipe is told here, where it can
+    // still be corrected.
+    if (!layout.nodes.empty() && (recipe.budget.maxVertices == 0 || recipe.budget.maxIndices == 0 || recipe.budget.maxCommands == 0)) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               std::format("the budget is empty and this screen resolves to {} nodes", layout.nodes.size()),
+               "a screen with nodes needs room for at least one rectangle, or every draw call it makes is refused");
+        return std::nullopt;
     }
 
     // 6. Goldens, from the resolved screen. Called rather than re-derived: ADR-012 decision 4 makes
