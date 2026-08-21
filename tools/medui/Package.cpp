@@ -90,7 +90,21 @@ constexpr std::string_view schemaRefused = "SCP005";
         if (element == nullptr) {
             throw std::logic_error(std::format("field '{}' on {} holds an empty list element", name, node.component));
         }
-        names.push_back(element->text);
+        // Checked for the same reason `textOf()` checks: an element of some other domain carries no
+        // text, so taking it silently would put an empty name in a state key and surface as the
+        // schema refusing the package - a confusing report of a bypassed gate rather than a clear one.
+        switch (element->kind) {
+            case ast::ValueKind::String:
+            case ast::ValueKind::TextKey:
+            case ast::ValueKind::ImageRef:
+            case ast::ValueKind::ColorToken:
+            case ast::ValueKind::Identifier:
+                names.push_back(element->text);
+                break;
+            default:
+                throw std::logic_error(
+                    std::format("field '{}' on {} lists a value that is not a name: semantic analysis is a required gate", name, node.component));
+        }
     }
     return names;
 }

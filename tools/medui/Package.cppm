@@ -30,8 +30,15 @@
  * reason is not style. A `std::string` short enough for the small-string optimisation stores its
  * characters inside the object, so moving that object moves the characters and every `string_view`
  * onto them dangles. A deque never relocates an element it already holds, and the container
- * requirements keep references valid across the deque's own move - so a document may be returned by
- * value, which every function here does, without invalidating the package it hands out.
+ * requirements keep references to its elements valid across both the deque's move construction and
+ * its move assignment - the latter because `std::allocator` propagates on move assignment, which
+ * makes that operation an adoption of the existing storage rather than a relocation of elements. So
+ * a document may be returned by value, which every function here does, and move-assigned into a
+ * result, which `readPackage()` does, without invalidating the package it hands out.
+ *
+ * That is the whole justification for the defaulted move operations on a type full of views, so it
+ * is asserted rather than argued: a scenario moves a document both ways and reads every name back
+ * through the package afterwards.
  *
  * Copying is deleted for the same reason, stated as a rule rather than left to be discovered: a
  * copied document would hold copied strings while its nodes still viewed the original's. There is no
@@ -124,9 +131,12 @@ public:
 
     ScreenDocument(const ScreenDocument&)            = delete;
     ScreenDocument& operator=(const ScreenDocument&) = delete;
-    ScreenDocument(ScreenDocument&&)                 = default;
-    ScreenDocument& operator=(ScreenDocument&&)      = default;
-    ~ScreenDocument()                                = default;
+
+    /// Moving is safe, and not by accident: see the module comment for why a deque's elements
+    /// survive both move operations, and `medui-package-survives-a-move` for the assertion of it.
+    ScreenDocument(ScreenDocument&&)            = default;
+    ScreenDocument& operator=(ScreenDocument&&) = default;
+    ~ScreenDocument()                           = default;
 
     /// The screen, as the device's own type. Views this document; valid while it lives.
     [[nodiscard]] mdux::medui::ScreenPackage package() const noexcept;

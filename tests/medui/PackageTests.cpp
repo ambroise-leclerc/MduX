@@ -434,3 +434,45 @@ const mdux::spec::Register aBypassedGateIsARefusalNotADiagnostic{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register aMovedDocumentStillOwnsItsText{
+    "A moved document still owns every name its package views",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-package-survives-a-move")
+            .Given("a compiled screen whose names are short enough to live inside their strings", [] {})
+            .When("the document is move-constructed and then move-assigned", [] {})
+            .Then("every name reads back unchanged through the package",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The small-string optimisation is the whole hazard: a name short enough to
+                      // live inside its `std::string` moves with the object, so this asserts what
+                      // the deque is chosen for rather than leaving it as an argument in a comment.
+                      // `writePackage()` reads every name and every span, so comparing the bytes
+                      // before and after a move exercises all of them at once.
+                      const std::string before = md::writePackage(everyComponent().package());
+
+                      // Initialising from the helper's return value would elide the move entirely
+                      // and assert nothing, so the source is named first and moved from explicitly.
+                      md::ScreenDocument source = everyComponent();
+                      md::ScreenDocument moved{std::move(source)};
+                      md::ScreenDocument assigned;
+                      assigned = std::move(moved);  // the operation readPackage() performs
+
+                      const ms::ScreenPackage package = assigned.package();
+                      checks.expect(package.validate().has_value(), "the moved screen still satisfies its schema");
+                      checks.expect(md::writePackage(package) == before, "every name and span survives both moves unchanged");
+
+                      // A state key list is a span into storage the document owns separately from
+                      // its text, so it is worth naming rather than trusting the byte comparison.
+                      if (const auto* status = std::get_if<ms::StatusIndicatorSpec>(&node(package, "state").payload)) {
+                          checks.expect(status->stateKeys.size() == 2 && status->stateKeys.front() == "STR-OK",
+                                        "the per-state keys still read back after the move");
+                      } else {
+                          checks.expect(false, "the state node holds a StatusIndicator spec");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
