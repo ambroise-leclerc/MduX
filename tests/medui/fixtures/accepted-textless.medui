@@ -1,0 +1,43 @@
+// A screen that draws no text, for the compiler driver's happy path (#198).
+//
+// Every node here is a component that paints pixels rather than characters: a Row background, an
+// Image, a VulkanViewport and a SignalTrace. That is what makes it compilable without a font
+// package and without an approved locale - `needsTextBudget()` answers false for it, so the recipe
+// needs no [text] table and the budget stage has nothing to measure.
+//
+// The SignalTrace is positioned, which is the other half of what this fixture is for: an explicitly
+// positioned node is pinned by a golden reference, so `goldens.json` carries one entry rather than
+// being empty and proving nothing.
+Screen TextlessScreen {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 400px, 300px;
+
+    Row {
+        id: topbar;
+        height: 40px;
+        background: Theme.Colors.TopbarBackground;
+
+        Image {
+            id: logo;
+            width: 120px;
+            height: 40px;
+            source: img("IMG-LOGO");
+        }
+    }
+
+    VulkanViewport {
+        id: scope;
+        width: 400px;
+        height: 160px;
+        stream_source: "ENDOSCOPE";
+    }
+
+    SignalTrace {
+        id: ecg;
+        width: 400px;
+        height: 100px;
+        position: 0px, 200px;
+        stream_source: "ECG_LEAD_II";
+        color: Theme.Colors.Nominal;
+    }
+}

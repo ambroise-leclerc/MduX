@@ -275,8 +275,9 @@ endif()
 # integer-only bounded layout solver, the text-budget check that measures a resolved box against the
 # widest approved translation (#195), the golden references that say where safety-critical content
 # must appear (#196), and the compiled-screen document with the canonical JSON it is committed as.
-# The mdux-meduic executable with its mdux_compile_screen() registration is #198, so there is still
-# no bake call site. Every later stage adds sources to this target rather than inventing another.
+# At S9 (#198) the compiler driver joins them: one file fixing the order the stages run in, the
+# recipe model, and the bake report. mdux_compile_screen() and the first committed screen artifact
+# are the second half of #198, so there is still no bake call site.
 #
 # The package stage reaches mdux.evidence.json and mdux.medui.schema through MduX::ToolsCommon's
 # link to MduX::Core, which is what the acceptance criterion on #197 asks for: the host compiler and
@@ -303,6 +304,7 @@ target_sources(MduXMeduiLib
             medui/Goldens.cppm
             medui/Package.cppm
             medui/Emit.cppm
+            medui/Compile.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
@@ -313,6 +315,7 @@ target_sources(MduXMeduiLib
         medui/Goldens.cpp
         medui/Package.cpp
         medui/Emit.cpp
+        medui/Compile.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
@@ -332,6 +335,26 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXMeduiLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+# The compiler (issue #198). Split library-and-executable like every other baker, so tests drive
+# run()/write()/verify() as calls rather than spawning a process and asserting an exit status.
+add_executable(mdux-meduic medui/MeduicMain.cpp)
+target_link_libraries(mdux-meduic PRIVATE MduX::MeduiLib MduX_warnings)
+
+set_target_properties(mdux-meduic
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-meduic PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-meduic PRIVATE /experimental:module /std:c++latest)
 endif()
 
 # The screen emitter (issue #197). Its own executable rather than a mode of the compiler, for the

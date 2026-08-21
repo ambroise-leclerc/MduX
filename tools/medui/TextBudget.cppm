@@ -104,6 +104,7 @@ import std;
 import mdux.font.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
+import mdux.tools.medui.ast;
 import mdux.tools.medui.layout;
 
 export namespace mdux::tools::medui {
@@ -156,10 +157,14 @@ struct DynamicTextRule {
  * would overflow on a device with the compiler's blessing. Requiring the whole set makes that
  * particular silence impossible.
  */
+// Every member carries a default initialiser. `-Wmissing-field-initializers` is an error in this
+// tree, so a type whose optional members still have to be spelled at every call site is a trap - and
+// an omitted `dynamicText` is fail-closed anyway: a name with no rule behind it is `MEDUI-E053`
+// rather than a name silently accepted.
 struct TextBudgetInputs {
     const mdux::font::FontPackage*   font{nullptr};
-    std::span<const LocaleText>      locales;
-    std::span<const DynamicTextRule> dynamicText;
+    std::span<const LocaleText>      locales{};
+    std::span<const DynamicTextRule> dynamicText{};
 };
 
 /// The ink one baked run paints, in surface pixels.
@@ -225,5 +230,19 @@ struct TextBudgetResult {
  * @throws std::logic_error if `inputs.font` is null, or if any gate above was bypassed.
  */
 [[nodiscard]] TextBudgetResult checkTextBudgets(const LayoutResult& layout, std::string file, TextBudgetInputs inputs);
+
+/**
+ * @brief Whether this screen has anything for the budget stage to measure.
+ *
+ * True when the screen carries a text key, or a field whose value names a dynamic-text source -
+ * `Clock`'s `format:` and `TextInput`'s `charset:`, the two the table in this module's
+ * implementation lists. Both are things `checkTextBudgets()` checks and nothing else does.
+ *
+ * Exported so a compiler driver can decide whether a recipe *must* supply a font package and its
+ * approved locales, rather than deciding by inspecting the screen itself. The list of dynamic-text
+ * fields would otherwise exist in two places, and the second copy is the one that would go stale the
+ * day a third field joins them.
+ */
+[[nodiscard]] bool needsTextBudget(const ast::Screen& screen);
 
 }  // namespace mdux::tools::medui
