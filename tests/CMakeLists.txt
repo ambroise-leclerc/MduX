@@ -684,13 +684,48 @@ mdux_discover_tests(text_tools_spec)
 # decision 3 puts `static_assert(package.validate().has_value())` in every generated screen, so
 # compile-time validation is a promise the device build depends on, and one no runtime test can
 # make on its behalf.
+# The emitted C++ for the test corpus screen (#197). Build-tree only, never committed - see
+# cmake/MduXScreenEmit.cmake. The package it renders is a fixture rather than an artifact under
+# generated/, because no screen is baked there until #198 registers one; the byte-comparison that
+# keeps the fixture honest is `medui-screen-emit-fixture-is-current` in medui_tools_spec, which
+# recompiles the source and compares.
+include(${CMAKE_SOURCE_DIR}/cmake/MduXScreenEmit.cmake)
+mdux_emit_screen_package(
+    ID every-component
+    PACKAGE tests/medui/fixtures/every-component-package.json
+    OUT_MODULE MDUX_EVERY_COMPONENT_SCREEN_MODULE
+    OUT_DIR MDUX_GENERATED_SCREEN_DIR
+)
+
 add_executable(medui_spec
     medui/MeduiSpecMain.cpp
     medui/SchemaTests.cpp
+    medui/GeneratedScreenTests.cpp
+    medui/GeneratedScreenModuleConsumer.cpp
+    medui/GeneratedScreenHeaderConsumer.cpp
 )
 
+# Compiling both emitted forms in one binary is #197's acceptance criterion, not incidental. It
+# works because the module form is attached to a named module and the header form is not, so they
+# are distinct entities that can coexist; GeneratedScreenTests then asserts they describe one
+# screen. The generated module needs its own named file set, because the default CXX_MODULES set's
+# base directory is this source directory and a generated module lives in the build tree.
+target_sources(medui_spec
+    PRIVATE
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_EVERY_COMPONENT_SCREEN_MODULE}
+)
+add_dependencies(medui_spec emit-screen-every-component)
+
+# MduX::Core and no host-tools module: a device build reaching a compiled screen through generated
+# code links no compiler and parses nothing, and this target linking is the evidence for it.
 target_link_libraries(medui_spec PRIVATE MduX::Core speclab::speclab)
-target_include_directories(medui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(medui_spec PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MDUX_GENERATED_SCREEN_DIR}
+)
 
 set_target_properties(medui_spec
     PROPERTIES
@@ -726,6 +761,11 @@ mdux_discover_tests(medui_spec)
 # ADR-011 fixes for golden references in one screen - including the node that matches both rules and
 # must therefore appear exactly once.
 #
+# EmitTests (#197) covers everything that has to hold before a compiler sees the generated source:
+# that the committed fixture package is still what compiling its source produces, that both halves of
+# the filename rule agree, and that a malformed package is refused rather than rendered. The emitted
+# C++ itself is compiled and compared in medui_spec, which links MduX::Core only.
+#
 # PackageTests (#197) reads tests/medui/fixtures/accepted-every-component.medui, a screen carrying
 # all eleven compiled payloads, and round-trips it through canonical JSON. The writer and the reader
 # spell each member name separately, so the scenario executes both directions over one screen rather
@@ -739,6 +779,7 @@ add_executable(medui_tools_spec
     medui/TextBudgetTests.cpp
     medui/GoldenTests.cpp
     medui/PackageTests.cpp
+    medui/EmitTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
@@ -748,6 +789,20 @@ target_include_directories(medui_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # open rather than string literals - #200's mdux-medui-check will be pointed at the same corpus,
 # and a fixture that exists only inside a test cannot be reused by the tool that checks files.
 target_compile_definitions(medui_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+# The build's own answers for mdux_screen_identifier(), written where EmitTests can read them and
+# compare against identifierForScreen() in the C++ emitter. Both halves are executed, for the reason
+# the shader pair had to learn: a C++ assertion cannot observe a CMake regex, so asserting one half
+# and calling it consistent with the other let the two drift on the leading-digit rule.
+set(mdux_screen_identifier_ids "every-component" "neurosense-500" "plain" "2d" "a.b-c" "already_fine" "ui.v2")
+set(mdux_screen_identifier_lines "")
+foreach(mdux_screen_identifier_id IN LISTS mdux_screen_identifier_ids)
+    mdux_screen_identifier(mdux_screen_identifier_value "${mdux_screen_identifier_id}")
+    string(APPEND mdux_screen_identifier_lines "${mdux_screen_identifier_id}\t${mdux_screen_identifier_value}\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/screen_identifier_parity.tsv" "${mdux_screen_identifier_lines}")
+target_compile_definitions(medui_tools_spec PRIVATE
+    MDUX_SCREEN_IDENTIFIER_PARITY_FILE="${CMAKE_CURRENT_BINARY_DIR}/screen_identifier_parity.tsv")
 
 set_target_properties(medui_tools_spec
     PROPERTIES
