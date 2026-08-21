@@ -524,19 +524,23 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
  * function a traceability export walks rather than a field every node pretends to have.
  */
 [[nodiscard]] constexpr std::string_view requirementOf(const CompiledNode& node) noexcept {
-    if (const auto* spec = std::get_if<ButtonSpec>(&node.payload)) {
+    // Copied for the reason `validatePayload()` documents at length: `std::get_if` over a subobject
+    // of an `inline` variable is refused as a constant expression under `-fsanitize=undefined`, and
+    // a traceability export walking a generated screen at compile time would hit exactly that.
+    const NodePayload payload = node.payload;
+    if (const auto* spec = std::get_if<ButtonSpec>(&payload)) {
         return spec->requirement;
     }
-    if (const auto* spec = std::get_if<CriticalButtonSpec>(&node.payload)) {
+    if (const auto* spec = std::get_if<CriticalButtonSpec>(&payload)) {
         return spec->requirement;
     }
-    if (const auto* spec = std::get_if<NumericDisplaySpec>(&node.payload)) {
+    if (const auto* spec = std::get_if<NumericDisplaySpec>(&payload)) {
         return spec->requirement;
     }
-    if (const auto* spec = std::get_if<StatusIndicatorSpec>(&node.payload)) {
+    if (const auto* spec = std::get_if<StatusIndicatorSpec>(&payload)) {
         return spec->requirement;
     }
-    if (const auto* spec = std::get_if<TextInputSpec>(&node.payload)) {
+    if (const auto* spec = std::get_if<TextInputSpec>(&payload)) {
         return spec->requirement;
     }
     return {};
@@ -627,6 +631,23 @@ struct ScreenPackage {
  *
  * Optional fields are checked when present and ignored when empty, because "absent" is a legal
  * value the dictionary allows for `requirement` on a `Button` or `charset` on a `TextInput`.
+ *
+ * ## Why the payload is taken by value
+ *
+ * Not an oversight, and not a style preference. `std::get_if` takes the address of its argument, and
+ * GCC 16.1 under `-fsanitize=undefined` refuses `&object != nullptr` - the comparison inside
+ * `get_if` - as a constant expression when `object` is a subobject of an `inline` variable with
+ * external linkage. That is exactly the shape #197's generated screens have, and exactly what their
+ * `static_assert(screen.validate().has_value())` evaluates, so the sanitizer leg failed to compile a
+ * screen every other configuration accepted.
+ *
+ * The standard is not ambiguous here: the address of an object with static storage duration is a
+ * core constant expression whatever instruments the translation unit, so this is a compiler defect
+ * rather than a rule anyone should design around. Copying into a parameter gives `get_if` an
+ * automatic object to point at, which every configuration accepts. The copy costs nothing that
+ * matters - every alternative is trivially copyable, so it neither allocates nor throws - and
+ * `medui-schema-inline-screen-validates` in the schema suite pins the property so a later
+ * simplification back to a reference does not quietly break the sanitizer leg again.
  */
 [[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> requireColor(std::string_view token) noexcept {
     if (const auto named = require(token); !named.has_value()) {
@@ -635,7 +656,7 @@ struct ScreenPackage {
     return checkColor(token);
 }
 
-[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> validatePayload(const NodePayload& payload) noexcept {
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> validatePayload(NodePayload payload) noexcept {
     if (const auto* spec = std::get_if<PanelSpec>(&payload)) {
         // A Panel exists because a Row declared a background, so it always has one.
         return requireColor(spec->colorToken);
