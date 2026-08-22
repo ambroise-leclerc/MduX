@@ -21,9 +21,10 @@ device links without a parser. The first compiled screen is committed under
 `mdux-medui-check` validates a single file while naming the two checks a file on its own cannot
 cover. With #201 the chain reaches pixels: `ScreenPixelTests` renders the committed screen through
 the governed runtime and compares the frame pixel by pixel under lavapipe. What the epic leaves for
-its successors is content rather than path — no text package is baked yet, so a screen carrying
+its successors is content rather than path: no text package is baked yet (#235), so a screen carrying
 `t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
-component as deferred.
+component as deferred (#17). The golden sidecar gains a static consumer in `ScreenPixelTests` and
+still awaits the rendered one ADR-012 describes, which is #16 over content #17 teaches to draw.
 
 | Metric | Count |
 |---|---|

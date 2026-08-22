@@ -161,8 +161,11 @@ carrying `static_assert(screen.validate().has_value())`, a governed runtime turn
 commands without allocating, and `mdux.render.vulkan` draws them. `ScreenPixelTests` walks the whole
 chain and compares the result pixel by pixel under lavapipe in CI.
 
-Two limits are worth stating beside that. No text package is baked in this repository yet, so a
-screen carrying `t("STR-KEY")` cannot be compiled end to end; and the runtime draws a `Panel` while
+Two limits are worth stating beside that. A **font** package is baked and committed
+(`generated/font/dejavu-ui/`), but no **text** package is — the per-locale glyph runs a screen's
+`t("STR-KEY")` resolves against, which would live under `generated/text/`. `mdux-textbake` can
+produce one and no recipe registers one, so a screen carrying a text key cannot be compiled end to
+end ([#235](https://github.com/ambroise-leclerc/MduX/issues/235)); and the runtime draws a `Panel` while
 counting every other component as deferred, because text needs that package and live-data components
 have no geometry until a frame exists. The committed screen therefore renders one bar — from a file
 an author wrote, through every stage, with nothing hand-carried between them.

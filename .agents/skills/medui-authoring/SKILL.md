@@ -30,9 +30,10 @@ and a `.hpp` carrying `static_assert(screen.validate().has_value())`, so a malfo
 build error rather than a startup failure (#197). A governed runtime draws one without allocating
 (#199), and `mdux-medui-check` validates a single file (#200).
 
-Two limits are worth knowing before you write a screen. **No text package is baked in this
-repository yet**, so a screen carrying `t("STR-KEY")` cannot be compiled end to end — that is #201,
-the last child of the epic. And the runtime draws a `Panel`; every other component is visited,
+Two limits are worth knowing before you write a screen. A font package is baked; **no text package
+is** — the per-locale glyph runs a `t("STR-KEY")` resolves against — so a screen carrying a text key
+cannot be compiled end to end
+([#235](https://github.com/ambroise-leclerc/MduX/issues/235)). And the runtime draws a `Panel`; every other component is visited,
 counted in `FrameStats::deferred` and left undrawn, because text needs that package and live-data
 components have no geometry until the frame does.
 

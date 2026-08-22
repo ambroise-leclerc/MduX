@@ -281,6 +281,11 @@ target_sources(offscreen_tests
             FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
 )
 add_dependencies(offscreen_tests emit-shader-mdux-ui emit-screen-endoscope-monitor)
+
+# ScreenPixelTests reads the committed golden sidecar under generated/, a fixed location in the
+# source tree rather than anything the build produces. It reads only; the source-tree-cleanliness
+# gate in CI stays satisfied.
+target_compile_definitions(offscreen_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 target_link_libraries(offscreen_tests PRIVATE MduX::MduX)
 target_include_directories(offscreen_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
