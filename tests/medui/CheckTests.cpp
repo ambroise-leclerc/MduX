@@ -22,6 +22,7 @@ import mdux.tools.medui.check;
 import mdux.tools.medui.diagnostics;
 
 #include "../framework/SpecLabBridge.hpp"
+#include "../framework/TemporaryDirectory.hpp"
 
 namespace {
 
@@ -59,30 +60,6 @@ namespace cli = mdux::tools::cli;
     return rendered.empty() ? std::string{"<nothing>"} : rendered;
 }
 
-/// A directory this scenario owns, removed when it is done with it.
-class TemporaryDirectory {
-public:
-    explicit TemporaryDirectory(std::string_view name) : path_{std::filesystem::temp_directory_path() / name} {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-        std::filesystem::create_directories(path_, code);
-    }
-
-    TemporaryDirectory(const TemporaryDirectory&)            = delete;
-    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
-
-    ~TemporaryDirectory() {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
 
 /// One shell command line, spelled the way the platform's shell will actually read it.
 ///
@@ -230,8 +207,8 @@ const mdux::spec::Register theToolExitsAndSpeaksTheSharedEnvelope{
             .When("it is run with --format=json", [] {})
             .Then("it exits non-zero having printed the envelope every MduX tool emits",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-medui-check-cli"};
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-medui-check-cli"};
 
                       const std::filesystem::path log     = scratch.path() / "stdout.txt";
                       const std::string           broken  = fixturePath("rejected-safety-without-requirement.medui").generic_string();
@@ -260,8 +237,8 @@ const mdux::spec::Register aCleanFileExitsZero{
             .When("the tool is run over it", [] {})
             .Then("it exits zero, because a note is not a failure",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-medui-check-clean"};
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-medui-check-clean"};
 
                       // The half that would be easy to get wrong: the notes about uncovered checks
                       // travel in the same envelope as findings, and an exit status keyed off the

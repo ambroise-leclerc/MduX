@@ -25,6 +25,7 @@ import mdux.tools.medui.package;
 import mdux.tools.medui.parser;
 
 #include "../framework/SpecLabBridge.hpp"
+#include "../framework/TemporaryDirectory.hpp"
 
 namespace {
 
@@ -48,29 +49,6 @@ constexpr mdux::draw::DrawBudget fixtureBudget{.maxVertices = 4096, .maxIndices 
     return buffer.str();
 }
 
-/// A directory this scenario owns, removed when it is done with it.
-class TemporaryDirectory {
-public:
-    explicit TemporaryDirectory(std::string_view name) : path_{std::filesystem::temp_directory_path() / name} {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-    }
-
-    TemporaryDirectory(const TemporaryDirectory&)            = delete;
-    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
-
-    ~TemporaryDirectory() {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
 
 [[nodiscard]] std::string contentsOf(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
@@ -235,10 +213,8 @@ const mdux::spec::Register aMalformedPackageIsNotRendered{
             .When("the emitter is pointed at it", [] {})
             .Then("nothing is rendered and the reader's own diagnostic is reported",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-screenemit-malformed"};
-                      std::error_code    code;
-                      std::filesystem::create_directories(scratch.path(), code);
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-screenemit-malformed"};
 
                       std::string       edited = fixture("every-component-package.json");
                       const std::size_t at     = edited.find("\"surfaceWidth\": 800");
@@ -327,10 +303,8 @@ const mdux::spec::Register aDecodedControlCharacterCannotEndTheLiteral{
             .When("it is compiled and rendered", [] {})
             .Then("the generated literal carries an escape rather than a line break",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-screenemit-escapes"};
-                      std::error_code    code;
-                      std::filesystem::create_directories(scratch.path(), code);
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-screenemit-escapes"};
 
                       // The lexer decodes `\n` inside a source string and the dictionary accepts an
                       // unrestricted String for `requirement`, so this screen is legal, its package
@@ -423,10 +397,8 @@ const mdux::spec::Register aReservedIdentifierIsRefused{
             .When("it is rendered", [] {})
             .Then("the emitter refuses rather than generating a reserved name",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-screenemit-reserved"};
-                      std::error_code    code;
-                      std::filesystem::create_directories(scratch.path(), code);
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-screenemit-reserved"};
 
                       // `a--b` maps to `screen_a__b`, and `__` is reserved to the implementation
                       // everywhere. Collapsing the run would fix the name and break injectivity, so
@@ -464,10 +436,8 @@ const mdux::spec::Register aProvenanceCommentCannotBeEnded{
             .When("it is rendered", [] {})
             .Then("the id appears escaped inside the comment, on one line",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-screenemit-comment"};
-                      std::error_code    code;
-                      std::filesystem::create_directories(scratch.path(), code);
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-screenemit-comment"};
 
                       // The schema asks only that an id be non-empty, and canonical JSON carries a
                       // control character as an escape, so this package is valid on both counts. A

@@ -62,13 +62,6 @@ struct ComponentRule {
 [[nodiscard]] std::span<const ComponentRule> componentDictionary() noexcept;
 
 /**
- * @brief External name tables against which one screen is checked.
- *
- * Text packages are prevalidated, one per approved locale, with unique locale names. The
- * analyzer reads only each package's locale and run IDs. Theme tokens are full names such as
- * `Theme.Colors.Title`; their concrete colour values belong to the later emitter stage.
- */
-/**
  * @brief Whether a caller is entitled to skip the locale-completeness check.
  *
  * The default is the one that fails closed. An empty `textPackages` span under `Required` means an
@@ -86,6 +79,13 @@ enum class LocalePolicy : std::uint8_t {
     Skipped,   ///< the caller has no approved locale set and accepts that keys go unchecked
 };
 
+/**
+ * @brief External name tables against which one screen is checked.
+ *
+ * Text packages are prevalidated, one per approved locale, with unique locale names. The
+ * analyzer reads only each package's locale and run IDs. Theme tokens are full names such as
+ * `Theme.Colors.Title`; their concrete colour values belong to the later emitter stage.
+ */
 struct SemanticInputs {
     std::span<const std::string_view>        themeTokens;
     std::span<const mdux::text::TextPackage> textPackages;
