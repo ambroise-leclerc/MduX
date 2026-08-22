@@ -267,9 +267,9 @@ const mdux::spec::Register writingIsIdempotent{
             .When("it is written into an empty directory, then written again", [] {})
             .Then("both files hold the rendering, unchanged by the second write",
                   [] {
-                      mdux::spec::Checks           checks;
-                      std::vector<cli::Diagnostic> diagnostics;
-                      TemporaryDirectory           scratch{"mdux-screenemit-write"};
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory scratch{"mdux-screenemit-write"};
 
                       const auto outputs = md::renderScreen(fixturePath("every-component-package.json"), diagnostics);
                       if (!outputs.has_value()) {

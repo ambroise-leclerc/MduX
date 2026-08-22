@@ -278,9 +278,9 @@ const mdux::spec::Register writingAndVerifyingAgree{
             .When("it is written, verified, and verified again after an edit", [] {})
             .Then("all three files appear, the untouched ones verify, and the edited one does not",
                   [] {
-                      mdux::spec::Checks           checks;
-                      std::vector<cli::Diagnostic> diagnostics;
-                      TemporaryDirectory           scratch{"mdux-meduic-write"};
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory scratch{"mdux-meduic-write"};
 
                       const md::Recipe  recipe     = textlessRecipe(diagnostics);
                       const std::string recipeText = fixture("textless-screen.toml");
