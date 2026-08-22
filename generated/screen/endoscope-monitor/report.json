@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "90ace4675f2ba636a950f333310cd997bf19d4496aa0aa05a5c15f55b49a6c7c"
+      "sha256": "c35fd66ae804cb6ac14ea691914f52b3690355fd32a361a14bc46058f257642c"
     }
   ],
   "options": {
