@@ -262,7 +262,7 @@ happened to read.
 - #195 S6 Text-budget validation against every approved locale · _closed_
 - #196 S7 Golden references for safety-critical nodes · _closed_
 - #197 S8 Canonical package and C++ emitters · _closed (PRs #220, #221)_
-- #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #228)_
+- #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
 - #199 S10 Allocation-free screen runtime · **next**
 - #200 S11 `mdux-medui-check`
 - #201 S12 First end-to-end screen

@@ -145,13 +145,18 @@ Six artifacts are committed today:
 | `generated/model/ecg-demo/` | `mdux-mlbake` | `weights.bin` |
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
-| `generated/screen/endoscope-monitor/` | `mdux-meduic` | `goldens.json` |
+| `generated/screen/endoscope-monitor/` | `mdux-meduic` | `package.json` + `goldens.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
-cannot bake vertices, because four of its components draw from live data and their geometry does not
-exist until the frame does. What it bakes instead is layout - where each node is, how much it may
-draw, and which validated token and key it draws with - and a sidecar of golden references saying
-where safety-critical content must appear. Both are reviewable as text, which is the point.
+cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
+`SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and their geometry does not exist
+until the frame does. What `package.json` carries instead is layout: where each node is, how much it
+may draw, and which validated token and key it draws with.
+
+`goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
+different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
+`position:`** in the golden set, which is why the committed screen has one entry: its `SignalTrace`
+is positioned, not annotated. Both files are reviewable as text, which is the point.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an
