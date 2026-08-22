@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "7edbb61c9e6e196bb8f38b9a1339491cf2b2abbf51e47515c9fb37b0df8f32ae"
+      "sha256": "c35fd66ae804cb6ac14ea691914f52b3690355fd32a361a14bc46058f257642c"
     }
   ],
   "options": {
@@ -22,11 +22,11 @@
   "outputs": [
     {
       "path": "goldens.json",
-      "sha256": "d287cf21560be2891a0ab11ba6bcf197cd2295fc20ed900d95ea931aef3bdf4c"
+      "sha256": "60c555cbeceb4e897e5a4302c0d667aaca84dd72d28ef2c13d96178d86eb1a2a"
     },
     {
       "path": "package.json",
-      "sha256": "c0aa463ba4f87185729aaa99870e2497012c4e3506eb5a101fbc166e54433cef"
+      "sha256": "72066d6b6ef6a80c974a99b807a3e5fe7e40aba08fa0d0885eff67e2348554f0"
     }
   ],
   "recipe": {

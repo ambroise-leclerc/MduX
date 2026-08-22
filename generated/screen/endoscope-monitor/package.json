@@ -35,7 +35,7 @@
     },
     {
       "bounds": {
-        "height": 520,
+        "height": 424,
         "width": 1280,
         "x": 0,
         "y": 72
@@ -44,6 +44,22 @@
       "kind": "VulkanViewport",
       "spec": {
         "streamSource": "ENDOSCOPE_PRIMARY"
+      }
+    },
+    {
+      "bounds": {
+        "height": 96,
+        "width": 1280,
+        "x": 0,
+        "y": 496
+      },
+      "id": "insufflation-pressure",
+      "kind": "NumericDisplay",
+      "spec": {
+        "colorToken": "Theme.Colors.ScoreDigits",
+        "requirement": "REQ-EM-001",
+        "source": "INSUFFLATION_PRESSURE",
+        "templateId": "TPL-PRESSURE-MMHG"
       }
     },
     {

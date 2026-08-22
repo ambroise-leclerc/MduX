@@ -29,8 +29,31 @@ Screen EndoscopeMonitor {
     VulkanViewport {
         id: endoscope-view;
         width: 1280px;
-        height: 520px;
+        height: 424px;
         stream_source: "ENDOSCOPE_PRIMARY";
+    }
+
+    // The safety-critical node, and the reason this screen has one: `goldens.json` should describe a
+    // real screen rather than only a test fixture. Annotated and traced, so the sidecar carries an
+    // entry saying where the insufflation reading must appear and in what tint - never what the
+    // number says, because the number is live.
+    //
+    // What that entry does *not* have yet is a verifier reading it against a frame. This component
+    // is deferred by the runtime, so there are no pixels to compare; the check ADR-012 describes
+    // arrives with #16, over content that #17 teaches to draw.
+    //
+    // A NumericDisplay deliberately: it is the one traceable component that carries no text key, so
+    // this screen exercises the annotation rules without needing the text package that does not
+    // exist yet (#201's remaining half, and the reason the runtime draws what it draws).
+    @safety_critical(cv_check: [Bounds, ColorHash])
+    NumericDisplay {
+        id: insufflation-pressure;
+        width: 1280px;
+        height: 96px;
+        requirement: "REQ-EM-001";
+        template: "TPL-PRESSURE-MMHG";
+        source: "INSUFFLATION_PRESSURE";
+        color: Theme.Colors.ScoreDigits;
     }
 
     // Positioned, so its rectangle is pinned by a golden reference: a waveform that drifts off its
