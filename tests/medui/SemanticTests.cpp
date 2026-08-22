@@ -377,13 +377,21 @@ const mdux::spec::Register theLocalePolicyIsAskedForNotInferred{
                       // an approved set containing no locale, so every key is absent from all of
                       // them. A caller who wanted the check skipped and forgot to say so gets a
                       // finding rather than a clean result.
-                      const md::SemanticResult required = md::analyze(*md::parse(source, "policy.medui").screen,
+                      // Parsed once and checked, rather than dereferenced twice on faith: a fixture
+                      // that stopped parsing would crash here instead of failing, and the helper at
+                      // the top of this file already guards exactly this.
+                      const md::ParseResult parsed = md::parse(source, "policy.medui");
+                      if (!parsed.screen || !parsed.diagnostics.empty()) {
+                          throw speclab::core::AssertionFailure("the locale-policy source did not parse", std::source_location::current());
+                      }
+
+                      const md::SemanticResult required = md::analyze(*parsed.screen,
                                                                       "policy.medui",
                                                                       md::SemanticInputs{.themeTokens = themes, .textPackages = none});
                       checks.expect(count(required, md::Code::UnknownTextKey) == 1, "the default policy reports a key with no locale to resolve in");
 
                       const md::SemanticResult skipped = md::analyze(
-                          *md::parse(source, "policy.medui").screen,
+                          *parsed.screen,
                           "policy.medui",
                           md::SemanticInputs{.themeTokens = themes, .textPackages = none, .locales = md::LocalePolicy::Skipped});
                       checks.expect(skipped.ok(), "and the explicit mode skips it");
