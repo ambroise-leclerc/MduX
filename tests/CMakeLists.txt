@@ -877,8 +877,11 @@ endforeach()
 add_test(NAME "screen.recipe.identity"
     COMMAND ${CMAKE_COMMAND} -DCASE=identity
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompileScreenRecipeTest.cmake")
+# Short fragments, on purpose: CMake wraps the text of a FATAL_ERROR to its own width, so a regex
+# spanning two clauses can straddle the line break it inserts. This one did - the message was right
+# and the test failed anyway - which is worth one line here to save the next person the same hunt.
 set_tests_properties("screen.recipe.identity" PROPERTIES
-    PASS_REGULAR_EXPRESSION "declares id 'real-screen', but was registered as")
+    PASS_REGULAR_EXPRESSION "declares id 'real-screen'")
 
 add_test(NAME "screen.recipe.ambiguous"
     COMMAND ${CMAKE_COMMAND} -DCASE=ambiguous
