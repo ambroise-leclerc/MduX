@@ -13,6 +13,11 @@ Makefile
 *.cmake
 !cmake/*.cmake
 
+# ...and the CMake-level tests, which are scripts CTest runs rather than build output. Without this
+# `git add` skips them silently and the tests fail on CI with "Not a file", which is how this line
+# came to exist.
+!tests/cmake/*.cmake
+
 # Compiled binaries
 *.exe
 *.dll
