@@ -449,6 +449,20 @@ mdux_bake_artifact(
         shaders.spv
 )
 
+# The first compiled screen (issue #198). Registered through mdux_compile_screen(), which is a thin
+# front for mdux_bake_artifact() - a screen earns the same build-tree bake, the same -update target
+# and the same evidence.screen.<id> byte comparison as a font or a shader, because nothing about a
+# screen justifies weaker evidence than its neighbours.
+#
+# It draws no text on purpose: no text package is baked in this tree yet, so the text-budget stage
+# has nothing to measure against and a screen carrying t("STR-KEY") would be refused for declaring no
+# approved locale. #201 lands the text half.
+include(cmake/MduXCompileScreen.cmake)
+mdux_compile_screen(
+    ID endoscope-monitor
+    RECIPE recipes/screen/endoscope-monitor.toml
+)
+
 # Generated C++ for that package (issue #121). Build-tree only, never committed - see
 # cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
 # module form; the header form exists for a translation unit that cannot import a named module.

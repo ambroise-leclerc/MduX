@@ -1,0 +1,43 @@
+# The endoscope monitor screen, compiled by mdux-meduic into generated/screen/endoscope-monitor/,
+# which is committed and byte-verified by `ctest -L evidence` on every active toolchain (ADR-007,
+# ADR-011, ADR-012).
+#
+# ## The id is the mapping ADR-012 asks to be recorded
+#
+# A screen's identity in the grammar is CamelCase - `Screen EndoscopeMonitor` - while an artifact id
+# must match `^[a-z0-9][a-z0-9-]*$` because it names a directory, a test and a generated C++
+# identifier. The recipe records the pairing rather than the compiler deriving it: a slug cannot be
+# derived injectively from a name, since names admit `-` and `_` and lowercasing is not injective
+# across case. What the compiler does check is that the two are the same word.
+#
+# ## Why this screen draws no text
+#
+# Not a simplification for its own sake. No text package is baked anywhere in this tree yet, so the
+# text-budget stage has nothing to measure against and a screen carrying `t("STR-KEY")` would be
+# refused - correctly - for declaring no approved locale. #201 lands the text half; this screen
+# proves the rest of the pipeline end to end in the meantime.
+#
+# To change the screen, edit the .medui source and run
+#
+#   cmake --build <build-dir> --target mdux-bake-update
+#
+# then review the diff to generated/screen/endoscope-monitor/.
+
+[package]
+id            = "endoscope-monitor"
+source        = "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+
+# The panel this screen is drawn for. Declared here rather than taken from the source, so a screen
+# drawn for another panel is a diagnostic rather than a silently rescaled frame; the solver checks
+# the source's own `surface:` against these two numbers.
+surfaceWidth  = 1280
+surfaceHeight = 720
+
+# What the runtime may draw for this screen, declared by the product rather than computed. The cost
+# model that would let a compiler compute it belongs to the runtime (#199), and until then a declared
+# ceiling is the honest form: DrawList fails closed against these numbers at run time, and the schema
+# refuses an empty budget on a screen that has nodes.
+[budget]
+maxVertices = 4096
+maxIndices  = 6144
+maxCommands = 64

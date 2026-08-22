@@ -11,11 +11,12 @@ what the build actually produces. Track C's authoring story is what remains: #14
 Wave 4 with the font and text pipeline, and #15 is underway in Wave 5 with the compiler
 that generates the screens it draws. Eight of its twelve children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
-golden references, and the canonical package with its C++ emitters — so the compiler now reads a
-`.medui` file, resolves it to a bounded box tree, refuses a box that cannot hold its widest approved
-translation, says where safety-critical content must appear, and writes the result as both a
-byte-compared artifact and `constexpr` C++ a device links without a parser. #198 is next: the CMake
-integration and the `mdux-meduic` host tool that runs all of it from a recipe.
+golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
+its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
+tree, refuses a box that cannot hold its widest approved translation, says where safety-critical
+content must appear, and writes the result as a byte-compared artifact and as `constexpr` C++ a
+device links without a parser. The first compiled screen is committed under
+`generated/screen/endoscope-monitor/`. #199 is next: the allocation-free runtime that draws one.
 
 | Metric | Count |
 |---|---|
@@ -59,7 +60,7 @@ Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · in progress        #15 (S1–S8 done · S9 next)
+Wave 5 · in progress        #15 (S1–S9 done · S10 next)
 Wave 6                      #16  #17
 ```
 
@@ -239,7 +240,7 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 8/12**
+#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 9/12**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
@@ -261,8 +262,8 @@ happened to read.
 - #195 S6 Text-budget validation against every approved locale · _closed_
 - #196 S7 Golden references for safety-critical nodes · _closed_
 - #197 S8 Canonical package and C++ emitters · _closed (PRs #220, #221)_
-- #198 S9 CMake integration and the `mdux-meduic` host tool · **next**
-- #199 S10 Allocation-free screen runtime
+- #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
+- #199 S10 Allocation-free screen runtime · **next**
 - #200 S11 `mdux-medui-check`
 - #201 S12 First end-to-end screen
 

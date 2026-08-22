@@ -857,6 +857,44 @@ endif()
 
 mdux_discover_tests(medui_tools_spec)
 
+# mdux_compile_screen()'s recipe reading (issue #198)
+#
+# Script-mode CMake, because what is under test is a pure function of the recipe text: which
+# `[package]` keys the wrapper extracts, and whether it refuses a registration that names a different
+# screen than the recipe compiles. Configuring a fixture project to reach the same two functions
+# would be slower and would report a failure two layers from its cause.
+#
+# The negative cases match the message rather than the exit status, following
+# governed.noThrow.symbolScan.negative - and, as that test's comment records, PASS_REGULAR_EXPRESSION
+# must not be combined with WILL_FAIL, which would invert the verdict. A bare "it failed" would be
+# satisfied by a typo in the script.
+foreach(mdux_screen_recipe_case scoped identity-accepts committed)
+    add_test(NAME "screen.recipe.${mdux_screen_recipe_case}"
+        COMMAND ${CMAKE_COMMAND} -DCASE=${mdux_screen_recipe_case}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompileScreenRecipeTest.cmake")
+endforeach()
+
+add_test(NAME "screen.recipe.identity"
+    COMMAND ${CMAKE_COMMAND} -DCASE=identity
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompileScreenRecipeTest.cmake")
+# Short fragments, on purpose: CMake wraps the text of a FATAL_ERROR to its own width, so a regex
+# spanning two clauses can straddle the line break it inserts. This one did - the message was right
+# and the test failed anyway - which is worth one line here to save the next person the same hunt.
+set_tests_properties("screen.recipe.identity" PROPERTIES
+    PASS_REGULAR_EXPRESSION "declares id 'real-screen'")
+
+add_test(NAME "screen.recipe.ambiguous"
+    COMMAND ${CMAKE_COMMAND} -DCASE=ambiguous
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompileScreenRecipeTest.cmake")
+set_tests_properties("screen.recipe.ambiguous" PROPERTIES
+    PASS_REGULAR_EXPRESSION "declares .source. 2 times")
+
+add_test(NAME "screen.recipe.missing"
+    COMMAND ${CMAKE_COMMAND} -DCASE=missing
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompileScreenRecipeTest.cmake")
+set_tests_properties("screen.recipe.missing" PROPERTIES
+    PASS_REGULAR_EXPRESSION "has no .source")
+
 # ML host-tools suite (issue #60)
 #
 # Links MduX::MlBakeLib, the host-tools-zone target. Deliberately separate from ml_spec, which

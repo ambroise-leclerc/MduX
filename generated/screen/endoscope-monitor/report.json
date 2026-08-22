@@ -1,0 +1,39 @@
+{
+  "inputs": [
+    {
+      "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
+      "sha256": "7edbb61c9e6e196bb8f38b9a1339491cf2b2abbf51e47515c9fb37b0df8f32ae"
+    }
+  ],
+  "options": {
+    "budget": {
+      "maxCommands": 64,
+      "maxIndices": 6144,
+      "maxVertices": 4096
+    },
+    "dynamicText": [],
+    "fontPackage": "",
+    "id": "endoscope-monitor",
+    "source": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
+    "surfaceHeight": 720,
+    "surfaceWidth": 1280,
+    "textPackages": []
+  },
+  "outputs": [
+    {
+      "path": "goldens.json",
+      "sha256": "d287cf21560be2891a0ab11ba6bcf197cd2295fc20ed900d95ea931aef3bdf4c"
+    },
+    {
+      "path": "package.json",
+      "sha256": "c0aa463ba4f87185729aaa99870e2497012c4e3506eb5a101fbc166e54433cef"
+    }
+  ],
+  "recipe": {
+    "path": "recipes/screen/endoscope-monitor.toml",
+    "sha256": "098afa4645afdb85dcf238c511c062bebedebf1148e8a565383df905db761af5"
+  },
+  "schemaVersion": 1,
+  "tool": "mdux-meduic",
+  "toolVersion": "0.5.0"
+}

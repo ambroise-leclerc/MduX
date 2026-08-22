@@ -1,0 +1,15 @@
+[
+  {
+    "bounds": {
+      "height": 128,
+      "width": 1280,
+      "x": 0,
+      "y": 592
+    },
+    "colorToken": "Theme.Colors.Nominal",
+    "cvChecks": [
+      "Bounds"
+    ],
+    "nodeId": "ecg-lead-ii"
+  }
+]
