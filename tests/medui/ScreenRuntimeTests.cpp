@@ -16,6 +16,7 @@
 import std;
 import speclab;
 import mdux.core.units;
+import mdux.evidence.report;
 import mdux.draw;
 import mdux.medui.schema;
 import mdux.medui.screen;
