@@ -57,8 +57,9 @@ CheckResult checkScreen(std::string_view source, std::string file) {
     const ast::Screen& screen = *parsed.screen;
 
     // 2. Semantic analysis, against the governed theme table and no approved locale. `analyze()`
-    //    skips the key checks when it is given no packages, which is why this can run at all - see
-    //    the note recorded below for what that leaves uncovered.
+    //    runs the key checks unless a caller asks for `LocalePolicy::Skipped`, which is what the
+    //    call below does - an empty package list on its own still means every key is absent. See the
+    //    note recorded further down for what asking for that leaves uncovered.
     std::vector<std::string_view> themeTokens;
     themeTokens.reserve(ms::themeColors.size());
     for (const ms::ThemeColor& colour : ms::themeColors) {

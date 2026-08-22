@@ -396,6 +396,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status verified at `develop` @ `45eecbe` · 22 August 2026_
+_Epic status verified at `develop` @ `a5cc41f` · 22 August 2026_
 _13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 11/12) · no enforcement gaps outstanding_
 _All epics on GitHub_

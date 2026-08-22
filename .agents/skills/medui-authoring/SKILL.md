@@ -127,7 +127,7 @@ verifier checks against. Rules:
 
 ## Checking a file without a full build
 
-```
+```console
 mdux-medui-check path/to/screen.medui [--format=json|text]
 ```
 
