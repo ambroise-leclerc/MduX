@@ -91,12 +91,15 @@ until the content filled in would be waiting on #17, which is a wave of its own.
 
 Two things worth settling before the tag rather than during it:
 
-- **There is no CHANGELOG and no release workflow.** What shipped in each of v0.2.0 through v0.5.0 is
-  recoverable only from this document's prose. If a release is two issues away, that gap costs least
-  to close now.
-- **`v0.5.0` is an ancestor of neither `develop` nor `master`**, and `develop` is 668 commits ahead of
-  `master`. Whatever the release ritual is, it is not readable from the repository - worth knowing
-  before 0.6.0 rather than at the moment of cutting it.
+- **There is now a [CHANGELOG](../CHANGELOG.md), and still no release workflow.** The 0.6.0 entry is
+  written from the merges it contains; the four earlier ones are summarised from this document's own
+  wave record, and the file says so, because two of the four tags are not ancestors of `develop` and
+  a reader checking them with `git log` would find that out the hard way.
+- **The release ritual is not readable from the repository.** `v0.2.0` and `v0.5.0` are ancestors of
+  neither `develop` nor `master`, while `v0.3.0` and `v0.4.0` are ancestors of `develop`; `develop`
+  is 668 commits ahead of `master`. So there is no rule a reader can infer about where a tag is cut,
+  and the CHANGELOG has to hedge its earlier entries because of it. Worth settling before 0.6.0
+  rather than at the moment of cutting it.
 
 ## The backlog
 
