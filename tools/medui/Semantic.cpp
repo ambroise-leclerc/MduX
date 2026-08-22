@@ -204,12 +204,11 @@ private:
     }
 
     void analyzeTextKey(const ast::Value& value) {
-        // No approved locale to check against means there is nothing to check, and saying "absent
-        // from every approved locale" when there are none is a vacuous truth dressed as a finding.
-        // The caller that must not tolerate the gap is the compiler driver, which refuses a recipe
-        // whose screen draws text and declares no locales (#198); `mdux-medui-check` runs without a
-        // recipe on purpose and reports the gap as a note (#200).
-        if (inputs_.textPackages.empty()) {
+        // Asked for, never inferred. An empty package span still means "an approved set with no
+        // locale in it" - so every key is absent from all of them - and only a caller that says so
+        // explicitly gets the check skipped. Reading permission out of the span would have handed
+        // every other caller a weaker check with nothing in the result to say so.
+        if (inputs_.locales == LocalePolicy::Skipped) {
             return;
         }
 

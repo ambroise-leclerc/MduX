@@ -219,13 +219,16 @@ const mdux::spec::Register semanticHardcodedTextPrecedence{"A literal in a text-
                                                                    .Execute();
                                                            }};
 
-const mdux::spec::Register semanticFieldDomains{"Known fields reject syntactically valid values from the wrong semantic domain", "evidence-unit", [] {
-                                                    return speclab::Test("medui-semantic-field-domains")
-                                                        .Given("a Row and Label with three mismatched field value forms", [] {})
-                                                        .When("the field domains are analyzed", [] {})
-                                                        .Then("each mismatch is MEDUI-E033 at the value",
-                                                              [] {
-                                                                  constexpr std::string_view                   source = R"(Screen Domains {
+const mdux::spec::Register semanticFieldDomains{
+    "Known fields reject syntactically valid values from the wrong semantic domain",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-field-domains")
+            .Given("a Row and Label with three mismatched field value forms", [] {})
+            .When("the field domains are analyzed", [] {})
+            .Then("each mismatch is MEDUI-E033 at the value",
+                  [] {
+                      constexpr std::string_view                   source = R"(Screen Domains {
     layout: Vertical { spacing: 0px; padding: 0px; }
     Row {
         id: content;
@@ -240,26 +243,21 @@ const mdux::spec::Register semanticFieldDomains{"Known fields reject syntactical
         }
     }
 })";
-                                                                  const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
-                                                                  const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-TITLE"})};
-                                                                  const md::SemanticResult                     result = analyze(source, themes, packages);
-                                                                  mdux::spec::Checks                           checks;
-                                                                  checks.expect(count(result, md::Code::FieldValueKind) == 3,
-                                                                                "all three mismatches report E033");
-                                                                  checks.expect(result.diagnostics.size() == 3,
-                                                                                "domain mismatches do not cascade into name diagnostics");
-                                                                  if (result.diagnostics.size() == 3) {
-                                                                      checks.expect(result.diagnostics[0].line == 6 && result.diagnostics[0].column == 18,
-                                                                                    "Row spacing points at Theme.Colors.Title");
-                                                                      checks.expect(result.diagnostics[1].line == 8 && result.diagnostics[1].column == 17,
-                                                                                    "Label id points at t(\"STR-TITLE\")");
-                                                                      checks.expect(result.diagnostics[2].line == 9 && result.diagnostics[2].column == 20,
-                                                                                    "Label width points at the string literal");
-                                                                  }
-                                                                  checks.raise();
-                                                              })
-                                                        .Execute();
-                                                }};
+                      const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-TITLE"})};
+                      const md::SemanticResult                     result = analyze(source, themes, packages);
+                      mdux::spec::Checks                           checks;
+                      checks.expect(count(result, md::Code::FieldValueKind) == 3, "all three mismatches report E033");
+                      checks.expect(result.diagnostics.size() == 3, "domain mismatches do not cascade into name diagnostics");
+                      if (result.diagnostics.size() == 3) {
+                          checks.expect(result.diagnostics[0].line == 6 && result.diagnostics[0].column == 18, "Row spacing points at Theme.Colors.Title");
+                          checks.expect(result.diagnostics[1].line == 8 && result.diagnostics[1].column == 17, "Label id points at t(\"STR-TITLE\")");
+                          checks.expect(result.diagnostics[2].line == 9 && result.diagnostics[2].column == 20, "Label width points at the string literal");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register malformedColorIsSemanticOnly{
     "A malformed colour path has one semantic-domain diagnostic and no syntax duplicate",
@@ -287,8 +285,7 @@ const mdux::spec::Register malformedColorIsSemanticOnly{
                       checks.expect(result.diagnostics.size() == 1, "the syntax and semantic phases do not duplicate the finding");
                       checks.expect(count(result, md::Code::FieldValueKind) == 1, "the malformed path reports E033");
                       if (result.diagnostics.size() == 1) {
-                          checks.expect(result.diagnostics[0].line == 8 && result.diagnostics[0].column == 16,
-                                        "E033 points at Theme.Color.Title");
+                          checks.expect(result.diagnostics[0].line == 8 && result.diagnostics[0].column == 16, "E033 points at Theme.Color.Title");
                       }
                       checks.raise();
                   })
@@ -320,16 +317,13 @@ const mdux::spec::Register semanticSpecialValueForms{"Image references, positive
                                                              .Execute();
                                                      }};
 
-const mdux::spec::Register semanticHardcodedTextList{
-    "A literal inside a text-key list is reported as hardcoded text at that element",
-    "evidence-unit",
-    [] {
-        return speclab::Test("medui-semantic-hardcoded-text-list")
-            .Given("a StatusIndicator states list mixing a literal and a governed key", [] {})
-            .When("the list is analyzed element by element", [] {})
-            .Then("the literal reports MEDUI-E017 without hiding valid keys",
-                  [] {
-                      constexpr std::string_view source = R"(Screen States {
+const mdux::spec::Register semanticHardcodedTextList{"A literal inside a text-key list is reported as hardcoded text at that element", "evidence-unit", [] {
+                                                         return speclab::Test("medui-semantic-hardcoded-text-list")
+                                                             .Given("a StatusIndicator states list mixing a literal and a governed key", [] {})
+                                                             .When("the list is analyzed element by element", [] {})
+                                                             .Then("the literal reports MEDUI-E017 without hiding valid keys",
+                                                                   [] {
+                                                                       constexpr std::string_view                   source = R"(Screen States {
     layout: Vertical { spacing: 0px; padding: 0px; }
     StatusIndicator {
         id: state;
@@ -340,14 +334,60 @@ const mdux::spec::Register semanticHardcodedTextList{
         states: ["Ready", t("STR-STOP")];
     }
 })";
-                      const std::array<std::string_view, 0> themes{};
-                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
-                      const md::SemanticResult result = analyze(source, themes, packages);
-                      const cli::Diagnostic* literal = find(result, md::Code::HardcodedString);
+                                                                       const std::array<std::string_view, 0>        themes{};
+                                                                       const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
+                                                                       const md::SemanticResult                     result = analyze(source, themes, packages);
+                                                                       const cli::Diagnostic* literal = find(result, md::Code::HardcodedString);
+                                                                       mdux::spec::Checks     checks;
+                                                                       checks.expect(result.diagnostics.size() == 1, "only the literal is rejected");
+                                                                       checks.expect(literal != nullptr && literal->line == 9 && literal->column == 18,
+                                                                                     "E017 points at the literal list element");
+                                                                       checks.raise();
+                                                                   })
+                                                             .Execute();
+                                                     }};
+
+const mdux::spec::Register theLocalePolicyIsAskedForNotInferred{
+    "Skipping the locale check is a mode a caller selects, not a meaning of an empty set",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-locale-policy")
+            .Given("a screen with a text key and no approved locale supplied", [] {})
+            .When("it is analyzed under each policy", [] {})
+            .Then("the default reports the key and only the explicit mode skips it",
+                  [] {
+                      const std::string_view                       source = R"(Screen Policy {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 200px, 100px;
+
+    Label {
+        id: title;
+        width: 100px;
+        height: 20px;
+        text: t("STR-TITLE");
+        color: Theme.Colors.Title;
+    }
+})";
+                      const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                      const std::array<mdux::text::TextPackage, 0> none{};
+
                       mdux::spec::Checks checks;
-                      checks.expect(result.diagnostics.size() == 1, "only the literal is rejected");
-                      checks.expect(literal != nullptr && literal->line == 9 && literal->column == 18,
-                                    "E017 points at the literal list element");
+
+                      // The default has to be the one that fails closed: an empty package span means
+                      // an approved set containing no locale, so every key is absent from all of
+                      // them. A caller who wanted the check skipped and forgot to say so gets a
+                      // finding rather than a clean result.
+                      const md::SemanticResult required = md::analyze(*md::parse(source, "policy.medui").screen,
+                                                                      "policy.medui",
+                                                                      md::SemanticInputs{.themeTokens = themes, .textPackages = none});
+                      checks.expect(count(required, md::Code::UnknownTextKey) == 1, "the default policy reports a key with no locale to resolve in");
+
+                      const md::SemanticResult skipped = md::analyze(
+                          *md::parse(source, "policy.medui").screen,
+                          "policy.medui",
+                          md::SemanticInputs{.themeTokens = themes, .textPackages = none, .locales = md::LocalePolicy::Skipped});
+                      checks.expect(skipped.ok(), "and the explicit mode skips it");
+                      checks.expect(count(skipped, md::Code::UnknownTextKey) == 0, "reporting no key findings at all");
                       checks.raise();
                   })
             .Execute();

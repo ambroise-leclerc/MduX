@@ -68,9 +68,28 @@ struct ComponentRule {
  * analyzer reads only each package's locale and run IDs. Theme tokens are full names such as
  * `Theme.Colors.Title`; their concrete colour values belong to the later emitter stage.
  */
+/**
+ * @brief Whether a caller is entitled to skip the locale-completeness check.
+ *
+ * The default is the one that fails closed. An empty `textPackages` span under `Required` means an
+ * approved set containing no locale, so every key is absent from all of them - which is what a
+ * compile must see rather than a clean result.
+ *
+ * `Skipped` exists for one caller: `mdux-medui-check` validates a file that may belong to no recipe,
+ * so there are no approved locales to check against and reporting every `t("STR-KEY")` as absent
+ * would be a vacuous truth dressed as a finding. It is a *mode a caller asks for*, not a meaning
+ * read into an empty span, because the second kind would hand every present and future caller a
+ * silently weaker check with nothing in the result to say so.
+ */
+enum class LocalePolicy : std::uint8_t {
+    Required,  ///< keys must resolve in every approved locale; no locales means none resolve
+    Skipped,   ///< the caller has no approved locale set and accepts that keys go unchecked
+};
+
 struct SemanticInputs {
     std::span<const std::string_view>        themeTokens;
     std::span<const mdux::text::TextPackage> textPackages;
+    LocalePolicy                             locales{LocalePolicy::Required};
 };
 
 /// Accumulated semantic diagnostics; an empty result admits the screen to the next stage.
