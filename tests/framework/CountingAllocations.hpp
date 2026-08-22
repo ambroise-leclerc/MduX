@@ -114,6 +114,18 @@ void* operator new[](std::size_t size, std::align_val_t alignment) {
     return ::operator new(size, alignment);
 }
 
+// The aligned nothrow pair. Absent from the first version of this file while its comment claimed
+// every allocating form was replaced - which left a path an allocation could take uncounted, in the
+// one file whose whole job is that no path is uncounted.
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    allocationCount.fetch_add(1, std::memory_order_relaxed);
+    return allocateAligned(size == 0 ? 1 : size, static_cast<std::size_t>(alignment));
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t& tag) noexcept {
+    return ::operator new(size, alignment, tag);
+}
+
 // GCC's -Wmismatched-new-delete sees std::free() applied to a pointer that came from
 // `operator new` and reports a mismatch. It is right about the shape and wrong about the facts:
 // the operator new above *is* std::malloc, so free is the correct counterpart. The warning cannot
@@ -146,6 +158,14 @@ void operator delete(void* pointer, const std::nothrow_t&) noexcept {
 
 void operator delete[](void* pointer, const std::nothrow_t&) noexcept {
     std::free(pointer);
+}
+
+void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept {
+    freeAligned(pointer);
+}
+
+void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept {
+    freeAligned(pointer);
 }
 
 void operator delete(void* pointer, std::align_val_t) noexcept {

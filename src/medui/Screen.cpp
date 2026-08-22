@@ -50,10 +50,12 @@ namespace {
 
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
+        case ScreenError::MalformedColorToken:
+            return "a node's colour token is not of the form Theme.Colors.<Token>";
         case ScreenError::UnknownColorToken:
             return "a node names a colour token the governed table does not define";
         case ScreenError::BudgetExhausted:
-            return "the frame would exceed the draw budget the screen declares";
+            return "the frame would exceed a draw budget it is held to";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -74,6 +76,20 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
         return mdux::core::err(error);
     };
 
+    // Where the list stood before this frame. The screen's own budget bounds what *this screen*
+    // draws, and `DrawList` can only enforce the budget it was created with - which may be larger,
+    // because one list may carry several screens. Without this the declared ceiling was decorative:
+    // a screen declaring room for one rectangle drew two whenever the caller passed a roomier list,
+    // and a mistake in the baked budget was silently bypassed instead of being observable.
+    const std::size_t vertexBase  = list.vertices().size();
+    const std::size_t indexBase   = list.indices().size();
+    const std::size_t commandBase = list.commands().size();
+
+    const auto withinScreenBudget = [&]() noexcept {
+        return list.vertices().size() - vertexBase <= screen.budget.maxVertices && list.indices().size() - indexBase <= screen.budget.maxIndices
+               && list.commands().size() - commandBase <= screen.budget.maxCommands;
+    };
+
     FrameStats stats;
 
     for (const CompiledNode& node : screen.nodes) {
@@ -90,10 +106,16 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
 
         const auto colour = resolveColorToken(panel->colorToken);
         if (!colour.has_value()) {
-            return refuse(ScreenError::UnknownColorToken);
+            return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
         }
 
         if (const auto recorded = list.addSolidRect(toRect(node.bounds), toColor(*colour)); !recorded.has_value()) {
+            return refuse(ScreenError::BudgetExhausted);
+        }
+        // Measured rather than predicted: a rectangle costs four vertices and six indices, and
+        // extends the current command or starts a new one depending on the clip. Reading the deltas
+        // keeps this from carrying a second copy of arithmetic `DrawList` already owns.
+        if (!withinScreenBudget()) {
             return refuse(ScreenError::BudgetExhausted);
         }
         ++stats.rects;

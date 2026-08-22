@@ -111,6 +111,9 @@ const mdux::spec::Register aFrameDrawsWhatItCanAndCountsTheRest{
                       // join with a baked text package this repository does not have yet. Counted
                       // rather than skipped, so an integrator sees what was left undone.
                       checks.expect(frame->deferred == 1, std::format("one node deferred, got {}", frame->deferred));
+                      // The per-node cap this implementation actually has, asserted rather than
+                      // described: no node contributes more than one rectangle.
+                      checks.expect(frame->rects <= frame->nodes, "no node records more than one rectangle");
                       checks.expect(list.vertices().size() == 8, std::format("two quads worth of vertices, got {}", list.vertices().size()));
                       checks.raise();
                   })
@@ -228,6 +231,26 @@ const mdux::spec::Register aRefusedFrameLeavesNothingBehind{
                           checks.expect(frame.error() == ms::ScreenError::UnknownColorToken,
                                         std::format("reported as UnknownColorToken, got '{}'", ms::describe(frame.error())));
                       }
+
+                      // A malformed name is a different failure from an absent one, and the schema
+                      // keeps them apart for a reason worth preserving here: one says the emitter is
+                      // broken, the other says the table does not define this colour.
+                      constexpr ms::PanelSpec                   malformed{.colorToken = "NotEvenAToken"};
+                      constexpr std::array<ms::CompiledNode, 1> malformedNodes{
+                          ms::CompiledNode{.id = "bad", .bounds = {0, 0, 40, 40}, .payload = malformed}
+                      };
+                      const ms::ScreenPackage malformedScreen{.id            = "malformed-token",
+                                                              .schemaVersion = mdux::evidence::kSchemaVersion,
+                                                              .surfaceWidth  = 400,
+                                                              .surfaceHeight = 300,
+                                                              .nodes         = malformedNodes,
+                                                              .budget        = testBudget};
+                      const auto              malformedFrame = ms::render(malformedScreen, list);
+                      checks.expect(!malformedFrame.has_value(), "a malformed colour is refused too");
+                      if (!malformedFrame.has_value()) {
+                          checks.expect(malformedFrame.error() == ms::ScreenError::MalformedColorToken,
+                                        std::format("and told apart from an unknown one, got '{}'", ms::describe(malformedFrame.error())));
+                      }
                       // The first panel had already been recorded when the second failed. A frame is
                       // whole or absent: a half-drawn one on a medical display looks like a reading.
                       checks.expect(list.vertices().size() == verticesBefore,
@@ -270,6 +293,183 @@ const mdux::spec::Register aBudgetTooSmallIsRefusedNotTruncated{
                                         std::format("reported as BudgetExhausted, got '{}'", ms::describe(frame.error())));
                       }
                       checks.expect(list.vertices().empty(), std::format("nothing is left recorded, got {} vertices", list.vertices().size()));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theWorkDoesNotVaryWithTheData{
+    "Two screens with the same node count and different data do the same work",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-work-is-data-independent")
+            .Given("two screens of three nodes whose rectangles and colours differ entirely", [] {})
+            .When("both are rendered", [] {})
+            .Then("the iteration count is the same, so work proportional to the data would show",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The case that carries the weight. Rendering one screen twice proves only
+                      // determinism, and doubling identical nodes doubles any per-node cost whatever
+                      // it depends on - so neither would catch work proportional to a rectangle's
+                      // width. These two screens have the same node count and share nothing else.
+                      constexpr ms::PanelSpec alert{.colorToken = "Theme.Colors.Alert"};
+                      constexpr ms::PanelSpec fault{.colorToken = "Theme.Colors.Fault"};
+                      constexpr ms::LabelSpec other{.textKey = "STR-OTHER", .colorToken = "Theme.Colors.ScoreDigits"};
+
+                      constexpr std::array<ms::CompiledNode, 3> tinyNodes{
+                          ms::CompiledNode{.id = "a", .bounds = {0, 0, 2, 2}, .payload = alert},
+                          ms::CompiledNode{.id = "b", .bounds = {4, 4, 2, 2}, .payload = other},
+                          ms::CompiledNode{.id = "c", .bounds = {8, 8, 2, 2}, .payload = fault}
+                      };
+                      constexpr std::array<ms::CompiledNode, 3> hugeNodes{
+                          ms::CompiledNode{.id = "a",   .bounds = {0, 0, 400, 150}, .payload = fault},
+                          ms::CompiledNode{.id = "b", .bounds = {0, 150, 400, 100}, .payload = other},
+                          ms::CompiledNode{.id = "c",  .bounds = {0, 250, 400, 50}, .payload = alert}
+                      };
+
+                      const ms::ScreenPackage tiny{.id            = "tiny",
+                                                   .schemaVersion = mdux::evidence::kSchemaVersion,
+                                                   .surfaceWidth  = 400,
+                                                   .surfaceHeight = 300,
+                                                   .nodes         = tinyNodes,
+                                                   .budget        = testBudget};
+                      const ms::ScreenPackage huge{.id            = "huge",
+                                                   .schemaVersion = mdux::evidence::kSchemaVersion,
+                                                   .surfaceWidth  = 400,
+                                                   .surfaceHeight = 300,
+                                                   .nodes         = hugeNodes,
+                                                   .budget        = testBudget};
+
+                      Scratch small;
+                      Scratch large;
+                      auto    listTiny = small.list(testBudget);
+                      auto    listHuge = large.list(testBudget);
+
+                      const auto a = ms::render(tiny, listTiny);
+                      const auto b = ms::render(huge, listHuge);
+                      if (!a.has_value() || !b.has_value()) {
+                          checks.expect(false, "both frames are recorded");
+                          checks.raise();
+                          return;
+                      }
+                      checks.expect(a->steps == b->steps, std::format("the same work for the same node count, got {} and {}", a->steps, b->steps));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theEmittedBytesArePinned{
+    "One panel emits exactly these vertices on every toolchain",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-vertex-bytes")
+            .Given("a screen of one panel at a known rectangle in a known colour", [] {})
+            .When("a frame is recorded", [] {})
+            .Then("every field of every vertex is the value frozen here",
+                  [] {
+                      mdux::spec::Checks checks;
+                      Scratch            scratch;
+                      auto               list = scratch.list(testBudget);
+
+                      // Comparing two renders proves repeatability inside one binary, and both CI
+                      // legs would pass while emitting different bytes. The constants below are what
+                      // makes this a cross-toolchain comparison: MSVC and GCC check their output
+                      // against the same numbers, so a float conversion or a colour quantisation
+                      // that differed would fail on the leg that differed.
+                      constexpr std::array<ms::CompiledNode, 1> pinned{
+                          ms::CompiledNode{.id = "topbar", .bounds = {0, 0, 400, 40}, .payload = topbar}
+                      };
+                      const ms::ScreenPackage screen{.id            = "pinned",
+                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth  = 400,
+                                                     .surfaceHeight = 300,
+                                                     .nodes         = pinned,
+                                                     .budget        = testBudget};
+
+                      const auto frame = ms::render(screen, list);
+                      if (!frame.has_value()) {
+                          checks.expect(false, "the frame is recorded");
+                          checks.raise();
+                          return;
+                      }
+
+                      // `Theme.Colors.TopbarBackground` is {0.82, 0.84, 0.86, 1.0} linear, and this
+                      // runtime quantises without a transfer function - so these four bytes are the
+                      // quantisation, pinned. A change to either the table or the rounding shows up
+                      // here rather than as a slightly different frame nobody compares.
+                      const std::uint32_t expectedColor = mdux::draw::packColor(mdux::core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255});
+
+                      const std::span<const mdux::draw::UiVertex> vertices = list.vertices();
+                      checks.expect(vertices.size() == 4, std::format("one quad, got {} vertices", vertices.size()));
+                      if (vertices.size() != 4) {
+                          checks.raise();
+                          return;
+                      }
+
+                      // Corner order is top-left, top-right, bottom-right, bottom-left. Every field
+                      // of all four is named, and `UiVertex` is statically asserted to be exactly
+                      // 24 bytes with no padding, so "every field" is "every byte".
+                      const std::array<mdux::draw::UiVertex, 4> expected{
+                          mdux::draw::UiVertex{  .x = 0.0F,  .y = 0.0F, .u = 0.0F, .v = 0.0F, .color = expectedColor, .mode = 0},
+                          mdux::draw::UiVertex{.x = 400.0F,  .y = 0.0F, .u = 0.0F, .v = 0.0F, .color = expectedColor, .mode = 0},
+                          mdux::draw::UiVertex{.x = 400.0F, .y = 40.0F, .u = 0.0F, .v = 0.0F, .color = expectedColor, .mode = 0},
+                          mdux::draw::UiVertex{  .x = 0.0F, .y = 40.0F, .u = 0.0F, .v = 0.0F, .color = expectedColor, .mode = 0}
+                      };
+                      for (std::size_t index = 0; index < expected.size(); ++index) {
+                          checks.expect(vertices[index] == expected[index],
+                                        std::format("vertex {} matches the frozen value, got x={} y={} colour={}",
+                                                    index,
+                                                    vertices[index].x,
+                                                    vertices[index].y,
+                                                    vertices[index].color));
+                      }
+
+                      const std::array<mdux::draw::Index, 6>   expectedIndices{0, 1, 2, 0, 2, 3};
+                      const std::span<const mdux::draw::Index> indices = list.indices();
+                      checks.expect(std::ranges::equal(indices, expectedIndices), "and the two triangles are wound as pinned");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theScreensOwnBudgetBoundsTheFrame{
+    "The screen's declared budget bounds the frame, whatever the list allows",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-own-budget")
+            .Given("a two-panel screen declaring room for one rectangle, and a list far larger", [] {})
+            .When("it is rendered", [] {})
+            .Then("the frame is refused and rolled back rather than drawn to the list's limit",
+                  [] {
+                      mdux::spec::Checks checks;
+                      Scratch            scratch;
+
+                      // The inverse of the exhausted-list case, and the one that showed the declared
+                      // budget was decorative: `DrawList` can only enforce the budget it was created
+                      // with, so a roomier list let a screen draw past the ceiling it declares - and
+                      // a mistake in a baked budget would have been bypassed rather than observed.
+                      auto list = scratch.list(testBudget);
+
+                      constexpr mdux::draw::DrawBudget          oneRect{.maxVertices = 4, .maxIndices = 6, .maxCommands = 1};
+                      constexpr std::array<ms::CompiledNode, 2> nodes{
+                          ms::CompiledNode{.id = "one",  .bounds = {0, 0, 400, 40}, .payload = topbar},
+                          ms::CompiledNode{.id = "two", .bounds = {0, 60, 400, 40}, .payload = footer}
+                      };
+                      const ms::ScreenPackage screen{.id            = "declares-one-rect",
+                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth  = 400,
+                                                     .surfaceHeight = 300,
+                                                     .nodes         = nodes,
+                                                     .budget        = oneRect};
+
+                      const auto frame = ms::render(screen, list);
+                      checks.expect(!frame.has_value(), "the screen's own budget refuses the second rectangle");
+                      if (!frame.has_value()) {
+                          checks.expect(frame.error() == ms::ScreenError::BudgetExhausted,
+                                        std::format("reported as BudgetExhausted, got '{}'", ms::describe(frame.error())));
+                      }
+                      checks.expect(list.vertices().empty(), std::format("and nothing is left recorded, got {} vertices", list.vertices().size()));
                       checks.raise();
                   })
             .Execute();
