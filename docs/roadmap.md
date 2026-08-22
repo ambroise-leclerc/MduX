@@ -16,7 +16,8 @@ its CMake registration — so the compiler now reads a `.medui` file, resolves i
 tree, refuses a box that cannot hold its widest approved translation, says where safety-critical
 content must appear, and writes the result as a byte-compared artifact and as `constexpr` C++ a
 device links without a parser. The first compiled screen is committed under
-`generated/screen/endoscope-monitor/`. #199 is next: the allocation-free runtime that draws one.
+`generated/screen/endoscope-monitor/`, and the governed runtime draws one without allocating. #200
+is next: `mdux-medui-check`, the authoring-side checker.
 
 | Metric | Count |
 |---|---|
@@ -60,7 +61,7 @@ Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · in progress        #15 (S1–S9 done · S10 next)
+Wave 5 · in progress        #15 (S1–S10 done · S11 next)
 Wave 6                      #16  #17
 ```
 
@@ -240,7 +241,7 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 9/12**
+#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 10/12**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
@@ -263,8 +264,8 @@ happened to read.
 - #196 S7 Golden references for safety-critical nodes · _closed_
 - #197 S8 Canonical package and C++ emitters · _closed (PRs #220, #221)_
 - #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
-- #199 S10 Allocation-free screen runtime · **next**
-- #200 S11 `mdux-medui-check`
+- #199 S10 Allocation-free screen runtime · _closed (PR #232)_
+- #200 S11 `mdux-medui-check` · **next**
 - #201 S12 First end-to-end screen
 
 _Blocks #16, #17_

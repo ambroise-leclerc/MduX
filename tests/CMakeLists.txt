@@ -709,6 +709,7 @@ mdux_emit_screen_package(
 add_executable(medui_spec
     medui/MeduiSpecMain.cpp
     medui/SchemaTests.cpp
+    medui/ScreenRuntimeTests.cpp
     medui/GeneratedScreenTests.cpp
     medui/GeneratedScreenModuleConsumer.cpp
     medui/GeneratedScreenHeaderConsumer.cpp
@@ -959,6 +960,37 @@ endif()
 
 mdux_discover_tests(ml_noheap_spec)
 
+# Screen runtime no-heap suite (issue #199)
+#
+# Its own binary for the reason ml_noheap_spec has one: it replaces the global operator new family,
+# and that is a whole-program property. Keeping it out of medui_spec means those scenarios run
+# against the ordinary allocator, and a failure here names the no-heap property rather than
+# appearing as one line among two dozen unrelated ones.
+add_executable(medui_noheap_spec
+    medui/ScreenNoHeapSpecMain.cpp
+    medui/ScreenNoHeapTests.cpp
+)
+
+target_link_libraries(medui_noheap_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(medui_noheap_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(medui_noheap_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(medui_noheap_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(medui_noheap_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(medui_noheap_spec)
+
 # No-heap verification, layer 2 (issue #63): object-file symbol scan.
 #
 # Catches an allocator reference at build time, in the PR that introduced it, rather than whenever
@@ -969,6 +1001,16 @@ set(mdux_ml_object_list "${CMAKE_CURRENT_BINARY_DIR}/ml_objects_$<CONFIG>.txt")
 file(GENERATE
     OUTPUT "${mdux_ml_object_list}"
     CONTENT "$<JOIN:$<FILTER:$<TARGET_OBJECTS:MduXCore>,INCLUDE,/ml/>,\n>"
+)
+
+# The same scan over the screen runtime's objects (issue #199). The profile is named `ml-noheap` for
+# historical reasons and what it forbids is not ML-specific - the allocation family and the throwing
+# operators - so it is reused rather than copied under a second name. Renaming it would touch the ML
+# wiring in a PR about screens; worth doing, separately.
+set(mdux_screen_object_list "${CMAKE_CURRENT_BINARY_DIR}/screen_objects_$<CONFIG>.txt")
+file(GENERATE
+    OUTPUT "${mdux_screen_object_list}"
+    CONTENT "$<JOIN:$<FILTER:$<TARGET_OBJECTS:MduXCore>,INCLUDE,/medui/>,\n>"
 )
 
 # The same mechanism over the whole governed target (issue #116), with the forbidden set narrowed
@@ -998,6 +1040,16 @@ else()
 endif()
 
 if(MDUX_SYMBOL_TOOL)
+    add_test(NAME screen.noheap.symbolScan
+        COMMAND ${CMAKE_COMMAND}
+            -DMDUX_SCAN_PROFILE=ml-noheap
+            -DMDUX_NOHEAP_OBJECT_LIST=${mdux_screen_object_list}
+            -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
+            -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
+    )
+    set_tests_properties(screen.noheap.symbolScan PROPERTIES LABELS "noheap")
+
     add_test(NAME ml.noheap.symbolScan
         COMMAND ${CMAKE_COMMAND}
             -DMDUX_SCAN_PROFILE=ml-noheap
