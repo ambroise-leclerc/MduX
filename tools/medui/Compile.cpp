@@ -171,6 +171,10 @@ evidence::json::Value Recipe::toOptions() const {
     Value options = Value::emptyObject();
     put(options, "budget", std::move(budgetValue));
     put(options, "dynamicText", Value::array(std::move(dynamic)));
+    // The id belongs in the report for the reason every other resolved knob does: it names the
+    // directory the artifact lives in, and a report that did not record it would describe a compile
+    // without saying which screen it produced.
+    put(options, "id", Value::string(id));
     put(options, "fontPackage", Value::string(fontPackage));
     put(options, "source", Value::string(source));
     put(options, "surfaceHeight", Value::integer(surfaceHeight));
