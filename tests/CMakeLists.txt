@@ -262,6 +262,7 @@ add_executable(offscreen_tests
     render/OffscreenTests.cpp
     render/PixelTests.cpp
     render/TextPixelTests.cpp
+    render/ScreenPixelTests.cpp
 )
 
 target_sources(offscreen_tests
@@ -271,12 +272,20 @@ target_sources(offscreen_tests
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
             FILES ${MDUX_UI_SHADER_MODULE}
+        # The emitted screen joins its own file set, because its base directory is the screen output
+        # directory rather than the shader one. ScreenPixelTests (#201) links it: the last link in
+        # the chain from an authored .medui file to a compared pixel.
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
 )
-add_dependencies(offscreen_tests emit-shader-mdux-ui)
+add_dependencies(offscreen_tests emit-shader-mdux-ui emit-screen-endoscope-monitor)
 target_link_libraries(offscreen_tests PRIVATE MduX::MduX)
 target_include_directories(offscreen_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MDUX_GENERATED_SHADER_DIR}
+    ${MDUX_GENERATED_SCREEN_DIR}
 )
 
 set_target_properties(offscreen_tests

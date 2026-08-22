@@ -10,7 +10,7 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: the compiler is complete front to back; one end-to-end screen remains
+## Status: an authored screen reaches pixels; the text half is what remains
 
 **A `.medui` lexer, AST, parser, semantic analyzer, integer-only bounded layout solver, text-budget
 check, and golden-reference pass exist** in the host-tools zone (`tools/medui/`). The diagnostic
@@ -49,9 +49,10 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
 [`Compliatory/MedUI` at `d5136a8`](https://github.com/Compliatory/MedUI/tree/d5136a8518bd499760ecff2aad215d3721329f20).
-A `.medui` file builds something in MduX today: register it with `mdux_compile_screen()` and it
-becomes a committed, byte-compared artifact plus generated C++ a device links. What it cannot yet do
-is carry text, for the reason above.
+A `.medui` file builds something in MduX today, and it reaches the screen: register it with
+`mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
+device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
+lavapipe. What it cannot yet do is carry text, for the reason above.
 
 ## Grammar shape
 

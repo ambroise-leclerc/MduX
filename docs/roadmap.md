@@ -1,7 +1,7 @@
 # MduX → TrustSC parity roadmap
 
 > Backlog · ambroise-leclerc/MduX · updated 22 August 2026
-> Epic status verified against `develop` @ `a5cc41f` · 22 August 2026 · `#15` current through `#200`.
+> Epic status verified against `develop` @ `06b2a59` · 22 August 2026 · `#15` current through `#201`.
 > The divergence table below was last re-verified on 17 August 2026 and is not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
@@ -10,7 +10,7 @@ backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draw
 pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
 what the build actually produces. Track C's authoring story is what remains: #14 closed
 Wave 4 with the font and text pipeline, and #15 is underway in Wave 5 with the compiler
-that generates the screens it draws. Eleven of its twelve children have landed — the ADRs,
+that generates the screens it draws. All twelve of its children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
 its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
@@ -19,8 +19,11 @@ content must appear, and writes the result as a byte-compared artifact and as `c
 device links without a parser. The first compiled screen is committed under
 `generated/screen/endoscope-monitor/`, the governed runtime draws one without allocating, and
 `mdux-medui-check` validates a single file while naming the two checks a file on its own cannot
-cover. #201 is next, and last: the first end-to-end screen, which is what the missing text package
-blocks.
+cover. With #201 the chain reaches pixels: `ScreenPixelTests` renders the committed screen through
+the governed runtime and compares the frame pixel by pixel under lavapipe. What the epic leaves for
+its successors is content rather than path — no text package is baked yet, so a screen carrying
+`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
+component as deferred.
 
 | Metric | Count |
 |---|---|
@@ -39,7 +42,7 @@ the whole of Track C.
 
 | Area | MduX today | TrustSC today |
 |---|---|---|
-| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build. What is still ahead is the first end-to-end screen (#201), which is what the missing text package blocks. | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
+| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). What is still ahead is content rather than path: the text package, and the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
 | Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Six artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
@@ -64,21 +67,26 @@ Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · in progress        #15 (S1–S11 done · S12 next)
+Wave 5 · in progress        #15 (S1–S12 done · epic closing)
 Wave 6                      #16  #17
 ```
 
 #### When v0.6.0 gets cut
 
-**After #201, not before.** The convention above is one version per wave, and Wave 5 is #15 alone.
-Cutting a version at 10/12 would break the pattern the last four releases followed, and would ship a
-compiler whose runtime draws one component kind and whose text half is missing: no text package is
-baked in this tree, so no screen carrying `t("STR-KEY")` compiles at all. Both gaps close in #201, and
-a 0.6.0 released before them would need its notes to explain that it cannot draw a label.
+**Now.** The convention above is one version per wave, Wave 5 is #15 alone, and #201 closed it at
+12/12: an authored `.medui` file reaches compared pixels through every stage.
 
-If a version has to be cut sooner than that, the line *after* #199 is the one to take rather than the
-line before it. Today's `develop` is a compiler producing artifacts nothing on a device consumes;
-#199 is what makes a device able to draw one, so it is the better boundary of the two.
+This recommendation was written at 10/12 and said the two content gaps — no baked text package, a
+runtime that draws one component kind — would close in #201. **They did not, and that expectation was
+mine rather than the issue's.** #201's acceptance asked for an end-to-end screen exercising a
+safety-critical node, and that is what it delivered; nothing in it promised the text half. So the
+gaps outlive the wave and belong to its successors: the text package to whoever bakes one, the
+components' own geometry to #17.
+
+That does not argue for delaying the tag. What v0.6.0 ships is a complete *path* — authored file,
+byte-compared artifact, `constexpr` C++, governed runtime, compared pixel — and the honest release
+note says exactly that: the chain is built and the content is one rectangle. A version held back
+until the content filled in would be waiting on #17, which is a wave of its own.
 
 Two things worth settling before the tag rather than during it:
 
@@ -265,7 +273,7 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 11/12**
+#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 12/12**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
@@ -290,7 +298,7 @@ happened to read.
 - #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
 - #199 S10 Allocation-free screen runtime · _closed (PR #232)_
 - #200 S11 `mdux-medui-check` · _closed (PR #233)_
-- #201 S12 First end-to-end screen · **next**
+- #201 S12 First end-to-end screen · _closed (PR #234)_
 
 _Blocks #16, #17_
 
@@ -396,6 +404,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status verified at `develop` @ `a5cc41f` · 22 August 2026_
-_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 11/12) · no enforcement gaps outstanding_
+_Epic status verified at `develop` @ `06b2a59` · 22 August 2026_
+_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 12/12) · no enforcement gaps outstanding_
 _All epics on GitHub_

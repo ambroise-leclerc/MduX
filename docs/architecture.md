@@ -256,7 +256,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | parsing, semantic validation, bounded layout, text budgets, and golden references are implemented; packaging and emission remain |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`; what remains is the text package (#201) and the components' own geometry (#17) |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
 | `constexpr` ML package emitter | [#153](https://github.com/ambroise-leclerc/MduX/issues/153) | would remove the startup JSON parse |
@@ -269,7 +269,7 @@ tracking issue; the issue is authoritative for what remains.
 for the object's whole lifetime; it was removed rather than fixed.
 
 What replaces it is `mdux.draw` (a governed description of a frame) plus `mdux.render.vulkan` (the
-adapter that renders it). `.medui` will generate the former. **Do not reintroduce HTML/CSS parsing.**
+adapter that renders it). `.medui` generates the former today, through the chain in the previous section. **Do not reintroduce HTML/CSS parsing.**
 
 ## Reading order
 

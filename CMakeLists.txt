@@ -465,6 +465,17 @@ mdux_compile_screen(
     RECIPE recipes/screen/endoscope-monitor.toml
 )
 
+# ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last
+# link in the chain the epic set out to build: a `.medui` file becomes a committed artifact, the
+# artifact becomes `constexpr` C++, and a pixel test links that C++ and renders it - so the first
+# pixel drawn from an authored screen is compared against an expectation rather than described.
+include(cmake/MduXScreenEmit.cmake)
+mdux_emit_screen_package(
+    ID endoscope-monitor
+    OUT_MODULE MDUX_ENDOSCOPE_SCREEN_MODULE
+    OUT_DIR MDUX_GENERATED_SCREEN_DIR
+)
+
 # Generated C++ for that package (issue #121). Build-tree only, never committed - see
 # cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
 # module form; the header form exists for a translation unit that cannot import a named module.

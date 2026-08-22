@@ -144,7 +144,7 @@ Derived from the targets and tests that build on `develop`.
 | **Host tools** (never linked into a device target) | | |
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
 | `mdux-mlbake` | Implemented | safetensors import, golden generation, byte-verified model packages |
-| `MduXMeduiLib` | Partial | `.medui` parsing, semantic validation, integer-only bounded layout, per-locale text budgets, and golden references for safety-critical nodes; packaging and emission remain ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
+| `MduXMeduiLib` | Implemented | The `.medui` compiler end to end: parsing, semantic validation, integer-only bounded layout, per-locale text budgets, golden references, the canonical package, two C++ emitters, and the `mdux-meduic` / `mdux-medui-check` tools ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
@@ -154,10 +154,22 @@ Derived from the targets and tests that build on `develop`.
 | Text and glyph rendering | Planned | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) |
 | Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
 
+`.medui` reaches pixels today, and the path is built rather than planned. An authored screen is
+compiled by `mdux-meduic` into `generated/screen/<id>/` — a package, a golden sidecar and a bake
+report, byte-compared across MSVC and GCC. Two emitters render that package as `constexpr` C++
+carrying `static_assert(screen.validate().has_value())`, a governed runtime turns it into draw
+commands without allocating, and `mdux.render.vulkan` draws them. `ScreenPixelTests` walks the whole
+chain and compares the result pixel by pixel under lavapipe in CI.
+
+Two limits are worth stating beside that. No text package is baked in this repository yet, so a
+screen carrying `t("STR-KEY")` cannot be compiled end to end; and the runtime draws a `Panel` while
+counting every other component as deferred, because text needs that package and live-data components
+have no geometry until a frame exists. The committed screen therefore renders one bar — from a file
+an author wrote, through every stage, with nothing hand-carried between them.
+
 The HTML/CSS path that earlier revisions described was **deleted** by
 [#127](https://github.com/ambroise-leclerc/MduX/issues/127) — `MedicalUiRenderer::render()` recorded
-no Vulkan commands. `mdux.draw` plus `mdux.render.vulkan` replace it; `.medui` will generate the
-former.
+no Vulkan commands. `mdux.draw` plus `mdux.render.vulkan` replaced it.
 
 ## Regulatory material, and what it is for
 
