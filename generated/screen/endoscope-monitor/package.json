@@ -1,0 +1,67 @@
+{
+  "budget": {
+    "maxCommands": 64,
+    "maxIndices": 6144,
+    "maxVertices": 4096
+  },
+  "id": "endoscope-monitor",
+  "kind": "screen",
+  "nodes": [
+    {
+      "bounds": {
+        "height": 72,
+        "width": 1280,
+        "x": 0,
+        "y": 0
+      },
+      "id": "topbar-background",
+      "kind": "Panel",
+      "spec": {
+        "colorToken": "Theme.Colors.TopbarBackground"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 240,
+        "x": 0,
+        "y": 0
+      },
+      "id": "brand-mark",
+      "kind": "Image",
+      "spec": {
+        "source": "IMG-BRAND-MARK"
+      }
+    },
+    {
+      "bounds": {
+        "height": 520,
+        "width": 1280,
+        "x": 0,
+        "y": 72
+      },
+      "id": "endoscope-view",
+      "kind": "VulkanViewport",
+      "spec": {
+        "streamSource": "ENDOSCOPE_PRIMARY"
+      }
+    },
+    {
+      "bounds": {
+        "height": 128,
+        "width": 1280,
+        "x": 0,
+        "y": 592
+      },
+      "id": "ecg-lead-ii",
+      "kind": "SignalTrace",
+      "spec": {
+        "colorToken": "Theme.Colors.Nominal",
+        "streamSource": "ECG_LEAD_II"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "surfaceHeight": 720,
+  "surfaceWidth": 1280
+}

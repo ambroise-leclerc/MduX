@@ -136,7 +136,7 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
-Five artifacts are committed today:
+Six artifacts are committed today:
 
 | Artifact | Baker | Payload |
 |---|---|---|
@@ -145,6 +145,13 @@ Five artifacts are committed today:
 | `generated/model/ecg-demo/` | `mdux-mlbake` | `weights.bin` |
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
+| `generated/screen/endoscope-monitor/` | `mdux-meduic` | `goldens.json` |
+
+The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
+cannot bake vertices, because four of its components draw from live data and their geometry does not
+exist until the frame does. What it bakes instead is layout - where each node is, how much it may
+draw, and which validated token and key it draws with - and a sidecar of golden references saying
+where safety-critical content must appear. Both are reviewable as text, which is the point.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an
