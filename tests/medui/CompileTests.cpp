@@ -28,6 +28,7 @@ import mdux.tools.medui.parser;
 import mdux.tools.medui.textbudget;
 
 #include "../framework/SpecLabBridge.hpp"
+#include "../framework/TemporaryDirectory.hpp"
 
 namespace {
 
@@ -66,30 +67,6 @@ namespace cli = mdux::tools::cli;
     return *recipe;
 }
 
-/// A directory this scenario owns, removed when it is done with it.
-class TemporaryDirectory {
-public:
-    explicit TemporaryDirectory(std::string_view name) : path_{std::filesystem::temp_directory_path() / name} {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-        std::filesystem::create_directories(path_, code);
-    }
-
-    TemporaryDirectory(const TemporaryDirectory&)            = delete;
-    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
-
-    ~TemporaryDirectory() {
-        std::error_code code;
-        std::filesystem::remove_all(path_, code);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
 
 /// One shell command line, spelled the way the platform's shell will actually read it.
 ///
@@ -301,9 +278,9 @@ const mdux::spec::Register writingAndVerifyingAgree{
             .When("it is written, verified, and verified again after an edit", [] {})
             .Then("all three files appear, the untouched ones verify, and the edited one does not",
                   [] {
-                      mdux::spec::Checks           checks;
-                      std::vector<cli::Diagnostic> diagnostics;
-                      TemporaryDirectory           scratch{"mdux-meduic-write"};
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory scratch{"mdux-meduic-write"};
 
                       const md::Recipe  recipe     = textlessRecipe(diagnostics);
                       const std::string recipeText = fixture("textless-screen.toml");
@@ -539,8 +516,8 @@ const mdux::spec::Register theExecutableFailsLikeATool{
             .When("it is run with --format=json", [] {})
             .Then("it exits non-zero having printed a diagnostic envelope",
                   [] {
-                      mdux::spec::Checks checks;
-                      TemporaryDirectory scratch{"mdux-meduic-cli"};
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-meduic-cli"};
 
                       // The one scenario that spawns the process rather than calling into the
                       // library. Everything else here drives the calls, which says more when it

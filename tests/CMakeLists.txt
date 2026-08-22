@@ -774,6 +774,11 @@ mdux_discover_tests(medui_spec)
 # ADR-011 fixes for golden references in one screen - including the node that matches both rules and
 # must therefore appear exactly once.
 #
+# CheckTests (#200) drives the single-file checker over the same rejection corpus the parser and
+# analyzer suites use by call, so a code that stops surfacing to an author stops a test. Two of its
+# scenarios spawn the tool, for the same reason CompileTests has one: nothing at call level shows
+# that the executable exits non-zero on a finding and zero on a run whose only output is notes.
+#
 # CompileTests (#198) drives the compiler driver as calls rather than spawning mdux-meduic: what is
 # under test is the order the stages run in, the recipe being complete for the screen it names, and
 # the three artifacts a compile produces - none of which an exit status could report on.
@@ -801,6 +806,7 @@ add_executable(medui_tools_spec
     medui/PackageTests.cpp
     medui/EmitTests.cpp
     medui/CompileTests.cpp
+    medui/CheckTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
@@ -816,8 +822,10 @@ target_compile_definitions(medui_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOUR
 # exception reach the terminate handler - which is the behaviour an author meets first when a recipe
 # is wrong. Everything else in this suite drives the calls, because a failing assertion then says
 # what was wrong instead of what the exit status was.
-add_dependencies(medui_tools_spec mdux-meduic)
-target_compile_definitions(medui_tools_spec PRIVATE MDUX_MEDUIC_PATH="$<TARGET_FILE:mdux-meduic>")
+add_dependencies(medui_tools_spec mdux-meduic mdux-medui-check)
+target_compile_definitions(medui_tools_spec PRIVATE
+    MDUX_MEDUIC_PATH="$<TARGET_FILE:mdux-meduic>"
+    MDUX_MEDUI_CHECK_PATH="$<TARGET_FILE:mdux-medui-check>")
 
 # The build's own answers for mdux_screen_identifier(), written where EmitTests can read them and
 # compare against identifierForScreen() in the C++ emitter. Both halves are executed, for the reason

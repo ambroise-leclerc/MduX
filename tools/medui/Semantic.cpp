@@ -204,6 +204,14 @@ private:
     }
 
     void analyzeTextKey(const ast::Value& value) {
+        // Asked for, never inferred. An empty package span still means "an approved set with no
+        // locale in it" - so every key is absent from all of them - and only a caller that says so
+        // explicitly gets the check skipped. Reading permission out of the span would have handed
+        // every other caller a weaker check with nothing in the result to say so.
+        if (inputs_.locales == LocalePolicy::Skipped) {
+            return;
+        }
+
         std::vector<std::string_view> missingLocales;
         bool                          foundAnywhere = false;
         for (const mdux::text::TextPackage& package : inputs_.textPackages) {
@@ -225,20 +233,16 @@ private:
     void analyzeText(const ast::Value& value, FieldDomain domain) {
         if (domain == TextKeyList && value.kind == ast::ValueKind::List) {
             if (value.list.empty()) {
-                report(Code::FieldValueKind, value.position,
-                       std::format("text field requires {}", describe(domain)));
+                report(Code::FieldValueKind, value.position, std::format("text field requires {}", describe(domain)));
                 return;
             }
             for (const std::shared_ptr<ast::Value>& element : value.list) {
                 if (element == nullptr) {
-                    report(Code::FieldValueKind, value.position,
-                           std::format("text field requires {}", describe(domain)));
+                    report(Code::FieldValueKind, value.position, std::format("text field requires {}", describe(domain)));
                 } else if (element->kind == ast::ValueKind::String) {
-                    report(Code::HardcodedString, element->position,
-                           "literal text cannot be checked against every approved locale");
+                    report(Code::HardcodedString, element->position, "literal text cannot be checked against every approved locale");
                 } else if (element->kind != ast::ValueKind::TextKey) {
-                    report(Code::FieldValueKind, element->position,
-                           std::format("text field requires {}", describe(domain)));
+                    report(Code::FieldValueKind, element->position, std::format("text field requires {}", describe(domain)));
                 } else {
                     analyzeTextKey(*element);
                 }
