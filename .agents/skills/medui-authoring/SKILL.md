@@ -112,11 +112,27 @@ verifier checks against. Rules:
 
 ## Checking a file without a full build
 
-`mdux-medui-check path/to/screen.medui` (issue #200) will validate a single file and print
-diagnostics — once it exists. The parser, analyzer, solver, budget check, and golden pass it will
-call already detect syntax errors, structural violations, unknown dictionary/theme names, hardcoded
-text in localizable fields, wrong field value domains, incomplete locale keys, layout overflow, a
-box that cannot contain its widest approved translation, a dynamic-text source that could escape
-the baked charset, a `@safety_critical` node with no `requirement:`, and an unknown `cv_check`;
-what is missing is the command that exposes them. Until it lands, review a `.medui`
-file by hand against this grammar and the component table above.
+```
+mdux-medui-check path/to/screen.medui [--format=json|text]
+```
+
+Validates one file and writes nothing. Exits non-zero when anything of error severity was found, so
+it drops into a pre-commit hook or an agent loop as it stands. `--format=json` emits the same
+envelope every MduX tool emits (#118), so a finding is `{file, line, column, code, severity,
+message, fixHint}` rather than prose to parse.
+
+**What it checks:** the grammar, the closed component dictionary, each field's value domain,
+hardcoded strings in localizable fields, theme tokens against the governed table, the
+`@safety_critical` rules including an unknown `cv_check` — and, when the file declares a `surface:`,
+bounded layout with its overflow and containment rules plus the golden set that follows.
+
+**What it cannot check, and says so.** Text keys and text budgets need the approved locales a recipe
+names, and a single file names none. Rather than reporting every `t("STR-KEY")` as absent from every
+locale — a vacuous truth dressed as a finding — the checker skips those and emits a note, `MDC001`.
+A screen with no `surface:` gets `MDC002` for the same reason: layout, overflow and golden bounds
+went unchecked. Notes do not fail the run; they are what makes a clean result visibly *partial*
+rather than silently so.
+
+For the two it cannot cover, compile the screen through `mdux-meduic` with a recipe carrying a
+`[text]` table: that checks every key against every approved locale, and every box against the
+widest translation of the text it holds.

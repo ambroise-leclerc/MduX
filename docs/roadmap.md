@@ -10,7 +10,7 @@ backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draw
 pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
 what the build actually produces. Track C's authoring story is what remains: #14 closed
 Wave 4 with the font and text pipeline, and #15 is underway in Wave 5 with the compiler
-that generates the screens it draws. Ten of its twelve children have landed — the ADRs,
+that generates the screens it draws. Eleven of its twelve children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
 its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
@@ -62,7 +62,7 @@ Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · in progress        #15 (S1–S10 done · S11 next)
+Wave 5 · in progress        #15 (S1–S11 done · S12 next)
 Wave 6                      #16  #17
 ```
 
@@ -263,7 +263,7 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 10/12**
+#### #15 — `.medui` compiler & build integration · **In progress · Wave 5 · 11/12**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
@@ -287,8 +287,8 @@ happened to read.
 - #197 S8 Canonical package and C++ emitters · _closed (PRs #220, #221)_
 - #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
 - #199 S10 Allocation-free screen runtime · _closed (PR #232)_
-- #200 S11 `mdux-medui-check` · **next**
-- #201 S12 First end-to-end screen
+- #200 S11 `mdux-medui-check` · _closed (PR #233)_
+- #201 S12 First end-to-end screen · **next**
 
 _Blocks #16, #17_
 
@@ -395,5 +395,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 ---
 
 _Epic status verified at `develop` @ `45eecbe` · 22 August 2026_
-_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 10/12) · no enforcement gaps outstanding_
+_13 epics · 9 delivered · Waves 1–4 shipped · Wave 5 in progress (#15 at 11/12) · no enforcement gaps outstanding_
 _All epics on GitHub_

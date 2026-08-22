@@ -204,6 +204,15 @@ private:
     }
 
     void analyzeTextKey(const ast::Value& value) {
+        // No approved locale to check against means there is nothing to check, and saying "absent
+        // from every approved locale" when there are none is a vacuous truth dressed as a finding.
+        // The caller that must not tolerate the gap is the compiler driver, which refuses a recipe
+        // whose screen draws text and declares no locales (#198); `mdux-medui-check` runs without a
+        // recipe on purpose and reports the gap as a note (#200).
+        if (inputs_.textPackages.empty()) {
+            return;
+        }
+
         std::vector<std::string_view> missingLocales;
         bool                          foundAnywhere = false;
         for (const mdux::text::TextPackage& package : inputs_.textPackages) {
@@ -225,20 +234,16 @@ private:
     void analyzeText(const ast::Value& value, FieldDomain domain) {
         if (domain == TextKeyList && value.kind == ast::ValueKind::List) {
             if (value.list.empty()) {
-                report(Code::FieldValueKind, value.position,
-                       std::format("text field requires {}", describe(domain)));
+                report(Code::FieldValueKind, value.position, std::format("text field requires {}", describe(domain)));
                 return;
             }
             for (const std::shared_ptr<ast::Value>& element : value.list) {
                 if (element == nullptr) {
-                    report(Code::FieldValueKind, value.position,
-                           std::format("text field requires {}", describe(domain)));
+                    report(Code::FieldValueKind, value.position, std::format("text field requires {}", describe(domain)));
                 } else if (element->kind == ast::ValueKind::String) {
-                    report(Code::HardcodedString, element->position,
-                           "literal text cannot be checked against every approved locale");
+                    report(Code::HardcodedString, element->position, "literal text cannot be checked against every approved locale");
                 } else if (element->kind != ast::ValueKind::TextKey) {
-                    report(Code::FieldValueKind, element->position,
-                           std::format("text field requires {}", describe(domain)));
+                    report(Code::FieldValueKind, element->position, std::format("text field requires {}", describe(domain)));
                 } else {
                     analyzeTextKey(*element);
                 }
