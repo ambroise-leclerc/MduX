@@ -95,11 +95,18 @@ Two things worth settling before the tag rather than during it:
   written from the merges it contains; the four earlier ones are summarised from this document's own
   wave record, and the file says so, because two of the four tags are not ancestors of `develop` and
   a reader checking them with `git log` would find that out the hard way.
-- **The release ritual is not readable from the repository.** `v0.2.0` and `v0.5.0` are ancestors of
-  neither `develop` nor `master`, while `v0.3.0` and `v0.4.0` are ancestors of `develop`; `develop`
-  is 668 commits ahead of `master`. So there is no rule a reader can infer about where a tag is cut,
-  and the CHANGELOG has to hedge its earlier entries because of it. Worth settling before 0.6.0
-  rather than at the moment of cutting it.
+- **The release ritual is inferable but not written down.** Checked rather than assumed, and an
+  earlier revision of this bullet got both facts wrong: `v0.5.0` peels to exactly `origin/master`'s
+  tip, so **tags land on `master`**, and `origin/master...origin/develop` is `1 32` — master carries
+  one commit develop does not, develop carries 32. (The "668" this bullet used to claim came from a
+  stale *local* `master`, 462 commits divergent from the real one, and was a total-history count
+  mislabelled as an ahead count.)
+
+  What is genuinely missing is the *procedure*: nothing records how develop reaches master, who
+  moves the version in `CMakeLists.txt`, or what a tag must be accompanied by. One non-linear
+  boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented cause: #23
+  purged normative text from git history. Worth writing the procedure down before 0.6.0 rather than
+  at the moment of cutting it.
 
 ## The backlog
 

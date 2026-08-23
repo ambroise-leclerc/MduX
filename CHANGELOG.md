@@ -6,16 +6,20 @@ issue carries the reasoning and this file carries the outcome.
 
 ## How to read the earlier entries
 
-This file starts at 0.6.0. **The entries for 0.2.0 through 0.5.0 are reconstructed from
-[`docs/roadmap.md`](docs/roadmap.md)'s own wave-by-wave record rather than derived from git history**,
-and that distinction is worth one paragraph because a reader may try to check them.
+This file starts at 0.6.0. **The entries for 0.2.0 through 0.5.0 summarise
+[`docs/roadmap.md`](docs/roadmap.md)'s own wave-by-wave record rather than deriving from git
+history**, and one boundary is the reason.
 
-Two of the four earlier tags — `v0.2.0` and `v0.5.0` — are not ancestors of `develop`, so
-`git log v0.4.0..v0.5.0` does not describe what a reader would expect it to. What the roadmap
-records is what each wave closed, and that is the account these entries summarise. Anything more
-precise would need the release ritual written down, which
-[`docs/roadmap.md`](docs/roadmap.md#when-v060-gets-cut) flags as the second thing to settle before
-tagging 0.6.0.
+`git log v0.2.0..v0.3.0` does not describe what a reader would expect: `v0.2.0` is not an ancestor
+of `v0.3.0`, and the two tags differ symmetrically by 462 commits against 475. That discontinuity has
+a known cause rather than being a mystery — #23 purged reproduced normative text from git history,
+not only from the working tree, so everything before that rewrite sits on a line the current one does
+not contain.
+
+Every later boundary is ordinary. `v0.3.0..v0.4.0` and `v0.4.0..v0.5.0` are both linear ranges
+(`0 93` and `0 72`), so a reader wanting commit-level detail for 0.4.0 or 0.5.0 can walk them and get
+exactly what they expect. These entries stay at wave granularity for consistency with 0.6.0's, not
+because the history is unavailable.
 
 ---
 
