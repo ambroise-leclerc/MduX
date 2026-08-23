@@ -15,10 +15,15 @@ mechanisms into a release.
 ## The branch topology
 
 ```text
-  feature/NNN-slug ──▶ develop ──▶ release/vX.Y.Z ──▶ master  (tagged vX.Y.Z)
-                          ▲                              │
-                          └───────────── back-merge ─────┘
+  NNN-slug ──▶ develop ──▶ release/vX.Y.Z ──▶ master  (tagged vX.Y.Z)
+                  ▲                              │
+                  └───────────── back-merge ─────┘
 ```
+
+A working branch is `<issue-number>-<slug>` — the scheme GitHub's "create a branch for this issue"
+button generates, and the one every workflow's `branches:` filter matches (`'[0-9]+-*'`, plus
+`'feat/**'` for branches that predate the convention). A branch named anything else gets **no checks
+at all**, silently, which is worse than a failing one.
 
 - **`develop`** integrates. Every change arrives by pull request, and a stack of PRs is based on its
   predecessor rather than on `develop` — see [`AGENTS.md`](../AGENTS.md) and issue `#117`.
@@ -68,10 +73,24 @@ in [`roadmap.md`](roadmap.md) and has an open child issue is a release note that
 $ git switch -c release/v0.6.0
 ```
 
-### 3. Move the version, in the one place it lives
+### 3. Move the version, in the one place it is *defined* and the three that assert it
 
-`CMakeLists.txt`'s `project(MduX VERSION X.Y.Z ...)` is the single source. `MDUX_TOOL_VERSION` flows
-from it into every baker, and therefore into every `report.json`; nothing else needs editing.
+`CMakeLists.txt`'s `project(MduX VERSION X.Y.Z ...)` is the single source: `MDUX_TOOL_VERSION` flows
+from it into every baker and therefore into every `report.json`, and `mdux::Version` from it into
+every consumer.
+
+Three tests then assert the value, and they have to move with it:
+
+```console
+$ grep -rn 'Version::minor ==\|Version::getString() ==' tests/
+tests/TestVersion.cpp:               2 assertions
+tests/TestRegulatoryCompliance.cpp:  1 assertion
+```
+
+They hard-code the number on purpose, and should keep doing so. `IEC 62304 Version Traceability`
+exists to check that the version a build *reports* is the version the project *declares*; derived
+from the same macro it would assert nothing. An earlier revision of this document said "nothing else
+needs editing" — cutting v0.6.0 found that out, three red tests into a green-looking release.
 
 ### 4. Re-bake every artifact, and read the diff
 
@@ -92,6 +111,27 @@ $ git diff generated/ | grep '^[-+]' | grep -v toolVersion | grep -v '^[-+][-+]'
 
 That command should print nothing.
 
+#### When you cannot run the bake
+
+This tree requires GCC 16 or MSVC with `import std`, and a preparer may have neither. The fallback is
+**bounded, and only this**: when the release changes no recipe, no input and no option — a pure
+version bump — the expected bytes are derivable by inspection, because `toolVersion` is the only
+field that moves. Write it, and let the release be gated on `evidence.<kind>.<id>` passing on **both**
+toolchain legs, which re-bakes every artifact from its recipe and byte-compares.
+
+Two things about that are worth being precise on, because it is a deviation from "run the baker":
+
+- **It is verification, not trust.** Two independent toolchains re-deriving the same bytes is a
+  stronger check than one unverified local bake. ADR-007 anticipated the case: it lists a hand-edited
+  file under `generated/` as a risk whose mitigation is that "re-baking overwrites the edit while the
+  byte-comparison fails the PR" — which is exactly the gate this leans on.
+- **It does not extend to anything else.** If any recipe, source or resolved option changed, the
+  bytes are not derivable by inspection and this fallback does not apply: find a supported toolchain.
+  A release that used it for more than a version bump would be asserting an artifact nobody derived.
+
+Record in the release PR that the fallback was used, so the next reviewer knows which of the two
+paths produced the bytes they are looking at.
+
 ### 5. Finish the changelog entry
 
 [`CHANGELOG.md`](../CHANGELOG.md)'s top entry moves from `unreleased` to the date. Its **known
@@ -99,7 +139,18 @@ limits** section is not optional: §5.8 asks for the anomalies known at release,
 that omits them describes a different release. If a limit was discovered after the entry was
 drafted, it goes in now.
 
-### 6. Run the full suite locally if you can, and let CI decide
+### 6. Update the roadmap
+
+The wave line moves from "in progress" to "shipped vX.Y.Z", the counts move, and the next wave opens.
+So do the provenance header and footer, which name the commit the status was verified at — a tagged
+roadmap whose banner names an older baseline contradicts itself in the one document a reader consults
+to find out what shipped.
+
+This is on the release branch, before the merge, and the ordering is the point: a roadmap updated
+after the tag leaves the tag pointing at a tree that still calls its own wave "in progress", and
+fixing it afterwards means re-tagging.
+
+### 7. Run the full suite locally if you can, and let CI decide
 
 ```console
 $ ctest --preset <your-preset> -L evidence      # the byte comparisons, both legs in CI
@@ -109,7 +160,7 @@ $ ctest --preset <your-preset>
 The `evidence` label is the one that matters here: it is the mechanical answer to "is the committed
 artifact the one this source produces".
 
-### 7. Merge to `master` and tag there
+### 8. Merge to `master` and tag there
 
 ```console
 $ gh pr create --base master --head release/v0.6.0 --title "Release v0.6.0"
@@ -122,7 +173,7 @@ $ git push origin v0.6.0
 The tag is annotated, and it names the commit on `master`. A lightweight tag records no author and no
 date of its own, which is a poor fit for a document that is meant to identify a configuration.
 
-### 8. Back-merge, so the histories do not drift
+### 9. Back-merge, so the histories do not drift
 
 ```console
 $ git switch develop && git merge --no-ff master && git push
@@ -131,11 +182,6 @@ $ git switch develop && git merge --no-ff master && git push
 Skipping this is how `master` accumulates commits `develop` does not have. As of this writing
 `origin/master...origin/develop` is `1 32` — master carries one commit develop does not, which is
 exactly the drift this step prevents.
-
-### 9. Update the roadmap
-
-The wave line moves from "in progress" to "shipped vX.Y.Z", and the next wave opens. That file is the
-programme's own account of what shipped when, and the CHANGELOG's earlier entries rest on it.
 
 ## What is deliberately not automated
 

@@ -23,7 +23,7 @@ because the history is unavailable.
 
 ---
 
-## 0.6.0 — unreleased
+## 0.6.0 — 23 August 2026
 
 Wave 5: the `.medui` compiler, end to end. An authored screen becomes a committed artifact, becomes
 `constexpr` C++, and reaches compared pixels.
