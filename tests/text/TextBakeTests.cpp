@@ -786,14 +786,17 @@ struct FixtureFont {
         font.pixelSize  = pixelSize;
         font.locales    = {"en-US"};
 
-        const std::vector<std::byte> sheet(64, std::byte{0});
+        // 16x16 rather than the 8x8 the three Latin glyphs need: `Shape::WithUnsupportedScripts`
+        // packs two more below them, and `validate()` refuses a slot that leaves the sheet. One
+        // size for every shape keeps the fixture a single code path.
+        const std::vector<std::byte> sheet(256, std::byte{0});
         const auto                   hex = mdux::evidence::toHex(mdux::evidence::sha256(sheet));
         font.atlas.path             = "atlas.bin";
-        font.atlas.width            = 8;
-        font.atlas.height           = 8;
+        font.atlas.width            = 16;
+        font.atlas.height           = 16;
         font.atlas.byteLength       = sheet.size();
         font.atlas.sha256           = std::string{hex.data(), hex.size()};
-        font.atlas.occupancyPercent = 75;
+        font.atlas.occupancyPercent = 19;
 
         // Sorted by code point, which is what `find()`'s binary search requires - and the order
         // that makes a record's packageIndex the glyph's position in this list.
