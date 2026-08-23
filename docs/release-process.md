@@ -132,10 +132,15 @@ Skipping this is how `master` accumulates commits `develop` does not have. As of
 `origin/master...origin/develop` is `1 32` — master carries one commit develop does not, which is
 exactly the drift this step prevents.
 
-### 9. Update the roadmap
+### 9. Update the roadmap — on the release branch, with the rest
 
-The wave line moves from "in progress" to "shipped vX.Y.Z", and the next wave opens. That file is the
-programme's own account of what shipped when, and the CHANGELOG's earlier entries rest on it.
+The wave line moves from "in progress" to "shipped vX.Y.Z", the counts move, and the next wave opens.
+That file is the programme's own account of what shipped when, and the CHANGELOG's earlier entries
+rest on it.
+
+This belongs in the release branch rather than after the tag, which is what cutting v0.6.0 taught:
+the tagged tree should describe itself. A roadmap updated afterwards leaves the tag pointing at a
+tree that still calls its own wave "in progress".
 
 ## What is deliberately not automated
 
