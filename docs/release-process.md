@@ -68,10 +68,24 @@ in [`roadmap.md`](roadmap.md) and has an open child issue is a release note that
 $ git switch -c release/v0.6.0
 ```
 
-### 3. Move the version, in the one place it lives
+### 3. Move the version, in the one place it is *defined* and the three that assert it
 
-`CMakeLists.txt`'s `project(MduX VERSION X.Y.Z ...)` is the single source. `MDUX_TOOL_VERSION` flows
-from it into every baker, and therefore into every `report.json`; nothing else needs editing.
+`CMakeLists.txt`'s `project(MduX VERSION X.Y.Z ...)` is the single source: `MDUX_TOOL_VERSION` flows
+from it into every baker and therefore into every `report.json`, and `mdux::Version` from it into
+every consumer.
+
+Three tests then assert the value, and they have to move with it:
+
+```console
+$ grep -rn 'Version::minor ==\|Version::getString() ==' tests/
+tests/TestVersion.cpp:               2 assertions
+tests/TestRegulatoryCompliance.cpp:  1 assertion
+```
+
+They hard-code the number on purpose, and should keep doing so. `IEC 62304 Version Traceability`
+exists to check that the version a build *reports* is the version the project *declares*; derived
+from the same macro it would assert nothing. An earlier revision of this document said "nothing else
+needs editing" — cutting v0.6.0 found that out, three red tests into a green-looking release.
 
 ### 4. Re-bake every artifact, and read the diff
 
