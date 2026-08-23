@@ -64,7 +64,18 @@ jobs:
     - name: Configure
       run: cmake --preset ninja-gcc
 
-    - name: Stage the artifacts
+    # Two passes, because a new artifact that another bake consumes does not exist yet on the first
+    # one: the screen's dependency on generated/text/.../package.json is unsatisfiable until the
+    # text bake has staged it, and ninja fails at graph time rather than building what it can.
+    # Staging the text package, re-configuring so the file is now visible, then staging everything
+    # is the ordinary bootstrap for introducing a consumed artifact.
+    - name: Stage the text package
+      run: cmake --build --preset ninja-gcc --target bake-text-endoscope-monitor-en-us-update
+
+    - name: Re-configure now that the text package exists
+      run: cmake --preset ninja-gcc
+
+    - name: Stage everything
       run: cmake --build --preset ninja-gcc --target mdux-bake-update
 
     - name: Show what moved
