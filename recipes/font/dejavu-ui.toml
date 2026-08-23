@@ -26,11 +26,17 @@
 # Same reasoning as the .spv files under recipes/shader/ and the .safetensors under
 # recipes/model/: an artifact whose bytes depend on which version of a tool the CI image ships is
 # not byte-reproducible. The font is an input, pinned by its digest in report.json. To change it,
-# replace the file and run
+# replace the file and run the evidence update to a fixpoint:
 #
 #   cmake --build <build-dir> --target mdux-bake-update
+#   cmake -S . -B <build-dir>
+#   cmake --build <build-dir>
+#   ctest --test-dir <build-dir> -L evidence --output-on-failure
 #
-# then review the diff to generated/font/dejavu-ui/.
+# Repeat those four commands until the evidence tests pass and an update pass reports that every
+# artifact is already up to date. Then review the diffs to the font and every dependent text and
+# screen artifact; the aggregate update target does not order their independent bakes. See
+# cmake/MduXBake.cmake, "Artifacts that consume other artifacts", for the mechanism.
 #
 # ## Why this charset
 #

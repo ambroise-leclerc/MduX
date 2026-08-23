@@ -1,0 +1,54 @@
+# The endoscope monitor's text, in the one locale its font package approves.
+#
+# The first committed text package in this repository, and the artifact that lets a screen carry
+# `t("STR-KEY")` at all: `mdux-meduic` refuses a screen that draws text and names no approved
+# locale, correctly, because a budget checked against no locale is a claim nobody made.
+#
+# ## One recipe per locale, not one recipe with every locale
+#
+# A text package is one locale's worth of positioned glyph runs (`mdux.text.schema`), so a second
+# locale is a second recipe producing a second package, and the screen recipe lists them all. That
+# is not bookkeeping: the runs are positioned against a *particular* atlas, and the widest approved
+# translation - which is what #195 measures every box against - is only meaningful when each
+# locale's own measurements exist separately.
+#
+# Today there is exactly one, because `recipes/font/dejavu-ui.toml` approves exactly `en-US`. A
+# locale added there without a text package added here is a build error rather than an omission:
+# `checkLocaleWiring()` refuses a screen whose font approves a locale the recipe has no package for.
+#
+# ## Why the strings live here rather than in the .medui source
+#
+# ADR-011, as amended by #203: a compiled screen is locale-free and carries `textKey` rather than
+# glyph runs, so the device joins the two for the locale it is running. A string in the source would
+# put one locale's words inside an artifact that is supposed to hold none.
+#
+# To change the wording, edit this file and run the evidence update to a fixpoint:
+#
+#   cmake --build <build-dir> --target mdux-bake-update
+#   cmake -S . -B <build-dir>
+#   cmake --build <build-dir>
+#   ctest --test-dir <build-dir> -L evidence --output-on-failure
+#
+# Repeat those four commands until the evidence tests pass and an update pass reports that every
+# artifact is already up to date, then review the diffs to generated/text/endoscope-monitor-en-us/
+# and generated/screen/endoscope-monitor/. The screen records this package as an input, but the
+# aggregate update target does not order their independent bakes; cmake/MduXBake.cmake explains why
+# the fixpoint is required.
+
+[package]
+id      = "endoscope-monitor-en-us"
+atlas   = "dejavu-ui"
+locale  = "en-US"
+
+# The committed font package these runs are measured against. Named as a path as well as by id
+# above, and the baker checks the two agree: an id alone could not be read, and a path alone could
+# be swapped for another package without the recipe saying so.
+font    = "generated/font/dejavu-ui/package.json"
+sidecar = "runs.bin"
+
+# The keys a `.medui` source names with `t("...")`, and their translations. Parallel arrays rather
+# than an array of tables because `mdux.tools.toml` implements a deliberate subset without them -
+# see tools/common/Toml.cppm:13, where it says so.
+[strings]
+keys   = ["STR-EM-TITLE"]
+values = ["Endoscope Monitor"]

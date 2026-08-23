@@ -1,10 +1,10 @@
 // The first screen this repository compiles into a committed artifact (#198).
 //
-// It draws no text, and that is a deliberate limit rather than a design: no text package is baked
-// anywhere in this tree yet, so a screen carrying `t("STR-KEY")` cannot be compiled end to end until
-// #201 lands the text half. What this screen does exercise is everything that does not depend on
-// that - the Row background the solver synthesises, a live video surface, a live waveform, a baked
-// image, and an explicitly positioned node whose rectangle a golden reference pins.
+// It draws the Row background the solver synthesises, a live video surface, a live waveform, a
+// baked image, an explicitly positioned node whose rectangle a golden reference pins - and, since
+// #235, a label. The label is what puts the text-budget stage over a committed artifact: its box is
+// measured against the widest translation every approved locale carries, which is a check that had
+// only ever run over packages a test built for itself.
 //
 // One property per line, matching TrustSC's own sources: its parser splits a component body line by
 // line, so a fixture written the portable way is evidence about a shared grammar rather than about
@@ -24,6 +24,19 @@ Screen EndoscopeMonitor {
             height: 72px;
             source: img("IMG-BRAND-MARK");
         }
+
+        // The screen's one piece of text, and the reason it is here rather than anywhere more
+        // decorative: it sits in a fixed-width box beside the brand mark, so the budget stage has a
+        // resolved rectangle to measure rather than one the solver would have to invent. The key is
+        // carried into the compiled screen; the words for it live in the text package, one per
+        // approved locale, because a compiled screen is locale-free (ADR-011 as amended by #203).
+        Label {
+            id: screen-title;
+            width: 1040px;
+            height: 72px;
+            text: t("STR-EM-TITLE");
+            color: Theme.Colors.Title;
+        }
     }
 
     VulkanViewport {
@@ -42,9 +55,9 @@ Screen EndoscopeMonitor {
     // is deferred by the runtime, so there are no pixels to compare; the check ADR-012 describes
     // arrives with #16, over content that #17 teaches to draw.
     //
-    // A NumericDisplay deliberately: it is the one traceable component that carries no text key, so
-    // this screen exercises the annotation rules without needing the text package that does not
-    // exist yet (#201's remaining half, and the reason the runtime draws what it draws).
+    // A NumericDisplay rather than a Label, still: its `template:` names a product template the
+    // compiler cannot expand into code points, so it is the traceable component whose worst case no
+    // budget can bound. That is a limit worth having in the screen rather than designed around.
     @safety_critical(cv_check: [Bounds, ColorHash])
     NumericDisplay {
         id: insufflation-pressure;

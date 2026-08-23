@@ -15,16 +15,16 @@
  *
  * The runtime draws a `Panel`. `EndoscopeMonitor`'s Row declares a background, so the solver
  * synthesised one, and that is what appears: a 1280x72 bar in `Theme.Colors.TopbarBackground`. Its
- * image, its video surface, its numeric readout and its waveform are visited, counted as deferred,
- * and left undrawn - because a compiled screen carries a `textKey` rather than glyphs and no text
- * package is baked in this tree, and because live-data components have no geometry until a sample
- * exists.
+ * image, its label, its video surface, its numeric readout and its waveform are visited, counted as
+ * deferred, and left undrawn - the label because a compiled screen carries a `textKey` rather than
+ * glyphs, so drawing it means joining the screen to a text package for the locale the device is
+ * running, which is #17's work; the live-data components because they have no geometry until a
+ * sample exists.
  *
  * That makes this test thin in content and complete in path, and the distinction is the point. What
  * it proves is not that MduX can draw a clinical screen; it is that a rectangle on this display came
  * from a file an author wrote, through every stage, with nothing hand-carried between them. The
- * content grows when the text package lands and the remaining components learn their geometry; the
- * path does not have to be built again.
+ * content grows when the components learn their geometry; the path does not have to be built again.
  *
  * ## What the golden sidecar has here, and what it does not
  *
@@ -135,13 +135,23 @@ TEST_CASE("The compiled screen is the one the compiler produced", "pixel") {
     CHECK(package.validate().has_value());
     CHECK(package.surfaceWidth == 1280);
     CHECK(package.surfaceHeight == 720);
-    CHECK(package.nodes.size() == 5);
+    CHECK(package.nodes.size() == 6);
 
     // The safety-critical node #201 asks for, reached through the function a traceability export
     // walks rather than by index.
     const medui::CompiledNode* traced = package.find("insufflation-pressure");
     REQUIRE(traced != nullptr);
     CHECK(medui::requirementOf(*traced) == "REQ-EM-001");
+
+    // The label carries the *key*, never the words. This is ADR-011 (as amended by #203) made
+    // checkable at the one place it could be violated without anything else noticing: a compiler
+    // that resolved `t("STR-EM-TITLE")` into "Endoscope Monitor" here would produce a screen that
+    // still validates, still renders identically today, and is wrong in every locale but one.
+    const medui::CompiledNode* label = package.find("screen-title");
+    REQUIRE(label != nullptr);
+    const auto* text = std::get_if<medui::LabelSpec>(&label->payload);
+    REQUIRE(text != nullptr);
+    CHECK(text->textKey == "STR-EM-TITLE");
 }
 
 TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel") {
@@ -171,9 +181,9 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     const auto recorded = medui::render(package, *list);
     REQUIRE(recorded.has_value());
     CHECK(recorded->rects == 1);
-    // Four of five nodes are visited and left undrawn, and the frame says so rather than looking
+    // Five of six nodes are visited and left undrawn, and the frame says so rather than looking
     // complete. See this file's header for which, and why each.
-    CHECK(recorded->deferred == 4);
+    CHECK(recorded->deferred == 5);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);

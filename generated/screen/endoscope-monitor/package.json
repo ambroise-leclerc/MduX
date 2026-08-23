@@ -35,6 +35,20 @@
     },
     {
       "bounds": {
+        "height": 72,
+        "width": 1040,
+        "x": 240,
+        "y": 0
+      },
+      "id": "screen-title",
+      "kind": "Label",
+      "spec": {
+        "colorToken": "Theme.Colors.Title",
+        "textKey": "STR-EM-TITLE"
+      }
+    },
+    {
+      "bounds": {
         "height": 424,
         "width": 1280,
         "x": 0,

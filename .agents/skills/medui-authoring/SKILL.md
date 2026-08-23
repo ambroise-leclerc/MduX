@@ -10,7 +10,7 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: an authored screen reaches pixels; the text half is what remains
+## Status: an authored screen reaches pixels, text included up to the draw
 
 **A `.medui` lexer, AST, parser, semantic analyzer, integer-only bounded layout solver, text-budget
 check, and golden-reference pass exist** in the host-tools zone (`tools/medui/`). The diagnostic
@@ -30,12 +30,18 @@ and a `.hpp` carrying `static_assert(screen.validate().has_value())`, so a malfo
 build error rather than a startup failure (#197). A governed runtime draws one without allocating
 (#199), and `mdux-medui-check` validates a single file (#200).
 
-Two limits are worth knowing before you write a screen. A font package is baked; **no text package
-is** — the per-locale glyph runs a `t("STR-KEY")` resolves against — so a screen carrying a text key
-cannot be compiled end to end
-([#235](https://github.com/ambroise-leclerc/MduX/issues/235)). And the runtime draws a `Panel`; every other component is visited,
-counted in `FrameStats::deferred` and left undrawn, because text needs that package and live-data
-components have no geometry until the frame does.
+A font package and a text package are both baked (#235), so a screen carrying `t("STR-KEY")` compiles
+end to end and its boxes are measured against the widest approved translation. Writing one means
+writing three files, not one: the `.medui` source, a `recipes/text/<id>-<locale>.toml` per locale the
+font approves, and the screen recipe's `[text]` table naming them — a locale the font approves with
+no package listed is a build error, because a budget checked against fewer locales than were approved
+is a claim nobody made.
+
+One limit is worth knowing before you write a screen: the runtime draws a `Panel`; every other
+component, a `Label` included, is visited, counted in `FrameStats::deferred` and left undrawn.
+Drawing text means joining a locale-free compiled screen to a text package for the locale the device
+is running, which is [#17](https://github.com/ambroise-leclerc/MduX/issues/17); live-data components
+have no geometry until the frame does.
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -53,7 +59,9 @@ grammar, component semantics, diagnostics, and portable guidance live in
 A `.medui` file builds something in MduX today, and it reaches the screen: register it with
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
-lavapipe. What it cannot yet do is carry text, for the reason above.
+lavapipe. It carries text too, since #235: a `t("STR-KEY")` compiles, and the box holding it is
+measured against every approved locale's widest translation. What it cannot yet do is *draw* that
+text, for the reason above.
 
 ## Grammar shape
 

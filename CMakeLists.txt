@@ -437,6 +437,31 @@ mdux_bake_artifact(
         atlas.bin
 )
 
+# The first committed text package (#235), and the artifact that lets a screen carry text at all.
+#
+# `SOURCES` names a file under generated/ deliberately. The input is the *committed* font package,
+# not the one this build happens to produce - a text package positioned against an atlas that only
+# exists in somebody's build tree would be evidence of nothing. Listing it here is what makes
+# re-baking the font invalidate this artifact rather than leaving it describing an atlas that moved.
+#
+# It is placed between the font and the screen for a reader's benefit and for nothing else:
+# registration order is **not** an execution order, and `mdux-bake-update` may stage this package
+# after the screen that consumes it has already been baked against the previous one. See
+# cmake/MduXBake.cmake, "Artifacts that consume other artifacts", for why that is contained and what
+# the workflow is.
+mdux_bake_artifact(
+    KIND text
+    ID endoscope-monitor-en-us
+    TOOL mdux-textbake
+    RECIPE recipes/text/endoscope-monitor-en-us.toml
+    SOURCES
+        generated/font/dejavu-ui/package.json
+    OUTPUTS
+        package.json
+        report.json
+        runs.bin
+)
+
 mdux_bake_artifact(
     KIND shader
     ID triangle
@@ -456,13 +481,25 @@ mdux_bake_artifact(
 # and the same evidence.screen.<id> byte comparison as a font or a shader, because nothing about a
 # screen justifies weaker evidence than its neighbours.
 #
-# It draws no text on purpose: no text package is baked in this tree yet, so the text-budget stage
-# has nothing to measure against and a screen carrying t("STR-KEY") would be refused for declaring no
-# approved locale. #201 lands the text half.
+# It draws text since #235, which is what puts the text-budget stage (#195) over a committed
+# artifact rather than only over packages a test builds: `checkTextBudgets()` measures the screen's
+# label against the widest translation the recipe's approved locales carry.
+#
+# The two packages are named as SOURCES so the screen re-bakes when either moves. A forgotten entry
+# would not fail - it would make the committed screen quietly stop matching the text it was compiled
+# against, which is the drift the whole artifact exists to make impossible.
 include(cmake/MduXCompileScreen.cmake)
 mdux_compile_screen(
     ID endoscope-monitor
     RECIPE recipes/screen/endoscope-monitor.toml
+    SOURCES
+        generated/font/dejavu-ui/package.json
+        generated/text/endoscope-monitor-en-us/package.json
+        # The sidecar too, and not as belt and braces: `loadLocales()` reads these bytes directly
+        # and records their digest among the screen's inputs. The package also records that digest,
+        # but every file a custom command reads is a dependency in its own right; otherwise an
+        # independently changed or damaged sidecar would not even ask the screen bake to validate it.
+        generated/text/endoscope-monitor-en-us/runs.bin
 )
 
 # ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last
