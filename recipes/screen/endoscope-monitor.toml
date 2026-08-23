@@ -10,12 +10,14 @@
 # derived injectively from a name, since names admit `-` and `_` and lowercasing is not injective
 # across case. What the compiler does check is that the two are the same word.
 #
-# ## Why this screen draws no text
+# ## What the [text] table is for
 #
-# Not a simplification for its own sake. No text package is baked anywhere in this tree yet, so the
-# text-budget stage has nothing to measure against and a screen carrying `t("STR-KEY")` would be
-# refused - correctly - for declaring no approved locale. #201 lands the text half; this screen
-# proves the rest of the pipeline end to end in the meantime.
+# A screen that draws text names the font package its boxes are measured against, and one committed
+# text package per locale that font approves. Both are checked rather than trusted: the compiler
+# refuses a package baked against a different atlas, a locale listed twice, a locale the font does
+# not approve, and - the one that matters most - a locale the font *does* approve that the recipe
+# has no package for. A budget checked against fewer locales than were approved is a claim nobody
+# made, so it is a build error rather than a narrower guarantee.
 #
 # To change the screen, edit the .medui source and run
 #
@@ -41,3 +43,10 @@ surfaceHeight = 720
 maxVertices = 4096
 maxIndices  = 6144
 maxCommands = 64
+
+# The packages this screen's text is validated against (#235). `fontPackage` supplies the glyph
+# metrics every box is measured with; `packages` lists one committed text package per locale the
+# font approves, which today is `en-US` alone.
+[text]
+fontPackage = "generated/font/dejavu-ui/package.json"
+packages    = ["generated/text/endoscope-monitor-en-us/package.json"]

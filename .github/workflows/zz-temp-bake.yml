@@ -1,0 +1,81 @@
+name: TEMPORARY - stage baked artifacts
+
+# Not part of this repository's checks, and deleted before this PR merges.
+#
+# Its only job is to run `mdux-bake-update` in the one environment that can build this project and
+# hand back the bytes it staged, so the committed artifacts for #235 are produced by the baker
+# rather than by a second implementation written to guess at them. ADR-007 asks that a committed
+# artifact be the one the tool produces; there is no local build available to the author, so this
+# is how that requirement is met.
+
+on:
+  pull_request:
+    branches: [ develop, '[0-9]+-*' ]
+
+permissions:
+  contents: read
+
+jobs:
+  bake:
+    name: Stage generated/
+    runs-on: ubuntu-latest
+    container: gcc:16.1.0
+    env:
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Resolve the pinned MedUI contract commit
+      id: medui-contract
+      shell: bash
+      run: |
+        set -euo pipefail
+        commit="$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' medui-conformance.toml)"
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout pinned MedUI conformance contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: Compliatory/MedUI
+        ref: ${{ steps.medui-contract.outputs.commit }}
+        path: .medui-conformance
+        persist-credentials: false
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y cmake ninja-build pkg-config libvulkan-dev \
+          vulkan-utility-libraries-dev spirv-tools libglfw3-dev libwayland-dev \
+          wayland-protocols libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev wget
+
+    - name: Install pinned CMake
+      run: |
+        CMAKE_VERSION="4.1.1"
+        CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        tar -xzf "$CMAKE_ARCHIVE" -C /opt/
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
+        ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest
+
+    - name: Configure
+      run: cmake --preset ninja-gcc
+
+    - name: Stage the artifacts
+      run: cmake --build --preset ninja-gcc --target mdux-bake-update
+
+    - name: Show what moved
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git status --short generated/
+        git diff --stat generated/
+
+    - name: Upload generated/
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: generated
+        path: generated/
+        retention-days: 1
