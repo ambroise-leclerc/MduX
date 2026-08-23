@@ -150,7 +150,7 @@ json::Value Recipe::toOptions() const {
         // Copying them here would make one edited translation appear in three places of the same
         // artifact diff, which makes the diff harder to read rather than more complete.
         static_cast<void>(options.set("font", json::Value::string(fontPackage)));
-        static_cast<void>(options.set("strings", json::Value::integer(strings.size())));
+        static_cast<void>(options.set("strings", json::Value::integer(static_cast<std::int64_t>(strings.size()))));
     }
     if (font.has_value()) {
         // Every resolved knob, because ADR-007's rule is that a silently changed default must not
