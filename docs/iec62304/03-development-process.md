@@ -100,5 +100,15 @@ software item, its known anomalies, and the configuration it was built from. Mdu
 pipeline ([ADR-007](../adr/ADR-007-evidence-pipeline-doctrine.md)) is the mechanism most directly
 relevant here: a `report.json` records exactly which recipe, inputs, and resolved options produced
 a given artifact, and CI re-derives the artifact from those to confirm the record is accurate before
-anything is considered final. There is no product release yet for this to apply to; the mechanism
-exists ahead of the need, which is the order issue #12 was deliberately built in.
+anything is considered final.
+
+[`docs/release-process.md`](../release-process.md) is the procedure that turns those mechanisms into
+a release, and three of its steps answer this sub-clause directly: every committed artifact is
+re-derived after the version moves and its diff reviewed, so the configuration released is the one
+the sources produce; the changelog entry carries the limits known at the time, which is this
+sub-clause's "known anomalies"; and the tag is annotated on `master`, so the composition has an
+identifier with an author and a date rather than a moving branch name.
+
+The distinction this document should keep is between a *library* release, which MduX has cut five of,
+and a *product* release by a manufacturer incorporating it — the second is out of scope here, and
+none of the five carries that claim.

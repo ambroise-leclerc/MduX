@@ -102,11 +102,12 @@ Two things worth settling before the tag rather than during it:
   stale *local* `master`, 462 commits divergent from the real one, and was a total-history count
   mislabelled as an ahead count.)
 
-  What is genuinely missing is the *procedure*: nothing records how develop reaches master, who
-  moves the version in `CMakeLists.txt`, or what a tag must be accompanied by. One non-linear
-  boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented cause: #23
-  purged normative text from git history. Worth writing the procedure down before 0.6.0 rather than
-  at the moment of cutting it.
+  The procedure that was missing is now [`release-process.md`](release-process.md): a release
+  branch off `develop`, the version moved in `CMakeLists.txt`, **every committed artifact re-baked**
+  because each `report.json` records the `toolVersion` it was baked by, the artifact diff reviewed
+  for anything that is not that field, then a merge to `master` and an annotated tag there. One
+  non-linear boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented
+  cause: #23 purged normative text from git history.
 
 ## The backlog
 

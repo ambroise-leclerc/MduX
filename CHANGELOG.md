@@ -65,6 +65,8 @@ Wave 5: the `.medui` compiler, end to end. An authored screen becomes a committe
 
 ### Also
 
+- [`docs/release-process.md`](docs/release-process.md), the procedure for cutting a version —
+  written before the version it is for.
 - Dual licensing under EUPL-1.2.
 - A file-header lint, after ten files were found in a documentation order `CONTRIBUTING.md` had
   retired twice (#223).
