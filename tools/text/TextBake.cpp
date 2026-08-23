@@ -66,6 +66,16 @@ constexpr std::string_view recipePixelSizeInvalid = "TXT018";
 // the fix is a different font, not a different charset.
 constexpr std::string_view tabularFiguresMismatch = "TXT019";
 
+// #235's text path. A font recipe's own "cannot read the font" is TXT012, which is about a
+// TrueType file; these are about a baked font *package*, which fails in different ways and sends
+// an author somewhere else - so they get their own codes rather than overloading TXT012/TXT013.
+constexpr std::string_view recipeStringsMalformed  = "TXT020";
+constexpr std::string_view recipeFontPackageUnread = "TXT021";
+constexpr std::string_view fontPackageUnparsed     = "TXT022";
+constexpr std::string_view localeNotApproved       = "TXT023";
+constexpr std::string_view stringNotDrawable       = "TXT024";
+constexpr std::string_view runTooWide              = "TXT025";
+
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
     diagnostics.push_back(cli::Diagnostic{.file = std::move(file),
@@ -91,6 +101,36 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::si
     return std::as_bytes(std::span{text.data(), text.size()});
 }
 
+/**
+ * @brief Resolves `relativePath` under `root`, or nullopt when it would escape.
+ *
+ * `root / relativePath` is not the containment it looks like: std::filesystem's operator/
+ * *replaces* the left operand when the right is absolute, so `source = "/etc/shadow"` reads that
+ * file and ignores `root` entirely. A relative path with `..` components escapes the same way by a
+ * different route. The recipe is repository content rather than network input, so this is not a
+ * live attack surface today - but a baker that will one day run over a recipe somebody else wrote
+ * should not have "the recipe is trusted" as its only defence.
+ *
+ * Shared by the font path's `source` and the text path's `font`, so the two cannot drift into
+ * disagreeing about what is inside the repository.
+ */
+[[nodiscard]] std::optional<std::filesystem::path> confine(const std::filesystem::path& root,
+                                                            std::string_view relativePath) {
+    if (relativePath.empty() || std::filesystem::path{relativePath}.is_absolute()) {
+        return std::nullopt;
+    }
+    const std::filesystem::path resolved   = (root / relativePath).lexically_normal();
+    const std::filesystem::path normalRoot = root.lexically_normal();
+    // lexically_relative() gives the path from root to the target; a result that starts with ".."
+    // means the target is outside root. Comparing the normalised forms is what makes `a/../../b`
+    // fail rather than pass on a string prefix check.
+    const auto relative = resolved.lexically_relative(normalRoot);
+    if (relative.empty() || *relative.begin() == "..") {
+        return std::nullopt;
+    }
+    return resolved;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -103,6 +143,15 @@ json::Value Recipe::toOptions() const {
     static_cast<void>(options.set("atlas", json::Value::string(atlas)));
     static_cast<void>(options.set("locale", json::Value::string(locale)));
     static_cast<void>(options.set("sidecar", json::Value::string(sidecar)));
+    if (!font.has_value()) {
+        // The resolved font package path, and how many runs were asked for. Not the strings
+        // themselves: they are the recipe's own content, the recipe's digest is recorded a few
+        // lines above this in every report, and their keys are already `package.json`'s run ids.
+        // Copying them here would make one edited translation appear in three places of the same
+        // artifact diff, which makes the diff harder to read rather than more complete.
+        static_cast<void>(options.set("font", json::Value::string(fontPackage)));
+        static_cast<void>(options.set("strings", json::Value::integer(strings.size())));
+    }
     if (font.has_value()) {
         // Every resolved knob, because ADR-007's rule is that a silently changed default must not
         // leave every report looking unchanged. The charset is recorded as its ranges rather than
@@ -314,6 +363,86 @@ namespace {
     return spec;
 }
 
+/**
+ * @brief Reads a text recipe's `[strings]` table and its `[package] font` key into `recipe`.
+ *
+ * Both are optional together and required together. A recipe with neither is the S1 shape - a
+ * package with no runs - which stays valid because a locale can legitimately have nothing to say
+ * yet, and because every text package in this repository was that shape until #235. A recipe with
+ * one and not the other is a half-written recipe, and saying so here is more useful than baking an
+ * empty package and leaving the author to wonder where their strings went.
+ */
+[[nodiscard]] bool parseStrings(const toml::Document& document, const toml::Table& package, Recipe& recipe,
+                                std::string_view recipePath, std::vector<cli::Diagnostic>& diagnostics) {
+    const toml::Table* strings = document.table("strings");
+    const toml::Value* font    = package.find("font");
+
+    if (strings == nullptr && font == nullptr) {
+        return true;
+    }
+    if (strings == nullptr || font == nullptr) {
+        report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+               strings == nullptr ? "recipe names a font package and has no [strings] table"
+                                  : "recipe has a [strings] table and names no font package",
+               "A run is a string positioned against a font package: neither is meaningful alone.");
+        return false;
+    }
+
+    std::vector<std::string> keys;
+    std::vector<std::string> values;
+    try {
+        recipe.fontPackage = font->asString();
+        keys               = strings->require("keys").asStringArray();
+        values             = strings->require("values").asStringArray();
+    } catch (const toml::TomlError& error) {
+        report(diagnostics, std::string{recipePath}, error.line(), recipeStringsMalformed, error.what(),
+               "[strings] needs parallel 'keys' and 'values' string arrays.");
+        return false;
+    }
+
+    if (keys.size() != values.size()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+               std::format("[strings] has {} keys and {} values", keys.size(), values.size()),
+               "The two arrays are parallel: one value per key, in the same order.");
+        return false;
+    }
+    if (keys.empty()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+               "[strings] is present and empty",
+               "Remove the table to bake a package with no runs, or give it a key.");
+        return false;
+    }
+
+    for (std::size_t i = 0; i < keys.size(); ++i) {
+        // Empty on either side, refused here rather than at schema validation. An empty key cannot
+        // be named by `t("")`; an empty value would bake a zero-length run, which validates and
+        // draws nothing, so a missing translation would ship as a blank label rather than as a
+        // build failure. Both are recipe-authoring mistakes, and a diagnostic naming the index is
+        // more actionable than a schema error at line 0.
+        if (keys[i].empty()) {
+            report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+                   std::format("[strings] key {} is empty", i));
+            return false;
+        }
+        if (values[i].empty()) {
+            report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+                   std::format("[strings] value for '{}' is empty", keys[i]),
+                   "An empty translation bakes a run that draws nothing, which ships as a blank label.");
+            return false;
+        }
+        for (std::size_t j = 0; j < i; ++j) {
+            if (keys[j] == keys[i]) {
+                report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+                       std::format("[strings] names the key '{}' twice", keys[i]),
+                       "A key becomes a run id, which is unique within a package.");
+                return false;
+            }
+        }
+        recipe.strings.push_back(TextString{.key = keys[i], .text = values[i]});
+    }
+    return true;
+}
+
 }  // namespace
 
 std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipePath,
@@ -367,6 +496,8 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
             return std::nullopt;
         }
         recipe.font = std::move(*spec);
+    } else if (!parseStrings(document, *package, recipe, recipePath, diagnostics)) {
+        return std::nullopt;
     }
 
     if (!isFontRecipe && recipe.atlas.empty()) {
@@ -678,32 +809,16 @@ using SlotIndex = std::vector<const atlas::GlyphSlot*>;
                                                      std::vector<cli::Diagnostic>& diagnostics) {
     const FontSpec& spec = *recipe.font;
 
-    // Confine the source path to the repository before opening it.
-    //
-    // `root / spec.source` is not the containment it looks like: std::filesystem's operator/
-    // *replaces* the left operand when the right is absolute, so `source = "/etc/shadow"` reads
-    // that file and ignores `root` entirely. A relative path with `..` components escapes the
-    // same way by a different route. The recipe is repository content rather than network input,
-    // so this is not a live attack surface today - but a baker that will one day run over a
-    // recipe somebody else wrote should not have "the recipe is trusted" as its only defence.
-    if (spec.source.empty() || std::filesystem::path{spec.source}.is_absolute()) {
+    // Confine the source path to the repository before opening it. See `confine()` for why the
+    // obvious `root / spec.source` is not containment.
+    const auto sourcePath = confine(root, spec.source);
+    if (!sourcePath.has_value()) {
         report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
-               std::format("font path '{}' must be relative to the repository root", spec.source));
-        return std::nullopt;
-    }
-    const std::filesystem::path sourcePath = (root / spec.source).lexically_normal();
-    const std::filesystem::path normalRoot = root.lexically_normal();
-    // lexically_relative() gives the path from root to source; a result that starts with ".."
-    // means source is outside root. Comparing the normalised forms is what makes `a/../../b`
-    // fail rather than pass on a string prefix check.
-    const auto relative = sourcePath.lexically_relative(normalRoot);
-    if (relative.empty() || *relative.begin() == "..") {
-        report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
-               std::format("font path '{}' resolves outside the repository root", spec.source));
+               std::format("font path '{}' must be relative to the repository root and stay inside it", spec.source));
         return std::nullopt;
     }
 
-    auto fontBytes = readFile(sourcePath);
+    auto fontBytes = readFile(*sourcePath);
     if (!fontBytes.has_value()) {
         report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
                std::format("cannot read font '{}'", spec.source),
@@ -784,6 +899,212 @@ using SlotIndex = std::vector<const atlas::GlyphSlot*>;
     return outputs;
 }
 
+/// Decodes UTF-8 into scalar values, or nullopt at the first malformed byte.
+///
+/// A local decoder rather than a shared one: the only other UTF-8 code in the tools is the medui
+/// lexer's `firstInvalidUtf8()`, which validates without decoding, and a shared decoder would be a
+/// module boundary for forty lines. It rejects what the standard rejects - overlong forms,
+/// surrogates, and anything past U+10FFFF - because each of those is a byte sequence that some
+/// other decoder accepts and turns into a different character, and this one's output ends up in a
+/// committed artifact.
+[[nodiscard]] std::optional<std::vector<char32_t>> decodeUtf8(std::string_view input) {
+    std::vector<char32_t> points;
+    points.reserve(input.size());
+
+    std::size_t i = 0;
+    while (i < input.size()) {
+        const auto    lead = static_cast<std::uint32_t>(static_cast<std::uint8_t>(input[i]));
+        std::size_t   length = 0;
+        std::uint32_t point  = 0;
+        std::uint32_t lowest = 0;  ///< the smallest scalar this length may legally encode
+        if (lead < 0x80u) {
+            length = 1; point = lead;         lowest = 0u;
+        } else if ((lead & 0xE0u) == 0xC0u) {
+            length = 2; point = lead & 0x1Fu; lowest = 0x80u;
+        } else if ((lead & 0xF0u) == 0xE0u) {
+            length = 3; point = lead & 0x0Fu; lowest = 0x800u;
+        } else if ((lead & 0xF8u) == 0xF0u) {
+            length = 4; point = lead & 0x07u; lowest = 0x10000u;
+        } else {
+            return std::nullopt;  // a continuation byte, or a lead no encoding uses
+        }
+        if (i + length > input.size()) {
+            return std::nullopt;
+        }
+        for (std::size_t k = 1; k < length; ++k) {
+            const auto continuation = static_cast<std::uint32_t>(static_cast<std::uint8_t>(input[i + k]));
+            if ((continuation & 0xC0u) != 0x80u) {
+                return std::nullopt;
+            }
+            point = (point << 6u) | (continuation & 0x3Fu);
+        }
+        // `lowest` is what rejects the overlong forms: U+0041 encoded in two bytes decodes to 65
+        // just as the one-byte form does, and a decoder that accepted both would let two different
+        // recipes bake byte-different sidecars for the same string.
+        if (point < lowest || point > 0x10FFFFu || (point >= 0xD800u && point <= 0xDFFFu)) {
+            return std::nullopt;
+        }
+        points.push_back(static_cast<char32_t>(point));
+        i += length;
+    }
+    return points;
+}
+
+/// Encodes one v1 record: little-endian `uint16 packageIndex`, `int16 x`, `int16 y`.
+///
+/// Spelled out byte by byte rather than memcpy'd from a struct, for the reason
+/// `mdux::text::draw::decodeRecord()` gives for decoding the same way: the sidecar is committed
+/// bytes compared across toolchains, so the encoding must not inherit the host's byte order or its
+/// struct padding. Two toolchains disagreeing here would move glyphs, not fail.
+void appendRecord(std::vector<std::byte>& out, std::uint16_t packageIndex, std::int16_t x, std::int16_t y) {
+    const auto emit16 = [&out](std::uint16_t value) {
+        out.push_back(static_cast<std::byte>(value & 0xFFu));
+        out.push_back(static_cast<std::byte>((value >> 8) & 0xFFu));
+    };
+    emit16(packageIndex);
+    emit16(std::bit_cast<std::uint16_t>(x));
+    emit16(std::bit_cast<std::uint16_t>(y));
+}
+
+/// Font units to pixels, rounded half up, in integers throughout.
+///
+/// `pen` is non-negative for every run this baker produces - the pen starts at zero and advances -
+/// so half-up and half-away-from-zero are the same rule here. Written as half-up because that is
+/// what the expression says, rather than implying a negative case that cannot arise.
+[[nodiscard]] std::int64_t toPixels(std::int64_t pen, std::uint32_t pixelSize, std::uint16_t unitsPerEm) noexcept {
+    const auto scaled = pen * static_cast<std::int64_t>(pixelSize) + static_cast<std::int64_t>(unitsPerEm) / 2;
+    return scaled / static_cast<std::int64_t>(unitsPerEm);
+}
+
+/// A font package and the bytes it was parsed from.
+///
+/// The bytes are carried rather than re-read for the report's input record. Reading the file twice
+/// would digest something the bake did not necessarily use - a file that changed between the two
+/// reads would produce a report attesting to a bake that never happened, which is the one thing an
+/// evidence artifact may not do.
+struct LoadedFont {
+    fontpkg::FontPackage   package;
+    std::vector<std::byte> bytes;
+};
+
+/// Reads and validates the font package a text recipe names, checking it is the one the recipe
+/// says it is and that it approves the recipe's locale.
+[[nodiscard]] std::optional<LoadedFont> loadFontPackage(const Recipe& recipe, std::string_view recipePath,
+                                                         const std::filesystem::path& root,
+                                                         std::vector<cli::Diagnostic>& diagnostics) {
+    const auto path = confine(root, recipe.fontPackage);
+    if (!path.has_value()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeFontPackageUnread,
+               std::format("font package path '{}' must be relative to the repository root and stay inside it",
+                           recipe.fontPackage));
+        return std::nullopt;
+    }
+    auto bytes = readFile(*path);
+    if (!bytes.has_value()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeFontPackageUnread,
+               std::format("cannot read font package '{}'", recipe.fontPackage),
+               "Bake the font package first; the path is resolved against the repository root.");
+        return std::nullopt;
+    }
+    // Not named `text`: that is the enclosing `mdux::text` namespace's name, and a local shadowing
+    // it is C4459 on MSVC, where warnings are errors.
+    const std::string_view packageText{reinterpret_cast<const char*>(bytes->data()), bytes->size()};
+    auto package = fontpkg::FontPackage::parse(packageText);
+    if (!package.has_value()) {
+        report(diagnostics, std::string{recipePath}, 0, fontPackageUnparsed,
+               std::format("'{}': {}", recipe.fontPackage, fontpkg::describe(package.error())));
+        return std::nullopt;
+    }
+
+    // The recipe names the atlas twice - once as an id the package records, once as a path to read.
+    // Checking they agree is what stops a recipe from recording runs as belonging to one font while
+    // having measured them against another, which no consumer could detect: the compiler's own
+    // wiring check (`checkLocaleWiring()`) compares the text package's `atlas` to the font it was
+    // handed, and would pass on a package whose id was right and whose positions were not.
+    if (package->id != recipe.atlas) {
+        report(diagnostics, std::string{recipePath}, 0, fontPackageUnparsed,
+               std::format("recipe's atlas is '{}' and '{}' holds the font package '{}'", recipe.atlas,
+                           recipe.fontPackage, package->id),
+               "The 'atlas' id and the 'font' path must name the same package.");
+        return std::nullopt;
+    }
+    // A v1 record addresses a glyph with a `std::uint16_t`, so a package with more glyphs than
+    // that cannot be indexed by one. Checked once here rather than per glyph: the alternative is a
+    // static_cast that truncates, and a truncated index draws a different character rather than
+    // failing - which is precisely the confusion `GlyphPlacement::packageIndex` is named to avoid.
+    if (package->glyphs.size() > std::numeric_limits<std::uint16_t>::max()) {
+        report(diagnostics, std::string{recipePath}, 0, fontPackageUnparsed,
+               std::format("the font package '{}' holds {} glyphs, more than a v1 record can index",
+                           package->id, package->glyphs.size()));
+        return std::nullopt;
+    }
+    if (std::ranges::find(package->locales, recipe.locale) == package->locales.end()) {
+        report(diagnostics, std::string{recipePath}, 0, localeNotApproved,
+               std::format("the font package '{}' does not approve the locale '{}'", package->id, recipe.locale),
+               "Add the locale to the font recipe, or bake this text against a font that approves it.");
+        return std::nullopt;
+    }
+    return LoadedFont{.package = std::move(*package), .bytes = std::move(*bytes)};
+}
+
+/// Positions one string into v1 records. See TextBake.cppm for why this is a pen walk rather than
+/// shaping, and why the pen accumulates in font units.
+[[nodiscard]] std::optional<std::vector<std::byte>> positionRun(const fontpkg::FontPackage& font, const TextString& entry,
+                                                                 std::string_view recipePath,
+                                                                 std::vector<cli::Diagnostic>& diagnostics) {
+    const auto points = decodeUtf8(entry.text);
+    if (!points.has_value()) {
+        report(diagnostics, std::string{recipePath}, 0, recipeStringsMalformed,
+               std::format("the value for '{}' is not valid UTF-8", entry.key));
+        return std::nullopt;
+    }
+
+    std::vector<std::byte> records;
+    records.reserve(points->size() * text::recordSize);
+    std::int64_t pen = 0;  // font units
+
+    for (std::size_t i = 0; i < points->size(); ++i) {
+        const char32_t point = (*points)[i];
+        const fontpkg::GlyphRecord* glyph = font.find(point);
+        if (glyph == nullptr) {
+            // Fail rather than substitute. ADR-010 leaves the runtime no fallback, so a glyph this
+            // baker cannot place is one that would be missing on the device - and a package that
+            // silently dropped it would ship a word with a hole in it that nobody reviewed.
+            report(diagnostics, std::string{recipePath}, 0, stringNotDrawable,
+                   std::format("the value for '{}' contains U+{:04X}, which the font package '{}' cannot draw",
+                               entry.key, static_cast<std::uint32_t>(point), font.id),
+                   "Widen the font recipe's charset, or write the string with characters it bakes.");
+            return std::nullopt;
+        }
+
+        // The record's index is into the *package's* glyph list, not the font's own glyph id -
+        // `mdux::text::draw::GlyphPlacement` documents the distinction, and swapping the two draws
+        // the wrong character rather than failing. `find()` returns a pointer into `font.glyphs`,
+        // so the index is that pointer's offset.
+        const auto packageIndex = static_cast<std::uint16_t>(glyph - font.glyphs.data());
+
+        const std::int64_t x = toPixels(pen, font.pixelSize, font.unitsPerEm);
+        if (x > std::numeric_limits<std::int16_t>::max()) {
+            report(diagnostics, std::string{recipePath}, 0, runTooWide,
+                   std::format("the value for '{}' reaches x={}px, past the {}px a v1 record can hold", entry.key, x,
+                               std::numeric_limits<std::int16_t>::max()),
+                   "Split the string, or shorten it.");
+            return std::nullopt;
+        }
+
+        // y is the baseline, and it is zero for every record this baker writes: a run's own origin
+        // is its baseline, and where the run sits on a screen is the emitter's decision, applied as
+        // `originY` at draw time. A baker that baked a y offset in would be deciding layout.
+        appendRecord(records, packageIndex, static_cast<std::int16_t>(x), std::int16_t{0});
+
+        pen += glyph->advanceWidth;
+        if (i + 1 < points->size()) {
+            pen += font.kerningFor(point, (*points)[i + 1]);
+        }
+    }
+    return records;
+}
+
 }  // namespace
 
 std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath,
@@ -793,10 +1114,19 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
     if (recipe.font.has_value()) {
         return runFontBake(recipe, recipePath, recipeBytes, root, diagnostics);
     }
-    static_cast<void>(root);  // A text bake reads no source files; the font path uses `root`.
 
     BakeOutputs outputs;
     outputs.sidecarName = recipe.sidecar;
+
+    // The font package, read once and shared by every run. Absent when the recipe carries no
+    // strings, which is the pre-#235 shape and still valid: a package with no runs reads nothing.
+    std::optional<LoadedFont> font;
+    if (!recipe.strings.empty()) {
+        font = loadFontPackage(recipe, recipePath, root, diagnostics);
+        if (!font.has_value()) {
+            return std::nullopt;
+        }
+    }
 
     text::TextPackage package;
     package.header.id = recipe.id;
@@ -804,9 +1134,27 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
     package.atlasId = recipe.atlas;
     package.locale = recipe.locale;
     package.sidecarPath = recipe.sidecar;
-    package.sidecarByteLength = 0;  // S1: no runs. The first real artifact is S4 (#160).
+
+    for (const TextString& entry : recipe.strings) {
+        auto records = positionRun(font->package, entry, recipePath, diagnostics);
+        if (!records.has_value()) {
+            return std::nullopt;
+        }
+        // Appended in recipe order, each run starting where the last one ended. Contiguous rather
+        // than padded: the schema's overlap and bounds rules are about ranges, not alignment, and
+        // a gap would be bytes no run accounts for in an artifact whose whole point is that every
+        // byte is accounted for.
+        text::TextRun positioned;
+        positioned.id         = entry.key;
+        positioned.byteOffset = outputs.sidecar.size();
+        positioned.byteLength = records->size();
+        positioned.sha256     = evidence::sha256(*records);
+        outputs.sidecar.insert(outputs.sidecar.end(), records->begin(), records->end());
+        package.runs.push_back(std::move(positioned));
+    }
+
+    package.sidecarByteLength = outputs.sidecar.size();
     package.sidecarSha256 = evidence::sha256(outputs.sidecar);
-    // No runs are appended; the package validates with an empty run list, by design.
 
     auto packageText = package.write();
     if (!packageText.has_value()) {
@@ -819,10 +1167,15 @@ std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath
     outputs.packageId = package.header.id;
     outputs.runCount = package.runs.size();
 
-    // No inputs at S1: a no-run package reads no source files. S4's font pipeline will record its
-    // TrueType and rasteriser inputs here; recording an empty list now keeps the report's inputs
-    // array present and structured rather than omitted.
+    // The font package is this bake's one input, and recording it is what makes the evidence chain
+    // hold: re-baking the font changes its package.json, which changes this report's input digest,
+    // which fails `evidence.text.<id>` until the runs are re-positioned against the new atlas. A
+    // package with no runs reads nothing and records an empty list - present and structured rather
+    // than omitted, so a reader distinguishes "no inputs" from "inputs not recorded".
     std::vector<evidence::FileRecord> inputs;
+    if (font.has_value()) {
+        inputs.push_back(fileRecord(recipe.fontPackage, font->bytes));
+    }
 
     evidence::BakeReport bakeReport;
     bakeReport.tool = std::string{toolName};
