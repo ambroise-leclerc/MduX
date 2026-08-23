@@ -4,7 +4,8 @@
 
 Accepted (2026-08-23)
 
-Supersedes ADR-001's Windows/Linux-only platform decision and ADR-003's compiler/toolchain matrix.
+Supersedes [ADR-001](ADR-001-multiplatform-graphics-framework.md)'s Windows/Linux-only platform
+decision and [ADR-003](ADR-003-compiler-modernization.md)'s compiler/toolchain matrix.
 
 ## Context
 

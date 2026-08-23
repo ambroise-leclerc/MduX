@@ -55,9 +55,15 @@ public:
         cout << "║  (Not true Vulkan SC - see docs for migration)   ║\n";
         cout << "╚══════════════════════════════════════════════════╝\n\n";
 
-        initWindow();
-        initVulkan();
-        mainLoop(smokeTest);
+        try {
+            initWindow();
+            initVulkan();
+            mainLoop(smokeTest);
+        }
+        catch (...) {
+            cleanup();
+            throw;
+        }
         cleanup();
     }
 
@@ -798,14 +804,18 @@ private:
 
         auto startTime = chrono::high_resolution_clock::now();
         uint32_t frameCount = 0;
+        uint32_t smokeFrameCount = 0;
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
             drawFrame();
             frameCount++;
-            if (smokeTest && frameCount == 3) {
-                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            if (smokeTest) {
+                smokeFrameCount++;
+                if (smokeFrameCount == 3) {
+                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
             }
 
             // Show FPS every second

@@ -69,9 +69,18 @@ jobs:
         set -euo pipefail
         test "$(uname -m)" = "arm64"
         test "$VULKAN_SDK_VERSION" = "1.4.309.0"
+        test -f "$VULKAN_SDK/setup-env.sh"
+        set +u
+        source "$VULKAN_SDK/setup-env.sh"
+        set -u
         icd="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json"
         test -f "$icd"
-        echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+        {
+          echo "DYLD_LIBRARY_PATH=${DYLD_LIBRARY_PATH:-}"
+          echo "VK_LAYER_PATH=${VK_LAYER_PATH:-}"
+          echo "VK_DRIVER_FILES=$icd"
+        } >> "$GITHUB_ENV"
+        export VK_DRIVER_FILES="$icd"
         set -o pipefail
         vulkaninfo --summary 2>&1 | tee "$RUNNER_TEMP/vulkaninfo.log"
         grep -Eiq 'MoltenVK|Apple M[0-9]' "$RUNNER_TEMP/vulkaninfo.log"

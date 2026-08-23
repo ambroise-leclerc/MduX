@@ -132,6 +132,7 @@ elseif(MDUX_SCAN_PROFILE STREQUAL "governed-throw")
             "_Xout_of_range"
             "_Xbad_alloc"
             "_Xinvalid_argument"
+            "__cxa_throw"
         )
         string(CONCAT reported_explanation
             "tolerated throw reference(s). This standard library emits its own throw sites in "

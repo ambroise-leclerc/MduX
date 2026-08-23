@@ -123,6 +123,7 @@ template <typename T>
     return member;
 }
 
+/// @brief Serializes supported locales into the package JSON representation.
 [[nodiscard]] json::Value localeJson(const std::vector<std::string>& locales) noexcept {
     std::vector<json::Value> values;
     values.reserve(locales.size());
@@ -132,6 +133,7 @@ template <typename T>
     return json::Value::array(std::move(values));
 }
 
+/// @brief Serializes atlas metrics into the package JSON representation.
 [[nodiscard]] json::Value atlasJson(const AtlasMetrics& atlas) noexcept {
     json::Value value = json::Value::emptyObject();
     static_cast<void>(value.set("path", json::Value::string(atlas.path)));
@@ -143,6 +145,7 @@ template <typename T>
     return value;
 }
 
+/// @brief Serializes glyph records into the package JSON representation.
 [[nodiscard]] json::Value glyphsJson(const std::vector<GlyphRecord>& glyphs) noexcept {
     std::vector<json::Value> values;
     values.reserve(glyphs.size());
@@ -163,6 +166,7 @@ template <typename T>
     return json::Value::array(std::move(values));
 }
 
+/// @brief Serializes kerning pairs into the package JSON representation.
 [[nodiscard]] json::Value kerningJson(const std::vector<KerningPair>& kerning) noexcept {
     std::vector<json::Value> values;
     values.reserve(kerning.size());
@@ -176,6 +180,7 @@ template <typename T>
     return json::Value::array(std::move(values));
 }
 
+/// @brief Serializes character-set ranges into the package JSON representation.
 [[nodiscard]] json::Value charsetJson(const std::vector<CharsetRange>& charset) noexcept {
     std::vector<json::Value> values;
     values.reserve(charset.size());

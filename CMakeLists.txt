@@ -52,7 +52,12 @@ else()
     message(FATAL_ERROR "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or upstream Clang 20+ for C++23 modules support.")
 endif()
 
-if(APPLE)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    message(FATAL_ERROR
+        "Unsupported Apple target '${CMAKE_SYSTEM_NAME}'. MduX supports Apple Silicon macOS only.")
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
         message(FATAL_ERROR "MduX supports macOS only on Apple Silicon (arm64).")
     endif()
@@ -68,11 +73,31 @@ if(APPLE)
     if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.1")
         message(FATAL_ERROR "MduX's verified macOS CMake is 4.3.1 exactly; found ${CMAKE_VERSION}.")
     endif()
-    if(NOT CMAKE_AR MATCHES "llvm-ar" OR NOT CMAKE_RANLIB MATCHES "llvm-ranlib")
-        message(FATAL_ERROR
-            "The macOS build requires LLVM's llvm-ar and llvm-ranlib; configure with "
-            "--preset ninja-macos-clang.")
-    endif()
+    function(_mdux_verify_llvm_archive_tool tool_path expected_name)
+        get_filename_component(tool_name "${tool_path}" NAME)
+        if(NOT tool_name STREQUAL expected_name)
+            message(FATAL_ERROR
+                "The macOS build requires ${expected_name}, but CMake selected '${tool_path}'. "
+                "Configure with --preset ninja-macos-clang.")
+        endif()
+
+        execute_process(
+            COMMAND "${tool_path}" --version
+            RESULT_VARIABLE tool_result
+            OUTPUT_VARIABLE tool_stdout
+            ERROR_VARIABLE tool_stderr
+        )
+        string(CONCAT tool_banner "${tool_stdout}" "\n" "${tool_stderr}")
+        if(NOT tool_result EQUAL 0 OR
+           NOT tool_banner MATCHES "LLVM version 21\\.1\\.8([^0-9.]|$)")
+            message(FATAL_ERROR
+                "The macOS build requires LLVM 21.1.8 ${expected_name}; '${tool_path} --version' "
+                "returned '${tool_banner}'.")
+        endif()
+    endfunction()
+
+    _mdux_verify_llvm_archive_tool("${CMAKE_AR}" "llvm-ar")
+    _mdux_verify_llvm_archive_tool("${CMAKE_RANLIB}" "llvm-ranlib")
 endif()
 
 # Check after the compiler/platform diagnostics so unsupported macOS combinations get the specific
@@ -113,7 +138,9 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja")
 endif()
 
 # Platform validation
-if(NOT WIN32 AND NOT UNIX)
+if(NOT WIN32 AND
+   NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux") AND
+   NOT (CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
     message(FATAL_ERROR "MduX only supports Windows, Linux, and Apple Silicon macOS.")
 endif()
 
