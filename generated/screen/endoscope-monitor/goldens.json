@@ -1,0 +1,29 @@
+[
+  {
+    "bounds": {
+      "height": 96,
+      "width": 1280,
+      "x": 0,
+      "y": 496
+    },
+    "colorToken": "Theme.Colors.ScoreDigits",
+    "cvChecks": [
+      "Bounds",
+      "ColorHash"
+    ],
+    "nodeId": "insufflation-pressure"
+  },
+  {
+    "bounds": {
+      "height": 128,
+      "width": 1280,
+      "x": 0,
+      "y": 592
+    },
+    "colorToken": "Theme.Colors.Nominal",
+    "cvChecks": [
+      "Bounds"
+    ],
+    "nodeId": "ecg-lead-ii"
+  }
+]

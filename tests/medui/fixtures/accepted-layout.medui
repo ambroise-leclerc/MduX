@@ -1,0 +1,53 @@
+// Hand-derived layout fixture for issue #194.
+// Surface content is 1248x688 after 16px padding. The Row consumes 48px, the NumericDisplay
+// 120px, and two 8px gaps; the final Fill viewport therefore receives 504px.
+Screen MonitorLayout {
+    layout: Vertical { spacing: 8px; padding: 16px; }
+    surface: 1280px, 720px;
+
+    Row {
+        id: topbar;
+        height: 48px;
+        spacing: 16px;
+        background: Theme.Colors.TopbarBackground;
+
+        Label {
+            id: title;
+            width: 340px;
+            height: 48px;
+            text: t("STR-TITLE");
+            color: Theme.Colors.Title;
+        }
+        Clock {
+            id: clock;
+            width: Fill;
+            height: Fill;
+            format: DateTimeSeconds;
+        }
+        StatusIndicator {
+            id: status;
+            width: 200px;
+            height: 48px;
+            requirement: "REQ-STATUS-001";
+            source: "MONITOR_STATUS";
+            states: [t("STR-NOMINAL")];
+        }
+    }
+
+    NumericDisplay {
+        id: score;
+        width: Fill;
+        height: 120px;
+        requirement: "REQ-SCORE-001";
+        template: "TPL-SCORE";
+        source: "SCORE";
+        color: Theme.Colors.ScoreDigits;
+    }
+
+    VulkanViewport {
+        id: viewport;
+        width: Fill;
+        height: Fill;
+        stream_source: "MONITOR_VIEW";
+    }
+}

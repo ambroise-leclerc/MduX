@@ -1,0 +1,13 @@
+{
+  "budget": {
+    "maxCommands": 0,
+    "maxIndices": 0,
+    "maxVertices": 0
+  },
+  "id": "empty-screen",
+  "kind": "screen",
+  "nodes": [],
+  "schemaVersion": 1,
+  "surfaceHeight": 100,
+  "surfaceWidth": 200
+}

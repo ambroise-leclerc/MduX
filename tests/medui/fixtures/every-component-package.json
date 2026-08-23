@@ -1,0 +1,181 @@
+{
+  "budget": {
+    "maxCommands": 256,
+    "maxIndices": 6144,
+    "maxVertices": 4096
+  },
+  "id": "every-component",
+  "kind": "screen",
+  "nodes": [
+    {
+      "bounds": {
+        "height": 64,
+        "width": 800,
+        "x": 0,
+        "y": 0
+      },
+      "id": "topbar-background",
+      "kind": "Panel",
+      "spec": {
+        "colorToken": "Theme.Colors.TopbarBackground"
+      }
+    },
+    {
+      "bounds": {
+        "height": 64,
+        "width": 800,
+        "x": 0,
+        "y": 0
+      },
+      "id": "title",
+      "kind": "Label",
+      "spec": {
+        "colorToken": "Theme.Colors.Title",
+        "textKey": "STR-TITLE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 40,
+        "width": 200,
+        "x": 0,
+        "y": 64
+      },
+      "id": "wall-clock",
+      "kind": "Clock",
+      "spec": {
+        "format": "TimeSeconds"
+      }
+    },
+    {
+      "bounds": {
+        "height": 60,
+        "width": 120,
+        "x": 0,
+        "y": 104
+      },
+      "id": "logo",
+      "kind": "Image",
+      "spec": {
+        "source": "IMG-LOGO"
+      }
+    },
+    {
+      "bounds": {
+        "height": 200,
+        "width": 640,
+        "x": 0,
+        "y": 164
+      },
+      "id": "endoscope",
+      "kind": "VulkanViewport",
+      "spec": {
+        "streamSource": "ENDOSCOPE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 100,
+        "width": 640,
+        "x": 0,
+        "y": 364
+      },
+      "id": "ecg",
+      "kind": "SignalTrace",
+      "spec": {
+        "colorToken": "Theme.Colors.Nominal",
+        "streamSource": "ECG_LEAD_II"
+      }
+    },
+    {
+      "bounds": {
+        "height": 40,
+        "width": 160,
+        "x": 0,
+        "y": 464
+      },
+      "id": "freeze",
+      "kind": "Button",
+      "spec": {
+        "colorToken": "Theme.Colors.PrimaryAction",
+        "labelKey": "STR-FREEZE",
+        "requirement": "REQ-EC-001",
+        "source": "FREEZE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 40,
+        "width": 160,
+        "x": 0,
+        "y": 504
+      },
+      "id": "halt",
+      "kind": "CriticalButton",
+      "spec": {
+        "colorToken": "Theme.Colors.Fault",
+        "labelKey": "STR-HALT",
+        "onPress": "TriggerHalt",
+        "requirement": "REQ-EC-002"
+      }
+    },
+    {
+      "bounds": {
+        "height": 60,
+        "width": 200,
+        "x": 0,
+        "y": 544
+      },
+      "id": "sedation-index",
+      "kind": "NumericDisplay",
+      "spec": {
+        "colorToken": "Theme.Colors.ScoreDigits",
+        "requirement": "REQ-EC-003",
+        "source": "SEDATION_INDEX",
+        "templateId": "TPL-SEDATION-INDEX-160"
+      }
+    },
+    {
+      "bounds": {
+        "height": 40,
+        "width": 200,
+        "x": 0,
+        "y": 604
+      },
+      "id": "state",
+      "kind": "StatusIndicator",
+      "spec": {
+        "colorTokens": [
+          "Theme.Colors.Nominal",
+          "Theme.Colors.Alert"
+        ],
+        "requirement": "REQ-EC-004",
+        "source": "STATE",
+        "stateKeys": [
+          "STR-OK",
+          "STR-ALARM"
+        ]
+      }
+    },
+    {
+      "bounds": {
+        "height": 40,
+        "width": 240,
+        "x": 0,
+        "y": 644
+      },
+      "id": "patient-id",
+      "kind": "TextInput",
+      "spec": {
+        "charset": "Ascii",
+        "colorToken": "Theme.Colors.Neutral",
+        "maxLength": 16,
+        "requirement": "REQ-EC-005",
+        "source": "PATIENT_ID"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "surfaceHeight": 700,
+  "surfaceWidth": 800
+}

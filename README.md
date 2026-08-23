@@ -23,7 +23,7 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
 [![OSV-Scanner](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/osv-scanner.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ambroise-leclerc/MduX/badge)](https://scorecard.dev/viewer/?uri=github.com/ambroise-leclerc/MduX)
-[![License: EPL-2.0](https://img.shields.io/badge/License-EPL--2.0-blue)](LICENSE)
+[![License: EUPL-1.2](https://img.shields.io/badge/License-EUPL--1.2-blue)](LICENSE)
 
 ## What this actually is
 
@@ -144,6 +144,7 @@ Derived from the targets and tests that build on `develop`.
 | **Host tools** (never linked into a device target) | | |
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
 | `mdux-mlbake` | Implemented | safetensors import, golden generation, byte-verified model packages |
+| `MduXMeduiLib` | Implemented | The `.medui` compiler end to end: parsing, semantic validation, integer-only bounded layout, per-locale text budgets, golden references, the canonical package, two C++ emitters, and the `mdux-meduic` / `mdux-medui-check` tools ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
@@ -151,13 +152,27 @@ Derived from the targets and tests that build on `develop`.
 | Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
 | **Not started** | | |
 | Text and glyph rendering | Planned | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) |
-| `.medui` compiler | Planned | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) |
 | Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
+
+`.medui` reaches pixels today, and the path is built rather than planned. An authored screen is
+compiled by `mdux-meduic` into `generated/screen/<id>/` — a package, a golden sidecar and a bake
+report, byte-compared across MSVC and GCC. Two emitters render that package as `constexpr` C++
+carrying `static_assert(screen.validate().has_value())`, a governed runtime turns it into draw
+commands without allocating, and `mdux.render.vulkan` draws them. `ScreenPixelTests` walks the whole
+chain and compares the result pixel by pixel under lavapipe in CI.
+
+Two limits are worth stating beside that. A **font** package is baked and committed
+(`generated/font/dejavu-ui/`), but no **text** package is — the per-locale glyph runs a screen's
+`t("STR-KEY")` resolves against, which would live under `generated/text/`. `mdux-textbake` can
+produce one and no recipe registers one, so a screen carrying a text key cannot be compiled end to
+end ([#235](https://github.com/ambroise-leclerc/MduX/issues/235)); and the runtime draws a `Panel` while
+counting every other component as deferred, because text needs that package and live-data components
+have no geometry until a frame exists. The committed screen therefore renders one bar — from a file
+an author wrote, through every stage, with nothing hand-carried between them.
 
 The HTML/CSS path that earlier revisions described was **deleted** by
 [#127](https://github.com/ambroise-leclerc/MduX/issues/127) — `MedicalUiRenderer::render()` recorded
-no Vulkan commands. `mdux.draw` plus `mdux.render.vulkan` replace it; `.medui` will generate the
-former.
+no Vulkan commands. `mdux.draw` plus `mdux.render.vulkan` replaced it.
 
 ## Regulatory material, and what it is for
 
@@ -198,7 +213,8 @@ certification or compliance claim.
 
 ## License
 
-Eclipse Public License 2.0 ([EPL-2.0](LICENSE)).
+Available under the [European Union Public Licence 1.2](LICENSE), or under separate commercial
+terms. See [LICENSING.md](LICENSING.md).
 
 ## Contact
 

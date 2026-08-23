@@ -71,8 +71,13 @@ Three decisions from that programme apply repository-wide:
    digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
 
 Waves 1 to 4 of that roadmap have shipped (v0.2.0, v0.3.0, v0.4.0, v0.5.0). Wave 4 was the font
-and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#15`), now
-unblocked.
+and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#15`), and all
+twelve of its children have landed: a screen goes from source to a bounded, budgeted,
+golden-annotated set of rectangles, to a committed byte-compared artifact, to `constexpr` C++, to
+draw commands recorded without allocating, to a pixel compared under lavapipe. What the wave leaves
+behind is content rather than path — no text package is baked (`#235`), so a screen carrying
+`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
+component as deferred (`#17`).
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -273,6 +278,35 @@ easiest to miss on review. So:
 `push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
 
+### Stacked delivery
+
+Branch naming above is what keeps CI *attached* to a stack. This is what keeps a stack *correct*.
+The full policy is in [`CONTRIBUTING.md`](CONTRIBUTING.md) § "Stacked delivery"; the rules an agent
+has to apply while working are:
+
+- **Declare the base.** A PR states whether it targets `develop` or a predecessor branch, and
+  which PR that predecessor is. `.github/pull_request_template.md` has the fields.
+- **Never merge a successor before its predecessor.** After the predecessor merges, rebase onto
+  current `develop` and re-request review of the final diff against `develop` — not against the
+  predecessor.
+- **Wait for the post-merge `develop` run**, not just the PR check, before merging the next
+  dependent PR. The PR check proves the branch builds; only the `develop` run proves the
+  integration does.
+- **Resolve a shared-registry conflict as a union by default.** The root `CMakeLists.txt`, the
+  `FILE_SET CXX_MODULES` lists, `tools/CMakeLists.txt`, `tests/CMakeLists.txt`, the schemas, the
+  generated indexes and the committed artifacts under `generated/` are the files where taking one
+  side deletes the other side's work while leaving a build that still compiles and tests that
+  still pass. If a conflict genuinely has to be resolved by taking one side, say in the PR
+  description which side you took and why — an undocumented one-sided resolution is the Wave 2
+  failure, a documented one is a decision.
+- **Land canonical types and schemas before their consumers.** Import what the predecessor
+  defined; do not restate it on a parallel branch.
+
+This is not general good practice written down for its own sake. Wave 2's stacked PRs lost CMake,
+module and test wiring during conflict resolution, and allowed two incompatible governance models
+to coexist until integration found them — repaired by #104 and reconciled by #105. Each rule above
+is one of the things that would have caught that earlier.
+
 ### Conventions
 
 - Follow the naming, formatting, and documentation conventions in
@@ -301,7 +335,7 @@ own branch, and adding work branches there would run every workflow twice per co
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
 | [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
-| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Planned** — no `.medui` compiler exists yet (issue `#15`). |
+| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Live** — a `.medui` file compiles to a committed artifact, emits `constexpr` C++, and reaches compared pixels; what it cannot yet carry is text (issue `#235`). |
 | [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Live** — `software_development_file/` exists with templates and records (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.

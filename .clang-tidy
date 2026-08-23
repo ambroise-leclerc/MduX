@@ -2,11 +2,22 @@
 # Based on C++ Core Guidelines
 # Enforces coding standards from CONTRIBUTING.md
 
+# bugprone-exception-escape is deliberately NOT disabled. It was, until issue #116: ADR-005 opens
+# by citing that suppression as the reason a `noexcept` violation in governed code was invisible to
+# static analysis, and listed re-enabling it as a follow-up gated on MduXCore existing. MduXCore has
+# existed since Wave 1.
+#
+# Scope, stated honestly: this check is *available* rather than *enforced*. The only CI job running
+# clang-tidy is security-analysis.yml, which invokes it with `|| true` against a GCC-generated
+# compile_commands.json that clang-tidy cannot parse for module interface units - both limitations
+# are documented in that workflow. So re-enabling this catches a noexcept violation for a developer
+# running clang-tidy locally, and will catch one in CI when the Clang leg is restored (#48), but it
+# is not what stops one landing today. That is governed.noThrow.symbolScan, which reads the emitted
+# objects and runs on every ctest.
 Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
-  -bugprone-exception-escape,
   cert-*,
   -cert-dcl21-cpp,
   -cert-dcl50-cpp,

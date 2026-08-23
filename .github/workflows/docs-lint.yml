@@ -39,6 +39,16 @@ jobs:
         python3 -m unittest discover -s tools/docs-lint -p "test_*.py"
         python3 tools/docs-lint/mdux_docs_lint.py
 
+    # Issue #223: CONTRIBUTING.md fixes one shape for a file-level Doxygen block, and the rule has
+    # been settled twice - once because the tree contradicted it, once because ten files had drifted
+    # back. A block without @file is not ignored by Doxygen; it silently documents whatever
+    # declaration follows. Checked here rather than in a C++ test so that a PR touching no C++ at
+    # all - which is exactly the kind that adds a file - still gets the answer.
+    - name: Check file-level Doxygen blocks
+      env:
+        PYTHONDONTWRITEBYTECODE: "1"
+      run: python3 tools/docs-lint/check_file_headers.py
+
     # Every AI-Reference.md is generated, so an edited module with a stale index is a defect the
     # build should catch rather than a reader. --check writes nothing; it fails when regenerating
     # would change a byte, and when a clause is cited in prose that no index row covers.

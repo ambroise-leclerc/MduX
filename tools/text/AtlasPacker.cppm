@@ -10,12 +10,15 @@
  *
  * ## Why this is host-tools rather than governed
  *
- * `mdux.text.raster` (#159) is governed because a device path could conceivably need to
- * rasterise, and ADR-008 decision 1 says that would have to be *this* module rather than a second
- * one. Packing has no such future: an atlas is chosen once, at build time, and a device consumes
- * the slot rectangles the baker recorded. Nothing on a device ever packs, so a governed packer
- * would be a promise with no caller - and every module in the governed zone is a module a
- * reviewer has to reason about for device behaviour.
+ * An atlas is chosen once, at build time, and a device consumes the slot rectangles the baker
+ * recorded. Nothing on a device ever packs, so a governed packer would be a promise with no
+ * caller - and every module in the governed zone is a module a reviewer has to reason about for
+ * device behaviour.
+ *
+ * `mdux.text.raster` (#159) sits in this zone for the same reason as of #116. It was governed
+ * on the argument that a device path might one day rasterise, which ADR-008 decision 1 would
+ * then require to be *that* module rather than a second one - but it allocates, so it has to
+ * catch at its `noexcept` boundary, which ADR-005 forbids in governed code. See `Raster.cppm`.
  *
  * ## Shelf placement, and why not something better
  *

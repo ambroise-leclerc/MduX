@@ -1,5 +1,16 @@
 # Contributing Guidelines
 
+## Invitation-only contributions
+
+This project accepts code and documentation contributions only from collaborators explicitly
+invited by a maintainer. Opening an issue or pull request does not constitute an invitation, and
+unsolicited pull requests may be closed without review.
+
+Before contributing, an invited collaborator must accept the [Contributor Licence
+Agreement](CLA.md) in the GitHub issue designated by the maintainer. Only collaborators with
+repository access may submit changes for review. Every change remains subject to maintainer review;
+an invitation does not guarantee merge.
+
 ## Coding Style
 
 We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 generic programming. Please refer to the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for detailed rules. Key points are summarized below:
@@ -31,6 +42,14 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 - Source files: `.cpp`
 - **File naming:** Use `UpperCamelCase` for `.hpp` and `.cpp` files (e.g., `Logger.hpp`, `DataProcessor.cpp`).
 
+### Releasing
+
+Cutting a version is a controlled event, not a tag on whatever is current:
+[`docs/release-process.md`](docs/release-process.md) is the procedure. The one step worth knowing
+before you need it is that moving the version in `CMakeLists.txt` invalidates every committed
+artifact, because each `report.json` records the `toolVersion` it was baked by — so a release
+re-bakes them and reviews the diff.
+
 ### Documentation
 
 We use **Doxygen** syntax for code documentation. Follow these guidelines:
@@ -58,6 +77,10 @@ We use **Doxygen** syntax for code documentation. Follow these guidelines:
   This rule previously said the opposite. It was never what the tree did — 82 files used `@file`
   against 56 that did not — and review bots cite this document, so the contradiction kept
   resurfacing on unrelated pull requests. #180 settled it in favour of the half that works.
+
+  `tools/docs-lint/check_file_headers.py` now enforces it, in the `Documentation Lint` job. #223
+  added it after finding ten files back in the retired order, all in one epic and all copied from
+  a neighbour: settling a rule in prose twice had not been enough to keep it true.
 - **Class documentation:** Include `@brief` with detailed description and usage examples.
 - **Method documentation:**
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.
@@ -113,10 +136,61 @@ Please run these tools on your code before submitting a pull request.
 - Ensure your branch is up to date with `develop` before submitting.
 - All code must pass CI checks and tests before merging.
 - Request a review from at least one maintainer.
+- Fill in [`.github/pull_request_template.md`](.github/pull_request_template.md) completely. Its
+  fields are the policy below, in the place where it is cheapest to apply.
+
+## Stacked delivery
+
+An epic is delivered as a chain of pull requests, each on its own issue branch, each targeting its
+predecessor rather than `develop` so a reviewer sees one issue's diff instead of the cumulative
+one. The branch-naming rule that keeps CI attached to such a chain is in
+[`AGENTS.md`](AGENTS.md) § 6; the rules below govern the *order* things merge in.
+
+They exist because of a specific failure. During Wave 2, stacked pull requests lost CMake, module
+and test wiring while their conflicts were being resolved, and two incompatible governance models
+coexisted on separate branches until integration discovered them — which took a repair PR (#104)
+and a reconciliation (#105) to undo. Every rule here is one of the things that would have caught
+it earlier.
+
+### Merge order
+
+- **A successor cannot merge before its predecessor.** Not "should not" — a stacked PR whose base
+  has not merged is proposing a diff against a branch that may still change under it.
+- After the predecessor merges, **rebase the successor onto current `develop`** and re-request
+  review of its final diff against `develop`. The diff a reviewer approved against the predecessor
+  is not the diff that will land.
+- **Required PR CI must be green, and then the resulting `develop` workflow must be green,**
+  before the next dependent PR merges. A green PR check proves the branch builds; only the
+  post-merge `develop` run proves the *integration* does. **Record that run** — its URL or id — in
+  the successor's "Post-merge gate" section, so the gate leaves evidence rather than only an
+  intention. A checkbox saying the author understood the rule is not a record that it was followed.
+
+### Conflicts
+
+- **Resolve a conflict in a shared registry as an explicit union, not a choice.** The registries
+  that matter are listed in the PR template: the root `CMakeLists.txt`, `FILE_SET CXX_MODULES`
+  lists, `tools/CMakeLists.txt`, `tests/CMakeLists.txt`, schemas, generated indexes and
+  `generated/` artifacts. Taking one side of a conflict in a source list silently deletes the other
+  side's target, which still compiles and still passes every test that was not the deleted one.
+- If a conflict genuinely has to be resolved by taking one side, say so in the PR description and
+  say why.
+
+### Ordering within a chain
+
+- **Canonical shared types and schemas land before their exports and consumers.** A successor
+  imports the type its predecessor defined; it does not restate it. Two branches each defining
+  their own version of "the same" type is how Wave 2 ended up with two governance models, and
+  neither branch's CI could see the problem.
+
+### Emergency merges
+
+A merge that bypasses the gates above — a local merge, an API push, an administrative override —
+requires a comment on the issue or PR naming **the exact head SHA that was incorporated** and
+**the post-merge CI run that covered it**. An undocumented bypass leaves no way to tell later
+which code was actually reviewed.
 
 ## Additional Notes
 
 - Write clear, descriptive commit messages.
 - Add or update documentation as needed.
 - Run all tests locally before submitting your PR.
-

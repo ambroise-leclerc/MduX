@@ -1,7 +1,7 @@
 name: Linux GCC 16 Build
 
 # NOTE: This project requires C++23 import std support:
-# - GCC 16+ ✅ Available via gcc:16 Docker container
+# - GCC 16+ ✅ Available via the gcc Docker image, pinned to a patch release below
 
 on:
   push:
@@ -24,7 +24,20 @@ jobs:
   linux-build-gcc16:
     name: Linux (GCC 16, Vulkan)
     runs-on: ubuntu-latest
-    container: gcc:16
+    # Pinned to a patch release, not the floating `gcc:16` tag. That tag moved from 16.1.0 to
+    # 16.2.0 on 2026-08-12 and turned develop red on a markdown-only commit (#205): GCC 16.2 could
+    # not read the module BMIs the SpecLab sources produce - "failed to read compiled module
+    # cluster ... Bad file data". The BMI format is not stable across GCC patch releases, and every
+    # other input to this job is already pinned (SpecLab to a commit SHA, CMake to 4.1.1), so the
+    # compiler was the one floating input - and the one most likely to break a C++23 modules build.
+    #
+    # Same reasoning as the CMake pin in windows-build.yml, which that file states at length after
+    # the same thing happened with `latest`. Moving to a newer GCC is a deliberate change: bump this
+    # tag in a PR of its own, so the diff that changes the compiler is the diff that fixes whatever
+    # the change breaks.
+    container: gcc:16.1.0
+    env:
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
     steps:
     - name: Checkout repository
@@ -33,6 +46,26 @@ jobs:
       # reason to survive into .git/config where any later build or test step could read it
       # (OpenSSF Scorecard's Token-Permissions check, zizmor's `artipacked`).
       with:
+        persist-credentials: false
+
+    - name: Resolve the pinned MedUI contract commit
+      id: medui-contract
+      shell: bash
+      run: |
+        set -euo pipefail
+        commit="$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' medui-conformance.toml)"
+        if [ -z "$commit" ]; then
+          echo "medui-conformance.toml has no 40-character commit pin" >&2
+          exit 1
+        fi
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout pinned MedUI conformance contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: Compliatory/MedUI
+        ref: ${{ steps.medui-contract.outputs.commit }}
+        path: .medui-conformance
         persist-credentials: false
 
     - name: Install dependencies
@@ -107,6 +140,15 @@ jobs:
     # ADR-008 decision 3.
     - name: Verify ML determinism (GCC 16)
       run: ctest --preset ninja-gcc -L determinism --output-on-failure
+
+    # Governed-zone no-throw, at the object level (ADR-005, issue #116). Broken out with -V rather
+    # than folded into the full run above, because a passing ctest prints none of a test's output -
+    # and this scan's output is half its purpose. It reports the throw-helper references it
+    # deliberately tolerates, and the ADR justifies tolerating them on the grounds that they stay
+    # "visible and counted". A number nobody can see in a job log is not counted. -V is what makes
+    # the claim true, and is the same reason the pixel step below uses it.
+    - name: Verify governed-zone no-throw (GCC 16)
+      run: ctest --preset ninja-gcc -L governed -V --no-tests=error
 
     # Rendered-truth verification (issue #125), moved here when the GCC 15 leg was retired.
     # Without it a broken ICD turns the only test that renders anything into a silent no-op:

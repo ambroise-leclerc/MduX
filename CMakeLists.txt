@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
-project(MduX VERSION 0.5.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
+project(MduX VERSION 0.6.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -197,7 +197,8 @@ target_sources(MduXCore
             include/mdux/font/Schema.cppm
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
-            include/mdux/text/Raster.cppm
+            include/mdux/medui/Schema.cppm
+            include/mdux/medui/Screen.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
@@ -209,7 +210,7 @@ target_sources(MduXCore
         src/font/Schema.cpp
         src/text/Draw.cpp
         src/text/Schema.cpp
-        src/text/Raster.cpp
+        src/medui/Screen.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
         src/governance/Program.cpp
@@ -448,6 +449,31 @@ mdux_bake_artifact(
         package.json
         report.json
         shaders.spv
+)
+
+# The first compiled screen (issue #198). Registered through mdux_compile_screen(), which is a thin
+# front for mdux_bake_artifact() - a screen earns the same build-tree bake, the same -update target
+# and the same evidence.screen.<id> byte comparison as a font or a shader, because nothing about a
+# screen justifies weaker evidence than its neighbours.
+#
+# It draws no text on purpose: no text package is baked in this tree yet, so the text-budget stage
+# has nothing to measure against and a screen carrying t("STR-KEY") would be refused for declaring no
+# approved locale. #201 lands the text half.
+include(cmake/MduXCompileScreen.cmake)
+mdux_compile_screen(
+    ID endoscope-monitor
+    RECIPE recipes/screen/endoscope-monitor.toml
+)
+
+# ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last
+# link in the chain the epic set out to build: a `.medui` file becomes a committed artifact, the
+# artifact becomes `constexpr` C++, and a pixel test links that C++ and renders it - so the first
+# pixel drawn from an authored screen is compared against an expectation rather than described.
+include(cmake/MduXScreenEmit.cmake)
+mdux_emit_screen_package(
+    ID endoscope-monitor
+    OUT_MODULE MDUX_ENDOSCOPE_SCREEN_MODULE
+    OUT_DIR MDUX_GENERATED_SCREEN_DIR
 )
 
 # Generated C++ for that package (issue #121). Build-tree only, never committed - see

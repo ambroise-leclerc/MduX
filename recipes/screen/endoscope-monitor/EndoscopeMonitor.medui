@@ -1,0 +1,69 @@
+// The first screen this repository compiles into a committed artifact (#198).
+//
+// It draws no text, and that is a deliberate limit rather than a design: no text package is baked
+// anywhere in this tree yet, so a screen carrying `t("STR-KEY")` cannot be compiled end to end until
+// #201 lands the text half. What this screen does exercise is everything that does not depend on
+// that - the Row background the solver synthesises, a live video surface, a live waveform, a baked
+// image, and an explicitly positioned node whose rectangle a golden reference pins.
+//
+// One property per line, matching TrustSC's own sources: its parser splits a component body line by
+// line, so a fixture written the portable way is evidence about a shared grammar rather than about
+// one implementation.
+Screen EndoscopeMonitor {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 1280px, 720px;
+
+    Row {
+        id: topbar;
+        height: 72px;
+        background: Theme.Colors.TopbarBackground;
+
+        Image {
+            id: brand-mark;
+            width: 240px;
+            height: 72px;
+            source: img("IMG-BRAND-MARK");
+        }
+    }
+
+    VulkanViewport {
+        id: endoscope-view;
+        width: 1280px;
+        height: 424px;
+        stream_source: "ENDOSCOPE_PRIMARY";
+    }
+
+    // The safety-critical node, and the reason this screen has one: `goldens.json` should describe a
+    // real screen rather than only a test fixture. Annotated and traced, so the sidecar carries an
+    // entry saying where the insufflation reading must appear and in what tint - never what the
+    // number says, because the number is live.
+    //
+    // What that entry does *not* have yet is a verifier reading it against a frame. This component
+    // is deferred by the runtime, so there are no pixels to compare; the check ADR-012 describes
+    // arrives with #16, over content that #17 teaches to draw.
+    //
+    // A NumericDisplay deliberately: it is the one traceable component that carries no text key, so
+    // this screen exercises the annotation rules without needing the text package that does not
+    // exist yet (#201's remaining half, and the reason the runtime draws what it draws).
+    @safety_critical(cv_check: [Bounds, ColorHash])
+    NumericDisplay {
+        id: insufflation-pressure;
+        width: 1280px;
+        height: 96px;
+        requirement: "REQ-EM-001";
+        template: "TPL-PRESSURE-MMHG";
+        source: "INSUFFLATION_PRESSURE";
+        color: Theme.Colors.ScoreDigits;
+    }
+
+    // Positioned, so its rectangle is pinned by a golden reference: a waveform that drifts off its
+    // band is the kind of regression a screenshot comparison catches and a unit test does not.
+    SignalTrace {
+        id: ecg-lead-ii;
+        width: 1280px;
+        height: 128px;
+        position: 0px, 592px;
+        stream_source: "ECG_LEAD_II";
+        color: Theme.Colors.Nominal;
+    }
+}

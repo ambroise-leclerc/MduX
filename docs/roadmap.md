@@ -1,59 +1,115 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 4 August 2026
-> Verified against `develop @ d1329da` · 4 August 2026
+> Backlog · ambroise-leclerc/MduX · updated 23 August 2026
+> Epic status verified at the v0.6.0 release baseline, `develop` @ `acbe102` · 23 August 2026 ·
+> `#15` closed, all twelve children.
+> The divergence table below was last re-verified on 17 August 2026 and is not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draws its first
-pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
-what the build actually produces. Track C's authoring story is what remains: #14 closed
-Wave 4 with the font and text pipeline, and #15 opens Wave 5 with the compiler that
-generates the screens it draws.
+backlog that closes the gap. Five waves have shipped — the renderer draws its first
+pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
+what the build actually produces, #14 closed Wave 4 with the font and text pipeline, and
+v0.6.0 closes Wave 5 with #15, the compiler that generates the screens it draws.
+All twelve of its children have landed — the ADRs,
+the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
+golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
+its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
+tree, refuses a box that cannot hold its widest approved translation, says where safety-critical
+content must appear, and writes the result as a byte-compared artifact and as `constexpr` C++ a
+device links without a parser. The first compiled screen is committed under
+`generated/screen/endoscope-monitor/`, the governed runtime draws one without allocating, and
+`mdux-medui-check` validates a single file while naming the two checks a file on its own cannot
+cover. With #201 the chain reaches pixels: `ScreenPixelTests` renders the committed screen through
+the governed runtime and compares the frame pixel by pixel under lavapipe. What the epic leaves for
+its successors is content rather than path: no text package is baked yet (#235), so a screen carrying
+`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
+component as deferred (#17). The golden sidecar gains a static consumer in `ScreenPixelTests` and
+still awaits the rendered one ADR-012 describes, which is #16 over content #17 teaches to draw.
 
 | Metric | Count |
 |---|---|
 | Epics | 13 |
-| Delivered | 7 |
-| Remaining | 6 |
-| Waves shipped | 3 |
+| Delivered | 10 |
+| Remaining | 3 |
+| Waves shipped | 5 |
 
 ## The thesis
 
 ### Where the two diverge
 
-Re-verified against `develop` on 9 August 2026. Eight of the nine rows have closed since
+Re-verified against `develop` on 17 August 2026. Eight of the nine rows have closed since
 this table was first written; the one that remains is the `.medui` authoring story, which is
 the whole of Track C.
 
 | Area | MduX today | TrustSC today |
 |---|---|---|
-| UI authoring | Partly closed. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The `.medui` compiler that generates it is still ahead — this is Track C, Wave 5. | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
+| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). What is still ahead is content rather than path: the text package, and the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Five artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
+| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Six artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
-| Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time. | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
+| Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. 436 tests on `develop`, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Tests | Closed. 438 tests at `v0.5.0`, and more since, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 ## Dependency order
 
 ### Six waves
 
-An epic opens when every epic it depends on has closed. Four waves have shipped
-(v0.2.0, v0.3.0, v0.4.0, v0.5.0), one epic per wave closing the dependency it held.
-Wave 5 is open now: #15's blockers were #12 and #14, both closed. #19 spans waves by design; its S3–S6 follow #15.
+An epic opens when every epic it depends on has closed. Five waves have shipped
+(v0.2.0, v0.3.0, v0.4.0, v0.5.0, v0.6.0), one epic per wave closing the dependency it held.
+Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is open: #16 and
+#17 were blocked on it and are not any more. #19 spans waves by design; its S3–S6 follow #15.
 
 ```text
-Wave 1 · shipped v0.2.0     #7 (done)   #11 (open · #116, #117)  #19 (S4–S6 open)
+Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
-Wave 5 · open now           #15
+Wave 5 · shipped v0.6.0     #15 (done)
 Wave 6                      #16  #17
 ```
+
+#### When v0.6.0 gets cut
+
+**Cut, on 23 August 2026.** The convention above is one version per wave, Wave 5 was #15 alone, and
+#201 closed it at 12/12: an authored `.medui` file reaches compared pixels through every stage. What
+follows is the reasoning as it stood before the tag, kept because the next release faces the same
+question.
+
+This recommendation was written at 10/12 and said the two content gaps — no baked text package, a
+runtime that draws one component kind — would close in #201. **They did not, and that expectation was
+mine rather than the issue's.** #201's acceptance asked for an end-to-end screen exercising a
+safety-critical node, and that is what it delivered; nothing in it promised the text half. So the
+gaps outlive the wave and belong to its successors: the text package to whoever bakes one, the
+components' own geometry to #17.
+
+That does not argue for delaying the tag. What v0.6.0 ships is a complete *path* — authored file,
+byte-compared artifact, `constexpr` C++, governed runtime, compared pixel — and the honest release
+note says exactly that: the chain is built and the content is one rectangle. A version held back
+until the content filled in would be waiting on #17, which is a wave of its own.
+
+Two things worth settling before the tag rather than during it:
+
+- **There is now a [CHANGELOG](../CHANGELOG.md), and still no release workflow.** The 0.6.0 entry is
+  written from the merges it contains; the four earlier ones are summarised from this document's own
+  wave record, and the file says so, because two of the four tags are not ancestors of `develop` and
+  a reader checking them with `git log` would find that out the hard way.
+- **The release ritual is inferable but not written down.** Checked rather than assumed, and an
+  earlier revision of this bullet got both facts wrong: `v0.5.0` peels to exactly `origin/master`'s
+  tip, so **tags land on `master`**, and `origin/master...origin/develop` is `1 32` — master carries
+  one commit develop does not, develop carries 32. (The "668" this bullet used to claim came from a
+  stale *local* `master`, 462 commits divergent from the real one, and was a total-history count
+  mislabelled as an ahead count.)
+
+  The procedure that was missing is now [`release-process.md`](release-process.md): a release
+  branch off `develop`, the version moved in `CMakeLists.txt`, **every committed artifact re-baked**
+  because each `report.json` records the `toolVersion` it was baked by, the artifact diff reviewed
+  for anything that is not that field, then a merge to `master` and an annotated tag there. One
+  non-linear boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented
+  cause: #23 purged normative text from git history.
 
 ## The backlog
 
@@ -136,16 +192,27 @@ _All nine closed in PR #154. `#65` also closes the S1 child of #19_
 
 ### Track B · Load-bearing foundations
 
-#### #11 — Foundations & trust-zone skeleton · **Open · Wave 2 enforcement gaps**
+#### #11 — Foundations & trust-zone skeleton · **Done**
 
 A new `MduXCore` that never receives Vulkan's include directories — so
-`#include <vulkan/vulkan.h>` in governed code is a compile error on every platform. Plus
+`#include <vulkan/vulkan.h>` in governed code is rejected on every platform. Plus
 the prerequisites that produce no demo and block everything.
 
 The foundations shipped in Wave 1: `MduXCore` split, link-graph verification, the test
 framework, presets, install/export, and `#48` (GCC 16 CI green; the Clang CI leg stays
-disabled, an honesty scope pinned in ADR-007). The epic stays open for the two enforcement
-gaps that postdate v0.2.0 and were folded back in.
+disabled, an honesty scope pinned in ADR-007). The two enforcement gaps that postdate
+v0.2.0 closed before Wave 5 opened, which closes the epic.
+
+`#116` found the gap it was written for to be live rather than theoretical. ADR-005
+asserted in the present tense a governed-source lint that had never been written, and
+`src/text/Raster.cpp` — governed, shipped in v0.5.0 — contained `try` and three `catch`
+clauses. The intended fix, `-fno-exceptions` on `MduXCore`, turned out to be unavailable:
+GCC records the language dialect in every module BMI and CMake synthesises one shared
+`std` target, so `import std` and `-fno-exceptions` are mutually exclusive. Enforcement
+landed instead as `mdux-governed-lint` over the source and `governed.noThrow.symbolScan`
+over the emitted objects; the rasteriser moved to the host-tools zone; and ADR-004 and
+ADR-005 were rewritten to describe only mechanisms CI runs, including what they still
+cannot claim.
 
 - #40 ADR: trust zones in C++
 - #41 ADR: error handling and exceptions
@@ -159,7 +226,14 @@ gaps that postdate v0.2.0 and were folded back in.
 - #116 S10 — Enforce governed-zone source and exception policy
 - #117 S11 — Stack-safe PR integration and post-merge policy
 
-_Remaining: `#116`, `#117`. Downstream epics are no longer blocked_
+_All eleven closed. `#117`'s PR template and merge-ordering policy land ahead of Wave 5,
+which is the most stacked epic of the programme_
+
+> **Closure depended on two independent merges**, and this line stays so that a reader can check
+> rather than assume: `#116` closed with PR #189 (the last of a three-PR stack behind #188 and
+> #187), and `#117` closed with PR #186, which targeted `develop` on its own. All four merged on
+> 11 August 2026, so the "Done" above is behind the tree rather than ahead of it — which is the
+> only direction this status line is allowed to be wrong in.
 
 #### #12 — Evidence kernel · **Done v0.3.0**
 
@@ -213,24 +287,32 @@ charset table — and the compiler rejects any format that could escape it, whic
 
 _Unblocks #15_
 
-#### #15 — `.medui` compiler & build integration · **Ready · opens Wave 5**
+#### #15 — `.medui` compiler & build integration · **Done v0.6.0**
 
 The schema module is imported by both the device runtime and the host compiler — one
 definition, shared. The runtime never sees the parser, which lives in a host-only tool.
 Rust shares types across the crate boundary; C++ can do better.
 
-- S1 ADRs: DSL boundary and generated artifacts
-- S2 Diagnostics and the code registry
-- S3 Lexer, parser, AST
-- S4 Theme tokens and locale-checked strings
-- S5 Layout and row flattening
-- S6 Text-budget validation
-- S7 Golden references for safety-critical nodes
-- S8 JSON and C++ emitters
-- S9 CMake integration and host tools
-- S10 Allocation-free screen runtime
-- S11 `mdux-medui-check`
-- S12 First end-to-end screen
+The front end is in the tree and conformance-tested against the shared MedUI spec
+(`medui-conformance.toml`, capabilities `syntax`, `semantics`, `layout`, `safety` — the last claimed
+with #196, which is what made the pinned `MEDUI-E070` case executable rather than skipped). ADR-011 and
+ADR-012 were amended by #203 before any code depended on them: the compiled screen is
+locale-free, so the per-locale text stays in the text package — which is why S6 measures every
+approved locale and reserves the worst of them, rather than sizing a box to the locale its author
+happened to read.
+
+- #190 S1 ADRs: DSL boundary and generated artifacts · _closed_
+- #191 S2 Diagnostics and the MDX-E code registry · _closed_
+- #192 S3 Lexer, parser, AST and the fixture corpus · _closed_
+- #193 S4 Theme tokens and locale-checked strings · _closed_
+- #194 S5 Bounded layout and `Row` flattening · _closed (PR #212)_
+- #195 S6 Text-budget validation against every approved locale · _closed_
+- #196 S7 Golden references for safety-critical nodes · _closed_
+- #197 S8 Canonical package and C++ emitters · _closed (PRs #220, #221)_
+- #198 S9 CMake integration and the `mdux-meduic` host tool · _closed (PRs #225, #231)_
+- #199 S10 Allocation-free screen runtime · _closed (PR #232)_
+- #200 S11 `mdux-medui-check` · _closed (PR #233)_
+- #201 S12 First end-to-end screen · _closed (PR #234)_
 
 _Blocks #16, #17_
 
@@ -336,6 +418,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Verified at `v0.5.0` · 9 August 2026_
-_13 epics · 8 delivered · Waves 1–4 shipped · Wave 5 open · #11 enforcement open_
+_Epic status verified at the v0.6.0 baseline, `develop` @ `acbe102` · 23 August 2026_
+_13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
 _All epics on GitHub_

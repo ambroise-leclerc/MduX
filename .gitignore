@@ -13,6 +13,11 @@ Makefile
 *.cmake
 !cmake/*.cmake
 
+# ...and the CMake-level tests, which are scripts CTest runs rather than build output. Without this
+# `git add` skips them silently and the tests fail on CI with "Not a file", which is how this line
+# came to exist.
+!tests/cmake/*.cmake
+
 # Compiled binaries
 *.exe
 *.dll
@@ -51,12 +56,20 @@ Makefile
 *.user
 *.sln.docstates
 
-# Documentation files (large PDFs, proprietary standards)
-inputs/Documentation/*.pdf
-inputs/Documentation/*.epub
-inputs/Documentation/ISO\ 13485/
-inputs/Documentation/ISO\ 14971\ The\ Definitive\ Guide/
-inputs/Documentation/Medical\ Device\ Cybersecurity\ for\ Engineers\ and\ Manufacturers/
+# Local reference material - never committed.
+#
+# The whole directory, not selected paths inside it. Five specific sub-paths were listed here
+# until issue #116, which left inputs/CMake/ and any newly-added folder under
+# inputs/Documentation/ untracked-but-not-ignored - so a `git add -A` would have committed them.
+# That is the exact class of content #7 and #23 spent a history rewrite removing, and ADR-006
+# forbids outright. A directory-level rule cannot be defeated by adding a file to it.
+#
+# This lives in the *first* PR of the #116 stack rather than the last, because the narrow rule
+# actually caught someone out while that stack was in review: a `git add -A` on this branch staged
+# `inputs/CMake` as a gitlink. It was a one-line SHA rather than the 431 MB behind it, and it was
+# amended out before anyone pulled, but a guard that lands after the thing it guards against is
+# not a guard.
+inputs/
 
 # Temporary files
 *.log
@@ -91,3 +104,6 @@ GEMINI.md
 # CI sets PYTHONDONTWRITEBYTECODE=1, but a local run of the self-tests still leaves these behind.
 __pycache__/
 *.pyc
+
+# Ephemeral exact-SHA checkout of the shared MedUI conformance contract in CI.
+.medui-conformance/
