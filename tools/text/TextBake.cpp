@@ -75,6 +75,9 @@ constexpr std::string_view fontPackageUnparsed     = "TXT022";
 constexpr std::string_view localeNotApproved       = "TXT023";
 constexpr std::string_view stringNotDrawable       = "TXT024";
 constexpr std::string_view runTooWide              = "TXT025";
+constexpr std::string_view unsupportedRepertoire   = "TXT026";
+constexpr std::string_view runOriginNegative       = "TXT027";
+constexpr std::string_view recipeFormAmbiguous     = "TXT028";
 
 void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::size_t line,
              std::string_view code, std::string message, std::string fixHint = {}) {
@@ -119,6 +122,15 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::si
     if (relativePath.empty() || std::filesystem::path{relativePath}.is_absolute()) {
         return std::nullopt;
     }
+    // A backslash is refused rather than translated. A recipe records repository paths with `/` on
+    // every platform, because `BakeReport::validate()` rejects a backslash in a recorded path - so
+    // a Windows-spelled recipe that resolved here would read its file and then fail much later, as
+    // a generic "the report is not valid", with nothing pointing at the recipe line that caused it.
+    // Refusing early gives that recipe one answer on both toolchains.
+    if (relativePath.find('\\') != std::string_view::npos) {
+        return std::nullopt;
+    }
+
     const std::filesystem::path resolved   = (root / relativePath).lexically_normal();
     const std::filesystem::path normalRoot = root.lexically_normal();
     // lexically_relative() gives the path from root to the target; a result that starts with ".."
@@ -126,6 +138,30 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::si
     // fail rather than pass on a string prefix check.
     const auto relative = resolved.lexically_relative(normalRoot);
     if (relative.empty() || *relative.begin() == "..") {
+        return std::nullopt;
+    }
+
+    // Lexical containment is not containment. A tracked entry can be a symlink - `assets/external
+    // -> /outside/root` is lexically under the root and reads bytes that are not - and the report
+    // would then record the repository-relative spelling while digesting host state nobody
+    // committed. That is an artifact whose reproducibility depends on the machine, which is the
+    // failure ADR-007 exists to prevent, so the check is repeated against the resolved forms.
+    //
+    // The root is canonicalised too, and that is not symmetry for its own sake: this repository is
+    // built under paths that are themselves symlinks - macOS resolves /tmp to /private/tmp, and
+    // CI's workspace is a mount - so canonicalising only the target would put every legitimate
+    // path outside a root spelled differently.
+    std::error_code    ec;
+    const auto canonicalRoot   = std::filesystem::weakly_canonical(normalRoot, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    const auto canonicalTarget = std::filesystem::weakly_canonical(resolved, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+    const auto canonicalRelative = canonicalTarget.lexically_relative(canonicalRoot);
+    if (canonicalRelative.empty() || *canonicalRelative.begin() == "..") {
         return std::nullopt;
     }
     return resolved;
@@ -149,6 +185,13 @@ json::Value Recipe::toOptions() const {
         // lines above this in every report, and their keys are already `package.json`'s run ids.
         // Copying them here would make one edited translation appear in three places of the same
         // artifact diff, which makes the diff harder to read rather than more complete.
+        //
+        // Both members are always present, including for a recipe with no strings - where they
+        // read `""` and `0`. That pair is not ambiguous, because `parseStrings()` accepts the two
+        // together or neither, so an empty path always means "this package positions nothing".
+        // Emitting the members conditionally would instead give text reports two shapes, and a
+        // reader comparing two of them would have to establish which shape they were looking at
+        // before reading either.
         static_cast<void>(options.set("font", json::Value::string(fontPackage)));
         static_cast<void>(options.set("strings", json::Value::integer(static_cast<std::int64_t>(strings.size()))));
     }
@@ -491,6 +534,17 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     }
 
     if (isFontRecipe) {
+        // A recipe carrying both forms is refused rather than resolved. Dispatching on [charset]
+        // alone would make a font recipe that also had [strings] bake a perfectly valid font
+        // package and silently drop every string - and a merge or a copy/paste is all it takes to
+        // produce one. For a tool whose output is evidence, an artifact of the wrong kind that
+        // passes every check is worse than a stopped build.
+        if (document.table("strings") != nullptr || package->find("font") != nullptr) {
+            report(diagnostics, std::string{recipePath}, 0, recipeFormAmbiguous,
+                   "recipe carries both the font form ([charset]) and the text form ([strings] / 'font')",
+                   "A recipe bakes an atlas or positions runs against one, never both. Split it in two.");
+            return std::nullopt;
+        }
         auto spec = parseFontSpec(document, *package, recipePath, diagnostics);
         if (!spec.has_value()) {
             return std::nullopt;
@@ -814,7 +868,8 @@ using SlotIndex = std::vector<const atlas::GlyphSlot*>;
     const auto sourcePath = confine(root, spec.source);
     if (!sourcePath.has_value()) {
         report(diagnostics, std::string{recipePath}, 0, recipeFontUnreadable,
-               std::format("font path '{}' must be relative to the repository root and stay inside it", spec.source));
+               std::format("font path '{}' is not a usable repository path", spec.source),
+               "It must be relative, spelled with '/', and resolve inside the repository - symlinks included.");
         return std::nullopt;
     }
 
@@ -968,9 +1023,11 @@ void appendRecord(std::vector<std::byte>& out, std::uint16_t packageIndex, std::
 
 /// Font units to pixels, rounded half up, in integers throughout.
 ///
-/// `pen` is non-negative for every run this baker produces - the pen starts at zero and advances -
-/// so half-up and half-away-from-zero are the same rule here. Written as half-up because that is
-/// what the expression says, rather than implying a negative case that cannot arise.
+/// **Precondition: `pen >= 0`.** The `+ unitsPerEm / 2` before the division is a half-*up* rule,
+/// which is only half-away-from-zero while the input is non-negative; on a negative pen it would
+/// bias toward zero and place a glyph a pixel right of where the same magnitude places it left.
+/// `positionRun()` enforces the precondition rather than this function widening to handle a case
+/// the format has no meaning for - see the pen check there.
 [[nodiscard]] std::int64_t toPixels(std::int64_t pen, std::uint32_t pixelSize, std::uint16_t unitsPerEm) noexcept {
     const auto scaled = pen * static_cast<std::int64_t>(pixelSize) + static_cast<std::int64_t>(unitsPerEm) / 2;
     return scaled / static_cast<std::int64_t>(unitsPerEm);
@@ -995,8 +1052,8 @@ struct LoadedFont {
     const auto path = confine(root, recipe.fontPackage);
     if (!path.has_value()) {
         report(diagnostics, std::string{recipePath}, 0, recipeFontPackageUnread,
-               std::format("font package path '{}' must be relative to the repository root and stay inside it",
-                           recipe.fontPackage));
+               std::format("font package path '{}' is not a usable repository path", recipe.fontPackage),
+               "It must be relative, spelled with '/', and resolve inside the repository - symlinks included.");
         return std::nullopt;
     }
     auto bytes = readFile(*path);
@@ -1049,6 +1106,46 @@ struct LoadedFont {
 
 /// Positions one string into v1 records. See TextBake.cppm for why this is a pen walk rather than
 /// shaping, and why the pen accumulates in font units.
+/**
+ * @brief The code points a v1 record and an identity pen walk can actually render.
+ *
+ * `font.find()` proves an atlas slot exists. It does not prove that emitting that glyph at the pen,
+ * left to right, in logical order, is a correct rendering of the string - and a `FontPackage` is
+ * free to bake anything. An Arabic letter has a glyph, and a pen walk emits it isolated,
+ * unjoined, and in the wrong direction. A combining acute has a glyph, and a pen walk places it
+ * *after* the base's advance instead of over it. Both cases produce a package that validates,
+ * byte-compares, and renders wrongly on a device - which is exactly what ADR-010 and this module's
+ * contract say must not happen.
+ *
+ * So the repertoire is declared rather than inferred, and it is deliberately narrow: the scripts
+ * below are left-to-right, need no joining or reordering, and contain no combining marks, so the
+ * identity walk is the whole of their shaping. Everything else - including scripts this baker
+ * could one day support - is refused, because widening the model is a decision that deserves the
+ * same review as the code that implements it, not a side effect of a font recipe growing a range.
+ *
+ * The two carve-outs inside Latin-1 are not fussiness. U+00AD SOFT HYPHEN is a format character
+ * whose whole meaning is conditional: it renders as nothing unless a line breaks there, and a pen
+ * walk has no line breaking, so it would bake a visible hyphen into a word. It is excluded with
+ * U+00A1's neighbour rather than by category, because there is no Unicode database here to ask.
+ */
+struct RepertoireRange {
+    char32_t first;
+    char32_t last;
+};
+
+constexpr std::array<RepertoireRange, 4> v1Repertoire{{
+    {U'\u0020', U'\u007E'},  // Basic Latin, printable
+    {U'\u00A0', U'\u00AC'},  // Latin-1 Supplement, up to but not including the soft hyphen
+    {U'\u00AE', U'\u00FF'},  // ...and past it
+    {U'\u0100', U'\u024F'},  // Latin Extended-A and -B, which are contiguous
+}};
+
+[[nodiscard]] constexpr bool inV1Repertoire(char32_t point) noexcept {
+    return std::ranges::any_of(v1Repertoire, [point](const RepertoireRange& range) noexcept {
+        return point >= range.first && point <= range.last;
+    });
+}
+
 [[nodiscard]] std::optional<std::vector<std::byte>> positionRun(const fontpkg::FontPackage& font, const TextString& entry,
                                                                  std::string_view recipePath,
                                                                  std::vector<cli::Diagnostic>& diagnostics) {
@@ -1065,6 +1162,19 @@ struct LoadedFont {
 
     for (std::size_t i = 0; i < points->size(); ++i) {
         const char32_t point = (*points)[i];
+
+        // Asked before `find()`, on purpose. A code point outside the model is refused whether or
+        // not the font happens to bake it, and reporting "the font cannot draw this" for a glyph
+        // that is plainly in the atlas would send an author to widen a charset that is already
+        // wide enough.
+        if (!inV1Repertoire(point)) {
+            report(diagnostics, std::string{recipePath}, 0, unsupportedRepertoire,
+                   std::format("the value for '{}' contains U+{:04X}, which this baker's shaping model does not cover",
+                               entry.key, static_cast<std::uint32_t>(point)),
+                   "v1 positions Latin left to right with no joining, reordering or mark attachment.");
+            return std::nullopt;
+        }
+
         const fontpkg::GlyphRecord* glyph = font.find(point);
         if (glyph == nullptr) {
             // Fail rather than substitute. ADR-010 leaves the runtime no fallback, so a glyph this
@@ -1083,6 +1193,21 @@ struct LoadedFont {
         // so the index is that pointer's offset.
         const auto packageIndex = static_cast<std::uint16_t>(glyph - font.glyphs.data());
 
+        // The pen is the invariant `toPixels()` rounds against, and the one that makes the upper
+        // bound below the only bound worth checking. `FontPackage::validate()` accepts any int16
+        // kerning adjustment and does not require `advance + kerning >= 0`, so a valid package can
+        // drive the pen left of where the run starts. Refused rather than encoded: a run's origin
+        // is its own left edge, and a glyph before it is a package whose author meant something
+        // this format cannot express.
+        if (pen < 0) {
+            report(diagnostics, std::string{recipePath}, 0, runOriginNegative,
+                   std::format("in the value for '{}', kerning moves the pen to {} font units, left of the run's origin",
+                               entry.key, pen),
+                   "A run starts at its own left edge; adjust the font package's kerning.");
+            return std::nullopt;
+        }
+
+        // Non-negative by the check above, so x is too, and only the upper bound can be exceeded.
         const std::int64_t x = toPixels(pen, font.pixelSize, font.unitsPerEm);
         if (x > std::numeric_limits<std::int16_t>::max()) {
             report(diagnostics, std::string{recipePath}, 0, runTooWide,

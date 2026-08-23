@@ -65,10 +65,18 @@
  * this baker does and more than the format can carry. A v1 record is a glyph and a position, so
  * what happens here is a pen walk: look each code point up in the font package, emit a record at
  * the pen, advance the pen by the glyph's advance width plus whatever kerning the package baked
- * for the pair. No reordering, no substitution, no ligatures, no bidirectional resolution. A
- * script needing any of those is not writable by this baker, and the honest form of that limit is
- * that it produces no package rather than a plausible wrong one - the charset check refuses every
- * code point the font cannot draw, which includes every script nobody baked.
+ * for the pair. No reordering, no substitution, no ligatures, no mark attachment, no bidirectional
+ * resolution.
+ *
+ * The limit is enforced, not merely documented, and it is enforced against a **declared
+ * repertoire** rather than against the font's charset. The distinction is the whole point: a font
+ * package is free to bake Arabic, or a combining acute, and for both of those the glyph lookup
+ * succeeds while the pen walk is wrong - isolated unjoined letters running the wrong way, an
+ * accent parked after the base rather than over it. Either would produce a package that validates,
+ * byte-compares across both toolchains, and renders incorrectly on a device, which is precisely
+ * the outcome ADR-010 exists to prevent. So a code point outside the repertoire this baker can
+ * actually position is refused *before* the font is consulted, and widening that repertoire is a
+ * reviewed change to the baker rather than a side effect of a font recipe growing a range.
  *
  * The pen accumulates in **font units** and converts to pixels per glyph, rather than converting
  * each advance and accumulating pixels. Both are defensible; only the first keeps a rounding error

@@ -771,7 +771,15 @@ struct FixtureFont {
     static constexpr std::uint32_t pixelSize  = 10;
     static constexpr std::int16_t  kernAB     = -50;
 
-    [[nodiscard]] static mdux::font::FontPackage package() {
+    /// How the fixture is built. `Plain` is the three-glyph Latin font every positioning case
+    /// uses; the other two exist to prove refusals that are *not* about a missing glyph.
+    enum class Shape {
+        Plain,
+        WithUnsupportedScripts,  ///< also bakes an Arabic letter and a combining acute
+        WithRunawayKerning,      ///< A->B kerns far enough left to drive the pen past the origin
+    };
+
+    [[nodiscard]] static mdux::font::FontPackage package(Shape shape = Shape::Plain) {
         mdux::font::FontPackage font;
         font.id         = "fixture-ui";
         font.unitsPerEm = unitsPerEm;
@@ -799,12 +807,31 @@ struct FixtureFont {
         };
         font.kerning           = {{.left = U'A', .right = U'B', .adjustment = kernAB}};
         font.restrictedCharset = {{.first = U' ', .last = U' '}, {.first = U'A', .last = U'B'}};
+
+        if (shape == Shape::WithUnsupportedScripts) {
+            // Both are legitimately bakeable and legitimately unrenderable by an identity pen walk:
+            // U+0301 belongs over the preceding base rather than after its advance, and U+0627 runs
+            // right to left and joins its neighbours. `find()` succeeds for both, which is exactly
+            // what makes them the right fixture - a refusal here cannot be a missing glyph.
+            font.glyphs.push_back({.codePoint = U'\u0301', .glyphIndex = 6, .advanceWidth = 0, .leftSideBearing = 0,
+                                   .x = 0, .y = 6, .width = 3, .height = 2, .bitmapOriginX = -3, .bitmapOriginY = 8});
+            font.glyphs.push_back({.codePoint = U'\u0627', .glyphIndex = 7, .advanceWidth = 400, .leftSideBearing = 0,
+                                   .x = 4, .y = 6, .width = 2, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6});
+            font.restrictedCharset.push_back({.first = U'\u0301', .last = U'\u0301'});
+            font.restrictedCharset.push_back({.first = U'\u0627', .last = U'\u0627'});
+        }
+        if (shape == Shape::WithRunawayKerning) {
+            // 'A' advances 700 and this pulls back 900, so the pen lands 200 units left of where
+            // the run began. `FontPackage::validate()` permits it: it constrains the adjustment to
+            // an int16 and says nothing about `advance + kerning`.
+            font.kerning = {{.left = U'A', .right = U'B', .adjustment = -900}};
+        }
         return font;
     }
 
     /// Writes the package into `dir` and returns its bare filename.
-    [[nodiscard]] static std::string writeInto(const std::filesystem::path& dir) {
-        auto text = package().write();
+    [[nodiscard]] static std::string writeInto(const std::filesystem::path& dir, Shape shape = Shape::Plain) {
+        auto text = package(shape).write();
         if (!text.has_value()) {
             throw speclab::core::AssertionFailure("the fixture font package is not valid",
                                                   std::source_location::current());
@@ -1066,6 +1093,197 @@ font = "font.json"
                       // because a locale with nothing to say yet is a legitimate package.
                       checks.expect(parseCode(validRecipe()) == "ok",
                                     "a recipe with neither still parses");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register unsupportedShapingIsRefused{
+    "A code point the pen walk cannot render is refused even when the font bakes it", "evidence-unit", [] {
+        return speclab::Test("text-bake-strings-repertoire")
+            .Given("a font package that also bakes a combining acute and an Arabic letter", [] {})
+            .When("strings using them are baked", [] {})
+            .Then("each is TXT026, and the glyph is demonstrably present",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const auto         dir      = freshTempDir("repertoire");
+                      const auto         fontName = FixtureFont::writeInto(dir, FixtureFont::Shape::WithUnsupportedScripts);
+
+                      // The premise first. If these ever stopped resolving, the refusals below
+                      // would still pass and would be proving something else entirely - a missing
+                      // glyph rather than an unsupported shaping model.
+                      const auto font = FixtureFont::package(FixtureFont::Shape::WithUnsupportedScripts);
+                      checks.expect(font.find(U'\u0301') != nullptr, "the combining acute is in the package");
+                      checks.expect(font.find(U'\u0627') != nullptr, "the Arabic letter is in the package");
+
+                      struct Case {
+                          std::string_view what;
+                          std::string      recipe;
+                      };
+                      const std::vector<Case> cases{
+                          // A base plus a combining mark: a pen walk parks the accent after the
+                          // base's advance instead of over it.
+                          // Written with the TOML parser's own \u escapes rather than as literal
+                          // UTF-8, so this source file stays ASCII: MSVC reads a file with no BOM
+                          // in the system code page unless told otherwise, and a mangled byte here
+                          // would make the scenario prove something other than what it says.
+                          {"a combining mark after a base", textRecipeText(fontName, R"(keys   = ["STR-ACUTE"]
+values = ["A\u0301"])")},
+                          // Right to left, and joining. A pen walk emits isolated forms in logical
+                          // order, which is wrong twice over.
+                          {"an Arabic letter", textRecipeText(fontName, R"(keys   = ["STR-ARABIC"]
+values = ["\u0627"])")},
+                      };
+
+                      for (const Case& entry : cases) {
+                          std::vector<cli::Diagnostic> diagnostics;
+                          auto recipe = bake::parseRecipe(entry.recipe, "fixture.toml", diagnostics);
+                          if (recipe.has_value()) {
+                              const auto bytes = std::as_bytes(std::span{entry.recipe.data(), entry.recipe.size()});
+                              auto       out   = bake::run(*recipe, "fixture.toml", bytes, dir, diagnostics);
+                              checks.expect(!out.has_value(), std::format("{}: the bake succeeded unexpectedly", entry.what));
+                          }
+                          const bool sawCode = std::ranges::any_of(
+                              diagnostics, [](const cli::Diagnostic& d) { return d.code == "TXT026"; });
+                          checks.expect(sawCode, std::format("{}: expected TXT026, got [{}]", entry.what,
+                                                             diagnostics.empty() ? std::string{"none"}
+                                                                                 : diagnostics.front().code));
+                          // Not TXT024. The distinction is the whole point of the scenario: the
+                          // author is told their text needs shaping this baker does not do, not
+                          // sent to widen a charset that already covers it.
+                          const bool sawNotDrawable = std::ranges::any_of(
+                              diagnostics, [](const cli::Diagnostic& d) { return d.code == "TXT024"; });
+                          checks.expect(!sawNotDrawable, std::format("{}: reported as a missing glyph", entry.what));
+                      }
+
+                      std::error_code ignored;
+                      std::filesystem::remove_all(dir, ignored);
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register negativePenIsRefused{
+    "Kerning that drives the pen left of the run's origin is refused, not encoded", "evidence-unit", [] {
+        return speclab::Test("text-bake-strings-negative-pen")
+            .Given("a valid font package whose A->B kerning outweighs A's advance", [] {})
+            .When("a string using that pair is baked", [] {})
+            .Then("it is TXT027 and nothing is produced",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const auto         dir      = freshTempDir("negative-pen");
+                      const auto         fontName = FixtureFont::writeInto(dir, FixtureFont::Shape::WithRunawayKerning);
+
+                      // The package really is valid: this is a legal artifact, not a corrupt one,
+                      // which is why the baker rather than the schema has to be the one to refuse.
+                      checks.expect(FixtureFont::package(FixtureFont::Shape::WithRunawayKerning).validate().has_value(),
+                                    "the runaway-kerning package validates");
+
+                      const std::string src = textRecipeText(fontName, R"(keys   = ["STR-AB"]
+values = ["AB"])");
+                      std::vector<cli::Diagnostic> diagnostics;
+                      auto recipe = bake::parseRecipe(src, "fixture.toml", diagnostics);
+                      checks.expect(recipe.has_value(), "the recipe parses");
+                      if (recipe.has_value()) {
+                          const auto bytes = std::as_bytes(std::span{src.data(), src.size()});
+                          auto       out   = bake::run(*recipe, "fixture.toml", bytes, dir, diagnostics);
+                          checks.expect(!out.has_value(), "the bake produced nothing");
+                      }
+                      const bool sawCode = std::ranges::any_of(
+                          diagnostics, [](const cli::Diagnostic& d) { return d.code == "TXT027"; });
+                      checks.expect(sawCode, std::format("expected TXT027, got [{}]",
+                                                         diagnostics.empty() ? std::string{"none"}
+                                                                             : diagnostics.front().code));
+
+                      std::error_code ignored;
+                      std::filesystem::remove_all(dir, ignored);
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register mixedRecipeFormIsRefused{
+    "A recipe carrying both the font form and the text form is refused", "evidence-unit", [] {
+        return speclab::Test("text-bake-recipe-mixed-form")
+            .Given("a font recipe that also carries [strings] and a font package reference", [] {})
+            .When("it is parsed", [] {})
+            .Then("it is TXT028 rather than a font bake that silently drops the strings",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const std::string mixed = R"([package]
+id = "fixture-ui"
+source = "recipes/font/dejavu-ui/DejaVuSans.ttf"
+pixelSize = 16
+locales = ["en-US"]
+font = "generated/font/dejavu-ui/package.json"
+
+[charset]
+names           = ["latin"]
+firstCodePoints = [32]
+lastCodePoints  = [126]
+
+[strings]
+keys   = ["STR-A"]
+values = ["A"]
+)";
+                      checks.expect(parseCode(mixed) == "TXT028",
+                                    std::format("a mixed recipe: got {}", parseCode(mixed)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register pathRulesAreCrossPlatform{
+    "A repository path is rejected for the same reason on every toolchain", "evidence-unit", [] {
+        return speclab::Test("text-bake-strings-path-rules")
+            .Given("recipes naming a font package by a Windows path and through a symlink", [] {})
+            .When("each is baked", [] {})
+            .Then("both are TXT021, on Linux and on Windows alike",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const auto         dir      = freshTempDir("path-rules");
+                      const auto         fontName = FixtureFont::writeInto(dir, FixtureFont::Shape::Plain);
+
+                      const std::string strings = R"(keys   = ["STR-A"]
+values = ["A"])";
+
+                      const auto codeFor = [&](std::string_view fontPath) {
+                          const std::string            src = textRecipeText(fontPath, strings);
+                          std::vector<cli::Diagnostic> diagnostics;
+                          auto recipe = bake::parseRecipe(src, "fixture.toml", diagnostics);
+                          if (recipe.has_value()) {
+                              const auto bytes = std::as_bytes(std::span{src.data(), src.size()});
+                              static_cast<void>(bake::run(*recipe, "fixture.toml", bytes, dir, diagnostics));
+                          }
+                          return diagnostics.empty() ? std::string{"none"} : diagnostics.front().code;
+                      };
+
+                      // A backslash resolves on Windows and does not on Linux, and a report may not
+                      // record one at all - so it is refused at the path rule, giving one answer
+                      // everywhere rather than a TXT021 here and a TXT005 there.
+                      checks.expect(codeFor("sub\\font.json") == "TXT021",
+                                    std::format("a backslash path: got {}", codeFor("sub\\font.json")));
+
+                      // The symlink case. Windows needs a privilege for this and usually refuses,
+                      // so the scenario asserts only when the link was actually created - a test
+                      // that silently passed on a platform it never exercised would be worse than
+                      // one that says it did not run.
+                      const auto outside = freshTempDir("path-rules-outside");
+                      std::error_code copyError;
+                      std::filesystem::copy_file(dir / fontName, outside / "font.json", copyError);
+                      std::error_code linkError;
+                      std::filesystem::create_symlink(outside / "font.json", dir / "escape.json", linkError);
+                      if (!linkError) {
+                          checks.expect(codeFor("escape.json") == "TXT021",
+                                        std::format("a symlink leaving the root: got {}", codeFor("escape.json")));
+                          // ...and the control: the same file, read directly, bakes.
+                          checks.expect(codeFor(fontName) == "none",
+                                        std::format("the same package read in place: got {}", codeFor(fontName)));
+                      }
+
+                      std::error_code ignored;
+                      std::filesystem::remove_all(dir, ignored);
+                      std::filesystem::remove_all(outside, ignored);
                       checks.raise();
                   })
             .Execute();
