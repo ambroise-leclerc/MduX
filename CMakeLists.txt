@@ -438,14 +438,17 @@ mdux_bake_artifact(
 )
 
 # The first committed text package (#235), and the artifact that lets a screen carry text at all.
-# Registered after the font it is measured against and before the screen that references it, which
-# is the order the evidence chain runs in: the font package is this bake's recorded input, and this
-# package is the screen's.
 #
 # `SOURCES` names a file under generated/ deliberately. The input is the *committed* font package,
 # not the one this build happens to produce - a text package positioned against an atlas that only
 # exists in somebody's build tree would be evidence of nothing. Listing it here is what makes
 # re-baking the font invalidate this artifact rather than leaving it describing an atlas that moved.
+#
+# It is placed between the font and the screen for a reader's benefit and for nothing else:
+# registration order is **not** an execution order, and `mdux-bake-update` may stage this package
+# after the screen that consumes it has already been baked against the previous one. See
+# cmake/MduXBake.cmake, "Artifacts that consume other artifacts", for why that is contained and what
+# the workflow is.
 mdux_bake_artifact(
     KIND text
     ID endoscope-monitor-en-us
@@ -492,6 +495,11 @@ mdux_compile_screen(
     SOURCES
         generated/font/dejavu-ui/package.json
         generated/text/endoscope-monitor-en-us/package.json
+        # The sidecar too, and not as belt and braces: `loadLocales()` reads it beside the package
+        # and records its digest among the screen's inputs, so a run repositioned without the
+        # package.json changing - a translation of the same length, say - would move the screen's
+        # report and nothing would have asked for a rebake.
+        generated/text/endoscope-monitor-en-us/runs.bin
 )
 
 # ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last

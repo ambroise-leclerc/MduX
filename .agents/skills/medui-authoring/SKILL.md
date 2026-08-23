@@ -59,7 +59,9 @@ grammar, component semantics, diagnostics, and portable guidance live in
 A `.medui` file builds something in MduX today, and it reaches the screen: register it with
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
-lavapipe. What it cannot yet do is carry text, for the reason above.
+lavapipe. It carries text too, since #235: a `t("STR-KEY")` compiles, and the box holding it is
+measured against every approved locale's widest translation. What it cannot yet do is *draw* that
+text, for the reason above.
 
 ## Grammar shape
 

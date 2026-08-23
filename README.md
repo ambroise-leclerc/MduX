@@ -38,8 +38,9 @@ A library with three zones, checked at configure time rather than by review
 `mdux_verify_trust_zones()` walks the full link graph and fails the configure step if a governed
 target ever reaches Vulkan or a windowing library.
 
-**What it is not:** a UI toolkit. Text is compiled and measured but not yet drawn, and there are no
-widgets yet — see
+**What it is not:** a UI toolkit. The component dictionary is closed and compiled — a `Label`, a
+`Button`, a `NumericDisplay` and the rest are validated, laid out and budget-checked at build time —
+but the runtime draws only a `Panel`, so nothing else has an appearance yet. See
 [Implementation status](#implementation-status). It is also not a quality-management system, a risk
 engine, or a lifecycle framework; there is no `mdux::risk`, `mdux::qms` or `mdux::lifecycle`
 namespace, and no code here generates a Design History File, a Risk Management File, or an audit

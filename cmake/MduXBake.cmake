@@ -45,6 +45,33 @@
 # this file. It mirrors Cargo's OUT_DIR discipline, which MduX otherwise loses by having no
 # build.rs equivalent.
 #
+# ## Artifacts that consume other artifacts
+#
+# A bake may list a committed artifact under SOURCES - the screen bake reads the font package, a
+# text package and its sidecar. That edge is real for the *bake*: ninja re-runs the screen's bake
+# when the committed text package changes on disk.
+#
+# What it is **not** is an ordering between artifacts inside one `mdux-bake-update`. Each
+# `<kind>-<id>-update` target depends only on its own baked outputs, and `mdux-bake-update` depends
+# on all of them independently, so ninja is free to bake the screen before the text update has
+# copied the new text package into `generated/`. Registration order in CMakeLists.txt does not
+# change that, and a comment claiming it does is worse than none.
+#
+# So a single update pass over an upstream change can stage a downstream artifact that attests the
+# *previous* upstream digest. Two things follow, and both matter:
+#
+# 1. **Run the update to a fixpoint.** Stage, reconfigure, build, and run `ctest -L evidence`. A
+#    downstream artifact left behind fails its own comparison; re-run the update and repeat until
+#    the tests pass and a pass stages nothing. Introducing a *new* consumed artifact needs this
+#    even to configure: the consumer's dependency on a file that does not exist yet is a ninja
+#    graph error, not a build that does what it can.
+#
+# 2. **Nothing escapes to a reviewer.** CI builds from an empty tree, so every bake reads the
+#    committed inputs; a screen staged against a superseded text package cannot match the bake that
+#    reads the current one, because `report.json` records every input's digest. The failure is
+#    `evidence.<kind>.<id>` on both toolchain legs. The fixpoint rule above is about not spending a
+#    CI round trip to learn it.
+#
 # ## Host-tool resolution
 #
 # TOOL is always a `MduX::<tool>` target. A cross-compiling build substitutes an imported
