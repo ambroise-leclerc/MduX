@@ -775,7 +775,9 @@ struct FixtureFont {
     /// uses; the other two exist to prove refusals that are *not* about a missing glyph.
     enum class Shape {
         Plain,
-        WithUnsupportedScripts,  ///< also bakes an Arabic letter and a combining acute
+        WithExtraScripts,        ///< also bakes Greek and Cyrillic letters, two combining marks
+                                 ///< and an Arabic letter - all of them present, so a refusal
+                                 ///< among them cannot be a missing glyph
         WithRunawayKerning,      ///< A->B kerns far enough left to drive the pen past the origin
     };
 
@@ -786,9 +788,9 @@ struct FixtureFont {
         font.pixelSize  = pixelSize;
         font.locales    = {"en-US"};
 
-        // 16x16 rather than the 8x8 the three Latin glyphs need: `Shape::WithUnsupportedScripts`
-        // packs two more below them, and `validate()` refuses a slot that leaves the sheet. One
-        // size for every shape keeps the fixture a single code path.
+        // 16x16 rather than the 8x8 the three Latin glyphs need: `Shape::WithExtraScripts` packs
+        // five more beside and below them, and `validate()` refuses a slot that leaves the sheet.
+        // One size for every shape keeps the fixture a single code path.
         const std::vector<std::byte> sheet(256, std::byte{0});
         const auto                   hex = mdux::evidence::toHex(mdux::evidence::sha256(sheet));
         font.atlas.path             = "atlas.bin";
@@ -811,16 +813,32 @@ struct FixtureFont {
         font.kerning           = {{.left = U'A', .right = U'B', .adjustment = kernAB}};
         font.restrictedCharset = {{.first = U' ', .last = U' '}, {.first = U'A', .last = U'B'}};
 
-        if (shape == Shape::WithUnsupportedScripts) {
-            // Both are legitimately bakeable and legitimately unrenderable by an identity pen walk:
-            // U+0301 belongs over the preceding base rather than after its advance, and U+0627 runs
-            // right to left and joins its neighbours. `find()` succeeds for both, which is exactly
-            // what makes them the right fixture - a refusal here cannot be a missing glyph.
+        if (shape == Shape::WithExtraScripts) {
+            // Five more glyphs, in code-point order, covering both directions of the repertoire
+            // rule. Every one of them is bakeable and every one resolves through `find()`, which is
+            // what makes this the right fixture: a refusal among them cannot be a missing glyph,
+            // and an acceptance among them cannot be an accident of the charset.
+            //
+            //   U+0301  combining acute      - refused: belongs over the base, not after it
+            //   U+03B1  Greek small alpha    - accepted: ADR-010 names Greek in the v1 scope
+            //   U+0416  Cyrillic capital Zhe - accepted: likewise Cyrillic
+            //   U+0483  combining titlo      - refused, and it sits *inside* the Cyrillic block,
+            //                                  which is why that block is admitted with a hole
+            //   U+0627  Arabic alef          - refused: right to left, and it joins its neighbours
             font.glyphs.push_back({.codePoint = U'\u0301', .glyphIndex = 6, .advanceWidth = 0, .leftSideBearing = 0,
                                    .x = 0, .y = 6, .width = 3, .height = 2, .bitmapOriginX = -3, .bitmapOriginY = 8});
-            font.glyphs.push_back({.codePoint = U'\u0627', .glyphIndex = 7, .advanceWidth = 400, .leftSideBearing = 0,
-                                   .x = 4, .y = 6, .width = 2, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6});
+            font.glyphs.push_back({.codePoint = U'\u03B1', .glyphIndex = 7, .advanceWidth = 600, .leftSideBearing = 0,
+                                   .x = 8, .y = 0, .width = 4, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6});
+            font.glyphs.push_back({.codePoint = U'\u0416', .glyphIndex = 8, .advanceWidth = 900, .leftSideBearing = 0,
+                                   .x = 0, .y = 8, .width = 6, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6});
+            font.glyphs.push_back({.codePoint = U'\u0483', .glyphIndex = 9, .advanceWidth = 0, .leftSideBearing = 0,
+                                   .x = 8, .y = 6, .width = 3, .height = 2, .bitmapOriginX = -3, .bitmapOriginY = 8});
+            font.glyphs.push_back({.codePoint = U'\u0627', .glyphIndex = 10, .advanceWidth = 400, .leftSideBearing = 0,
+                                   .x = 12, .y = 0, .width = 2, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6});
             font.restrictedCharset.push_back({.first = U'\u0301', .last = U'\u0301'});
+            font.restrictedCharset.push_back({.first = U'\u03B1', .last = U'\u03B1'});
+            font.restrictedCharset.push_back({.first = U'\u0416', .last = U'\u0416'});
+            font.restrictedCharset.push_back({.first = U'\u0483', .last = U'\u0483'});
             font.restrictedCharset.push_back({.first = U'\u0627', .last = U'\u0627'});
         }
         if (shape == Shape::WithRunawayKerning) {
@@ -1101,59 +1119,83 @@ font = "font.json"
             .Execute();
     }};
 
-const mdux::spec::Register unsupportedShapingIsRefused{
-    "A code point the pen walk cannot render is refused even when the font bakes it", "evidence-unit", [] {
+const mdux::spec::Register repertoireMatchesTheAdr{
+    "The enforced repertoire is ADR-010's v1 scope: Greek and Cyrillic bake, their marks do not",
+    "evidence-unit", [] {
         return speclab::Test("text-bake-strings-repertoire")
-            .Given("a font package that also bakes a combining acute and an Arabic letter", [] {})
-            .When("strings using them are baked", [] {})
-            .Then("each is TXT026, and the glyph is demonstrably present",
+            .Given("a font package baking Greek, Cyrillic, two combining marks and an Arabic letter", [] {})
+            .When("a string of each is baked", [] {})
+            .Then("the three scripts ADR-010 names position, and the rest are TXT026",
                   [] {
                       mdux::spec::Checks checks;
                       const auto         dir      = freshTempDir("repertoire");
-                      const auto         fontName = FixtureFont::writeInto(dir, FixtureFont::Shape::WithUnsupportedScripts);
+                      const auto         fontName = FixtureFont::writeInto(dir, FixtureFont::Shape::WithExtraScripts);
 
-                      // The premise first. If these ever stopped resolving, the refusals below
-                      // would still pass and would be proving something else entirely - a missing
-                      // glyph rather than an unsupported shaping model.
-                      const auto font = FixtureFont::package(FixtureFont::Shape::WithUnsupportedScripts);
-                      checks.expect(font.find(U'\u0301') != nullptr, "the combining acute is in the package");
-                      checks.expect(font.find(U'\u0627') != nullptr, "the Arabic letter is in the package");
+                      // The premise first. Every code point below resolves, so neither half of this
+                      // scenario can be an accident of the charset: a refusal is about the shaping
+                      // model rather than a missing glyph, and an acceptance is about the
+                      // repertoire rather than a lucky lookup.
+                      const auto font = FixtureFont::package(FixtureFont::Shape::WithExtraScripts);
+                      for (const char32_t point : {U'\u0301', U'\u03B1', U'\u0416', U'\u0483', U'\u0627'}) {
+                          checks.expect(font.find(point) != nullptr,
+                                        std::format("U+{:04X} is in the package", static_cast<std::uint32_t>(point)));
+                      }
 
                       struct Case {
                           std::string_view what;
+                          std::string_view expectedCode;  ///< "none" means it is expected to bake
                           std::string      recipe;
                       };
                       const std::vector<Case> cases{
-                          // A base plus a combining mark: a pen walk parks the accent after the
-                          // base's advance instead of over it.
+                          // ADR-010's Context and Decision 5 name Latin, Cyrillic and Greek LTR as
+                          // the whole of the v1 scope. An implementation enforcing less than that
+                          // ships a rendering nobody reviewed; one enforcing more refuses text the
+                          // accepted architecture promises. These two cases pin the second half.
+                          //
                           // Written with the TOML parser's own \u escapes rather than as literal
                           // UTF-8, so this source file stays ASCII: MSVC reads a file with no BOM
                           // in the system code page unless told otherwise, and a mangled byte here
                           // would make the scenario prove something other than what it says.
-                          {"a combining mark after a base", textRecipeText(fontName, R"(keys   = ["STR-ACUTE"]
+                          {"a Greek letter", "none", textRecipeText(fontName, R"(keys   = ["STR-GREEK"]
+values = ["\u03B1"])")},
+                          {"a Cyrillic letter", "none", textRecipeText(fontName, R"(keys   = ["STR-CYRILLIC"]
+values = ["\u0416"])")},
+                          // A base plus a combining mark: a pen walk parks the accent after the
+                          // base's advance instead of over it.
+                          {"a combining mark after a base", "TXT026", textRecipeText(fontName, R"(keys   = ["STR-ACUTE"]
 values = ["A\u0301"])")},
+                          // The same defect inside the Cyrillic block, which is why that block is
+                          // admitted with U+0483..U+0489 carved out rather than whole.
+                          {"a combining mark inside the Cyrillic block", "TXT026",
+                           textRecipeText(fontName, R"(keys   = ["STR-TITLO"]
+values = ["\u0416\u0483"])")},
                           // Right to left, and joining. A pen walk emits isolated forms in logical
                           // order, which is wrong twice over.
-                          {"an Arabic letter", textRecipeText(fontName, R"(keys   = ["STR-ARABIC"]
+                          {"an Arabic letter", "TXT026", textRecipeText(fontName, R"(keys   = ["STR-ARABIC"]
 values = ["\u0627"])")},
                       };
 
                       for (const Case& entry : cases) {
                           std::vector<cli::Diagnostic> diagnostics;
                           auto recipe = bake::parseRecipe(entry.recipe, "fixture.toml", diagnostics);
+                          bool baked  = false;
                           if (recipe.has_value()) {
                               const auto bytes = std::as_bytes(std::span{entry.recipe.data(), entry.recipe.size()});
-                              auto       out   = bake::run(*recipe, "fixture.toml", bytes, dir, diagnostics);
-                              checks.expect(!out.has_value(), std::format("{}: the bake succeeded unexpectedly", entry.what));
+                              baked = bake::run(*recipe, "fixture.toml", bytes, dir, diagnostics).has_value();
                           }
-                          const bool sawCode = std::ranges::any_of(
-                              diagnostics, [](const cli::Diagnostic& d) { return d.code == "TXT026"; });
-                          checks.expect(sawCode, std::format("{}: expected TXT026, got [{}]", entry.what,
-                                                             diagnostics.empty() ? std::string{"none"}
-                                                                                 : diagnostics.front().code));
-                          // Not TXT024. The distinction is the whole point of the scenario: the
-                          // author is told their text needs shaping this baker does not do, not
-                          // sent to widen a charset that already covers it.
+                          const std::string got =
+                              diagnostics.empty() ? std::string{"none"} : diagnostics.front().code;
+
+                          if (entry.expectedCode == "none") {
+                              checks.expect(baked, std::format("{}: expected a package, got [{}]", entry.what, got));
+                              continue;
+                          }
+                          checks.expect(!baked, std::format("{}: the bake succeeded unexpectedly", entry.what));
+                          checks.expect(got == entry.expectedCode,
+                                        std::format("{}: expected {}, got [{}]", entry.what, entry.expectedCode, got));
+                          // Not TXT024. The distinction is the whole point: the author is told
+                          // their text needs shaping this baker does not do, not sent to widen a
+                          // charset that already covers it.
                           const bool sawNotDrawable = std::ranges::any_of(
                               diagnostics, [](const cli::Diagnostic& d) { return d.code == "TXT024"; });
                           checks.expect(!sawNotDrawable, std::format("{}: reported as a missing glyph", entry.what));
@@ -1264,8 +1306,29 @@ values = ["A"])";
                       // A backslash resolves on Windows and does not on Linux, and a report may not
                       // record one at all - so it is refused at the path rule, giving one answer
                       // everywhere rather than a TXT021 here and a TXT005 there.
-                      checks.expect(codeFor("sub\\font.json") == "TXT021",
-                                    std::format("a backslash path: got {}", codeFor("sub\\font.json")));
+                      //
+                      // Four backslashes, deliberately. C++ turns them into two, which the TOML
+                      // parser turns into one. Writing two here would put a lone `\f` in the TOML,
+                      // and `\f` is a *recognised escape* that decodes to a form feed - so the
+                      // recipe would hold no backslash at all, this case would pass because a file
+                      // named with a control character is absent, and deleting the rule it claims
+                      // to test would leave it green.
+                      const std::string backslashRecipe = textRecipeText("sub\\\\font.json", strings);
+                      std::vector<cli::Diagnostic> backslashDiagnostics;
+                      auto backslashParsed = bake::parseRecipe(backslashRecipe, "fixture.toml", backslashDiagnostics);
+                      checks.expect(backslashParsed.has_value(), "the backslash recipe parses");
+                      if (backslashParsed.has_value()) {
+                          // The assertion that keeps the case honest: the path really did survive
+                          // both layers as a backslash.
+                          checks.expect(backslashParsed->fontPackage.find('\\') != std::string::npos,
+                                        std::format("the parsed path keeps its backslash, got '{}'",
+                                                    backslashParsed->fontPackage));
+                          const auto bytes = std::as_bytes(std::span{backslashRecipe.data(), backslashRecipe.size()});
+                          static_cast<void>(bake::run(*backslashParsed, "fixture.toml", bytes, dir, backslashDiagnostics));
+                      }
+                      const std::string backslashCode =
+                          backslashDiagnostics.empty() ? std::string{"none"} : backslashDiagnostics.front().code;
+                      checks.expect(backslashCode == "TXT021", std::format("a backslash path: got {}", backslashCode));
 
                       // The symlink case. Windows needs a privilege for this and usually refuses,
                       // so the scenario asserts only when the link was actually created - a test
@@ -1277,6 +1340,10 @@ values = ["A"])";
                       std::error_code linkError;
                       std::filesystem::create_symlink(outside / "font.json", dir / "escape.json", linkError);
                       if (!linkError) {
+                          // Asserted rather than assumed: if the copy had failed, the control case
+                          // below would be reading a file that is not there and would agree with
+                          // the escape case for the wrong reason.
+                          checks.expect(!copyError, "the outside-the-root copy was made");
                           checks.expect(codeFor("escape.json") == "TXT021",
                                         std::format("a symlink leaving the root: got {}", codeFor("escape.json")));
                           // ...and the control: the same file, read directly, bakes.

@@ -74,9 +74,14 @@
  * succeeds while the pen walk is wrong - isolated unjoined letters running the wrong way, an
  * accent parked after the base rather than over it. Either would produce a package that validates,
  * byte-compares across both toolchains, and renders incorrectly on a device, which is precisely
- * the outcome ADR-010 exists to prevent. So a code point outside the repertoire this baker can
- * actually position is refused *before* the font is consulted, and widening that repertoire is a
- * reviewed change to the baker rather than a side effect of a font recipe growing a range.
+ * the outcome ADR-010 exists to prevent. So a code point outside the repertoire is refused
+ * *before* the font is consulted.
+ *
+ * The repertoire is ADR-010's v1 scope and nothing else - Latin, Greek and Cyrillic, left to
+ * right, with those blocks' combining marks carved out. It is not this file's to widen or narrow:
+ * a baker enforcing less than the ADR ships a rendering nobody reviewed, and one enforcing more
+ * refuses text the accepted architecture promises. Both are the same defect in opposite
+ * directions, so a change to the repertoire is a change to ADR-010 first.
  *
  * The pen accumulates in **font units** and converts to pixels per glyph, rather than converting
  * each advance and accumulating pixels. Both are defensible; only the first keeps a rounding error

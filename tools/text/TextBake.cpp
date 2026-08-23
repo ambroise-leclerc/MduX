@@ -1117,27 +1117,44 @@ struct LoadedFont {
  * byte-compares, and renders wrongly on a device - which is exactly what ADR-010 and this module's
  * contract say must not happen.
  *
- * So the repertoire is declared rather than inferred, and it is deliberately narrow: the scripts
- * below are left-to-right, need no joining or reordering, and contain no combining marks, so the
- * identity walk is the whole of their shaping. Everything else - including scripts this baker
- * could one day support - is refused, because widening the model is a decision that deserves the
- * same review as the code that implements it, not a side effect of a font recipe growing a range.
+ * So the repertoire is declared rather than inferred, and what it declares is ADR-010's own v1
+ * scope: "Latin/Cyrillic/Greek LTR text with no ligatures, no GPOS, no contextual forms and no
+ * RTL/contextual behaviour". Those three scripts are left-to-right and need no joining or
+ * reordering, so once their combining marks are excluded the identity walk is the whole of their
+ * shaping. Everything else is refused - and widening this is a change to ADR-010 followed by a
+ * change here, never a side effect of a font recipe growing a range.
  *
- * The two carve-outs inside Latin-1 are not fussiness. U+00AD SOFT HYPHEN is a format character
- * whose whole meaning is conditional: it renders as nothing unless a line breaks there, and a pen
- * walk has no line breaking, so it would bake a visible hyphen into a word. It is excluded with
- * U+00A1's neighbour rather than by category, because there is no Unicode database here to ask.
+ * The carve-outs are the marks and the one format character, all excluded by range because there
+ * is no Unicode database here to ask by category:
+ *
+ * - **U+00AD SOFT HYPHEN.** A format character whose meaning is conditional: it renders as nothing
+ *   unless a line breaks there, and a pen walk has no line breaking, so it would bake a visible
+ *   hyphen into the middle of a word.
+ * - **U+0483..U+0489.** The Cyrillic block's own combining marks (Mn and Me), which belong over
+ *   the preceding base rather than after its advance - the same defect as U+0301, inside a block
+ *   that is otherwise entirely identity-safe.
+ *
+ * The blocks are the principal ones of each script rather than every block that has ever carried a
+ * Latin, Greek or Cyrillic character. Cyrillic Extended-A (U+2DE0..U+2DFF) is *entirely* combining
+ * marks and Extended-B carries several, so both are left out until somebody carves them by hand;
+ * omitting a block costs a build error, and admitting one wrongly costs a device rendering nobody
+ * reviewed.
  */
 struct RepertoireRange {
     char32_t first;
     char32_t last;
 };
 
-constexpr std::array<RepertoireRange, 4> v1Repertoire{{
+constexpr std::array<RepertoireRange, 9> v1Repertoire{{
     {U'\u0020', U'\u007E'},  // Basic Latin, printable
     {U'\u00A0', U'\u00AC'},  // Latin-1 Supplement, up to but not including the soft hyphen
     {U'\u00AE', U'\u00FF'},  // ...and past it
     {U'\u0100', U'\u024F'},  // Latin Extended-A and -B, which are contiguous
+    {U'\u1E00', U'\u1EFF'},  // Latin Extended Additional: precomposed, so no marks to attach
+    {U'\u0370', U'\u03FF'},  // Greek and Coptic
+    {U'\u0400', U'\u0482'},  // Cyrillic, up to its combining marks
+    {U'\u048A', U'\u04FF'},  // ...and past U+0483..U+0489, which are Mn and Me
+    {U'\u0500', U'\u052F'},  // Cyrillic Supplement, which is letters only
 }};
 
 [[nodiscard]] constexpr bool inV1Repertoire(char32_t point) noexcept {
@@ -1171,7 +1188,8 @@ constexpr std::array<RepertoireRange, 4> v1Repertoire{{
             report(diagnostics, std::string{recipePath}, 0, unsupportedRepertoire,
                    std::format("the value for '{}' contains U+{:04X}, which this baker's shaping model does not cover",
                                entry.key, static_cast<std::uint32_t>(point)),
-                   "v1 positions Latin left to right with no joining, reordering or mark attachment.");
+                   "ADR-010's v1 scope is Latin, Greek and Cyrillic left to right, with no joining, "
+                   "reordering or mark attachment.");
             return std::nullopt;
         }
 
