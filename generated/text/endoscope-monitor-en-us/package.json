@@ -1,0 +1,20 @@
+{
+  "atlas": "dejavu-ui",
+  "id": "endoscope-monitor-en-us",
+  "kind": "text",
+  "locale": "en-US",
+  "runs": [
+    {
+      "byteLength": 102,
+      "byteOffset": 0,
+      "id": "STR-EM-TITLE",
+      "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+    }
+  ],
+  "schemaVersion": 1,
+  "sidecar": {
+    "byteLength": 102,
+    "path": "runs.bin",
+    "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+  }
+}

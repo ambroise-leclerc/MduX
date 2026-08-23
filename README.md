@@ -38,7 +38,8 @@ A library with three zones, checked at configure time rather than by review
 `mdux_verify_trust_zones()` walks the full link graph and fails the configure step if a governed
 target ever reaches Vulkan or a windowing library.
 
-**What it is not:** a UI toolkit. There is no text, no layout, and no widgets yet — see
+**What it is not:** a UI toolkit. Text is compiled and measured but not yet drawn, and there are no
+widgets yet — see
 [Implementation status](#implementation-status). It is also not a quality-management system, a risk
 engine, or a lifecycle framework; there is no `mdux::risk`, `mdux::qms` or `mdux::lifecycle`
 namespace, and no code here generates a Design History File, a Risk Management File, or an audit
@@ -161,14 +162,14 @@ carrying `static_assert(screen.validate().has_value())`, a governed runtime turn
 commands without allocating, and `mdux.render.vulkan` draws them. `ScreenPixelTests` walks the whole
 chain and compares the result pixel by pixel under lavapipe in CI.
 
-Two limits are worth stating beside that. A **font** package is baked and committed
-(`generated/font/dejavu-ui/`), but no **text** package is — the per-locale glyph runs a screen's
-`t("STR-KEY")` resolves against, which would live under `generated/text/`. `mdux-textbake` can
-produce one and no recipe registers one, so a screen carrying a text key cannot be compiled end to
-end ([#235](https://github.com/ambroise-leclerc/MduX/issues/235)); and the runtime draws a `Panel` while
-counting every other component as deferred, because text needs that package and live-data components
-have no geometry until a frame exists. The committed screen therefore renders one bar — from a file
-an author wrote, through every stage, with nothing hand-carried between them.
+A **font** package and a **text** package are both baked and committed
+(`generated/font/dejavu-ui/`, `generated/text/endoscope-monitor-en-us/`), so the committed screen
+carries a `t("STR-KEY")` and its box is measured, at build time, against the widest translation every
+approved locale holds. One limit is worth stating beside that: the runtime draws a `Panel` while
+counting every other component as deferred — drawing text means joining a locale-free screen to a
+text package at run time, which is [#17](https://github.com/ambroise-leclerc/MduX/issues/17), and
+live-data components have no geometry until a frame exists. The committed screen therefore renders
+one bar — from a file an author wrote, through every stage, with nothing hand-carried between them.
 
 The HTML/CSS path that earlier revisions described was **deleted** by
 [#127](https://github.com/ambroise-leclerc/MduX/issues/127) — `MedicalUiRenderer::render()` recorded

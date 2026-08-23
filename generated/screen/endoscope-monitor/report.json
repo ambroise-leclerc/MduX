@@ -2,7 +2,19 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "c35fd66ae804cb6ac14ea691914f52b3690355fd32a361a14bc46058f257642c"
+      "sha256": "f56a09470f5dca3ac72d7dd010549ea53a267ab18a8dac375be9fb3213b8b99d"
+    },
+    {
+      "path": "generated/font/dejavu-ui/package.json",
+      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+    },
+    {
+      "path": "generated/text/endoscope-monitor-en-us/package.json",
+      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+    },
+    {
+      "path": "generated/text/endoscope-monitor-en-us/runs.bin",
+      "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
     }
   ],
   "options": {
@@ -12,12 +24,14 @@
       "maxVertices": 4096
     },
     "dynamicText": [],
-    "fontPackage": "",
+    "fontPackage": "generated/font/dejavu-ui/package.json",
     "id": "endoscope-monitor",
     "source": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
     "surfaceHeight": 720,
     "surfaceWidth": 1280,
-    "textPackages": []
+    "textPackages": [
+      "generated/text/endoscope-monitor-en-us/package.json"
+    ]
   },
   "outputs": [
     {
@@ -26,12 +40,12 @@
     },
     {
       "path": "package.json",
-      "sha256": "72066d6b6ef6a80c974a99b807a3e5fe7e40aba08fa0d0885eff67e2348554f0"
+      "sha256": "3bb40b1e7abf842ed7ec58dac8509b67f1bdd06809e5c36ad65360c2f5d7401e"
     }
   ],
   "recipe": {
     "path": "recipes/screen/endoscope-monitor.toml",
-    "sha256": "098afa4645afdb85dcf238c511c062bebedebf1148e8a565383df905db761af5"
+    "sha256": "ce8676090fb3355b9d16b4ef2b7dadaa640593997b54141eaa0b55e945bac328"
   },
   "schemaVersion": 1,
   "tool": "mdux-meduic",
