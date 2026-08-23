@@ -25,7 +25,7 @@
   ],
   "recipe": {
     "path": "recipes/text/endoscope-monitor-en-us.toml",
-    "sha256": "b0dac023422c04fba9f27ed3c9218322de48342bf7cebda58de5d8079070c2db"
+    "sha256": "2233d48498be26aadd6ea3ba6a56f3076357471c481c0846e7f58003ab0deadf"
   },
   "schemaVersion": 1,
   "tool": "mdux-textbake",

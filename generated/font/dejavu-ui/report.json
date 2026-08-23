@@ -35,7 +35,7 @@
   ],
   "recipe": {
     "path": "recipes/font/dejavu-ui.toml",
-    "sha256": "f0d458cbb0916a9a05e2ddf23cde5864c30a3f0837278a4d79fa08c85d4d08fb"
+    "sha256": "53ba6f4a76878119c332596b7c41ee003f724f6cc61271e34b4160703a6cf8ba"
   },
   "schemaVersion": 1,
   "tool": "mdux-textbake",
