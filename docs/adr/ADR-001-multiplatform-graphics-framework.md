@@ -1,7 +1,7 @@
 # ADR-001: Graphics Framework Selection for Medical Device Software
 
 ## Status
-Revised (v2.0 - 2025-07-25)
+Superseded by ADR-013 (2026-08-23)
 
 ## Context
 MduX is a modern C++23 header-only UI library designed specifically for medical device software. The library needs to support Windows and Linux platforms while maintaining high performance, reliability, and regulatory compliance for Class B and Class C medical devices.

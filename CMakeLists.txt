@@ -1,29 +1,26 @@
 cmake_minimum_required(VERSION 4.0.0)
 
-# CRITICAL: Must be the first thing after cmake_minimum_required for toolchain detection
-# Official UUID for CMake 4.0.3 import std support
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+# CMake still gates import std behind an experimental UUID. Fail explicitly when this project has
+# not reviewed a newer CMake series instead of silently accepting an unknown gate value.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.4")
+    message(FATAL_ERROR
+        "CMake ${CMAKE_VERSION} has not been qualified for MduX import std support; use a 4.0-4.3 release.")
+endif()
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+else()
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
 project(MduX VERSION 0.6.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Debug: Check if import std support was detected
 message(STATUS "CMAKE_EXPERIMENTAL_CXX_IMPORT_STD: ${CMAKE_EXPERIMENTAL_CXX_IMPORT_STD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-if(TARGET __CMAKE::CXX23)
-    message(STATUS "__CMAKE::CXX23 target available")
-else()
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.40")
-        message(STATUS "__CMAKE::CXX23 target NOT available, but MSVC ${CMAKE_CXX_COMPILER_VERSION} should support import std with /experimental:module")
-    else()
-        message(WARNING "__CMAKE::CXX23 target NOT available - import std; will not work")
-    endif()
-endif()
 
 # Compiler version requirements for C++23 modules support
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -47,8 +44,47 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
         message(FATAL_ERROR "Clang 20 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    message(FATAL_ERROR
+        "AppleClang is unsupported. Apple Silicon macOS requires upstream LLVM/Clang 21.1.8; "
+        "configure with --preset ninja-macos-clang.")
 else()
-    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or Clang 20+ for C++23 modules support.")
+    message(FATAL_ERROR "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or upstream Clang 20+ for C++23 modules support.")
+endif()
+
+if(APPLE)
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+        message(FATAL_ERROR "MduX supports macOS only on Apple Silicon (arm64).")
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR
+            "MduX on macOS requires upstream LLVM/Clang 21.1.8; AppleClang and GCC are unsupported.")
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "21.1.8")
+        message(FATAL_ERROR
+            "MduX's verified macOS compiler is upstream Clang 21.1.8 exactly; found "
+            "${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.1")
+        message(FATAL_ERROR "MduX's verified macOS CMake is 4.3.1 exactly; found ${CMAKE_VERSION}.")
+    endif()
+    if(NOT CMAKE_AR MATCHES "llvm-ar" OR NOT CMAKE_RANLIB MATCHES "llvm-ranlib")
+        message(FATAL_ERROR
+            "The macOS build requires LLVM's llvm-ar and llvm-ranlib; configure with "
+            "--preset ninja-macos-clang.")
+    endif()
+endif()
+
+# Check after the compiler/platform diagnostics so unsupported macOS combinations get the specific
+# remediation rather than a generic missing-import-metadata error.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+    message(STATUS "C++23 import std metadata available")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.40")
+    message(STATUS "__CMAKE::CXX23 target NOT available, but MSVC ${CMAKE_CXX_COMPILER_VERSION} should support import std with /experimental:module")
+else()
+    message(FATAL_ERROR
+        "The selected compiler and standard library do not provide C++23 import std support. "
+        "CMAKE_CXX_COMPILER_IMPORT_STD='${CMAKE_CXX_COMPILER_IMPORT_STD}'.")
 endif()
 
 # Generator validation.
@@ -78,7 +114,7 @@ endif()
 
 # Platform validation
 if(NOT WIN32 AND NOT UNIX)
-    message(FATAL_ERROR "MduX only supports Windows and Linux platforms.")
+    message(FATAL_ERROR "MduX only supports Windows, Linux, and Apple Silicon macOS.")
 endif()
 
 # Force 64-bit architecture on Windows for Vulkan compatibility
@@ -90,6 +126,11 @@ endif()
 
 # C++23 Modules support
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+# Initialize every subsequently-created C++ target with import std support. Checking for CMake's
+# internal target here is too early on Clang: CMake creates it while applying this property.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+    set(CMAKE_CXX_MODULE_STD ON)
+endif()
 
 # Compiler-specific modules configuration
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -219,7 +260,7 @@ target_sources(MduXCore
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 
-if(TARGET __CMAKE::CXX23)
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(MduXCore PROPERTIES CXX_MODULE_STD ON)
 endif()
 
@@ -248,16 +289,12 @@ target_sources(MduX
 
 target_compile_features(MduX_options INTERFACE cxx_std_23)
 
-# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
-if(TARGET __CMAKE::CXX23)
+# Only set CXX_MODULE_STD when compiler metadata advertises it.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
     message(STATUS "CXX_MODULE_STD enabled for MduX target")
 else()
-    # Not fatal on its own: `import std` is opt-in per CMake version and toolchain, and the
-    # project still builds without it. The Visual Studio case that used to be caught here is
-    # now caught by the generator check near the top of this file, which rejects every
-    # non-Ninja generator rather than only that one.
-    message(STATUS "CXX_MODULE_STD disabled - __CMAKE::CXX23 target not available")
+    message(STATUS "CXX_MODULE_STD disabled - compiler metadata unavailable")
 endif()
 
 target_include_directories(MduX PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
@@ -546,6 +583,10 @@ if(MDUX_BUILD_TESTS)
         "${CMAKE_COMMAND}"
         -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
         -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "AR=${CMAKE_AR}"
+        -D "RANLIB=${CMAKE_RANLIB}"
+        -D "STDLIB_MODULES_JSON=${CMAKE_CXX_STDLIB_MODULES_JSON}"
+        -D "OSX_SYSROOT=${CMAKE_OSX_SYSROOT}"
         -D "GENERATOR=${CMAKE_GENERATOR}"
         -D "EXPECTED_VERSION=${PROJECT_VERSION}"
         -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"

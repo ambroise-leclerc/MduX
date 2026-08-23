@@ -16,6 +16,7 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![Version](https://img.shields.io/github/v/tag/ambroise-leclerc/MduX?label=version)](https://github.com/ambroise-leclerc/MduX/tags)
 [![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
 [![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
+[![macOS Apple Silicon CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml)
 [![Docs Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml)
 [![Evidence Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml)
 [![Compliance Docs](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml)
@@ -114,6 +115,10 @@ ctest --output-on-failure
 Requires **GCC 16+**, **MSVC 17.14+** or **Clang 20+**, **CMake 4.0+**, **Ninja**, and the
 **Vulkan SDK 1.3+**.
 
+The verified macOS configuration is narrower: Apple Silicon, upstream Clang 21.1.8 with libc++,
+CMake 4.3.1, Ninja, and the LunarG Vulkan SDK/MoltenVK. Reproduce it with
+`cmake --preset ninja-macos-clang`; AppleClang, GCC on macOS, and Intel Macs are rejected.
+
 `-G Ninja` is the one flag you cannot drop. CMake implements C++ modules for the Ninja and
 Visual Studio generators only, and Visual Studio cannot do `import std` — so Ninja is the entire
 supported set, and configuring without it stops with a message saying exactly that. To stop
@@ -122,7 +127,7 @@ typing it, `export CMAKE_GENERATOR=Ninja` once and plain `cmake ..` works from t
 If your default `g++` is older than 16, point at a newer one with the standard variables:
 `CXX=g++-16 CC=gcc-16 cmake .. -G Ninja`.
 
-`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc` and friends. Those exist so each CI
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-macos-clang` and friends. Those exist so each CI
 leg can invoke a named configuration this repository owns rather than a command line that merely
 resembles one. They are not needed to build by hand, and nothing above uses them.
 

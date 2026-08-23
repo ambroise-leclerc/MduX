@@ -81,16 +81,16 @@ DeviceObjectManager::DeviceObjectManager(DeviceObjectManager&& other) noexcept
     : device(other.device)
     , reservations(other.reservations)
     , initialized(other.initialized)
-    , commandPools(move(other.commandPools))
-    , descriptorPools(move(other.descriptorPools))
-    , queryPools(move(other.queryPools))
-    , buffers(move(other.buffers))
-    , images(move(other.images))
-    , imageViews(move(other.imageViews))
-    , samplers(move(other.samplers))
-    , renderPasses(move(other.renderPasses))
-    , framebuffers(move(other.framebuffers))
-    , objectAuditTrail(move(other.objectAuditTrail))
+    , commandPools(std::move(other.commandPools))
+    , descriptorPools(std::move(other.descriptorPools))
+    , queryPools(std::move(other.queryPools))
+    , buffers(std::move(other.buffers))
+    , images(std::move(other.images))
+    , imageViews(std::move(other.imageViews))
+    , samplers(std::move(other.samplers))
+    , renderPasses(std::move(other.renderPasses))
+    , framebuffers(std::move(other.framebuffers))
+    , objectAuditTrail(std::move(other.objectAuditTrail))
     , statistics(other.statistics)
 {
     other.device = VK_NULL_HANDLE;
@@ -104,16 +104,16 @@ DeviceObjectManager& DeviceObjectManager::operator=(DeviceObjectManager&& other)
         device = other.device;
         reservations = other.reservations;
         initialized = other.initialized;
-        commandPools = move(other.commandPools);
-        descriptorPools = move(other.descriptorPools);
-        queryPools = move(other.queryPools);
-        buffers = move(other.buffers);
-        images = move(other.images);
-        imageViews = move(other.imageViews);
-        samplers = move(other.samplers);
-        renderPasses = move(other.renderPasses);
-        framebuffers = move(other.framebuffers);
-        objectAuditTrail = move(other.objectAuditTrail);
+        commandPools = std::move(other.commandPools);
+        descriptorPools = std::move(other.descriptorPools);
+        queryPools = std::move(other.queryPools);
+        buffers = std::move(other.buffers);
+        images = std::move(other.images);
+        imageViews = std::move(other.imageViews);
+        samplers = std::move(other.samplers);
+        renderPasses = std::move(other.renderPasses);
+        framebuffers = std::move(other.framebuffers);
+        objectAuditTrail = std::move(other.objectAuditTrail);
         statistics = other.statistics;
 
         other.device = VK_NULL_HANDLE;

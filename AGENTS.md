@@ -163,38 +163,33 @@ in `include/` or `src/`.
   superseded by the clause corpus above or by an ADR. Read that file before concluding content was
   lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
 - `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
+  `macos-arm64-build.yml`,
   `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
   `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
   gets built/tested in CI.
-- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
-  `ninja-clang` (issue #45).
+- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug`,
+  `ninja-clang`, `ninja-macos-clang` and `ninja-macos-clang-debug`.
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
 
 ## 5. Supported environment and common commands
 
-**Platforms**: Windows 10+ and Linux only are supported and intended — but this is not, as earlier
-text here claimed, enforced by a fatal CMake check. The guard in `CMakeLists.txt` is
-`if(NOT WIN32 AND NOT UNIX)`, and CMake sets `UNIX` on macOS too, so that check does not actually
-block macOS. In practice macOS is excluded by the compiler-version gate instead: `AppleClang` is not
-one of the recognized `CMAKE_CXX_COMPILER_ID` branches (MSVC/GNU/Clang), so it falls through to a
-non-fatal `message(WARNING ...)` rather than a `FATAL_ERROR` — and even past that warning, C++23
-modules scanning is not functional under AppleClang, so a macOS configure fails later for unrelated
-reasons rather than being rejected up front. Treat "Windows/Linux only" as the intended, tested
-scope, not a mechanically enforced restriction.
+**Platforms**: Windows 10+, Linux, and Apple Silicon macOS are supported and tested. macOS has one
+verified tuple: upstream LLVM/Clang 21.1.8 with libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK
+1.4.309.0/MoltenVK. `cmake --preset ninja-macos-clang` selects the repository toolchain file, which
+also supplies `llvm-ar`, `llvm-ranlib`, the libc++ modules manifest and the active macOS SDK.
+AppleClang, GCC on macOS, Intel Macs, and version drift are rejected deliberately. Do not generalise
+a result from that tuple into support for an untested macOS configuration.
 
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note that `.github/workflows/clang-build.yml` carries only a `workflow_dispatch`
-  trigger. It is a live workflow that can be started from the Actions tab, but no push or pull
-  request runs it, so Clang is unverified by automatic CI even though the version floor is
-  enforced at configure time. Treat a Clang result as unverified unless you can point at a
-  specific manual run of that workflow.
+- Clang 20+ on Linux remains manual-CI only. macOS requires upstream Clang 21.1.8 exactly and is
+  automatic CI; that does not verify Linux Clang.
 - CMake 4.0+
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`
-enforces this). Plain CMake, identical on Linux and Windows:
+enforces this). Plain CMake on Linux and Windows:
 
 ```bash
 mkdir build && cd build
@@ -207,7 +202,17 @@ Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. 
 takes the platform default and stops with a message naming the generator it found.
 `export CMAKE_GENERATOR=Ninja` removes the need for the flag.
 
-`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang` and `-debug` variants.
+On Apple Silicon macOS use the verified preset instead:
+
+```bash
+export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+cmake --preset ninja-macos-clang
+cmake --build --preset ninja-macos-clang
+ctest --preset ninja-macos-clang --output-on-failure
+```
+
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang`,
+`ninja-macos-clang` and `-debug` variants.
 Those exist so each CI workflow invokes a configuration this repository owns instead of a
 look-alike command line; they are not needed to build by hand, and each uses its own binary dir.
 

@@ -24,6 +24,10 @@ this high.
 | **Ninja** | any recent | fatal check in `CMakeLists.txt` |
 | **Vulkan SDK** | 1.3+ | `find_package(Vulkan REQUIRED)` |
 
+On macOS the supported tuple is exact rather than a minimum: Apple Silicon, upstream LLVM/Clang
+21.1.8, libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK 1.4.309.0 with MoltenVK. AppleClang,
+Homebrew GCC, Intel Macs, and other macOS toolchain versions are intentionally unsupported.
+
 A version below the floor fails at configure with a message naming the version it found.
 
 **Ninja is not optional.** CMake implements C++ modules for the Ninja, Ninja Multi-Config and
@@ -38,7 +42,7 @@ builds the tree cleanly. If you hit that ICE, check `g++ --version` for `experim
 
 ## Build and test
 
-Ordinary out-of-source CMake, on either platform:
+Ordinary out-of-source CMake, on Windows or Linux:
 
 ```bash
 mkdir build && cd build
@@ -50,6 +54,22 @@ ctest --output-on-failure
 That is the whole thing. `MDUX_BUILD_EXAMPLES` and `MDUX_BUILD_TESTS` default to `ON`, so the
 default configure already builds everything the test suite needs.
 
+On Apple Silicon macOS, install CMake 4.3.1, Ninja, GLFW, upstream LLVM 21.1.8 and LunarG's Vulkan
+SDK, source the SDK's `setup-env.sh`, then use the guarded preset:
+
+```bash
+export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+cmake --preset ninja-macos-clang
+cmake --build --preset ninja-macos-clang
+ctest --preset ninja-macos-clang --output-on-failure
+```
+
+The toolchain file discovers Homebrew's `llvm` installation when `MDUX_LLVM_ROOT` is unset, but
+still rejects any version other than 21.1.8. MoltenVK is a Vulkan portability implementation over
+Metal: application instances must enable portability enumeration and devices must enable
+`VK_KHR_portability_subset` when exposed. MduX's headless harness and triangle example do this;
+host applications remain responsible for the same setup.
+
 If your default compiler is not the one you want — Ubuntu's `g++` may be an older release, or a
 GCC 16 pre-release snapshot — select it with the standard variables:
 
@@ -60,7 +80,7 @@ CC=gcc-16 CXX=g++-16 cmake .. -G Ninja
 ### Presets
 
 `CMakePresets.json` defines `ninja-gcc`, `ninja-gcc-debug`, `ninja-msvc`, `ninja-msvc-debug` and
-`ninja-clang`. They exist for CI, not for you: each workflow invokes a named configuration this
+`ninja-clang`, `ninja-macos-clang` and `ninja-macos-clang-debug`. They exist for CI, not for you: each workflow invokes a named configuration this
 repository owns, so a reviewer can read what CI built instead of trusting that a hand-written
 command line in a YAML file still matches the one in this document. Building by hand needs none
 of them.
@@ -142,9 +162,13 @@ cmake_minimum_required(VERSION 4.0.0)
 # "requires that the __CMAKE::CXX23 target exist, but it was not provided by
 # the toolchain" - which does not obviously point back at this line.
 #
-# The UUID changes between CMake releases. This one is CMake 4.0-4.1; if yours
-# rejects it, take the value from MduX's own top-level CMakeLists.txt.
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+# The UUID changed in CMake 4.3. MduX rejects 4.4+ until its next value and
+# behavior have been reviewed.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+else()
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -157,7 +181,7 @@ find_package(MduX REQUIRED)
 add_executable(myapp main.cpp)
 target_link_libraries(myapp PRIVATE MduX::MduX)
 
-if(TARGET __CMAKE::CXX23)
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(myapp PROPERTIES CXX_MODULE_STD ON)
 endif()
 ```
@@ -202,13 +226,15 @@ build-time only.
 
 Worth knowing before you build on this.
 
-**Platforms.** Windows 10+ and Linux are the intended and tested scope. macOS is not supported:
-AppleClang is not a recognised compiler branch, and C++23 module scanning does not work under it, so
-a macOS configure fails for unrelated-looking reasons rather than being rejected cleanly.
+**Platforms.** Windows 10+, Linux, and Apple Silicon macOS are tested. macOS support means only the
+exact upstream-Clang/libc++/MoltenVK tuple above; AppleClang, GCC, Intel hardware and unpinned SDK
+combinations fail at configure time. MoltenVK translates Vulkan to Metal and does not imply native
+Vulkan feature or performance parity.
 
-**Clang is unverified.** The floor is enforced and `ninja-clang` exists, but the Clang CI job is
-commented out ([#48](https://github.com/ambroise-leclerc/MduX/issues/48)). Treat Clang as
-best-effort. Cross-toolchain evidence claims cover MSVC and GCC only.
+**Linux Clang is unverified.** The general floor is enforced and `ninja-clang` exists, but its CI
+job is manual-only ([#48](https://github.com/ambroise-leclerc/MduX/issues/48)). The automatic macOS
+Clang job covers only the exact Apple Silicon tuple above. Cross-toolchain evidence claims remain
+anchored by MSVC and GCC; the macOS run is an additional check, not a certification claim.
 
 **Rendering is a vertical slice, not a UI toolkit.** `mdux.draw` records solid and textured rects
 into a fixed budget, and `mdux.render.vulkan` draws them. There is **no text, no layout, and no

@@ -486,6 +486,11 @@ CPMAddPackage(
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
     # SpecLab v0.1.0
     GIT_TAG 37b51fcec
+    PATCH_COMMAND
+        ${CMAKE_COMMAND}
+            -D "SOURCE_DIR=<SOURCE_DIR>"
+            -D "PATCH_FILE=${CMAKE_SOURCE_DIR}/cmake/patches/speclab-cmake-4.3.patch"
+            -P "${CMAKE_SOURCE_DIR}/cmake/patches/ApplySpecLabPatch.cmake"
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"
@@ -1090,6 +1095,7 @@ if(MDUX_SYMBOL_TOOL)
             -DMDUX_NOHEAP_OBJECT_LIST=${mdux_governed_object_list}
             -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
             -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -DMDUX_THROW_SYMBOLS_AMBIGUOUS=${APPLE}
             -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
     )
     set_tests_properties(governed.noThrow.symbolScan PROPERTIES LABELS "governed")
@@ -1097,21 +1103,18 @@ if(MDUX_SYMBOL_TOOL)
     # The negative fixture. See tests/governed/ThrowFixture.cpp for why a scan that only ever runs
     # against conforming code is not yet evidence of anything.
     #
-    # MSVC is excluded, and the reason is the same one that makes the positive scan
-    # report-only there: the MSVC STL inlines its own throw sites, so `_CxxThrowException` cannot
-    # distinguish a governed `throw` from an ordinary `std::string` growth path. The
-    # `governed-throw` profile therefore forbids nothing under dumpbin, and a negative test needs
-    # something to be forbidden before it can prove the rejection works. Registering it anyway
-    # would produce a test that fails on Windows for a reason unrelated to any defect - the kind of
-    # noise that trains a reader to ignore a red check.
+    # MSVC and macOS/libc++ are excluded because their standard-library throw sites use the same
+    # object symbol as a hand-written throw (`_CxxThrowException` or `__cxa_throw`). The profile
+    # therefore forbids nothing there, and a negative test needs something to be forbidden before
+    # it can prove rejection works. mdux-governed-lint is the source-level gate on those legs.
     #
     # CXX_SCAN_FOR_MODULES OFF keeps this object out of the module dependency graph: it declares no
     # module and imports none, and a fixture whose job is to be non-conforming has no business in
     # anyone's dyndep.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR APPLE)
         message(STATUS
-            "governed.noThrow.symbolScan.negative not registered on MSVC - the governed-throw "
-            "profile forbids no symbol under dumpbin, so there is nothing for a negative test to "
+            "governed.noThrow.symbolScan.negative not registered on this standard library - the "
+            "governed-throw profile cannot distinguish library and source throws, so there is nothing for a negative test to "
             "prove. mdux-governed-lint covers the rule on this toolchain.")
     else()
         add_library(mdux_throw_fixture OBJECT governed/ThrowFixture.cpp)

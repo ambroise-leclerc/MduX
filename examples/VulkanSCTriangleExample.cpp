@@ -48,7 +48,7 @@ constexpr char WINDOW_TITLE[] = "MduX - Vulkan SC Pattern Demo (Standard Vulkan)
 
 class VulkanSCTriangleApp {
 public:
-    void run() {
+    void run(bool smokeTest) {
         cout << "╔══════════════════════════════════════════════════╗\n";
         cout << "║  MduX Vulkan SC Pattern Demonstration            ║\n";
         cout << "║  IEC 62304 Class B - Using Standard Vulkan 1.3   ║\n";
@@ -57,7 +57,7 @@ public:
 
         initWindow();
         initVulkan();
-        mainLoop();
+        mainLoop(smokeTest);
         cleanup();
     }
 
@@ -148,11 +148,36 @@ private:
         uint32_t glfwExtensionCount = 0;
         const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
+        if (glfwExtensions == nullptr) {
+            throw runtime_error("GLFW did not report the Vulkan instance extensions required for a surface");
+        }
+        vector<const char*> instanceExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+        VkInstanceCreateFlags instanceFlags = 0;
+
+#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+        uint32_t availableCount = 0;
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, nullptr) != VK_SUCCESS) {
+            throw runtime_error("Failed to enumerate Vulkan instance extensions");
+        }
+        vector<VkExtensionProperties> available(availableCount);
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, available.data()) != VK_SUCCESS) {
+            throw runtime_error("Failed to read Vulkan instance extensions");
+        }
+        const bool hasPortabilityEnumeration = ranges::any_of(available, [](const VkExtensionProperties& extension) {
+            return string_view{extension.extensionName} == VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+        });
+        if (hasPortabilityEnumeration) {
+            instanceFlags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        }
+#endif
+
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.flags = instanceFlags;
         createInfo.pApplicationInfo = &appInfo;
-        createInfo.enabledExtensionCount = glfwExtensionCount;
-        createInfo.ppEnabledExtensionNames = glfwExtensions;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
+        createInfo.ppEnabledExtensionNames = instanceExtensions.data();
         createInfo.enabledLayerCount = 0;
 
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
@@ -260,9 +285,30 @@ private:
         VkPhysicalDeviceFeatures deviceFeatures{};
 
         // Device extensions
-        const vector<const char*> deviceExtensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        uint32_t availableExtensionCount = 0;
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableExtensionCount, nullptr) != VK_SUCCESS) {
+            throw runtime_error("Failed to enumerate Vulkan device extensions");
+        }
+        vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableExtensionCount,
+                                                 availableExtensions.data()) != VK_SUCCESS) {
+            throw runtime_error("Failed to read Vulkan device extensions");
+        }
+        const auto hasDeviceExtension = [&availableExtensions](string_view wanted) {
+            return ranges::any_of(availableExtensions, [wanted](const VkExtensionProperties& extension) {
+                return wanted == extension.extensionName;
+            });
         };
+        if (!hasDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            throw runtime_error("The selected Vulkan device does not provide VK_KHR_swapchain");
+        }
+
+        vector<const char*> deviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+#ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+        if (hasDeviceExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+            deviceExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
+#endif
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -744,7 +790,7 @@ private:
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void mainLoop() {
+    void mainLoop(bool smokeTest) {
         cout << "\n╔══════════════════════════════════════════════════╗\n";
         cout << "║  Medical Device Rendering Active                ║\n";
         cout << "║  Press ESC or close window to exit              ║\n";
@@ -758,6 +804,9 @@ private:
 
             drawFrame();
             frameCount++;
+            if (smokeTest && frameCount == 3) {
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            }
 
             // Show FPS every second
             auto currentTime = chrono::high_resolution_clock::now();
@@ -857,10 +906,15 @@ private:
 // Main Entry Point
 //=============================================================================
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const bool smokeTest = argc == 2 && string_view{argv[1]} == "--smoke-test";
+        if (argc > 1 && !smokeTest) {
+            cerr << "Usage: VulkanSCTriangleExample [--smoke-test]\n";
+            return 2;
+        }
         VulkanSCTriangleApp app;
-        app.run();
+        app.run(smokeTest);
         return 0;
     }
     catch (const exception& e) {

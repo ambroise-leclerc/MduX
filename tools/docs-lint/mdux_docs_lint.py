@@ -120,9 +120,14 @@ class LintContext:
     findings: list[Finding] = field(default_factory=list)
     seen_justification_ids: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # macOS exposes /tmp through a /private/var symlink. Resolve the root once so a target
+        # resolved below it is not mistaken for a path escaping the repository.
+        self.repo_root = self.repo_root.resolve()
+
     def relativize(self, path: Path) -> str:
         try:
-            return str(path.relative_to(self.repo_root)) if path.is_absolute() else str(path)
+            return str(path.resolve().relative_to(self.repo_root)) if path.is_absolute() else str(path)
         except ValueError:
             return str(path)
 

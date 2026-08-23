@@ -93,6 +93,35 @@
                 "MDUX_BUILD_TESTS": "ON",
                 "MDUX_BUILD_DOCS": "OFF"
             }
+        },
+        {
+            "name": "ninja-macos-clang",
+            "displayName": "Ninja with upstream Clang on Apple Silicon",
+            "description": "Verified macOS configuration: arm64, upstream LLVM/Clang 21.1.8, libc++, CMake 4.3.1, Ninja, and the LunarG Vulkan SDK/MoltenVK.",
+            "generator": "Ninja",
+            "binaryDir": "build-macos-clang",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/macos-arm64-llvm.cmake",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "MDUX_BUILD_EXAMPLES": "ON",
+                "MDUX_BUILD_TESTS": "ON",
+                "MDUX_BUILD_DOCS": "OFF"
+            }
+        },
+        {
+            "name": "ninja-macos-clang-debug",
+            "displayName": "Ninja with upstream Clang on Apple Silicon (Debug)",
+            "description": "Debug variant of ninja-macos-clang.",
+            "inherits": "ninja-macos-clang",
+            "binaryDir": "build-macos-clang-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -115,6 +144,14 @@
         {
             "name": "ninja-clang",
             "configurePreset": "ninja-clang"
+        },
+        {
+            "name": "ninja-macos-clang",
+            "configurePreset": "ninja-macos-clang"
+        },
+        {
+            "name": "ninja-macos-clang-debug",
+            "configurePreset": "ninja-macos-clang-debug"
         }
     ],
     "testPresets": [
@@ -141,6 +178,16 @@
         {
             "name": "ninja-clang",
             "configurePreset": "ninja-clang",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-macos-clang",
+            "configurePreset": "ninja-macos-clang",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "ninja-macos-clang-debug",
+            "configurePreset": "ninja-macos-clang-debug",
             "output": { "outputOnFailure": true }
         }
     ]

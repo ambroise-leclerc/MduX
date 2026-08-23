@@ -11,6 +11,15 @@ on trust.
 compliance.** MduX is an experimental proof-of-concept. See
 [`regulatory-compliance.md`](regulatory-compliance.md) for the scope limits the project claims.
 
+## Verified platforms
+
+Windows and Linux use native Vulkan implementations. Apple Silicon macOS is also a verified target
+through one pinned configuration: upstream Clang 21.1.8/libc++, CMake 4.3.1, Ninja, and LunarG
+Vulkan SDK 1.4.309.0 with MoltenVK. The preset and toolchain file reject AppleClang, macOS GCC,
+Intel Macs, and version drift. MoltenVK is an adapter over Metal, so this adds a distinct driver
+path rather than claiming native-Vulkan equivalence; automatic CI must execute both pixel tests and
+a three-frame presentation smoke test on that path.
+
 ## Trust zones
 
 The organising idea, from [ADR-004](adr/ADR-004-trust-zones-in-cpp.md). Three zones, with the
@@ -206,8 +215,8 @@ Labels select the evidence-bearing suites:
 | `evidence-unit` | unit tests of the evidence modules themselves |
 | `determinism` | the ML kernels produce the frozen bit patterns |
 | `noheap` | `predict()` performs no allocation |
-| `governed` | no governed object contains a throw expression — a gate on GCC/Clang, informational on MSVC ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
-| `pixel` | rendered output matches expectations, under lavapipe |
+| `governed` | no governed source contains a throw expression; object-symbol gate on libstdc++, informational on MSVC/libc++ ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
+| `pixel` | rendered output matches expectations, under lavapipe and MoltenVK |
 | `regulatory` | corpus indexes and schemas are current |
 
 The `evidence` / `evidence-unit` split is deliberate: a broken SHA-256 test and a drifted artifact
@@ -215,16 +224,16 @@ must not produce the same CI signal. `governed` is separate from `noheap` for th
 run `cmake/MduXNoHeapScan.cmake`, but over different objects with different forbidden sets, and a
 CI leg selecting one should not silently start covering the other.
 
-`governed` includes a negative test on GCC/Clang. `governed.noThrow.symbolScan.negative` scans a
+`governed` includes a negative test where the standard library keeps its own throws distinguishable
+from source throws (the GCC/libstdc++ leg). `governed.noThrow.symbolScan.negative` scans a
 deliberately non-conforming object (`tests/governed/ThrowFixture.cpp`) and passes only when the scan
 rejects it with the expected message — because a check that has only ever run against conforming
 code passes identically when it is working and when it is looking for the wrong thing.
 
-Neither test gates on MSVC, and the reason is worth knowing: the MSVC STL inlines its own throw
-sites, so `_CxxThrowException` in a governed object is the same symbol whether it came from a
-hand-written `throw` or from a `std::string` growth path. The scan reports there instead of
-failing, and [`mdux-governed-lint`](../tools/governed-lint/) — which reads source and is
-toolchain-independent — is what enforces the rule on Windows.
+The object scan is informational on MSVC and macOS libc++: both emit library-owned throw references
+that are indistinguishable from a hand-written throw in the same object. The scan reports those
+references, and [`mdux-governed-lint`](../tools/governed-lint/) — which reads source and is
+toolchain-independent — enforces the rule on those legs.
 
 ## Install and export
 

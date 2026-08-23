@@ -1,7 +1,7 @@
 # ADR-003: Compiler Modernization for C++23 Modules Support
 
 ## Status
-Accepted (2025-07-26)
+Superseded by ADR-013 (2026-08-23)
 
 ## Context
 MduX is evolving towards a pure C++23 modules-based architecture to provide better build performance, improved dependency management, and enhanced developer experience. This evolution requires updating the minimum supported compiler versions to ensure robust C++23 modules support.

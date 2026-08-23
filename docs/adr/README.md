@@ -7,9 +7,9 @@ in the index below, numbers contiguous from ADR-001.
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | Accepted | 2025-07-15 |
+| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | **Superseded by ADR-013** | 2025-07-15 |
 | [ADR-002](ADR-002-testing-framework-selection.md) | Testing framework selection (Catch2) | **Superseded by ADR-009** | 2026-08-03 |
-| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | Accepted | 2025-07-26 |
+| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | **Superseded by ADR-013** | 2025-07-26 |
 | [ADR-004](ADR-004-trust-zones-in-cpp.md) | Trust zones in C++ | Accepted | 2026-07-26 |
 | [ADR-005](ADR-005-error-handling-and-exceptions-policy.md) | Error handling and exceptions policy | Accepted | 2026-07-26 |
 | [ADR-006](ADR-006-no-reproduction-of-normative-standard-text.md) | No reproduction of normative standard text | Accepted | 2026-07-26 |
@@ -19,8 +19,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-010](ADR-010-no-on-device-text-shaping.md) | No on-device text shaping | Accepted | 2026-08-06 |
 | [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) | The deterministic `.medui` compile boundary | Accepted | 2026-08-11 |
 | [ADR-012](ADR-012-compiled-screen-artifacts.md) | What a compiled screen emits, and which parts are committed | Accepted | 2026-08-11 |
+| [ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) | Verified Apple Silicon macOS toolchain | Accepted | 2026-08-23 |
 
-Every number from 001 to 012 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 013 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here

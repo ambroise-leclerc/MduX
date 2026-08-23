@@ -11,6 +11,14 @@ Agreement](CLA.md) in the GitHub issue designated by the maintainer. Only collab
 repository access may submit changes for review. Every change remains subject to maintainer review;
 an invitation does not guarantee merge.
 
+## Supported build hosts
+
+CI verifies Windows, Linux/GCC, and Apple Silicon macOS. The macOS leg is deliberately exact:
+upstream Clang 21.1.8 with libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK 1.4.309.0/MoltenVK.
+Use `cmake --preset ninja-macos-clang`; AppleClang, GCC on macOS, and Intel Macs are unsupported.
+For rendering changes, a passing compile is insufficient: the macOS pixel suite must run without a
+skip and `VulkanSCTriangleExample --smoke-test` must present through MoltenVK.
+
 ## Coding Style
 
 We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 generic programming. Please refer to the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) for detailed rules. Key points are summarized below:

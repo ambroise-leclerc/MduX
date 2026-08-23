@@ -14,14 +14,14 @@ safety/compliance impact (see `mdux-regulated-change`).
 
 Before configuring, check:
 
-1. **Platform**: Windows 10+ or Linux only. There is no macOS build path — a fatal CMake check in
-   the root `CMakeLists.txt` rejects other platforms.
+1. **Platform**: Windows 10+, Linux, or the exact Apple Silicon macOS tuple recorded in ADR-013.
+   On macOS use `ninja-macos-clang`; AppleClang, GCC, Intel Macs and version drift are rejected.
 2. **Compiler version**: MSVC 17.14+, GCC 16+, or Clang 20+. The root `CMakeLists.txt` fails fast
    with `message(FATAL_ERROR ...)` if the detected compiler is below these floors — read that
    error message; it names the exact required version.
-3. **CMake**: 4.0+ (`cmake_minimum_required(VERSION 4.0.0)`).
+3. **CMake**: 4.0+ generally; exactly 4.3.1 on the verified macOS tuple.
 4. **Vulkan SDK**: 1.3+, discoverable via `find_package(Vulkan REQUIRED)`. Run `vulkaninfo
-   --summary` (Linux) or check `%VULKAN_SDK%` (Windows) to confirm the SDK is installed and on the
+   --summary` (Linux/macOS) or check `%VULKAN_SDK%` (Windows) to confirm the SDK is installed and on the
    search path before configuring — a missing SDK is the most common early configure failure and
    produces a clear "Vulkan SDK not found" error with installation instructions on Windows.
 
@@ -37,6 +37,8 @@ know will fail or guessing at results.
    mkdir build && cd build
    cmake .. -G Ninja
    ```
+   On Apple Silicon macOS instead use `cmake --preset ninja-macos-clang`; its toolchain selects
+   upstream Clang 21.1.8/libc++, LLVM archive tools and the libc++ modules manifest.
    - `-G Ninja` is mandatory and is checked at configure time. CMake implements C++ modules only
      for the Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A
      bare `cmake ..` picks the platform default and fails with a message naming the generator it
@@ -44,7 +46,8 @@ know will fail or guessing at results.
    - To select a compiler other than the default: `CC=gcc-16 CXX=g++-16 cmake .. -G Ninja`.
    - Relevant options: `MDUX_BUILD_EXAMPLES`, `MDUX_BUILD_TESTS` (default `ON`),
      `MDUX_BUILD_DOCS`, `MDUX_ENABLE_REGULATORY_DOCS` (default `OFF`/`ON` respectively).
-   - `CMakePresets.json`'s presets (`ninja-gcc`, `ninja-msvc`, `ninja-clang`, and `-debug`
+   - `CMakePresets.json`'s presets (`ninja-gcc`, `ninja-msvc`, `ninja-clang`,
+     `ninja-macos-clang`, and `-debug`
      variants) exist so each CI workflow invokes a configuration this repository owns rather than
      a look-alike command line. Use one only when reproducing a CI leg exactly; each writes to its
      own binary dir (`build-gcc`, `build-clang`, …), so it will not collide with `build/`.
@@ -81,11 +84,14 @@ know will fail or guessing at results.
 - **GCC, still current**: `vulkansc_memory_tests` is compiled `-O0` on GCC. That one is *not*
   historical - the ICE in the GIMPLE ealias pass reproduces on GCC 16 as well, and every level
   above `-O0` triggers it. See `tests/CMakeLists.txt` and issue #48.
-- **Clang 20**: `.github/workflows/clang-build.yml` is a live, syntax-checked workflow, but its
+- **Linux Clang 20**: `.github/workflows/clang-build.yml` is a live, syntax-checked workflow, but its
   only trigger is `workflow_dispatch` — it can be started by hand from the Actions tab, and no
   push or pull request starts it. So Clang is outside automatic CI coverage even though the
   version floor is enforced in `CMakeLists.txt`. Report a Clang build result as unverified
   against the project's automatic CI, unless you can cite a specific manual run of that workflow.
+- **macOS Clang**: `.github/workflows/macos-arm64-build.yml` is automatic and pins upstream Clang
+  21.1.8. Its pixel and presentation steps must not be skipped; local compilation without a Metal
+  device does not reproduce that evidence.
 - **MSVC**: requires `/experimental:module` and `/std:c++latest`, already wired into
   `CMakeLists.txt`; the Visual Studio *generator* is explicitly rejected in favor of Ninja for
   `import std;` support (see the `CMAKE_GENERATOR MATCHES "Visual Studio"` fatal-error check).
