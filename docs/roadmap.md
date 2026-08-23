@@ -91,12 +91,23 @@ until the content filled in would be waiting on #17, which is a wave of its own.
 
 Two things worth settling before the tag rather than during it:
 
-- **There is no CHANGELOG and no release workflow.** What shipped in each of v0.2.0 through v0.5.0 is
-  recoverable only from this document's prose. If a release is two issues away, that gap costs least
-  to close now.
-- **`v0.5.0` is an ancestor of neither `develop` nor `master`**, and `develop` is 668 commits ahead of
-  `master`. Whatever the release ritual is, it is not readable from the repository - worth knowing
-  before 0.6.0 rather than at the moment of cutting it.
+- **There is now a [CHANGELOG](../CHANGELOG.md), and still no release workflow.** The 0.6.0 entry is
+  written from the merges it contains; the four earlier ones are summarised from this document's own
+  wave record, and the file says so, because two of the four tags are not ancestors of `develop` and
+  a reader checking them with `git log` would find that out the hard way.
+- **The release ritual is inferable but not written down.** Checked rather than assumed, and an
+  earlier revision of this bullet got both facts wrong: `v0.5.0` peels to exactly `origin/master`'s
+  tip, so **tags land on `master`**, and `origin/master...origin/develop` is `1 32` — master carries
+  one commit develop does not, develop carries 32. (The "668" this bullet used to claim came from a
+  stale *local* `master`, 462 commits divergent from the real one, and was a total-history count
+  mislabelled as an ahead count.)
+
+  The procedure that was missing is now [`release-process.md`](release-process.md): a release
+  branch off `develop`, the version moved in `CMakeLists.txt`, **every committed artifact re-baked**
+  because each `report.json` records the `toolVersion` it was baked by, the artifact diff reviewed
+  for anything that is not that field, then a merge to `master` and an annotated tag there. One
+  non-linear boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented
+  cause: #23 purged normative text from git history.
 
 ## The backlog
 

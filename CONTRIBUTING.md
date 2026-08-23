@@ -42,6 +42,14 @@ We follow the **C++ Core Guidelines** to ensure conformance with modern C++23 ge
 - Source files: `.cpp`
 - **File naming:** Use `UpperCamelCase` for `.hpp` and `.cpp` files (e.g., `Logger.hpp`, `DataProcessor.cpp`).
 
+### Releasing
+
+Cutting a version is a controlled event, not a tag on whatever is current:
+[`docs/release-process.md`](docs/release-process.md) is the procedure. The one step worth knowing
+before you need it is that moving the version in `CMakeLists.txt` invalidates every committed
+artifact, because each `report.json` records the `toolVersion` it was baked by — so a release
+re-bakes them and reviews the diff.
+
 ### Documentation
 
 We use **Doxygen** syntax for code documentation. Follow these guidelines:
