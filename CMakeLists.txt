@@ -495,10 +495,10 @@ mdux_compile_screen(
     SOURCES
         generated/font/dejavu-ui/package.json
         generated/text/endoscope-monitor-en-us/package.json
-        # The sidecar too, and not as belt and braces: `loadLocales()` reads it beside the package
-        # and records its digest among the screen's inputs, so a run repositioned without the
-        # package.json changing - a translation of the same length, say - would move the screen's
-        # report and nothing would have asked for a rebake.
+        # The sidecar too, and not as belt and braces: `loadLocales()` reads these bytes directly
+        # and records their digest among the screen's inputs. The package also records that digest,
+        # but every file a custom command reads is a dependency in its own right; otherwise an
+        # independently changed or damaged sidecar would not even ask the screen bake to validate it.
         generated/text/endoscope-monitor-en-us/runs.bin
 )
 

@@ -22,13 +22,18 @@
 # glyph runs, so the device joins the two for the locale it is running. A string in the source would
 # put one locale's words inside an artifact that is supposed to hold none.
 #
-# To change the wording, edit this file and run
+# To change the wording, edit this file and run the evidence update to a fixpoint:
 #
 #   cmake --build <build-dir> --target mdux-bake-update
+#   cmake -S . -B <build-dir>
+#   cmake --build <build-dir>
+#   ctest --test-dir <build-dir> -L evidence --output-on-failure
 #
-# then review the diff to generated/text/endoscope-monitor-en-us/ *and* to
-# generated/screen/endoscope-monitor/ - the screen's own report records this package as an input, so
-# both artifacts move together.
+# Repeat those four commands until the evidence tests pass and an update pass reports that every
+# artifact is already up to date, then review the diffs to generated/text/endoscope-monitor-en-us/
+# and generated/screen/endoscope-monitor/. The screen records this package as an input, but the
+# aggregate update target does not order their independent bakes; cmake/MduXBake.cmake explains why
+# the fixpoint is required.
 
 [package]
 id      = "endoscope-monitor-en-us"

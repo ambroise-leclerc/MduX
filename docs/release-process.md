@@ -38,12 +38,12 @@ work.
 
 ## The step that surprises everyone once
 
-`report.json` records `toolVersion`, which is the project version the baker was built from. Six
+`report.json` records `toolVersion`, which is the project version the baker was built from. Seven
 artifacts carry it today:
 
 ```console
 $ grep -rl toolVersion generated/ | wc -l
-6
+7
 ```
 
 So **bumping the version in `CMakeLists.txt` invalidates every committed artifact**. Until they are
@@ -97,8 +97,18 @@ needs editing" — cutting v0.6.0 found that out, three red tests into a green-l
 ```console
 $ cmake --preset <your-preset>
 $ cmake --build --preset <your-preset> --target mdux-bake-update
+$ cmake --preset <your-preset>
+$ cmake --build --preset <your-preset>
+$ ctest --preset <your-preset> -L evidence
 $ git diff --stat generated/
 ```
+
+Run the update, configure, build and evidence-test sequence to a **fixpoint**: repeat it until the
+evidence tests pass and an update pass reports that every artifact is already up to date. Some
+artifacts consume other committed artifacts, but their independent `-update` targets have no
+execution order. A version bump therefore needs successive passes to propagate the new upstream
+package digests through text and screen reports. [`MduXBake.cmake`](../cmake/MduXBake.cmake) records
+the mechanism in detail. Do not treat the first clean-looking diff as the end of the update.
 
 **Every changed file must differ only in `toolVersion`.** Anything else — a digest, a payload byte,
 a member — means the release is carrying an unreviewed change to a baked artifact, and the release
