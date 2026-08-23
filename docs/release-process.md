@@ -160,28 +160,50 @@ $ ctest --preset <your-preset>
 The `evidence` label is the one that matters here: it is the mechanical answer to "is the committed
 artifact the one this source produces".
 
-### 8. Merge to `master` and tag there
+### 8. Merge to `master`, tag there, and publish the release
 
 ```console
-$ gh pr create --base master --head release/v0.6.0 --title "Release v0.6.0"
-# after review and a green run:
-$ git switch master && git pull
-$ git tag -a v0.6.0 -m "MduX v0.6.0"
-$ git push origin v0.6.0
+$ gh pr create --base master --head release/vX.Y.Z --title "Release vX.Y.Z"
+# after review and a green run, merge it - then, without checking master out:
+$ git fetch origin
+$ git tag -a vX.Y.Z origin/master -m "MduX vX.Y.Z"
+$ git push origin vX.Y.Z
+$ gh release create vX.Y.Z --verify-tag --title "vX.Y.Z — Wave N: <what it is>" --notes-file <notes>
 ```
 
-The tag is annotated, and it names the commit on `master`. A lightweight tag records no author and no
-date of its own, which is a poor fit for a document that is meant to identify a configuration.
+Three things this spells out because cutting v0.6.0 found each of them the hard way.
+
+**Tag `origin/master`, not a checked-out `master`.** A local `master` in a long-lived clone can be
+hundreds of commits from the real one — 462, in the clone this procedure was written in — so
+`git switch master && git pull` attempts a merge rather than a fast-forward. Tagging the remote ref
+needs no checkout and cannot pick up a stale branch.
+
+**The tag is annotated.** A lightweight tag records no author and no date of its own, which is a poor
+fit for an object meant to identify a configuration.
+
+**Publish a GitHub release too.** Every release before v0.6.0 has one, titled
+`vX.Y.Z — Wave N: <subject>`, and the tag alone is not what a reader lands on. Its notes are the
+changelog entry's highlights *and its known-limits section* — §5.8's anomalies belong where someone
+reads them, not only in a file they might open.
 
 ### 9. Back-merge, so the histories do not drift
 
 ```console
-$ git switch develop && git merge --no-ff master && git push
+$ git switch develop && git pull && git merge --no-ff origin/master && git push
+$ git rev-list --left-right --count origin/master...origin/develop   # left column must be 0
 ```
 
-Skipping this is how `master` accumulates commits `develop` does not have. As of this writing
-`origin/master...origin/develop` is `1 32` — master carries one commit develop does not, which is
-exactly the drift this step prevents.
+Skipping this is how `master` accumulates commits `develop` does not have.
+
+**Merge the release PR, do not squash it.** A squash gives the release commit a single parent, so the
+release-branch commits are not in `master`'s ancestry and every file the release branch touched
+arrives at the back-merge as an `add/add` conflict — four of them in v0.6.0. The conflicts are
+resolvable, because `master`'s side *is* the release content, but they are noise the merge button
+creates and a real merge avoids.
+
+If it was squashed anyway: resolve every conflict to `master`'s side, then verify rather than trust —
+`git diff --quiet origin/master -- <path>` for each one, so a resolution that silently kept the wrong
+side is caught before it is pushed.
 
 ## What is deliberately not automated
 
