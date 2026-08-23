@@ -59,7 +59,7 @@ moves.
 ### 1. Confirm `develop` is releasable
 
 ```console
-$ git switch develop && git pull
+$ git switch develop && git pull --ff-only    # fails rather than merging, if local has drifted
 $ gh pr list --state open --base develop      # nothing half-landed
 $ gh run list --branch develop --limit 1      # green on both toolchain legs
 ```
@@ -164,14 +164,21 @@ artifact the one this source produces".
 
 ```console
 $ gh pr create --base master --head release/vX.Y.Z --title "Release vX.Y.Z"
-# after review and a green run, merge it - then, without checking master out:
+# after review and a green run - --merge, never --squash, see step 9:
+$ gh pr merge <pr> --merge
+# then, without checking master out:
 $ git fetch origin
-$ git tag -a vX.Y.Z origin/master -m "MduX vX.Y.Z"
+$ git tag -a vX.Y.Z -m "MduX vX.Y.Z" origin/master
 $ git push origin vX.Y.Z
 $ gh release create vX.Y.Z --verify-tag --title "vX.Y.Z — Wave N: <what it is>" --notes-file <notes>
 ```
 
-Three things this spells out because cutting v0.6.0 found each of them the hard way.
+Four things this spells out because cutting v0.6.0 found each of them the hard way.
+
+**Merge with `--merge`, mechanically.** The reason is in step 9, but the choice is made *here*, and
+the web UI remembers whichever method was used last — which is precisely how v0.6.0 was squashed
+against the intended topology. Naming the method on the command line does not depend on anyone
+recalling a warning further down this page.
 
 **Tag `origin/master`, not a checked-out `master`.** A local `master` in a long-lived clone can be
 hundreds of commits from the real one — 462, in the clone this procedure was written in — so
@@ -181,29 +188,56 @@ needs no checkout and cannot pick up a stale branch.
 **The tag is annotated.** A lightweight tag records no author and no date of its own, which is a poor
 fit for an object meant to identify a configuration.
 
-**Publish a GitHub release too.** Every release before v0.6.0 has one, titled
-`vX.Y.Z — Wave N: <subject>`, and the tag alone is not what a reader lands on. Its notes are the
+**Publish a GitHub release too.** Every wave release from v0.2.0 onward has one, titled
+`vX.Y.Z — Wave N: <subject>`; the `v0.1` tag predates the convention and has none. The tag alone is
+not what a reader lands on. Its notes are the
 changelog entry's highlights *and its known-limits section* — §5.8's anomalies belong where someone
 reads them, not only in a file they might open.
 
 ### 9. Back-merge, so the histories do not drift
 
 ```console
-$ git switch develop && git pull && git merge --no-ff origin/master && git push
-$ git rev-list --left-right --count origin/master...origin/develop   # left column must be 0
+$ git switch develop && git pull --ff-only && git merge --no-ff origin/master && git push
+$ git rev-list --left-right --count origin/master...origin/develop
+0	34
 ```
 
-Skipping this is how `master` accumulates commits `develop` does not have.
+The left column must be `0`: `master` carries nothing `develop` lacks. Skipping this step is how that
+number grows. `--ff-only` is the same guard as step 1 — if local `develop` has drifted or carries an
+unpushed commit, the pull must fail rather than quietly add a merge, because an extra merge here is
+indistinguishable in the final count from the drift this step exists to measure.
 
-**Merge the release PR, do not squash it.** A squash gives the release commit a single parent, so the
-release-branch commits are not in `master`'s ancestry and every file the release branch touched
-arrives at the back-merge as an `add/add` conflict — four of them in v0.6.0. The conflicts are
-resolvable, because `master`'s side *is* the release content, but they are noise the merge button
-creates and a real merge avoids.
+**Merge the release PR, do not squash it.** A squash gives the release commit a single parent, so no
+release-branch commit is in `master`'s ancestry, and the back-merge falls back to the last common
+commit — for v0.6.0, the *previous* release. Everything both sides changed since then conflicts:
+four files, three of them `add/add` (files neither side had at that point) and one an ordinary
+content conflict. Not every touched file — `CMakeLists.txt` merged cleanly. The conflicts are noise
+the merge button creates and a real merge avoids.
 
-If it was squashed anyway: resolve every conflict to `master`'s side, then verify rather than trust —
-`git diff --quiet origin/master -- <path>` for each one, so a resolution that silently kept the wrong
-side is caught before it is pushed.
+If it was squashed anyway, do **not** resolve globally to `master`. That is only right when the
+squashed delta is a superset of `develop`'s — true for v0.6.0 because nothing landed on `develop`
+while the release PR was open, and not guaranteed by anything in this procedure. Take it per path, against the commit the release branched from. A squash-merged PR's branch is
+usually deleted, but GitHub keeps its head, so the branch point is always recoverable:
+
+```console
+$ git fetch origin refs/pull/<pr>/head
+$ base=$(git merge-base FETCH_HEAD origin/develop)
+$ git log --oneline $base..origin/develop -- <path>
+```
+
+Empty means `develop` did not touch the path after the release branched, so the conflict is the
+squash alone and `master`'s side is the whole content:
+
+```console
+$ git checkout --theirs -- <path> && git add -- <path>
+$ git diff --quiet --cached origin/master -- <path>   # what is staged is what master has
+```
+
+Non-empty means two real changes collided, and the merge is an ordinary one: keep both sides. For the
+shared registries — the diagnostic codes, the roadmap tables — that is the same union-by-default rule
+that applies to every other merge in this repository. If the two cannot be reconciled by reading
+them, stop and decide it explicitly; a release is the worst place to let a resolution rule delete
+work silently.
 
 ## What is deliberately not automated
 
