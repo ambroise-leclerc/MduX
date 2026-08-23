@@ -1,16 +1,17 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 22 August 2026
-> Epic status verified against `develop` @ `06b2a59` · 22 August 2026 · `#15` current through `#201`.
+> Backlog · ambroise-leclerc/MduX · updated 23 August 2026
+> Epic status verified at the v0.6.0 release baseline, `develop` @ `acbe102` · 23 August 2026 ·
+> `#15` closed, all twelve children.
 > The divergence table below was last re-verified on 17 August 2026 and is not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. Waves 1, 2 and 3 have shipped — the renderer draws its first
-pixel, zero-SOUP ML inference is in the tree, and the documentation has been rebuilt from
-what the build actually produces. Track C's authoring story is what remains: #14 closed
-Wave 4 with the font and text pipeline, and #15 is underway in Wave 5 with the compiler
-that generates the screens it draws. All twelve of its children have landed — the ADRs,
+backlog that closes the gap. Five waves have shipped — the renderer draws its first
+pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
+what the build actually produces, #14 closed Wave 4 with the font and text pipeline, and
+v0.6.0 closes Wave 5 with #15, the compiler that generates the screens it draws.
+All twelve of its children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
 its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
@@ -417,6 +418,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status verified at `develop` @ `06b2a59` · 22 August 2026_
+_Epic status verified at the v0.6.0 baseline, `develop` @ `acbe102` · 23 August 2026_
 _13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
 _All epics on GitHub_
