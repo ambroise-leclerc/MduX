@@ -112,6 +112,7 @@ add_executable(shader_spec
     shader/SpirvTests.cpp
     shader/ShaderBakeTests.cpp
     shader/UiPackageTests.cpp
+    shader/CommittedPackageTests.cpp
     shader/EmitTests.cpp
     shader/GeneratedTests.cpp
     shader/GeneratedModuleConsumer.cpp
