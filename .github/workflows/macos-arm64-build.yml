@@ -131,7 +131,11 @@ jobs:
         # here; the Linux sanitizer job remains the leak-detection authority for non-render tests.
         ASAN_OPTIONS: detect_leaks=0
         UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-      run: ctest --preset ninja-macos-clang-debug -E offscreen_tests --output-on-failure --no-tests=error
+      # The symbol scans establish properties of the Release object files above. Debug and
+      # sanitizer instrumentation deliberately change those objects; rerunning the static scan
+      # here can reject instrumentation/runtime references instead of MduX behavior. The runtime
+      # no-heap cases remain in this sanitized invocation.
+      run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|.*\.symbolScan' --output-on-failure --no-tests=error
 
     - name: Run rendered tests under ASan and UBSan
       env:
