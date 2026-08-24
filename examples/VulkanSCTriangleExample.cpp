@@ -737,7 +737,7 @@ private:
         }
     }
 
-    void drawFrame() {
+    [[nodiscard]] bool drawFrame() {
         vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
         uint32_t imageIndex;
@@ -746,7 +746,7 @@ private:
                                                VK_NULL_HANDLE, &imageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return;  // Window resized, skip frame
+            return false;  // Window resized, skip frame
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw runtime_error("Failed to acquire swapchain image");
         }
@@ -787,13 +787,15 @@ private:
 
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        const bool presented = result != VK_ERROR_OUT_OF_DATE_KHR;
+        if (!presented || result == VK_SUBOPTIMAL_KHR) {
             // Window resized
         } else if (result != VK_SUCCESS) {
             throw runtime_error("Failed to present swapchain image");
         }
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        return presented;
     }
 
     void mainLoop(bool smokeTest) {
@@ -809,9 +811,9 @@ private:
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
-            drawFrame();
+            const bool rendered = drawFrame();
             frameCount++;
-            if (smokeTest) {
+            if (smokeTest && rendered) {
                 smokeFrameCount++;
                 if (smokeFrameCount == 3) {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
