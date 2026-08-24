@@ -126,7 +126,10 @@ jobs:
 
     - name: Run non-render tests under ASan and UBSan
       env:
-        ASAN_OPTIONS: detect_leaks=1
+        # macOS libobjc/libxpc process initialization retains three allocations that LeakSanitizer
+        # reports for every test executable before MduX code runs. Keep ASan's memory-error checks
+        # here; the Linux sanitizer job remains the leak-detection authority for non-render tests.
+        ASAN_OPTIONS: detect_leaks=0
         UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       run: ctest --preset ninja-macos-clang-debug -E offscreen_tests --output-on-failure --no-tests=error
 
