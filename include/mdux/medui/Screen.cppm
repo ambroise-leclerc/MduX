@@ -54,6 +54,13 @@
  * property the compiler checked and the property the frame has the identical property. Centring, or
  * a baseline offset, would leave the build-time guarantee true of a rectangle nobody draws.
  *
+ * That argument holds only while the bound package is the one the compiler measured, and nothing in
+ * the artifacts says so (see `TextBinding`). So the same box is measured again here and refused as
+ * `TextOverflowsNode` when it does not fit, which costs one comparison over a walk the placement
+ * needs anyway. The build-time check remains the one that reports a *useful* diagnostic, at the
+ * right time, to the person who can fix it; this one exists so that a screen can never draw text
+ * over its neighbours because it was joined to the wrong package.
+ *
  * Two consequences worth stating rather than discovering. Leading placement means a right-to-left
  * locale would need a different rule - and cannot arrive without one, since `mdux-textbake` refuses
  * every RTL code point (ADR-010's v1 repertoire). And ink placement means a label whose text has no
@@ -122,7 +129,21 @@ enum class ScreenError : std::uint8_t {
     UnknownTextKey,       ///< a bound text package carries no run for a node's `textKey`
     MalformedTextRun,     ///< a run's range leaves the sidecar, or its bytes are not whole records
     RunTooLong,           ///< a run holds more than `maxGlyphsPerRun` records
+    AtlasMismatch,        ///< the text package was baked against a different font package
+    SidecarMismatch,      ///< the sidecar is not the one the text package describes
+    TextOverflowsNode,    ///< a run's ink is wider or taller than the node that names it
 };
+
+// The two token failures are kept apart because the schema keeps them apart, and for its reason: a
+// malformed name is a defect in whatever emitted the screen, while an absent one is a table that
+// does not define it. Collapsing them would tell an integrator to look in the wrong place.
+
+[[nodiscard]] std::string_view describe(ScreenError error) noexcept;
+
+// `AtlasMismatch` and `SidecarMismatch` are `create()`'s, not a frame's: both are properties of the
+// three artifacts a caller bound together, decided once. `TextOverflowsNode` is a frame's, and is
+// the check that makes the placement rule below safe against a binding this module cannot
+// authenticate - see `TextBinding` for what that means and what it does not.
 
 /**
  * @brief The largest run this runtime will draw, in records.
@@ -139,51 +160,93 @@ enum class ScreenError : std::uint8_t {
 inline constexpr std::size_t maxGlyphsPerRun = 256;
 
 /**
- * @brief The packages a locale-free compiled screen is joined to so its text can be drawn.
+ * @brief The packages a locale-free compiled screen is joined to, once its consistency is proved.
  *
  * A compiled screen carries `textKey` rather than glyphs (ADR-011 as amended by #203), which is what
  * lets one screen serve every approved locale. The join is the device's, once, for the locale it is
  * running - and it is passed rather than looked up because this module performs no I/O and holds no
  * state.
  *
- * All three members travel together and are checked together. A default-constructed binding means
- * "this caller has no text", which is not an error: every text node is deferred, exactly as it was
- * before #242, and a screen with no text nodes costs nothing either way.
+ * ## Why this is not an aggregate
  *
- * Nothing here is owned. The packages outlive the frame - on a device they are static - and the
- * spans are the caller's storage, so `render()` allocates nothing by construction rather than by
+ * Three artifacts have to agree before any of them can be trusted, and none of the agreements can be
+ * checked cheaply enough to repeat per frame:
+ *
+ * - the text package must be the one baked against *this* font, or the run records index a glyph
+ *   table that assigns different shapes to the same numbers, and the frame draws a plausible
+ *   sentence made of the wrong letters;
+ * - the sidecar must be the one the package describes, which `sidecarByteLength` and
+ *   `sidecarSha256` state exactly - a different sidecar of the same length passes every structural
+ *   check and renders different words;
+ * - every run's range must lie inside it, be a whole number of records, and hash to what the
+ *   package recorded.
+ *
+ * So `create()` proves all of that once and is the only way to obtain a bound `TextBinding`. What
+ * `render()` does per frame is a key lookup and a bounds comparison, which is what keeps the
+ * bounded-work claim intact. A default-constructed binding is *unbound* and means "this caller has
+ * no text": every text node is deferred, exactly as before #242, which is not an error.
+ *
+ * ## What it still does not prove
+ *
+ * That this is the package the compiler measured. A second, individually valid package can carry the
+ * same key against the same font with different wording, and nothing in the artifacts links a
+ * compiled screen to the packages #195 checked it against. `render()` closes the *consequence* -
+ * text wider than its node is refused rather than drawn over its neighbours - but the identity
+ * itself needs the compiled screen to carry it, which is a change to what a screen emits (ADR-012)
+ * and is tracked separately.
+ *
+ * Nothing here is owned. The packages outlive the frame - on a device they are static - and the span
+ * is the caller's storage, so `render()` allocates nothing by construction rather than by
  * discipline.
  */
-struct TextBinding {
-    /// The font the runs were positioned against. Its glyph table supplies every rectangle's atlas
-    /// slot and origin.
-    const mdux::font::FontPackage* font{nullptr};
+class TextBinding {
+public:
+    /// An unbound binding: no text, every text node deferred.
+    constexpr TextBinding() noexcept = default;
 
-    /// The text package for the locale being run. Its run ids are the `textKey`s a screen names.
-    const mdux::text::TextPackage* text{nullptr};
+    /**
+     * @brief Proves `font`, `text` and `runs` describe each other, or says which one does not.
+     *
+     * Hashes the sidecar, so it is linear in its size - once, at start-up, never in a frame.
+     *
+     * @param font the font package the runs were positioned against
+     * @param text the text package for the locale being run
+     * @param runs the sidecar bytes `text` addresses ranges of
+     */
+    [[nodiscard]] static mdux::core::Result<TextBinding, ScreenError> create(const mdux::font::FontPackage& font,
+                                                                             const mdux::text::TextPackage& text,
+                                                                             std::span<const std::byte>     runs) noexcept;
 
-    /// The sidecar bytes `text` addresses ranges of - the committed `runs.bin`, or a mapping of it.
-    std::span<const std::byte> runs{};
+    /// Whether this binding carries packages. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept { return font_ != nullptr && text_ != nullptr; }
 
-    /// Whether all three are present. A partial binding is treated as no binding rather than as an
-    /// error: a caller assembling one incrementally should see deferred nodes, not a refused frame.
-    [[nodiscard]] constexpr bool complete() const noexcept {
-        return font != nullptr && text != nullptr && !runs.empty();
-    }
+    [[nodiscard]] constexpr const mdux::font::FontPackage* font() const noexcept { return font_; }
+    [[nodiscard]] constexpr const mdux::text::TextPackage* text() const noexcept { return text_; }
+    [[nodiscard]] constexpr std::span<const std::byte> runs() const noexcept { return runs_; }
+
+private:
+    constexpr TextBinding(const mdux::font::FontPackage* font, const mdux::text::TextPackage* text,
+                          std::span<const std::byte> runs) noexcept
+        : font_{font}, text_{text}, runs_{runs} {}
+
+    const mdux::font::FontPackage* font_{nullptr};
+    const mdux::text::TextPackage* text_{nullptr};
+    std::span<const std::byte>     runs_{};
 };
 
-// The two token failures are kept apart because the schema keeps them apart, and for its reason: a
-// malformed name is a defect in whatever emitted the screen, while an absent one is a table that
-// does not define it. Collapsing them would tell an integrator to look in the wrong place.
-
-[[nodiscard]] std::string_view describe(ScreenError error) noexcept;
+// The guarantee `create()` is documented to give, held by the language rather than by discipline.
+// A class with private data members is not an aggregate, so `TextBinding{...}` cannot brace-elide
+// its way past the checks - and if a future edit makes the members public "for convenience", this
+// fails here rather than silently reopening the bypass.
+static_assert(!std::is_aggregate_v<TextBinding>, "a TextBinding must only be obtainable through create()");
 
 /**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint, for the
  * reasons the module comment gives one by one. A caller that expects a screen to be fully drawn can
- * assert it is zero; today, on any screen carrying text or live data, it will not be.
+ * assert it is zero; today, on any screen carrying live data, it will not be - and on one carrying
+ * text it will not be either unless a `TextBinding` was supplied.
  */
 struct FrameStats {
     std::uint32_t nodes{0};     ///< nodes visited

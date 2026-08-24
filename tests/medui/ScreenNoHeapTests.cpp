@@ -16,6 +16,7 @@
 import std;
 import speclab;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.draw;
 import mdux.font.schema;
@@ -221,11 +222,27 @@ const mdux::spec::Register drawingTextAllocatesNothing{
                           built.locale           = "en-US";
                           built.sidecarPath      = "runs.bin";
                           built.sidecarByteLength = records.size();
-                          built.runs.push_back(mdux::text::TextRun{.id = "STR-TITLE", .byteOffset = 0, .byteLength = records.size()});
+                          // The digests `create()` checks. Computed rather than written out, so the
+                          // fixture cannot drift from the bytes above and start exercising the
+                          // rejection path while claiming to measure the accepted one.
+                          built.sidecarSha256     = mdux::evidence::sha256(records);
+                          built.runs.push_back(mdux::text::TextRun{.id         = "STR-TITLE",
+                                                                   .byteOffset = 0,
+                                                                   .byteLength = records.size(),
+                                                                   .sha256     = mdux::evidence::sha256(records)});
                           return built;
                       }();
 
-                      const ms::TextBinding binding{.font = &font, .text = &text, .runs = records};
+                      // Through `create()`, which is the only way to obtain one - and which hashes
+                      // the sidecar. That cost is the caller's, once, and sits outside the counter
+                      // below on purpose: what this scenario measures is the frame, not the setup.
+                      const auto made = ms::TextBinding::create(font, text, records);
+                      if (!made.has_value()) {
+                          checks.expect(false, "the fixture binding is valid");
+                          checks.raise();
+                          return;
+                      }
+                      const ms::TextBinding binding = *made;
 
                       static std::array<mdux::draw::UiVertex, 512>   vertices{};
                       static std::array<mdux::draw::Index, 768>      indices{};

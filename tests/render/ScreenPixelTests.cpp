@@ -157,8 +157,14 @@ struct BoundText {
     mdux::font::FontPackage font;
     mdux::text::TextPackage text;
 
-    [[nodiscard]] medui::TextBinding binding() const noexcept {
-        return medui::TextBinding{.font = &font, .text = &text, .runs = runs};
+    /// Through `create()`, which is the only way to obtain one - and which proves the three
+    /// committed artifacts describe each other before a frame reads any of them.
+    [[nodiscard]] medui::TextBinding binding() const {
+        auto made = medui::TextBinding::create(font, text, runs);
+        if (!made.has_value()) {
+            throw std::runtime_error(std::format("the committed artifacts were refused: {}", medui::describe(made.error())));
+        }
+        return *made;
     }
 };
 
@@ -211,12 +217,23 @@ struct InkBox {
     if (run == nullptr) {
         return InkBox{};
     }
+    // Bounds and alignment before the span exists, not after. This helper reads committed bytes,
+    // and a corrupt artifact should make it return "no ink" - which fails the REQUIRE below with the
+    // run named - rather than form an out-of-range span and take the process with it. Subtraction
+    // rather than `byteOffset + byteLength`, which wraps.
+    if (run->byteOffset > bound.runs.size() || run->byteLength > bound.runs.size() - run->byteOffset
+        || run->byteLength % mdux::text::draw::recordSize != 0) {
+        return InkBox{};
+    }
     const std::span<const std::byte> records{bound.runs.data() + run->byteOffset, static_cast<std::size_t>(run->byteLength)};
 
     InkBox box;
     for (std::size_t offset = 0; offset < records.size(); offset += mdux::text::draw::recordSize) {
         const auto placement = mdux::text::draw::decodeRecord(records.subspan(offset, mdux::text::draw::recordSize));
         if (!placement.has_value()) {
+            return InkBox{};
+        }
+        if (placement->packageIndex >= bound.font.glyphs.size()) {
             return InkBox{};
         }
         const mdux::font::GlyphRecord& glyph = bound.font.glyphs[placement->packageIndex];

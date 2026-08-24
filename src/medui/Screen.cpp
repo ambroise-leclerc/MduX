@@ -11,6 +11,7 @@ import std;
 import mdux.core.result;
 import mdux.core.units;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.text.draw;
@@ -49,14 +50,19 @@ namespace {
                             .height = static_cast<mdux::core::Px>(bounds.height)};
 }
 
-/// The top-left corner of the ink one run paints, in the run's own coordinates.
+/// The box the ink of one run occupies, in the run's own coordinates.
 ///
 /// `inked` false means the run paints nothing at all - a single space, say - which is a legitimate
 /// run rather than an error, and one that produces no rectangles.
-struct InkOrigin {
-    bool             inked{false};
-    mdux::core::Px x{0};
-    mdux::core::Px y{0};
+struct InkBox {
+    bool           inked{false};
+    mdux::core::Px left{0};
+    mdux::core::Px top{0};
+    mdux::core::Px right{0};   ///< exclusive
+    mdux::core::Px bottom{0};  ///< exclusive
+
+    [[nodiscard]] constexpr mdux::core::Px width() const noexcept { return right - left; }
+    [[nodiscard]] constexpr mdux::core::Px height() const noexcept { return bottom - top; }
 };
 
 /**
@@ -70,9 +76,9 @@ struct InkOrigin {
  * Placement arithmetic is `addGlyphRect()`'s and is not restated: `bitmapOriginX` from the pen, and
  * `bitmapOriginY` measured *up* from the baseline, hence subtracted on a downward y axis.
  */
-[[nodiscard]] mdux::core::Result<InkOrigin, ScreenError> measureInk(const mdux::font::FontPackage& font,
-                                                                     std::span<const std::byte>     records) noexcept {
-    InkOrigin origin;
+[[nodiscard]] mdux::core::Result<InkBox, ScreenError> measureInk(const mdux::font::FontPackage& font,
+                                                                 std::span<const std::byte>     records) noexcept {
+    InkBox box;
     for (std::size_t offset = 0; offset < records.size(); offset += mdux::text::draw::recordSize) {
         const auto placement = mdux::text::draw::decodeRecord(records.subspan(offset, mdux::text::draw::recordSize));
         if (!placement.has_value()) {
@@ -85,31 +91,70 @@ struct InkOrigin {
         if (glyph.isBlank()) {
             continue;
         }
-        const auto left = static_cast<mdux::core::Px>(placement->x + glyph.bitmapOriginX);
-        const auto top  = static_cast<mdux::core::Px>(placement->y - glyph.bitmapOriginY);
-        if (!origin.inked) {
-            origin = InkOrigin{.inked = true, .x = left, .y = top};
+        const auto left   = static_cast<mdux::core::Px>(placement->x + glyph.bitmapOriginX);
+        const auto top    = static_cast<mdux::core::Px>(placement->y - glyph.bitmapOriginY);
+        const auto right  = static_cast<mdux::core::Px>(left + static_cast<mdux::core::Px>(glyph.width));
+        const auto bottom = static_cast<mdux::core::Px>(top + static_cast<mdux::core::Px>(glyph.height));
+        if (!box.inked) {
+            box = InkBox{.inked = true, .left = left, .top = top, .right = right, .bottom = bottom};
             continue;
         }
-        origin.x = left < origin.x ? left : origin.x;
-        origin.y = top < origin.y ? top : origin.y;
+        box.left   = left < box.left ? left : box.left;
+        box.top    = top < box.top ? top : box.top;
+        box.right  = right > box.right ? right : box.right;
+        box.bottom = bottom > box.bottom ? bottom : box.bottom;
     }
-    return origin;
+    return box;
 }
 
 /// The run a node's `textKey` names, as a span of the bound sidecar.
 ///
-/// Both failures are the caller's binding rather than the screen's: a key the package does not carry
-/// means the wrong package was bound for this screen, and a range leaving the sidecar means the
-/// package and the bytes handed with it do not belong together. Neither can be true of a package
-/// this repository baked, and both are cheap to refuse rather than to trust.
+/// A lookup and nothing else. Every structural property of the range - inside the sidecar, a whole
+/// number of records, within the cap, hashing to what the package recorded - was established once by
+/// `TextBinding::create()`, which is what a binding *is*. Repeating them here would put a hash in a
+/// frame; not establishing them anywhere would put a `subspan()` precondition in the hands of a
+/// package nobody checked.
+///
+/// The one failure left is the screen's rather than the binding's: a key this package does not
+/// carry means the wrong locale, or the wrong package, was bound for this screen.
 [[nodiscard]] mdux::core::Result<std::span<const std::byte>, ScreenError> runFor(const TextBinding& binding,
                                                                                   std::string_view   textKey) noexcept {
-    for (const mdux::text::TextRun& run : binding.text->runs) {
-        if (run.id != textKey) {
-            continue;
-        }
-        if (run.byteEnd() > binding.runs.size()) {
+    const mdux::text::TextRun* run = binding.text()->find(textKey);
+    if (run == nullptr) {
+        return mdux::core::err(ScreenError::UnknownTextKey);
+    }
+    return binding.runs().subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength));
+}
+
+}  // namespace
+
+mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const mdux::font::FontPackage& font,
+                                                                 const mdux::text::TextPackage& text,
+                                                                 std::span<const std::byte>     runs) noexcept {
+    // The runs index `font.glyphs` by position, so a package baked against another font names the
+    // same numbers for different shapes. Nothing downstream can detect that: every index would still
+    // be in range, and the frame would draw a plausible sentence made of the wrong letters.
+    if (text.atlasId != font.id) {
+        return mdux::core::err(ScreenError::AtlasMismatch);
+    }
+
+    // The sidecar the package describes, exactly. Length first because it is free and rules out the
+    // common mistake; the digest because a different sidecar of the same length passes every
+    // structural check there is and renders different words.
+    if (runs.size() != text.sidecarByteLength) {
+        return mdux::core::err(ScreenError::SidecarMismatch);
+    }
+    if (mdux::evidence::sha256(runs) != text.sidecarSha256) {
+        return mdux::core::err(ScreenError::SidecarMismatch);
+    }
+
+    for (const mdux::text::TextRun& run : text.runs) {
+        // Subtraction rather than `byteOffset + byteLength`, which wraps: a hand-built package with
+        // `byteOffset = UINT64_MAX - 5` and `byteLength = 6` sums to zero and would pass an addition
+        // form, then violate `subspan()`'s precondition. This is the form `TextPackage::validate()`
+        // already uses, for the same reason - a package that reached here without going through it
+        // is exactly the case this function exists for.
+        if (run.byteOffset > runs.size() || run.byteLength > runs.size() - run.byteOffset) {
             return mdux::core::err(ScreenError::MalformedTextRun);
         }
         if (run.byteLength % mdux::text::draw::recordSize != 0) {
@@ -118,12 +163,17 @@ struct InkOrigin {
         if (run.byteLength / mdux::text::draw::recordSize > maxGlyphsPerRun) {
             return mdux::core::err(ScreenError::RunTooLong);
         }
-        return binding.runs.subspan(static_cast<std::size_t>(run.byteOffset), static_cast<std::size_t>(run.byteLength));
+        // Each run's own digest as well as the sidecar's. The sidecar hash already covers these
+        // bytes, so this catches a package whose *ranges* were rewritten to point at each other's
+        // runs - which the whole-file hash cannot see.
+        const auto slice = runs.subspan(static_cast<std::size_t>(run.byteOffset), static_cast<std::size_t>(run.byteLength));
+        if (mdux::evidence::sha256(slice) != run.sha256) {
+            return mdux::core::err(ScreenError::SidecarMismatch);
+        }
     }
-    return mdux::core::err(ScreenError::UnknownTextKey);
-}
 
-}  // namespace
+    return TextBinding{&font, &text, runs};
+}
 
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
@@ -139,6 +189,12 @@ std::string_view describe(ScreenError error) noexcept {
             return "a run's range leaves the bound sidecar, or its bytes are not whole records";
         case ScreenError::RunTooLong:
             return "a run holds more records than this runtime will draw in one node";
+        case ScreenError::AtlasMismatch:
+            return "the text package was baked against a different font package";
+        case ScreenError::SidecarMismatch:
+            return "the sidecar is not the one the text package describes";
+        case ScreenError::TextOverflowsNode:
+            return "a run's ink is larger than the node that names it";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -181,7 +237,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
         ++stats.steps;
 
         if (const auto* label = std::get_if<LabelSpec>(&node.payload); label != nullptr) {
-            if (!text.complete()) {
+            if (!text.bound()) {
                 // Nothing to join to. Deferred rather than refused: a caller that has not bound a
                 // locale yet is in a normal state, not a broken one.
                 ++stats.deferred;
@@ -199,7 +255,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
                 return refuse(records.error());
             }
 
-            const auto ink = measureInk(*text.font, *records);
+            const auto ink = measureInk(*text.font(), *records);
             if (!ink.has_value()) {
                 return refuse(ink.error());
             }
@@ -216,14 +272,23 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
                 continue;
             }
 
+            // The check that makes the placement rule safe against a package this module cannot
+            // authenticate. #195 proved this box fits this rectangle for the package it measured;
+            // this proves it for the package actually bound, at the cost of one comparison over a
+            // walk the placement needs anyway. See Screen.cppm for why the two are not redundant.
+            if (ink->width() > static_cast<mdux::core::Px>(node.bounds.width)
+                || ink->height() > static_cast<mdux::core::Px>(node.bounds.height)) {
+                return refuse(ScreenError::TextOverflowsNode);
+            }
+
             // The ink box's corner goes to the node's corner. `originX`/`originY` are added to every
             // record, so subtracting where the ink starts puts that corner exactly on the origin.
-            const auto originX = static_cast<mdux::core::Px>(node.bounds.x) - ink->x;
-            const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink->y;
+            const auto originX = static_cast<mdux::core::Px>(node.bounds.x) - ink->left;
+            const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink->top;
 
             const std::size_t verticesBefore = list.vertices().size();
             if (const auto recorded =
-                    mdux::text::draw::recordRun(list, *text.font, *records, originX, originY, toColor(*labelColour));
+                    mdux::text::draw::recordRun(list, *text.font(), *records, originX, originY, toColor(*labelColour));
                 !recorded.has_value()) {
                 // `recordRun()` rolls its own run back and this rolls the whole frame back. Its error
                 // is not forwarded: every way it can fail here is either something `runFor()` and

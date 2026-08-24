@@ -16,6 +16,7 @@
 import std;
 import speclab;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.draw;
 import mdux.font.schema;
@@ -519,17 +520,36 @@ void appendRecord(std::vector<std::byte>& out, std::uint16_t index, std::int16_t
     emit(std::bit_cast<std::uint16_t>(y));
 }
 
-/// A text package naming one run over `records`.
-[[nodiscard]] mdux::text::TextPackage textFixturePackage(std::string_view key, std::size_t byteLength) {
+/// A text package naming one run over the whole of `records`, with the digests `create()` checks.
+///
+/// The digests are computed from the bytes rather than written out: a fixture carrying a stale one
+/// would exercise the rejection path while claiming to be the accepted case, which is the way a
+/// suite quietly stops testing what it says it does.
+[[nodiscard]] mdux::text::TextPackage textFixturePackage(std::string_view key, std::span<const std::byte> records) {
     mdux::text::TextPackage package;
-    package.header.id       = "runtime-text";
-    package.header.kind     = std::string{mdux::text::packageKind};
-    package.atlasId         = "runtime-ui";
-    package.locale          = "en-US";
-    package.sidecarPath     = "runs.bin";
-    package.sidecarByteLength = byteLength;
-    package.runs.push_back(mdux::text::TextRun{.id = std::string{key}, .byteOffset = 0, .byteLength = byteLength});
+    package.header.id         = "runtime-text";
+    package.header.kind       = std::string{mdux::text::packageKind};
+    package.atlasId           = "runtime-ui";
+    package.locale            = "en-US";
+    package.sidecarPath       = "runs.bin";
+    package.sidecarByteLength = records.size();
+    package.sidecarSha256     = mdux::evidence::sha256(records);
+    package.runs.push_back(mdux::text::TextRun{.id         = std::string{key},
+                                               .byteOffset = 0,
+                                               .byteLength = records.size(),
+                                               .sha256     = mdux::evidence::sha256(records)});
     return package;
+}
+
+/// A binding built from a fixture, or a scenario failure naming what `create()` refused.
+[[nodiscard]] ms::TextBinding bindOrThrow(const mdux::font::FontPackage& font, const mdux::text::TextPackage& text,
+                                          std::span<const std::byte> records) {
+    auto made = ms::TextBinding::create(font, text, records);
+    if (!made.has_value()) {
+        throw speclab::core::AssertionFailure(std::format("the fixture binding was refused: {}", ms::describe(made.error())),
+                                              std::source_location::current());
+    }
+    return *made;
 }
 
 constexpr ms::LabelSpec fixtureLabel{.textKey = "STR-A", .colorToken = "Theme.Colors.Title"};
@@ -556,12 +576,11 @@ const mdux::spec::Register labelInkLandsOnTheNodeCorner{
                       const mdux::font::FontPackage font = textFixtureFont();
                       std::vector<std::byte>        records;
                       appendRecord(records, 1, 0, 0);  // the 'A', at the run's own origin
-                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records.size());
+                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records);
 
                       Scratch              scratch;
-                      mdux::draw::DrawList list = scratch.list(testBudget);
-                      const auto           frame =
-                          ms::render(labelScreen, list, ms::TextBinding{.font = &font, .text = &text, .runs = records});
+                      mdux::draw::DrawList list  = scratch.list(testBudget);
+                      const auto           frame = ms::render(labelScreen, list, bindOrThrow(font, text, records));
 
                       checks.expect(frame.has_value(), "the frame was recorded");
                       if (!frame.has_value()) {
@@ -586,10 +605,71 @@ const mdux::spec::Register labelInkLandsOnTheNodeCorner{
             .Execute();
     }};
 
-const mdux::spec::Register labelRefusals{
-    "A binding that cannot serve the screen is refused rather than drawn around", "evidence-unit", [] {
-        return speclab::Test("medui-screen-label-refusals")
+const mdux::spec::Register bindingRefusals{
+    "Three artifacts that do not describe each other are refused once, not per frame", "evidence-unit", [] {
+        return speclab::Test("medui-screen-binding-refusals")
             .Given("bindings that are wrong in one way each", [] {})
+            .When("each is offered to create()", [] {})
+            .Then("each reports its own error",
+                  [] {
+                      mdux::spec::Checks            checks;
+                      const mdux::font::FontPackage font = textFixtureFont();
+
+                      std::vector<std::byte> records;
+                      appendRecord(records, 1, 0, 0);
+
+                      const auto errorOf = [&](const mdux::text::TextPackage& text, std::span<const std::byte> runs) {
+                          auto made = ms::TextBinding::create(font, text, runs);
+                          return made.has_value() ? std::optional<ms::ScreenError>{} : std::optional{made.error()};
+                      };
+
+                      // A package baked against another font. Every glyph index would still be in
+                      // range here, so nothing downstream could detect it - the frame would draw a
+                      // plausible sentence made of the wrong letters.
+                      mdux::text::TextPackage otherAtlas = textFixturePackage("STR-A", records);
+                      otherAtlas.atlasId                 = "some-other-font";
+                      checks.expect(errorOf(otherAtlas, records) == ms::ScreenError::AtlasMismatch, "another font is AtlasMismatch");
+
+                      // The right length, the wrong bytes. This is the case a structural check
+                      // cannot reach and the digest exists for: it renders different words.
+                      std::vector<std::byte> impostor;
+                      appendRecord(impostor, 0, 0, 0);
+                      checks.expect(errorOf(textFixturePackage("STR-A", records), impostor) == ms::ScreenError::SidecarMismatch,
+                                    "a same-length wrong sidecar is SidecarMismatch");
+
+                      // A sidecar of the wrong length, which the cheap check catches first.
+                      checks.expect(errorOf(textFixturePackage("STR-A", records), std::span{records}.first(0))
+                                        == ms::ScreenError::SidecarMismatch,
+                                    "a short sidecar is SidecarMismatch");
+
+                      // The wraparound. `byteOffset + byteLength` sums to zero for these, so an
+                      // addition-form range check would accept them and hand `subspan()` an offset
+                      // past its size. Six bytes is one record, so the cap does not catch it either.
+                      mdux::text::TextPackage wrapped = textFixturePackage("STR-A", records);
+                      wrapped.runs[0].byteOffset      = std::numeric_limits<std::uint64_t>::max() - 5;
+                      wrapped.runs[0].byteLength      = 6;
+                      checks.expect(errorOf(wrapped, records) == ms::ScreenError::MalformedTextRun,
+                                    "a range that wraps is MalformedTextRun");
+
+                      // Past the cap. Built rather than described, so the constant and the refusal
+                      // cannot drift apart: one record more than the runtime will draw.
+                      std::vector<std::byte> tooMany;
+                      for (std::size_t i = 0; i <= ms::maxGlyphsPerRun; ++i) {
+                          appendRecord(tooMany, 1, static_cast<std::int16_t>(i), 0);
+                      }
+                      checks.expect(errorOf(textFixturePackage("STR-A", tooMany), tooMany) == ms::ScreenError::RunTooLong,
+                                    std::format("{} records is RunTooLong", ms::maxGlyphsPerRun + 1));
+
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register frameRefusals{
+    "A valid binding that does not serve this screen is refused, and the list is left as found",
+    "evidence-unit", [] {
+        return speclab::Test("medui-screen-frame-refusals")
+            .Given("bindings create() accepts but this screen cannot use", [] {})
             .When("the screen is rendered with each", [] {})
             .Then("each reports its own error and records nothing",
                   [] {
@@ -600,35 +680,33 @@ const mdux::spec::Register labelRefusals{
                       appendRecord(records, 1, 0, 0);
 
                       const auto renderWith = [&](const mdux::text::TextPackage& text, std::span<const std::byte> runs) {
-                          Scratch              scratch;
-                          mdux::draw::DrawList list = scratch.list(testBudget);
-                          const auto frame = ms::render(labelScreen, list, ms::TextBinding{.font = &font, .text = &text, .runs = runs});
-                          return std::pair{frame.has_value() ? ms::ScreenError::BudgetExhausted : frame.error(),
+                          const ms::TextBinding binding = bindOrThrow(font, text, runs);
+                          Scratch               scratch;
+                          mdux::draw::DrawList  list = scratch.list(testBudget);
+                          const auto            frame = ms::render(labelScreen, list, binding);
+                          return std::pair{frame.has_value() ? std::optional<ms::ScreenError>{} : std::optional{frame.error()},
                                            list.vertices().size()};
                       };
 
-                      // A package for another screen: it parses, it validates, and it does not carry
-                      // this node's key.
-                      const auto wrongKey = renderWith(textFixturePackage("STR-SOMETHING-ELSE", records.size()), records);
+                      // A package for another screen: it is internally consistent, it passes
+                      // `create()`, and it does not carry this node's key.
+                      const auto wrongKey = renderWith(textFixturePackage("STR-SOMETHING-ELSE", records), records);
                       checks.expect(wrongKey.first == ms::ScreenError::UnknownTextKey, "an absent key is UnknownTextKey");
                       checks.expect(wrongKey.second == 0, "and records nothing");
 
-                      // The package and the bytes handed with it do not belong together: the run's
-                      // range leaves the sidecar it was given.
-                      const auto shortSidecar = renderWith(textFixturePackage("STR-A", records.size()), std::span{records}.first(2));
-                      checks.expect(shortSidecar.first == ms::ScreenError::MalformedTextRun, "a range past the sidecar is MalformedTextRun");
-                      checks.expect(shortSidecar.second == 0, "and records nothing");
-
-                      // Past the cap. Built rather than described, so the constant and the refusal
-                      // cannot drift apart: one record more than the runtime will draw.
-                      std::vector<std::byte> tooMany;
-                      for (std::size_t i = 0; i <= ms::maxGlyphsPerRun; ++i) {
-                          appendRecord(tooMany, 1, static_cast<std::int16_t>(i), 0);
+                      // The finding this check exists for: a second valid package, same font, same
+                      // key, wider text. Nothing in the artifacts says which package the compiler
+                      // measured, so the runtime measures the one it was given - and refuses it
+                      // rather than drawing over the node's neighbours. The node is 100 wide; this
+                      // run is fifty glyphs at ten pixels of advance.
+                      std::vector<std::byte> wide;
+                      for (std::int16_t i = 0; i < 50; ++i) {
+                          appendRecord(wide, 1, static_cast<std::int16_t>(i * 10), 0);
                       }
-                      const auto overLong = renderWith(textFixturePackage("STR-A", tooMany.size()), tooMany);
-                      checks.expect(overLong.first == ms::ScreenError::RunTooLong,
-                                    std::format("{} records is RunTooLong", ms::maxGlyphsPerRun + 1));
-                      checks.expect(overLong.second == 0, "and records nothing");
+                      const auto overflowing = renderWith(textFixturePackage("STR-A", wide), wide);
+                      checks.expect(overflowing.first == ms::ScreenError::TextOverflowsNode,
+                                    "text wider than its node is TextOverflowsNode");
+                      checks.expect(overflowing.second == 0, "and the list is left as it was found");
 
                       checks.raise();
                   })
@@ -647,12 +725,11 @@ const mdux::spec::Register aRunOfBlanksDrawsNothing{
                       const mdux::font::FontPackage font = textFixtureFont();
                       std::vector<std::byte>        records;
                       appendRecord(records, 0, 0, 0);  // the space
-                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records.size());
+                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records);
 
                       Scratch              scratch;
-                      mdux::draw::DrawList list = scratch.list(testBudget);
-                      const auto           frame =
-                          ms::render(labelScreen, list, ms::TextBinding{.font = &font, .text = &text, .runs = records});
+                      mdux::draw::DrawList list  = scratch.list(testBudget);
+                      const auto           frame = ms::render(labelScreen, list, bindOrThrow(font, text, records));
 
                       checks.expect(frame.has_value(), "the frame was recorded");
                       if (frame.has_value()) {
