@@ -65,10 +65,14 @@ jobs:
         path: .medui-conformance
         persist-credentials: false
 
-    - name: Setup CMake (latest)
+    # Pinned, not 'latest'. The root CMakeLists.txt rejects CMake 4.4+ outright until this project
+    # has reviewed that series' `import std` gate, so a floating version turns this job red the day
+    # 4.4 ships, with no change to the repository. Every other workflow already pins for the
+    # related reason that the gate UUID is version-specific: Windows to 4.1.1, macOS to 4.3.1.
+    - name: Setup CMake (4.3.1, within the qualified 4.0-4.3 window)
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
       with:
-        cmake-version: 'latest'
+        cmake-version: '4.3.1'
 
     - name: Install LLVM/Clang 20
       run: |

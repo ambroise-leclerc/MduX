@@ -299,6 +299,20 @@ const mdux::spec::Register modulesWellFormedSpirv{
                    })
             .When("each module range is reflected", [state] {
                 for (const shader::ShaderModule& module : state->package->modules) {
+                    // validate() bounded these ranges against the length package.json *declares*
+                    // for the sidecar. This span is over the bytes actually read, so a truncated
+                    // file still runs off the end - UB in place of the test failure this scenario
+                    // exists to produce. Subtraction, because the sum can wrap.
+                    const std::size_t sidecarSize = state->sidecar->size();
+                    if (module.byteOffset > sidecarSize ||
+                        module.byteLength > sidecarSize - module.byteOffset) {
+                        throw speclab::core::AssertionFailure(
+                            std::format("module '{}' spans [{}, {}) of a sidecar that is {} bytes "
+                                        "on disk",
+                                        module.id, module.byteOffset,
+                                        module.byteOffset + module.byteLength, sidecarSize),
+                            std::source_location::current());
+                    }
                     const std::span<const std::byte> range{
                         state->sidecar->data() + module.byteOffset,
                         static_cast<std::size_t>(module.byteLength)};
@@ -319,7 +333,7 @@ const mdux::spec::Register modulesWellFormedSpirv{
                     state->reflections.push_back(*reflection);
                 }
             })
-            .Then("each reflects to its declared stage and entry point",
+            .Then("each reflects to its declared stage, entry point and portable SPIR-V version",
                   [state] {
                       mdux::spec::Checks checks;
                       for (std::size_t i = 0; i < state->package->modules.size(); ++i) {
@@ -331,6 +345,11 @@ const mdux::spec::Register modulesWellFormedSpirv{
                           checks.expect(reflection.entryPoint == module.entryPoint,
                                         std::format("module '{}' reflects to its entry point",
                                                     module.id));
+                          checks.expect(reflection.versionMajor == 1 &&
+                                            reflection.versionMinor <= 5,
+                                        std::format(
+                                            "module '{}' is compatible with Vulkan 1.2",
+                                            module.id));
                           checks.expect(module.byteLength % 4 == 0,
                                         std::format("module '{}' is word aligned", module.id));
                       }

@@ -68,8 +68,10 @@ const mdux::spec::Register theCounterMoves{"The allocation counter moves when so
                                                              // runtime, an inlined allocation - the counter would simply never move and
                                                              // every scenario below would pass.
                                                              const std::size_t before = allocations();
-                                                             auto*             leaked = new std::array<std::byte, 64>{};
-                                                             const std::size_t after  = allocations();
+                                                             // volatile prevents Clang's release optimiser from proving the allocation
+                                                             // and matching delete have no observable effect and removing both.
+                                                             auto* volatile leaked   = new std::array<std::byte, 64>{};
+                                                             const std::size_t after = allocations();
                                                              delete leaked;
 
                                                              checks.expect(after > before, std::format("the counter moved, {} then {}", before, after));

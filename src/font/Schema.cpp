@@ -85,8 +85,7 @@ template <typename T>
             return err(SchemaError::IntegerOutOfRange);
         }
     } else {
-        if (*raw < static_cast<std::int64_t>(std::numeric_limits<T>::min())
-            || *raw > static_cast<std::int64_t>(std::numeric_limits<T>::max())) {
+        if (*raw < static_cast<std::int64_t>(std::numeric_limits<T>::min()) || *raw > static_cast<std::int64_t>(std::numeric_limits<T>::max())) {
             return err(SchemaError::IntegerOutOfRange);
         }
     }
@@ -122,6 +121,76 @@ template <typename T>
         return err(SchemaError::WrongType);
     }
     return member;
+}
+
+/// @brief Serializes supported locales into the package JSON representation.
+[[nodiscard]] json::Value localeJson(const std::vector<std::string>& locales) noexcept {
+    std::vector<json::Value> values;
+    values.reserve(locales.size());
+    for (const std::string& tag : locales) {
+        values.push_back(json::Value::string(tag));
+    }
+    return json::Value::array(std::move(values));
+}
+
+/// @brief Serializes atlas metrics into the package JSON representation.
+[[nodiscard]] json::Value atlasJson(const AtlasMetrics& atlas) noexcept {
+    json::Value value = json::Value::emptyObject();
+    static_cast<void>(value.set("path", json::Value::string(atlas.path)));
+    static_cast<void>(value.set("width", json::Value::integer(atlas.width)));
+    static_cast<void>(value.set("height", json::Value::integer(atlas.height)));
+    static_cast<void>(value.set("byteLength", json::Value::integer(static_cast<std::int64_t>(atlas.byteLength))));
+    static_cast<void>(value.set("sha256", json::Value::string(atlas.sha256)));
+    static_cast<void>(value.set("occupancyPercent", json::Value::integer(atlas.occupancyPercent)));
+    return value;
+}
+
+/// @brief Serializes glyph records into the package JSON representation.
+[[nodiscard]] json::Value glyphsJson(const std::vector<GlyphRecord>& glyphs) noexcept {
+    std::vector<json::Value> values;
+    values.reserve(glyphs.size());
+    for (const GlyphRecord& glyph : glyphs) {
+        json::Value entry = json::Value::emptyObject();
+        static_cast<void>(entry.set("codePoint", json::Value::integer(glyph.codePoint)));
+        static_cast<void>(entry.set("glyphIndex", json::Value::integer(glyph.glyphIndex)));
+        static_cast<void>(entry.set("advanceWidth", json::Value::integer(glyph.advanceWidth)));
+        static_cast<void>(entry.set("leftSideBearing", json::Value::integer(glyph.leftSideBearing)));
+        static_cast<void>(entry.set("x", json::Value::integer(glyph.x)));
+        static_cast<void>(entry.set("y", json::Value::integer(glyph.y)));
+        static_cast<void>(entry.set("width", json::Value::integer(glyph.width)));
+        static_cast<void>(entry.set("height", json::Value::integer(glyph.height)));
+        static_cast<void>(entry.set("bitmapOriginX", json::Value::integer(glyph.bitmapOriginX)));
+        static_cast<void>(entry.set("bitmapOriginY", json::Value::integer(glyph.bitmapOriginY)));
+        values.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(values));
+}
+
+/// @brief Serializes kerning pairs into the package JSON representation.
+[[nodiscard]] json::Value kerningJson(const std::vector<KerningPair>& kerning) noexcept {
+    std::vector<json::Value> values;
+    values.reserve(kerning.size());
+    for (const KerningPair& pair : kerning) {
+        json::Value entry = json::Value::emptyObject();
+        static_cast<void>(entry.set("left", json::Value::integer(pair.left)));
+        static_cast<void>(entry.set("right", json::Value::integer(pair.right)));
+        static_cast<void>(entry.set("adjustment", json::Value::integer(pair.adjustment)));
+        values.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(values));
+}
+
+/// @brief Serializes character-set ranges into the package JSON representation.
+[[nodiscard]] json::Value charsetJson(const std::vector<CharsetRange>& charset) noexcept {
+    std::vector<json::Value> values;
+    values.reserve(charset.size());
+    for (const CharsetRange& range : charset) {
+        json::Value entry = json::Value::emptyObject();
+        static_cast<void>(entry.set("first", json::Value::integer(range.first)));
+        static_cast<void>(entry.set("last", json::Value::integer(range.last)));
+        values.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(values));
 }
 
 }  // namespace
@@ -227,17 +296,15 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
     // Rejecting only '/' and '\\' let through ".", "..", and Windows drive-relative forms like
     // "C:atlas.bin" - each of which resolves somewhere other than beside package.json on at least
     // one supported platform.
-    if (atlas.path == "." || atlas.path == ".."
-        || atlas.path.find_first_of("/\\:") != std::string::npos) {
+    if (atlas.path == "." || atlas.path == ".." || atlas.path.find_first_of("/\\:") != std::string::npos) {
         return err(SchemaError::AtlasPathHasSeparator);
     }
     // Exactly 64 lowercase hex characters. The field's whole purpose is letting a runtime check
     // the sidecar it was handed belongs to this package; a malformed digest is one it cannot use,
     // and accepting one would mean write() could emit a package with no usable integrity value.
-    if (atlas.sha256.size() != 64
-        || !std::ranges::all_of(atlas.sha256, [](char c) noexcept {
-               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-           })) {
+    if (atlas.sha256.size() != 64 || !std::ranges::all_of(atlas.sha256, [](char c) noexcept {
+            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        })) {
         return err(SchemaError::InvalidAtlasDigest);
     }
     if (!isPowerOfTwo(atlas.width) || !isPowerOfTwo(atlas.height)) {
@@ -268,8 +335,7 @@ ResultVoid<SchemaError> FontPackage::validate() const noexcept {
                 return err(SchemaError::GlyphsNotSorted);
             }
         }
-        if (static_cast<std::uint64_t>(glyph.x) + glyph.width > atlas.width
-            || static_cast<std::uint64_t>(glyph.y) + glyph.height > atlas.height) {
+        if (static_cast<std::uint64_t>(glyph.x) + glyph.width > atlas.width || static_cast<std::uint64_t>(glyph.y) + glyph.height > atlas.height) {
             return err(SchemaError::GlyphOutsideAtlas);
         }
     }
@@ -354,60 +420,11 @@ Result<json::Value, SchemaError> FontPackage::toJson() const noexcept {
     set("unitsPerEm", json::Value::integer(unitsPerEm));
     set("pixelSize", json::Value::integer(pixelSize));
 
-    std::vector<json::Value> localeValues;
-    localeValues.reserve(locales.size());
-    for (const std::string& tag : locales) {
-        localeValues.push_back(json::Value::string(tag));
-    }
-    set("locales", json::Value::array(std::move(localeValues)));
-
-    json::Value atlasValue = json::Value::emptyObject();
-    static_cast<void>(atlasValue.set("path", json::Value::string(atlas.path)));
-    static_cast<void>(atlasValue.set("width", json::Value::integer(atlas.width)));
-    static_cast<void>(atlasValue.set("height", json::Value::integer(atlas.height)));
-    static_cast<void>(atlasValue.set("byteLength", json::Value::integer(static_cast<std::int64_t>(atlas.byteLength))));
-    static_cast<void>(atlasValue.set("sha256", json::Value::string(atlas.sha256)));
-    static_cast<void>(atlasValue.set("occupancyPercent", json::Value::integer(atlas.occupancyPercent)));
-    set("atlas", std::move(atlasValue));
-
-    std::vector<json::Value> glyphValues;
-    glyphValues.reserve(glyphs.size());
-    for (const GlyphRecord& glyph : glyphs) {
-        json::Value entry = json::Value::emptyObject();
-        static_cast<void>(entry.set("codePoint", json::Value::integer(glyph.codePoint)));
-        static_cast<void>(entry.set("glyphIndex", json::Value::integer(glyph.glyphIndex)));
-        static_cast<void>(entry.set("advanceWidth", json::Value::integer(glyph.advanceWidth)));
-        static_cast<void>(entry.set("leftSideBearing", json::Value::integer(glyph.leftSideBearing)));
-        static_cast<void>(entry.set("x", json::Value::integer(glyph.x)));
-        static_cast<void>(entry.set("y", json::Value::integer(glyph.y)));
-        static_cast<void>(entry.set("width", json::Value::integer(glyph.width)));
-        static_cast<void>(entry.set("height", json::Value::integer(glyph.height)));
-        static_cast<void>(entry.set("bitmapOriginX", json::Value::integer(glyph.bitmapOriginX)));
-        static_cast<void>(entry.set("bitmapOriginY", json::Value::integer(glyph.bitmapOriginY)));
-        glyphValues.push_back(std::move(entry));
-    }
-    set("glyphs", json::Value::array(std::move(glyphValues)));
-
-    std::vector<json::Value> kerningValues;
-    kerningValues.reserve(kerning.size());
-    for (const KerningPair& pair : kerning) {
-        json::Value entry = json::Value::emptyObject();
-        static_cast<void>(entry.set("left", json::Value::integer(pair.left)));
-        static_cast<void>(entry.set("right", json::Value::integer(pair.right)));
-        static_cast<void>(entry.set("adjustment", json::Value::integer(pair.adjustment)));
-        kerningValues.push_back(std::move(entry));
-    }
-    set("kerning", json::Value::array(std::move(kerningValues)));
-
-    std::vector<json::Value> charsetValues;
-    charsetValues.reserve(restrictedCharset.size());
-    for (const CharsetRange& range : restrictedCharset) {
-        json::Value entry = json::Value::emptyObject();
-        static_cast<void>(entry.set("first", json::Value::integer(range.first)));
-        static_cast<void>(entry.set("last", json::Value::integer(range.last)));
-        charsetValues.push_back(std::move(entry));
-    }
-    set("restrictedCharset", json::Value::array(std::move(charsetValues)));
+    set("locales", localeJson(locales));
+    set("atlas", atlasJson(atlas));
+    set("glyphs", glyphsJson(glyphs));
+    set("kerning", kerningJson(kerning));
+    set("restrictedCharset", charsetJson(restrictedCharset));
 
     return package;
 }
@@ -535,7 +552,7 @@ Result<FontPackage, SchemaError> FontPackage::parse(std::string_view text) noexc
             return err(SchemaError::WrongType);
         }
         GlyphRecord glyph;
-        auto        point   = requireCodePoint(entry, "codePoint");
+        auto        point = requireCodePoint(entry, "codePoint");
         if (!point.has_value()) {
             return err(point.error());
         }
@@ -638,8 +655,9 @@ Result<FontPackage, SchemaError> FontPackage::parse(std::string_view text) noexc
 }
 
 const GlyphRecord* FontPackage::find(char32_t point) const noexcept {
-    const auto it = std::lower_bound(glyphs.begin(), glyphs.end(), point,
-                                     [](const GlyphRecord& glyph, char32_t value) noexcept { return glyph.codePoint < value; });
+    const auto it = std::lower_bound(glyphs.begin(), glyphs.end(), point, [](const GlyphRecord& glyph, char32_t value) noexcept {
+        return glyph.codePoint < value;
+    });
     if (it == glyphs.end() || it->codePoint != point) {
         return nullptr;
     }
@@ -647,8 +665,9 @@ const GlyphRecord* FontPackage::find(char32_t point) const noexcept {
 }
 
 bool FontPackage::permits(char32_t point) const noexcept {
-    const auto it = std::upper_bound(restrictedCharset.begin(), restrictedCharset.end(), point,
-                                     [](char32_t value, const CharsetRange& range) noexcept { return value < range.first; });
+    const auto it = std::upper_bound(restrictedCharset.begin(), restrictedCharset.end(), point, [](char32_t value, const CharsetRange& range) noexcept {
+        return value < range.first;
+    });
     if (it == restrictedCharset.begin()) {
         return false;
     }

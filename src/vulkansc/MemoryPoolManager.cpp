@@ -27,10 +27,10 @@ MemoryPoolManager::~MemoryPoolManager() {
 MemoryPoolManager::MemoryPoolManager(MemoryPoolManager&& other) noexcept
     : device(other.device)
     , physicalDevice(other.physicalDevice)
-    , config(move(other.config))
+    , config(std::move(other.config))
     , initialized(other.initialized)
-    , pools(move(other.pools))
-    , allocationHistory(move(other.allocationHistory))
+    , pools(std::move(other.pools))
+    , allocationHistory(std::move(other.allocationHistory))
     , statistics(other.statistics)
 {
     other.device = VK_NULL_HANDLE;
@@ -44,10 +44,10 @@ MemoryPoolManager& MemoryPoolManager::operator=(MemoryPoolManager&& other) noexc
 
         device = other.device;
         physicalDevice = other.physicalDevice;
-        config = move(other.config);
+        config = std::move(other.config);
         initialized = other.initialized;
-        pools = move(other.pools);
-        allocationHistory = move(other.allocationHistory);
+        pools = std::move(other.pools);
+        allocationHistory = std::move(other.allocationHistory);
         statistics = other.statistics;
 
         other.device = VK_NULL_HANDLE;

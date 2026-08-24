@@ -38,6 +38,7 @@ function(configure_compiler_settings target_name)
   target_compile_definitions(${target_name} INTERFACE
     $<$<PLATFORM_ID:Windows>:MDUX_PLATFORM_WINDOWS;WIN32_LEAN_AND_MEAN;NOMINMAX>
     $<$<PLATFORM_ID:Linux>:MDUX_PLATFORM_LINUX>
+    $<$<PLATFORM_ID:Darwin>:MDUX_PLATFORM_MACOS>
   )
 endfunction()
 

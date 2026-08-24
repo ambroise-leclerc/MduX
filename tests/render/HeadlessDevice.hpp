@@ -172,8 +172,10 @@ private:
         // predate it, and an unguarded reference does not compile there. Where it is absent the
         // platform has no portability driver either, so nothing is lost.
 #ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
-        flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-        instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        if (hasExtension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+            flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        }
 #endif
 
         // The validation layers, when the machine has them. Without these a pixel test proves the

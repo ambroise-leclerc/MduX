@@ -1,0 +1,54 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d1d075a..fce9ed3 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,14 +1,19 @@
+ cmake_minimum_required(VERSION 4.0.0)
+ 
+-# CRITICAL: Must be the first thing after cmake_minimum_required for toolchain detection
+-# Official UUID for CMake 4.0.3 import std support
++# CRITICAL: Must be set before project() for toolchain detection. CMake 4.3 rotated the
++# experimental gate; earlier supported releases use the original value.
+ # Set unconditionally, before project(). It cannot be guarded on CMAKE_CXX_COMPILER_ID here:
+ # that variable is populated by compiler detection inside project(), so before that call it is
+ # empty and any if/elseif on it takes the else branch - which is how this ended up disabling
+ # `import std` for every compiler, MSVC included.
+-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
++if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
++    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
++else()
++    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
++endif()
+ set(CMAKE_CXX_STANDARD 23)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
++set(CMAKE_CXX_EXTENSIONS OFF)
+ 
+ include(cmake/PreventInSourceBuilds.cmake)
+ 
+@@ -16,7 +21,5 @@ set(SPECLAB_PROJECT_VERSION "0.1.0" CACHE STRING "SpecLab project version")
+ project(speclab VERSION ${SPECLAB_PROJECT_VERSION} DESCRIPTION "Modern C++23 Modules Testing Framework for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/speclab" LANGUAGES CXX)
+ 
+-set(CMAKE_CXX_EXTENSIONS OFF)
+-
+ message(STATUS "CMAKE_EXPERIMENTAL_CXX_IMPORT_STD: ${CMAKE_EXPERIMENTAL_CXX_IMPORT_STD}")
+ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+ 
+@@ -48,7 +51,7 @@ endif()
+ # at or above the floor checked above, so an absent target here is a CMake/UUID problem
+ # rather than an out-of-date compiler. There is no manual fallback for any compiler - see the
+ # comment above the __CMAKE::CXX23 link below for why none is offered.
+-if(TARGET __CMAKE::CXX23)
++if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+     message(STATUS "__CMAKE::CXX23 target available")
+ else()
+     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+@@ -68,6 +71,9 @@ endif()
+ 
+ # C++23 Modules support
+ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
++if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
++    set(CMAKE_CXX_MODULE_STD ON)
++endif()
+ 
+ # Compiler-specific modules configuration
+ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

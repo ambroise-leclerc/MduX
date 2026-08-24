@@ -14,14 +14,15 @@
 #
 # To change a shader, edit the .glsl source beside its .spv and regenerate both:
 #
-#   glslangValidator -V --target-env vulkan1.3 recipes/shader/mdux-ui/ui.vert \
+#   glslangValidator -V --target-env vulkan1.2 recipes/shader/mdux-ui/ui.vert \
 #                       -o recipes/shader/mdux-ui/ui.vert.spv
-#   glslangValidator -V --target-env vulkan1.3 recipes/shader/mdux-ui/ui.frag \
+#   glslangValidator -V --target-env vulkan1.2 recipes/shader/mdux-ui/ui.frag \
 #                       -o recipes/shader/mdux-ui/ui.frag.spv
 #   cmake --build <build-dir> --target mdux-bake-update
 #
-# then review the diff to generated/shader/mdux-ui/. The .spv is what a reviewer checks the
-# digests of; the .glsl beside it is what a reviewer reads.
+# then review the diff to generated/shader/mdux-ui/. Vulkan 1.2 is deliberate: MoltenVK exposes
+# Vulkan 1.2 semantics and rejects the SPIR-V 1.6 emitted for a Vulkan 1.3 target. The .spv is what
+# a reviewer checks the digests of; the .glsl beside it is what a reviewer reads.
 
 [package]
 id = "mdux-ui"

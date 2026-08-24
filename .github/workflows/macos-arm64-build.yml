@@ -1,0 +1,163 @@
+name: macOS Apple Silicon Build
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    name: macOS 15 arm64 (Clang 21, MoltenVK)
+    # Explicitly the arm64 image; do not replace this with macos-latest, whose architecture and
+    # installed toolchain can move independently of this verified target.
+    runs-on: macos-15
+    env:
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Resolve the pinned MedUI contract commit
+      id: medui-contract
+      shell: bash
+      run: |
+        set -euo pipefail
+        commit="$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' medui-conformance.toml)"
+        test -n "$commit"
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout pinned MedUI conformance contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: Compliatory/MedUI
+        ref: ${{ steps.medui-contract.outputs.commit }}
+        path: .medui-conformance
+        persist-credentials: false
+
+    - name: Setup pinned CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
+      with:
+        cmake-version: '4.3.1'
+
+    - name: Install pinned upstream LLVM and host tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        brew install llvm@21 ninja glfw
+        llvm_root="$(brew --prefix llvm@21)"
+        test "$("$llvm_root/bin/clang++" --version | sed -n 's/.*clang version \([0-9.]*\).*/\1/p' | head -1)" = "21.1.8"
+        echo "MDUX_LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
+        echo "$llvm_root/bin" >> "$GITHUB_PATH"
+
+    - name: Install pinned LunarG SDK with MoltenVK
+      uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+      with:
+        version: 1.4.309.0
+        cache: true
+
+    - name: Select and verify MoltenVK
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(uname -m)" = "arm64"
+        test "$VULKAN_SDK_VERSION" = "1.4.309.0"
+        icd="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json"
+        test -f "$icd"
+        export DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}"
+        export VK_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d"
+        export VK_DRIVER_FILES="$icd"
+        {
+          echo "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
+          echo "VK_LAYER_PATH=$VK_LAYER_PATH"
+          echo "VK_DRIVER_FILES=$icd"
+        } >> "$GITHUB_ENV"
+        set -o pipefail
+        vulkaninfo --summary 2>&1 | tee "$RUNNER_TEMP/vulkaninfo.log"
+        grep -Eiq 'MoltenVK|Apple M[0-9]' "$RUNNER_TEMP/vulkaninfo.log"
+
+    - name: Configure
+      run: cmake --preset ninja-macos-clang
+
+    - name: Build
+      run: cmake --build --preset ninja-macos-clang --parallel 4
+
+    - name: Run full test suite
+      run: ctest --preset ninja-macos-clang --output-on-failure
+
+    - name: Verify evidence, determinism, no-heap, and regulatory labels
+      run: |
+        ctest --preset ninja-macos-clang -L evidence --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L determinism --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L noheap --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L regulatory --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L governed -V --no-tests=error
+
+    - name: Verify rendered output ran on MoltenVK
+      shell: bash
+      run: |
+        set -euo pipefail
+        pixel_log="$RUNNER_TEMP/macos-pixel.log"
+        ctest --preset ninja-macos-clang -L pixel -V --no-tests=error 2>&1 | tee "$pixel_log"
+        if grep -q 'Skipped' "$pixel_log"; then
+          echo '::error::Pixel tests skipped; the macOS target must execute them through MoltenVK.'
+          exit 1
+        fi
+
+    - name: Smoke-test Vulkan presentation
+      run: ./build-macos-clang/examples/VulkanSCTriangleExample --smoke-test
+
+    - name: Configure ASan and UBSan
+      run: |
+        cmake --preset ninja-macos-clang-debug \
+          -DMDUX_BUILD_EXAMPLES=OFF \
+          -DENABLE_SANITIZER_ADDRESS=ON \
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
+
+    - name: Build ASan and UBSan
+      run: cmake --build --preset ninja-macos-clang-debug --parallel 4
+
+    - name: Run non-render tests under ASan and UBSan
+      env:
+        # macOS libobjc/libxpc process initialization retains three allocations that LeakSanitizer
+        # reports for every test executable before MduX code runs. Keep ASan's memory-error checks
+        # here; the Linux sanitizer job remains the leak-detection authority for non-render tests.
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      # The symbol scans establish properties of the Release object files above. Debug and
+      # sanitizer instrumentation deliberately change those objects; rerunning the static scan
+      # here can reject instrumentation/runtime references instead of MduX behavior. The runtime
+      # no-heap cases remain in this sanitized invocation.
+      run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|.*\.symbolScan' --output-on-failure --no-tests=error
+
+    - name: Run rendered tests under ASan and UBSan
+      env:
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      shell: bash
+      run: |
+        set -euo pipefail
+        render_log="$RUNNER_TEMP/macos-asan-pixel.log"
+        ctest --preset ninja-macos-clang-debug -R offscreen_tests -V --no-tests=error 2>&1 | tee "$render_log"
+        if grep -q 'Skipped' "$render_log"; then
+          echo '::error::Sanitized rendered-truth tests skipped.'
+          exit 1
+        fi
+
+    - name: Verify no source-tree writes
+      shell: bash
+      run: |
+        set -euo pipefail
+        status="$(git status --porcelain)"
+        if [ -n "$status" ]; then
+          echo "Build wrote into the source tree:"
+          echo "$status"
+          exit 1
+        fi

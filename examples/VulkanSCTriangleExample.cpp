@@ -48,16 +48,22 @@ constexpr char WINDOW_TITLE[] = "MduX - Vulkan SC Pattern Demo (Standard Vulkan)
 
 class VulkanSCTriangleApp {
 public:
-    void run() {
+    void run(bool smokeTest) {
         cout << "╔══════════════════════════════════════════════════╗\n";
         cout << "║  MduX Vulkan SC Pattern Demonstration            ║\n";
         cout << "║  IEC 62304 Class B - Using Standard Vulkan 1.3   ║\n";
         cout << "║  (Not true Vulkan SC - see docs for migration)   ║\n";
         cout << "╚══════════════════════════════════════════════════╝\n\n";
 
-        initWindow();
-        initVulkan();
-        mainLoop();
+        try {
+            initWindow();
+            initVulkan();
+            mainLoop(smokeTest);
+        }
+        catch (...) {
+            cleanup();
+            throw;
+        }
         cleanup();
     }
 
@@ -148,11 +154,36 @@ private:
         uint32_t glfwExtensionCount = 0;
         const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
+        if (glfwExtensions == nullptr) {
+            throw runtime_error("GLFW did not report the Vulkan instance extensions required for a surface");
+        }
+        vector<const char*> instanceExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+        VkInstanceCreateFlags instanceFlags = 0;
+
+#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+        uint32_t availableCount = 0;
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, nullptr) != VK_SUCCESS) {
+            throw runtime_error("Failed to enumerate Vulkan instance extensions");
+        }
+        vector<VkExtensionProperties> available(availableCount);
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, available.data()) != VK_SUCCESS) {
+            throw runtime_error("Failed to read Vulkan instance extensions");
+        }
+        const bool hasPortabilityEnumeration = ranges::any_of(available, [](const VkExtensionProperties& extension) {
+            return string_view{extension.extensionName} == VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+        });
+        if (hasPortabilityEnumeration) {
+            instanceFlags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        }
+#endif
+
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.flags = instanceFlags;
         createInfo.pApplicationInfo = &appInfo;
-        createInfo.enabledExtensionCount = glfwExtensionCount;
-        createInfo.ppEnabledExtensionNames = glfwExtensions;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
+        createInfo.ppEnabledExtensionNames = instanceExtensions.data();
         createInfo.enabledLayerCount = 0;
 
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
@@ -260,9 +291,34 @@ private:
         VkPhysicalDeviceFeatures deviceFeatures{};
 
         // Device extensions
-        const vector<const char*> deviceExtensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        uint32_t availableExtensionCount = 0;
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableExtensionCount, nullptr) != VK_SUCCESS) {
+            throw runtime_error("Failed to enumerate Vulkan device extensions");
+        }
+        vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &availableExtensionCount,
+                                                 availableExtensions.data()) != VK_SUCCESS) {
+            throw runtime_error("Failed to read Vulkan device extensions");
+        }
+        const auto hasDeviceExtension = [&availableExtensions](string_view wanted) {
+            return ranges::any_of(availableExtensions, [wanted](const VkExtensionProperties& extension) {
+                return wanted == extension.extensionName;
+            });
         };
+        if (!hasDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            throw runtime_error("The selected Vulkan device does not provide VK_KHR_swapchain");
+        }
+
+        vector<const char*> deviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        // Spelled out rather than through VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME, which lives in
+        // vulkan_beta.h and is therefore only defined under VK_ENABLE_BETA_EXTENSIONS. Guarding on
+        // that macro compiles to nothing on every configuration this project builds, so the device
+        // came up without the extension a portability driver requires
+        // (VUID-VkDeviceCreateInfo-pProperties-04451). tests/render/HeadlessDevice.hpp uses the
+        // literal for the same reason.
+        if (hasDeviceExtension("VK_KHR_portability_subset")) {
+            deviceExtensions.push_back("VK_KHR_portability_subset");
+        }
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -685,16 +741,32 @@ private:
         }
     }
 
-    void drawFrame() {
-        vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    // waitTimeout bounds both blocking waits below. Interactive runs pass UINT64_MAX and block as
+    // before; the smoke test passes a finite value so its own deadline in mainLoop() is reachable
+    // at all - a wait that never returns is not something a check after the call can time out.
+    [[nodiscard]] bool drawFrame(uint64_t waitTimeout) {
+        // A timed-out fence means the previous frame is still in flight, so this must return
+        // without resetting the fence or submitting over work the GPU has not finished. Every
+        // other non-success result - device loss, host or device allocation failure - is fatal
+        // and must not be reported as a skipped frame: interactive mode would retry it forever,
+        // and the smoke test would blame its own deadline for a Vulkan failure.
+        const VkResult fenceResult =
+            vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, waitTimeout);
+        if (fenceResult == VK_TIMEOUT) {
+            return false;
+        }
+        if (fenceResult != VK_SUCCESS) {
+            throw runtime_error(format("Failed to wait for the in-flight fence (VkResult {})",
+                                       static_cast<int>(fenceResult)));
+        }
 
         uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
+        VkResult result = vkAcquireNextImageKHR(device, swapchain, waitTimeout,
                                                imageAvailableSemaphores[currentFrame],
                                                VK_NULL_HANDLE, &imageIndex);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return;  // Window resized, skip frame
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_TIMEOUT || result == VK_NOT_READY) {
+            return false;  // Window resized, or no image within the timeout; skip frame
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw runtime_error("Failed to acquire swapchain image");
         }
@@ -735,29 +807,54 @@ private:
 
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        const bool presented = result != VK_ERROR_OUT_OF_DATE_KHR;
+        if (!presented || result == VK_SUBOPTIMAL_KHR) {
             // Window resized
         } else if (result != VK_SUCCESS) {
             throw runtime_error("Failed to present swapchain image");
         }
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        return presented;
     }
 
-    void mainLoop() {
+    void mainLoop(bool smokeTest) {
         cout << "\n╔══════════════════════════════════════════════════╗\n";
         cout << "║  Medical Device Rendering Active                ║\n";
         cout << "║  Press ESC or close window to exit              ║\n";
         cout << "╚══════════════════════════════════════════════════╝\n\n";
 
+        // The smoke test counts presented frames, and drawFrame() reports a frame it could not
+        // present rather than throwing - a swapchain that goes out of date is not an error here.
+        // But this example never recreates the swapchain, so once that happens it never presents
+        // again: without a deadline the loop spins at full speed forever and CI burns its job
+        // limit instead of failing. Bound it in wall-clock time and let the check after the loop
+        // turn every early exit - deadline, or a closed window - into one non-zero exit.
+        constexpr uint32_t smokeFramesRequired = 3;
+        constexpr chrono::seconds smokeDeadline{30};
+        // Comfortably longer than a frame on a working device, short enough that the deadline
+        // above still governs. Interactive runs keep the indefinite wait.
+        constexpr uint64_t smokeWaitTimeoutNanos = 2'000'000'000;
+        const uint64_t waitTimeout = smokeTest ? smokeWaitTimeoutNanos : UINT64_MAX;
+
         auto startTime = chrono::high_resolution_clock::now();
+        const auto smokeStartTime = startTime;
         uint32_t frameCount = 0;
+        uint32_t smokeFrameCount = 0;
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
-            drawFrame();
+            const bool rendered = drawFrame(waitTimeout);
             frameCount++;
+            if (smokeTest) {
+                if (rendered && ++smokeFrameCount >= smokeFramesRequired) {
+                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+                else if (chrono::high_resolution_clock::now() - smokeStartTime > smokeDeadline) {
+                    break;
+                }
+            }
 
             // Show FPS every second
             auto currentTime = chrono::high_resolution_clock::now();
@@ -771,6 +868,11 @@ private:
                 frameCount = 0;
                 startTime = currentTime;
             }
+        }
+
+        if (smokeTest && smokeFrameCount < smokeFramesRequired) {
+            throw runtime_error(format("Smoke test presented {} of {} frames within {}s",
+                                       smokeFrameCount, smokeFramesRequired, smokeDeadline.count()));
         }
 
         cout << "\n\n✓ Rendering stopped\n";
@@ -857,10 +959,15 @@ private:
 // Main Entry Point
 //=============================================================================
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const bool smokeTest = argc == 2 && string_view{argv[1]} == "--smoke-test";
+        if (argc > 1 && !smokeTest) {
+            cerr << "Usage: VulkanSCTriangleExample [--smoke-test]\n";
+            return 2;
+        }
         VulkanSCTriangleApp app;
-        app.run();
+        app.run(smokeTest);
         return 0;
     }
     catch (const exception& e) {

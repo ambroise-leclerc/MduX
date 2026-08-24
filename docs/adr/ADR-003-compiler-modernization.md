@@ -1,7 +1,14 @@
 # ADR-003: Compiler Modernization for C++23 Modules Support
 
 ## Status
-Accepted (2025-07-26)
+Accepted — macOS toolchain scope superseded by
+[ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) (2026-08-23)
+
+ADR-013 pins one exact macOS tuple; it does not replace the compiler floors decided here. MSVC
+17.14+, GCC 16+ and Clang 20+ are still in force and are still enforced by fatal checks in the
+root `CMakeLists.txt`, and both `AGENTS.md` and `docs/getting-started.md` still cite them. The
+status is scoped rather than plain `Superseded` because this index defines a superseded decision
+as an abandoned turn, and these floors have not been abandoned.
 
 ## Context
 MduX is evolving towards a pure C++23 modules-based architecture to provide better build performance, improved dependency management, and enhanced developer experience. This evolution requires updating the minimum supported compiler versions to ensure robust C++23 modules support.

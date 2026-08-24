@@ -56,28 +56,53 @@ int main() {\n\
 
 file(WRITE "${consumer_src}/CMakeLists.txt" "\
 cmake_minimum_required(VERSION 4.0.0)\n\
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD \"d0edc3af-4c50-42ea-a356-e2862fe7a444\")\n\
+if(CMAKE_VERSION VERSION_GREATER_EQUAL \"4.4\")\n\
+    message(FATAL_ERROR \"This consumer has not qualified CMake's newer import std gate\")\n\
+endif()\n\
+if(CMAKE_VERSION VERSION_GREATER_EQUAL \"4.3\")\n\
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD \"451f2fe2-a8a2-47c3-bc32-94786d8fc91b\")\n\
+else()\n\
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD \"d0edc3af-4c50-42ea-a356-e2862fe7a444\")\n\
+endif()\n\
 set(CMAKE_CXX_STANDARD 23)\n\
 set(CMAKE_CXX_STANDARD_REQUIRED ON)\n\
 set(CMAKE_CXX_EXTENSIONS OFF)\n\
 project(MduXInstallConsumer LANGUAGES CXX)\n\
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)\n\
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)\n\
+    set(CMAKE_CXX_MODULE_STD ON)\n\
+endif()\n\
 find_package(MduX REQUIRED)\n\
 if(NOT TARGET MduX::Core)\n\
     message(FATAL_ERROR \"Installed package does not provide MduX::Core\")\n\
 endif()\n\
 add_executable(consumer main.cpp)\n\
 target_link_libraries(consumer PRIVATE MduX::MduX)\n\
-if(TARGET __CMAKE::CXX23)\n\
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)\n\
     set_target_properties(consumer PROPERTIES CXX_MODULE_STD ON)\n\
 endif()\n\
 ")
 
 message(STATUS "InstallTreeConsumer: configuring consumer project")
+set(consumer_toolchain_arguments)
+if(DEFINED AR AND NOT AR STREQUAL "")
+    list(APPEND consumer_toolchain_arguments "-DCMAKE_AR=${AR}")
+endif()
+if(DEFINED RANLIB AND NOT RANLIB STREQUAL "")
+    list(APPEND consumer_toolchain_arguments "-DCMAKE_RANLIB=${RANLIB}")
+endif()
+if(DEFINED STDLIB_MODULES_JSON AND NOT STDLIB_MODULES_JSON STREQUAL "")
+    list(APPEND consumer_toolchain_arguments
+        "-DCMAKE_CXX_STDLIB_MODULES_JSON=${STDLIB_MODULES_JSON}")
+endif()
+if(DEFINED OSX_SYSROOT AND NOT OSX_SYSROOT STREQUAL "")
+    list(APPEND consumer_toolchain_arguments "-DCMAKE_OSX_SYSROOT=${OSX_SYSROOT}")
+endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -B "${consumer_build}" -S "${consumer_src}"
             -G "${GENERATOR}"
             -DCMAKE_CXX_COMPILER=${CXX_COMPILER}
+            ${consumer_toolchain_arguments}
             -DCMAKE_PREFIX_PATH=${install_prefix}
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
