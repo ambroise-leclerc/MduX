@@ -48,10 +48,11 @@ Makefile
 # humbletim/setup-vulkan-sdk extracts to $GITHUB_WORKSPACE/VULKAN_SDK on Windows
 # (confirmed from a real CI run: VULKAN_SDK=D:/a/MduX/MduX/VULKAN_SDK, i.e. the
 # repo root) rather than $RUNNER_TEMP, which the "Verify no source-tree writes"
-# check below correctly flagged as an untracked write. Ignoring it here is the
-# fix, not changing the action - there's no documented input to redirect its
-# extraction path.
+# check below correctly flagged as an untracked write. The macOS leg also leaves its cached
+# download at the exact root path vulkan_sdk.zip. Ignoring these action-owned paths is the fix,
+# not changing the action - there's no documented input to redirect either one.
 /VULKAN_SDK/
+/vulkan_sdk.zip
 
 # IDE and editor files
 .vs/
