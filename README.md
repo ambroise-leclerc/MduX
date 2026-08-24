@@ -41,7 +41,8 @@ target ever reaches Vulkan or a windowing library.
 
 **What it is not:** a UI toolkit. The component dictionary is closed and compiled — a `Label`, a
 `Button`, a `NumericDisplay` and the rest are validated, laid out and budget-checked at build time —
-but the runtime draws only a `Panel`, so nothing else has an appearance yet. See
+but the runtime draws only a `Panel` and a `Label`, so most of the dictionary has no appearance
+yet. See
 [Implementation status](#implementation-status). It is also not a quality-management system, a risk
 engine, or a lifecycle framework; there is no `mdux::risk`, `mdux::qms` or `mdux::lifecycle`
 namespace, and no code here generates a Design History File, a Risk Management File, or an audit
@@ -171,11 +172,13 @@ chain and compares the result pixel by pixel under lavapipe in CI.
 A **font** package and a **text** package are both baked and committed
 (`generated/font/dejavu-ui/`, `generated/text/endoscope-monitor-en-us/`), so the committed screen
 carries a `t("STR-KEY")` and its box is measured, at build time, against the widest translation every
-approved locale holds. One limit is worth stating beside that: the runtime draws a `Panel` while
-counting every other component as deferred — drawing text means joining a locale-free screen to a
-text package at run time, which is [#17](https://github.com/ambroise-leclerc/MduX/issues/17), and
-live-data components have no geometry until a frame exists. The committed screen therefore renders
-one bar — from a file an author wrote, through every stage, with nothing hand-carried between them.
+approved locale holds, and its label reaches the display: the governed runtime joins the compiled
+screen to the text package for the locale it is running and records the baked glyph runs
+([#242](https://github.com/ambroise-leclerc/MduX/issues/242)). One limit is worth stating beside
+that: the remaining components are still counted as deferred, because a `Button` is more than its
+text and live-data components have no geometry until a frame exists
+([#17](https://github.com/ambroise-leclerc/MduX/issues/17)). The committed screen renders a bar and
+a title — from files an author wrote, through every stage, with nothing hand-carried between them.
 
 The HTML/CSS path that earlier revisions described was **deleted** by
 [#127](https://github.com/ambroise-leclerc/MduX/issues/127) — `MedicalUiRenderer::render()` recorded

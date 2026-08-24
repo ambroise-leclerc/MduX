@@ -14,14 +14,18 @@
  *
  * ## What this runtime draws, and what it does not
  *
- * It draws a `Panel`: a filled rectangle in the colour its token resolves to. Every other component
- * is visited, counted, and left undrawn - and that is a stated limit rather than an omission, so it
- * is worth saying exactly why for each.
+ * It draws a `Panel`: a filled rectangle in the colour its token resolves to. It draws a `Label`
+ * too, when the caller supplies the packages a locale-free screen has to be joined to. Every other
+ * component is visited, counted, and left undrawn - and that is a stated limit rather than an
+ * omission, so it is worth saying exactly why for each.
  *
- * - `Label`, `Button`, `CriticalButton`, `TextInput` draw **text**. A compiled screen carries a
- *   `textKey`, not glyphs (ADR-011), so drawing them is a join with a baked text package for the
- *   locale the device is running. No text package is baked in this repository yet, so the join has
- *   nothing to join to; it belongs with #201, which lands the text half.
+ * - `Label` draws **text**, and does so through `TextBinding` (#242). A compiled screen carries a
+ *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
+ *   locale the device is running. Without a binding there is nothing to join to and the node is
+ *   deferred exactly as before, which is also what a screen with no text costs: nothing.
+ * - `Button`, `CriticalButton`, `TextInput` carry text keys as well, and are still deferred. Their
+ *   text is not the whole of their appearance - a button has a face, a text input has a caret and a
+ *   selection - and this module will not invent those. They arrive with #17.
  * - `Clock`, `NumericDisplay`, `SignalTrace`, `StatusIndicator` draw from **live data**. Their
  *   geometry does not exist until the frame does - that is ADR-012's reason a screen bakes layout
  *   rather than vertices - so what they paint is a function of a sample this module is not given.
@@ -35,6 +39,26 @@
  * authoritative over a question it has no evidence for, so it counts what it cannot decide and says
  * so in `FrameStats::deferred`. A device integrator sees "eleven nodes, one drawn" rather than a
  * screen that quietly renders less than it looks like it should.
+ *
+ * ## Where a label's glyphs go, and why that is not an invention
+ *
+ * Drawing text needs one decision this module cannot avoid making: where the run sits inside the
+ * node's rectangle. The shared component model does not say - it constrains which fields a `Label`
+ * carries and that its text must fit its box, and stops there - and the font package carries no
+ * ascent, so there is no baseline metric to derive a placement from either.
+ *
+ * The rule here is therefore chosen, and chosen to be the one that is **already validated**: the
+ * run's *ink* box is placed at the node's top-left corner. #195 measures ink - the union of the
+ * rectangles the atlas actually paints, blanks skipped - against the node's resolved bounds, and
+ * refuses the screen when it does not fit. Placing that same box at that same origin makes the
+ * property the compiler checked and the property the frame has the identical property. Centring, or
+ * a baseline offset, would leave the build-time guarantee true of a rectangle nobody draws.
+ *
+ * Two consequences worth stating rather than discovering. Leading placement means a right-to-left
+ * locale would need a different rule - and cannot arrive without one, since `mdux-textbake` refuses
+ * every RTL code point (ADR-010's v1 repertoire). And ink placement means a label whose text has no
+ * ink at all - a single space - draws nothing and is *not* deferred: it was joined, measured, and
+ * found to paint nothing, which is a different fact from having no package to join to.
  *
  * ## Bounded work, and the counter that proves it
  *
@@ -52,11 +76,16 @@
  *
  * What these tests establish is bounded, and the bound is worth stating rather than implying.
  * `steps` is self-reported: a future inner loop that performed work without incrementing it would
- * leave all three green. What they do establish is that the work this runtime performs does not vary
- * with a node's payload or geometry at equal node count, and scales linearly with the node count.
- * Making the per-node half a fact rather than a measurement needs a type-level cap - TrustSC does it
- * with `TextRuntime::<MAX_GLYPH_COMMANDS_PER_RUN>` - and that belongs with the first component whose
- * geometry is variable, which is #17's ground rather than this module's today.
+ * leave all three green. What they do establish is that the work this runtime performs scales
+ * linearly with the node count.
+ *
+ * A `Label` is the first component whose per-node work is *not* constant: it is proportional to the
+ * run's length. This paragraph used to promise the cap that fixes it - "a type-level cap, as TrustSC
+ * does with `TextRuntime::<MAX_GLYPH_COMMANDS_PER_RUN>`, belonging with the first component whose
+ * geometry is variable" - and `maxGlyphsPerRun` is it. A run longer than that is refused rather than
+ * truncated, so per-node work is bounded by a constant a device knows before it runs, and the bound
+ * on a frame is `nodes * maxGlyphsPerRun` rather than a number that depends on what a translator
+ * wrote.
  *
  * ## Two things this deliberately does not do
  *
@@ -78,7 +107,10 @@ import std;
 import mdux.core.result;
 import mdux.core.units;
 import mdux.draw;
+import mdux.font.schema;
 import mdux.medui.schema;
+import mdux.text.draw;
+import mdux.text.schema;
 
 export namespace mdux::medui {
 
@@ -87,6 +119,57 @@ enum class ScreenError : std::uint8_t {
     MalformedColorToken,  ///< a node's colour is not of the form `Theme.Colors.<Token>`
     UnknownColorToken,    ///< well-formed, and the governed table does not define it
     BudgetExhausted,      ///< a write would exceed a `DrawBudget` this frame is held to
+    UnknownTextKey,       ///< a bound text package carries no run for a node's `textKey`
+    MalformedTextRun,     ///< a run's range leaves the sidecar, or its bytes are not whole records
+    RunTooLong,           ///< a run holds more than `maxGlyphsPerRun` records
+};
+
+/**
+ * @brief The largest run this runtime will draw, in records.
+ *
+ * The type-level cap the bounded-work section above promises. Its job is not to be generous - it is
+ * to make per-node work a constant a device can multiply by its node count before it runs, rather
+ * than a number that moves when somebody edits a translation.
+ *
+ * 256 because it is comfortably past any label a 1280px panel can hold at a legible size - the
+ * committed screen's title is 17 - while staying a number a reviewer can multiply in their head
+ * against a `DrawBudget`. A run beyond it is `RunTooLong`, never truncated: half a sentence on a
+ * medical display reads as a whole one.
+ */
+inline constexpr std::size_t maxGlyphsPerRun = 256;
+
+/**
+ * @brief The packages a locale-free compiled screen is joined to so its text can be drawn.
+ *
+ * A compiled screen carries `textKey` rather than glyphs (ADR-011 as amended by #203), which is what
+ * lets one screen serve every approved locale. The join is the device's, once, for the locale it is
+ * running - and it is passed rather than looked up because this module performs no I/O and holds no
+ * state.
+ *
+ * All three members travel together and are checked together. A default-constructed binding means
+ * "this caller has no text", which is not an error: every text node is deferred, exactly as it was
+ * before #242, and a screen with no text nodes costs nothing either way.
+ *
+ * Nothing here is owned. The packages outlive the frame - on a device they are static - and the
+ * spans are the caller's storage, so `render()` allocates nothing by construction rather than by
+ * discipline.
+ */
+struct TextBinding {
+    /// The font the runs were positioned against. Its glyph table supplies every rectangle's atlas
+    /// slot and origin.
+    const mdux::font::FontPackage* font{nullptr};
+
+    /// The text package for the locale being run. Its run ids are the `textKey`s a screen names.
+    const mdux::text::TextPackage* text{nullptr};
+
+    /// The sidecar bytes `text` addresses ranges of - the committed `runs.bin`, or a mapping of it.
+    std::span<const std::byte> runs{};
+
+    /// Whether all three are present. A partial binding is treated as no binding rather than as an
+    /// error: a caller assembling one incrementally should see deferred nodes, not a refused frame.
+    [[nodiscard]] constexpr bool complete() const noexcept {
+        return font != nullptr && text != nullptr && !runs.empty();
+    }
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a
@@ -116,6 +199,8 @@ struct FrameStats {
  *
  * @param screen a compiled screen, normally the `constexpr` one a generated translation unit holds
  * @param list   a draw list the caller created over storage sized from `screen.budget`
+ * @param text   the packages this screen's text keys resolve against; default means "no text", and
+ *               every text node is then deferred rather than refused
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -126,6 +211,7 @@ struct FrameStats {
  * list can carry several screens; without the second check the screen's declared budget would be
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
-[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list) noexcept;
+[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list,
+                                                                 const TextBinding& text = {}) noexcept;
 
 }  // namespace mdux::medui

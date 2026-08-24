@@ -13,17 +13,20 @@
  *
  * ## What is on screen, and why it is one rectangle
  *
- * The runtime draws a `Panel`. `EndoscopeMonitor`'s Row declares a background, so the solver
- * synthesised one, and that is what appears: a 1280x72 bar in `Theme.Colors.TopbarBackground`. Its
- * image, its label, its video surface, its numeric readout and its waveform are visited, counted as
- * deferred, and left undrawn - the label because a compiled screen carries a `textKey` rather than
- * glyphs, so drawing it means joining the screen to a text package for the locale the device is
- * running, which is #17's work; the live-data components because they have no geometry until a
- * sample exists.
+ * The runtime draws a `Panel` and a `Label`. `EndoscopeMonitor`'s Row declares a background, so the
+ * solver synthesised one, and that is what appears: a 1280x72 bar in `Theme.Colors.TopbarBackground`,
+ * with the screen's title drawn over it from the committed text package (#242). Its image, its video
+ * surface, its numeric readout and its waveform are visited, counted as deferred, and left undrawn,
+ * because they have no geometry until a sample exists or a package this repository does not yet bake.
+ *
+ * Two scenarios below, deliberately not one. The first renders without a binding and is the older
+ * claim unchanged - the panel lands where the compiler put it, every text node deferred. The second
+ * binds the committed font and text packages and checks the glyphs. Keeping them apart is what makes
+ * the unbound path a tested contract rather than a code path nobody exercises once a binding exists.
  *
  * That makes this test thin in content and complete in path, and the distinction is the point. What
- * it proves is not that MduX can draw a clinical screen; it is that a rectangle on this display came
- * from a file an author wrote, through every stage, with nothing hand-carried between them. The
+ * it proves is not that MduX can draw a clinical screen; it is that a bar and a title on this display
+ * came from files an author wrote, through every stage, with nothing hand-carried between them. The
  * content grows when the components learn their geometry; the path does not have to be built again.
  *
  * ## What the golden sidecar has here, and what it does not
@@ -67,7 +70,10 @@ import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.render.offscreen;
 import mdux.render.vulkan;
+import mdux.font.schema;
 import mdux.shader.schema;
+import mdux.text.draw;
+import mdux.text.schema;
 import mdux.shader.generated.mdux_ui;
 import mdux.test;
 
@@ -121,6 +127,143 @@ struct RecordContext {
 void recordFrame(VkCommandBuffer commandBuffer, void* context) {
     auto* recording = static_cast<RecordContext*>(context);
     static_cast<void>(recording->renderer->record(commandBuffer, *recording->list));
+}
+
+/// Reads a committed file, or fails the scenario naming it.
+[[nodiscard]] std::vector<std::byte> committed(std::string_view kind, std::string_view id, std::string_view name) {
+    const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "generated" / kind / id / name;
+    std::ifstream               file{path, std::ios::binary};
+    if (!file.is_open()) {
+        throw std::runtime_error(std::format("cannot open {}", path.generic_string()));
+    }
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const std::string  text = buffer.str();
+    const auto*        data = reinterpret_cast<const std::byte*>(text.data());
+    return std::vector<std::byte>{data, data + text.size()};
+}
+
+[[nodiscard]] std::string_view asText(const std::vector<std::byte>& bytes) noexcept {
+    return std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+/// The three committed artifacts a device joins a locale-free screen to, held together so a
+/// scenario cannot bind two of them and forget the third.
+struct BoundText {
+    std::vector<std::byte>  fontJson;
+    std::vector<std::byte>  textJson;
+    std::vector<std::byte>  runs;
+    std::vector<std::byte>  atlas;
+    mdux::font::FontPackage font;
+    mdux::text::TextPackage text;
+
+    [[nodiscard]] medui::TextBinding binding() const noexcept {
+        return medui::TextBinding{.font = &font, .text = &text, .runs = runs};
+    }
+};
+
+/// Loads them from `generated/`, which is the point: the pixels below come from the same bytes
+/// `ctest -L evidence` compares, not from a fixture written to make this scenario pass.
+[[nodiscard]] BoundText loadCommittedText() {
+    BoundText bound;
+    bound.fontJson = committed("font", "dejavu-ui", "package.json");
+    bound.textJson = committed("text", "endoscope-monitor-en-us", "package.json");
+    bound.runs     = committed("text", "endoscope-monitor-en-us", "runs.bin");
+    bound.atlas    = committed("font", "dejavu-ui", "atlas.bin");
+
+    auto font = mdux::font::FontPackage::parse(asText(bound.fontJson));
+    if (!font.has_value()) {
+        throw std::runtime_error("the committed font package did not parse");
+    }
+    auto text = mdux::text::TextPackage::parse(asText(bound.textJson));
+    if (!text.has_value()) {
+        throw std::runtime_error("the committed text package did not parse");
+    }
+    bound.font = std::move(*font);
+    bound.text = std::move(*text);
+    return bound;
+}
+
+/// A rectangle in pixels, or nothing.
+struct InkBox {
+    bool   found{false};
+    core::Px left{0};
+    core::Px top{0};
+    core::Px right{0};   ///< exclusive
+    core::Px bottom{0};  ///< exclusive
+};
+
+/**
+ * @brief The ink one committed run paints, measured from the packages rather than from the frame.
+ *
+ * This is the *independent* half of the scenario below. The runtime derives the same quantity to
+ * decide where to put the run; deriving it here from the committed bytes - and then finding the same
+ * box in the rendered pixels - is what makes the assertion about the placement rule rather than a
+ * restatement of the code that implements it.
+ */
+[[nodiscard]] InkBox inkOfRun(const BoundText& bound, std::string_view key) {
+    const mdux::text::TextRun* run = nullptr;
+    for (const mdux::text::TextRun& candidate : bound.text.runs) {
+        if (candidate.id == key) {
+            run = &candidate;
+        }
+    }
+    if (run == nullptr) {
+        return InkBox{};
+    }
+    const std::span<const std::byte> records{bound.runs.data() + run->byteOffset, static_cast<std::size_t>(run->byteLength)};
+
+    InkBox box;
+    for (std::size_t offset = 0; offset < records.size(); offset += mdux::text::draw::recordSize) {
+        const auto placement = mdux::text::draw::decodeRecord(records.subspan(offset, mdux::text::draw::recordSize));
+        if (!placement.has_value()) {
+            return InkBox{};
+        }
+        const mdux::font::GlyphRecord& glyph = bound.font.glyphs[placement->packageIndex];
+        if (glyph.isBlank()) {
+            continue;
+        }
+        const auto left   = static_cast<core::Px>(placement->x + glyph.bitmapOriginX);
+        const auto top    = static_cast<core::Px>(placement->y - glyph.bitmapOriginY);
+        const auto right  = static_cast<core::Px>(left + static_cast<core::Px>(glyph.width));
+        const auto bottom = static_cast<core::Px>(top + static_cast<core::Px>(glyph.height));
+        if (!box.found) {
+            box = InkBox{.found = true, .left = left, .top = top, .right = right, .bottom = bottom};
+            continue;
+        }
+        box.left   = std::min(box.left, left);
+        box.top    = std::min(box.top, top);
+        box.right  = std::max(box.right, right);
+        box.bottom = std::max(box.bottom, bottom);
+    }
+    return box;
+}
+
+/// The bounding box of every pixel inside `within` that is not `ground`.
+///
+/// The label is drawn over the topbar panel, so "painted" means "differs from the panel's colour" -
+/// which also makes the assertion insensitive to the anti-aliased coverage values themselves. What
+/// is under test is where the glyphs landed, not what shade each edge pixel came out.
+[[nodiscard]] InkBox paintedWithin(std::span<const core::ColorRgba8> pixels, core::Extent2D surface,
+                                   const medui::NodeRect& within, core::ColorRgba8 ground) {
+    InkBox box;
+    for (core::Px y = static_cast<core::Px>(within.y); y < static_cast<core::Px>(within.y + within.height); ++y) {
+        for (core::Px x = static_cast<core::Px>(within.x); x < static_cast<core::Px>(within.x + within.width); ++x) {
+            const auto index = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+            if (pixels[index] == ground) {
+                continue;
+            }
+            if (!box.found) {
+                box = InkBox{.found = true, .left = x, .top = y, .right = static_cast<core::Px>(x + 1), .bottom = static_cast<core::Px>(y + 1)};
+                continue;
+            }
+            box.left   = std::min(box.left, x);
+            box.top    = std::min(box.top, y);
+            box.right  = std::max(box.right, static_cast<core::Px>(x + 1));
+            box.bottom = std::max(box.bottom, static_cast<core::Px>(y + 1));
+        }
+    }
+    return box;
 }
 
 }  // namespace
@@ -314,4 +457,78 @@ TEST_CASE("The safety-critical region is empty, which is what the golden cannot 
     const std::size_t index   = centreY * static_cast<std::size_t>(surface.width) + centreX;
     REQUIRE(index < pixels->size());
     CHECK((*pixels)[index] == background);
+}
+
+TEST_CASE("An authored screen's label reaches pixels where the compiler measured it", "pixel") {
+    // The last link the chain was missing. The screen, the font package and the text package are all
+    // committed artifacts; the runtime joins them; the glyphs land on the display. Nothing in this
+    // scenario is hand-carried - the bytes are the ones `ctest -L evidence` byte-compares.
+    const medui::ScreenPackage package = screen();
+    const core::Extent2D       surface = surfaceOf(package);
+    const BoundText            bound   = loadCommittedText();
+
+    const medui::CompiledNode* label = package.find("screen-title");
+    REQUIRE(label != nullptr);
+
+    const auto& gpu    = sharedDevice();
+    auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
+    REQUIRE(target.has_value());
+
+    VulkanRenderContext context;
+    context.device           = gpu.device();
+    context.physicalDevice   = gpu.physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = gpu.queue();
+    context.queueFamilyIndex = gpu.queueFamilyIndex();
+    context.viewport         = surface;
+
+    // The coverage overload, with the committed atlas. A default renderer would sample a white
+    // 1x1 default and every glyph would come out a filled rectangle - which would still "draw
+    // text" in the loosest sense and would prove nothing about the atlas.
+    auto renderer = UiRenderer::createWithCoverageAtlas(context, mdux::shader::generated::mdux_ui::package(), package.budget,
+                                                        bound.atlas, bound.font.atlas.width, bound.font.atlas.height);
+    REQUIRE(renderer.has_value());
+
+    Frame frame;
+    auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
+    REQUIRE(list.has_value());
+
+    const auto recorded = medui::render(package, *list, bound.binding());
+    REQUIRE(recorded.has_value());
+
+    // One fewer deferred node than the unbound frame, and the difference is the label. Asserted as
+    // the count rather than as "the label was drawn" so that a future component learning to draw
+    // cannot make this scenario pass for a reason it does not name.
+    CHECK(recorded->deferred == 4);
+    // The panel, plus one rectangle per inked glyph. "Endoscope Monitor" is 17 characters of which
+    // the space paints nothing, so 16 glyphs and the panel.
+    CHECK(recorded->rects == 17);
+
+    RecordContext recording{.renderer = &*renderer, .list = &*list};
+    auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
+    REQUIRE(pixels.has_value());
+
+    // The panel's colour, which is what the label is drawn over and therefore what "not painted"
+    // means inside the topbar.
+    constexpr core::ColorRgba8 topbar{.r = 209, .g = 214, .b = 219, .a = 255};
+
+    const InkBox derived = inkOfRun(bound, "STR-EM-TITLE");
+    REQUIRE(derived.found);
+    const InkBox painted = paintedWithin(*pixels, surface, label->bounds, topbar);
+    REQUIRE(painted.found);
+
+    // The placement rule, stated as an assertion: the ink box's top-left corner is the node's
+    // top-left corner. This is the whole of what Screen.cppm decides, and the reason it decides it -
+    // that #195 measured this box against this rectangle - is only true if these two agree.
+    CHECK(painted.left == label->bounds.x);
+    CHECK(painted.top == label->bounds.y);
+
+    // ...and the extent is the one measured from the committed packages, so the glyphs are the run's
+    // rather than some subset that happened to land in the right corner.
+    CHECK(painted.right - painted.left == derived.right - derived.left);
+    CHECK(painted.bottom - painted.top == derived.bottom - derived.top);
+
+    // The build-time promise, now observable: the text fits the box it was measured against.
+    CHECK(painted.right <= label->bounds.x + label->bounds.width);
+    CHECK(painted.bottom <= label->bounds.y + label->bounds.height);
 }

@@ -18,8 +18,10 @@ import speclab;
 import mdux.core.units;
 import mdux.evidence.report;
 import mdux.draw;
+import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
+import mdux.text.schema;
 
 #include "../framework/SpecLabBridge.hpp"
 
@@ -168,6 +170,99 @@ const mdux::spec::Register refusingAFrameAllocatesNothing{
                           checks.expect(!ms::describe(frame.error()).empty(), "the error describes itself");
                       }
                       checks.expect(after == before, std::format("the error path allocates nothing, counter went {} to {}", before, after));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register drawingTextAllocatesNothing{
+    "Rendering a frame that draws text allocates nothing",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-render-text")
+            .Given("a screen whose label is joined to a font and text package", [] {})
+            .When("frames are recorded", [] {})
+            .Then("the allocation counter does not move",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The packages are built before the measurement, and they *do* allocate - a
+                      // FontPackage owns vectors. That is the caller's cost, paid once on a device
+                      // at start-up or not at all if the packages are `constexpr`. What is measured
+                      // is the join: `render()` reading them per frame.
+                      static const mdux::font::FontPackage font = [] {
+                          mdux::font::FontPackage built;
+                          built.id         = "noheap-ui";
+                          built.unitsPerEm = 1000;
+                          built.pixelSize  = 10;
+                          built.locales    = {"en-US"};
+                          built.atlas.path             = "atlas.bin";
+                          built.atlas.width            = 8;
+                          built.atlas.height           = 8;
+                          built.atlas.byteLength       = 64;
+                          built.atlas.sha256           = std::string(64, 'a');
+                          built.atlas.occupancyPercent = 25;
+                          built.glyphs = {{.codePoint = U'A', .glyphIndex = 4, .advanceWidth = 700, .leftSideBearing = 0,
+                                           .x = 0, .y = 0, .width = 4, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6}};
+                          built.restrictedCharset = {{.first = U'A', .last = U'A'}};
+                          return built;
+                      }();
+
+                      // One record: glyph 0 at the run's own origin, little-endian, as
+                      // `mdux::text::draw::decodeRecord()` reads it.
+                      static const std::array<std::byte, 6> records{std::byte{0}, std::byte{0}, std::byte{0},
+                                                                    std::byte{0}, std::byte{0}, std::byte{0}};
+
+                      static const mdux::text::TextPackage text = [] {
+                          mdux::text::TextPackage built;
+                          built.header.id        = "noheap-text";
+                          built.header.kind      = std::string{mdux::text::packageKind};
+                          built.atlasId          = "noheap-ui";
+                          built.locale           = "en-US";
+                          built.sidecarPath      = "runs.bin";
+                          built.sidecarByteLength = records.size();
+                          built.runs.push_back(mdux::text::TextRun{.id = "STR-TITLE", .byteOffset = 0, .byteLength = records.size()});
+                          return built;
+                      }();
+
+                      const ms::TextBinding binding{.font = &font, .text = &text, .runs = records};
+
+                      static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                      static std::array<mdux::draw::Index, 768>      indices{};
+                      static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                      auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+                      if (!created.has_value()) {
+                          checks.expect(false, "the storage satisfies the budget");
+                          checks.raise();
+                          return;
+                      }
+                      mdux::draw::DrawList list = std::move(*created);
+
+                      // Nothing inside the measured loop may format a message, which is a rule this
+                      // scenario learned by breaking it: `std::format` allocates, so a per-frame
+                      // assertion carrying one would report the test's own allocation as the
+                      // runtime's. The outcome is captured and asserted after the counter is read.
+                      std::uint32_t lastRects = 0;
+                      bool          allRecorded = true;
+
+                      const std::size_t before = allocations();
+                      for (int frame = 0; frame < 8; ++frame) {
+                          list.reset();
+                          const auto recorded = ms::render(screen, list, binding);
+                          if (!recorded.has_value()) {
+                              allRecorded = false;
+                              continue;
+                          }
+                          lastRects = recorded->rects;
+                      }
+                      const std::size_t after = allocations();
+
+                      checks.expect(allRecorded, "each frame is recorded");
+                      // The label is drawn rather than deferred, so this scenario measures the text
+                      // path rather than the same deferred walk the case above measures.
+                      checks.expect(lastRects == 2, std::format("the panel and the glyph, got {}", lastRects));
+                      checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
                       checks.raise();
                   })
             .Execute();
