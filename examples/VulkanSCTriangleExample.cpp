@@ -741,16 +741,24 @@ private:
         }
     }
 
-    [[nodiscard]] bool drawFrame() {
-        vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    // waitTimeout bounds both blocking waits below. Interactive runs pass UINT64_MAX and block as
+    // before; the smoke test passes a finite value so its own deadline in mainLoop() is reachable
+    // at all - a wait that never returns is not something a check after the call can time out.
+    [[nodiscard]] bool drawFrame(uint64_t waitTimeout) {
+        // A timed-out fence means the previous frame is still in flight, so this must return
+        // without resetting the fence or submitting over work the GPU has not finished.
+        if (vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, waitTimeout) !=
+            VK_SUCCESS) {
+            return false;
+        }
 
         uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
+        VkResult result = vkAcquireNextImageKHR(device, swapchain, waitTimeout,
                                                imageAvailableSemaphores[currentFrame],
                                                VK_NULL_HANDLE, &imageIndex);
 
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            return false;  // Window resized, skip frame
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_TIMEOUT || result == VK_NOT_READY) {
+            return false;  // Window resized, or no image within the timeout; skip frame
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw runtime_error("Failed to acquire swapchain image");
         }
@@ -816,6 +824,10 @@ private:
         // turn every early exit - deadline, or a closed window - into one non-zero exit.
         constexpr uint32_t smokeFramesRequired = 3;
         constexpr chrono::seconds smokeDeadline{30};
+        // Comfortably longer than a frame on a working device, short enough that the deadline
+        // above still governs. Interactive runs keep the indefinite wait.
+        constexpr uint64_t smokeWaitTimeoutNanos = 2'000'000'000;
+        const uint64_t waitTimeout = smokeTest ? smokeWaitTimeoutNanos : UINT64_MAX;
 
         auto startTime = chrono::high_resolution_clock::now();
         const auto smokeStartTime = startTime;
@@ -825,7 +837,7 @@ private:
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
-            const bool rendered = drawFrame();
+            const bool rendered = drawFrame(waitTimeout);
             frameCount++;
             if (smokeTest) {
                 if (rendered && ++smokeFrameCount >= smokeFramesRequired) {

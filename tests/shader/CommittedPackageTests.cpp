@@ -1,4 +1,5 @@
 /**
+ * @file CommittedPackageTests.cpp
  * @brief Contract scenarios that apply to every committed shader package, not to one of them.
  *
  * @compliance ADR-007 Evidence pipeline doctrine
@@ -122,6 +123,23 @@ const mdux::spec::Register everyPackageTargetsPortableSpirv{
                                   std::source_location::current());
                           }
                           for (const shader::ShaderModule& module : parsed->modules) {
+                              // ShaderPackage::validate() already checked these ranges, but against
+                              // the sidecar length *declared in package.json*. This span is over the
+                              // bytes actually on disk, and a truncated sidecar is exactly the bad
+                              // committed artifact this file exists to catch - so it has to fail
+                              // here rather than read past the buffer. Subtraction rather than
+                              // `byteOffset + byteLength`, which can wrap.
+                              const std::size_t sidecarSize = sidecar->size();
+                              if (module.byteOffset > sidecarSize ||
+                                  module.byteLength > sidecarSize - module.byteOffset) {
+                                  throw speclab::core::AssertionFailure(
+                                      std::format("module '{}' of package '{}' spans [{}, {}) of a "
+                                                  "sidecar that is {} bytes on disk",
+                                                  module.id, name, module.byteOffset,
+                                                  module.byteOffset + module.byteLength,
+                                                  sidecarSize),
+                                      std::source_location::current());
+                              }
                               const std::span<const std::byte> range{
                                   sidecar->data() + module.byteOffset,
                                   static_cast<std::size_t>(module.byteLength)};
@@ -149,7 +167,8 @@ const mdux::spec::Register everyPackageTargetsPortableSpirv{
                               module.reflection.versionMajor == 1 &&
                                   module.reflection.versionMinor <= 5,
                               std::format("module '{}' of package '{}' is SPIR-V {}.{}, which a "
-                                          "Vulkan 1.2 implementation accepts",
+                                          "Vulkan 1.2 implementation such as MoltenVK rejects; "
+                                          "re-bake it with --target-env vulkan1.2",
                                           module.id, module.package,
                                           module.reflection.versionMajor,
                                           module.reflection.versionMinor));
