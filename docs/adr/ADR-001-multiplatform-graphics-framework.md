@@ -1,7 +1,14 @@
 # ADR-001: Graphics Framework Selection for Medical Device Software
 
 ## Status
-Superseded by [ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) (2026-08-23)
+Accepted — platform scope superseded by
+[ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) (2026-08-23)
+
+ADR-013 replaces only the "Windows and Linux" platform scope below, by adding a verified Apple
+Silicon macOS target. This ADR's actual decision — Vulkan as the low-level graphics framework —
+still stands and is still what the tree implements. The status is scoped rather than plain
+`Superseded` because this index defines a superseded decision as an abandoned turn, and reading a
+binding decision as abandoned is the more expensive error.
 
 ## Context
 MduX is a modern C++23 header-only UI library designed specifically for medical device software. The library needs to support Windows and Linux platforms while maintaining high performance, reliability, and regulatory compliance for Class B and Class C medical devices.

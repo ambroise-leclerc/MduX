@@ -19,7 +19,9 @@ Before configuring, check:
 2. **Compiler version**: MSVC 17.14+, GCC 16+, or Clang 20+. The root `CMakeLists.txt` fails fast
    with `message(FATAL_ERROR ...)` if the detected compiler is below these floors — read that
    error message; it names the exact required version.
-3. **CMake**: 4.0+ generally; exactly 4.3.1 on the verified macOS tuple.
+3. **CMake**: 4.0-4.3 generally — a window, not a floor, since the root `CMakeLists.txt` rejects
+   4.4+ until that series' `import std` gate is reviewed; exactly 4.3.1 on the verified macOS
+   tuple.
 4. **Vulkan SDK**: 1.3+, discoverable via `find_package(Vulkan REQUIRED)`. Run `vulkaninfo
    --summary` (Linux/macOS) or check `%VULKAN_SDK%` (Windows) to confirm the SDK is installed and on the
    search path before configuring — a missing SDK is the most common early configure failure and

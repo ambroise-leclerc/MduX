@@ -7,9 +7,9 @@ in the index below, numbers contiguous from ADR-001.
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | **Superseded by ADR-013** | 2025-07-15 |
+| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | Accepted; platform scope superseded by ADR-013 | 2025-07-15 |
 | [ADR-002](ADR-002-testing-framework-selection.md) | Testing framework selection (Catch2) | **Superseded by ADR-009** | 2026-08-03 |
-| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | **Superseded by ADR-013** | 2025-07-26 |
+| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | Accepted; macOS toolchain scope superseded by ADR-013 | 2025-07-26 |
 | [ADR-004](ADR-004-trust-zones-in-cpp.md) | Trust zones in C++ | Accepted | 2026-07-26 |
 | [ADR-005](ADR-005-error-handling-and-exceptions-policy.md) | Error handling and exceptions policy | Accepted | 2026-07-26 |
 | [ADR-006](ADR-006-no-reproduction-of-normative-standard-text.md) | No reproduction of normative standard text | Accepted | 2026-07-26 |

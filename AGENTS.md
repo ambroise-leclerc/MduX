@@ -185,7 +185,10 @@ a result from that tuple into support for an untested macOS configuration.
 - GCC 16+
 - Clang 20+ on Linux remains manual-CI only. macOS requires upstream Clang 21.1.8 exactly and is
   automatic CI; that does not verify Linux Clang.
-- CMake 4.0+
+- CMake 4.0-4.3. This is a window, not a floor: the root `CMakeLists.txt` rejects 4.4+ with a
+  fatal error until that series' experimental `import std` gate has been reviewed, because the
+  gate UUID is version-specific and an unreviewed value silently disables `import std` rather
+  than failing. Raise the ceiling deliberately when qualifying a new series.
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`

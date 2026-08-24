@@ -299,6 +299,20 @@ const mdux::spec::Register modulesWellFormedSpirv{
                    })
             .When("each module range is reflected", [state] {
                 for (const shader::ShaderModule& module : state->package->modules) {
+                    // validate() bounded these ranges against the length package.json *declares*
+                    // for the sidecar. This span is over the bytes actually read, so a truncated
+                    // file still runs off the end - UB in place of the test failure this scenario
+                    // exists to produce. Subtraction, because the sum can wrap.
+                    const std::size_t sidecarSize = state->sidecar->size();
+                    if (module.byteOffset > sidecarSize ||
+                        module.byteLength > sidecarSize - module.byteOffset) {
+                        throw speclab::core::AssertionFailure(
+                            std::format("module '{}' spans [{}, {}) of a sidecar that is {} bytes "
+                                        "on disk",
+                                        module.id, module.byteOffset,
+                                        module.byteOffset + module.byteLength, sidecarSize),
+                            std::source_location::current());
+                    }
                     const std::span<const std::byte> range{
                         state->sidecar->data() + module.byteOffset,
                         static_cast<std::size_t>(module.byteLength)};

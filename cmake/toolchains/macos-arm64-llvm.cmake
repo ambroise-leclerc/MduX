@@ -20,20 +20,29 @@ set(_mdux_llvm_root "$ENV{MDUX_LLVM_ROOT}")
 if(NOT _mdux_llvm_root)
     find_program(_mdux_brew brew PATHS /opt/homebrew/bin NO_DEFAULT_PATH)
     if(_mdux_brew)
-        execute_process(
-            COMMAND "${_mdux_brew}" --prefix llvm
-            RESULT_VARIABLE _mdux_brew_result
-            OUTPUT_VARIABLE _mdux_llvm_root
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        if(NOT _mdux_brew_result EQUAL 0)
-            set(_mdux_llvm_root "")
-        endif()
+        # `llvm@21` before `llvm`, because that is the formula CI installs and the one that stays
+        # at this ADR's version. Unversioned `llvm` follows whatever Homebrew's current LLVM is, so
+        # probing it first sends a contributor who installed exactly what CI installs into the
+        # version rejection below.
+        foreach(_mdux_brew_formula llvm@21 llvm)
+            execute_process(
+                COMMAND "${_mdux_brew}" --prefix ${_mdux_brew_formula}
+                RESULT_VARIABLE _mdux_brew_result
+                OUTPUT_VARIABLE _mdux_brew_prefix
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(_mdux_brew_result EQUAL 0 AND IS_DIRECTORY "${_mdux_brew_prefix}")
+                set(_mdux_llvm_root "${_mdux_brew_prefix}")
+                break()
+            endif()
+        endforeach()
     endif()
 endif()
 if(NOT _mdux_llvm_root)
     message(FATAL_ERROR
-        "Set MDUX_LLVM_ROOT to an upstream LLVM 21.1.8 installation (or install Homebrew llvm).")
+        "Set MDUX_LLVM_ROOT to an upstream LLVM 21.1.8 installation, or install the formula CI "
+        "uses: brew install llvm@21.")
 endif()
 
 set(CMAKE_CXX_COMPILER "${_mdux_llvm_root}/bin/clang++" CACHE FILEPATH "" FORCE)

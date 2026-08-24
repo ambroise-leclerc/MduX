@@ -1067,6 +1067,22 @@ else()
     set(mdux_symbol_tool_kind "nm")
 endif()
 
+# Whether the standard library leaves its own throw sites indistinguishable from a source `throw`
+# in the object. That is a property of the *standard library*, not of the platform: libc++ routes
+# its string/vector failure paths straight through `__cxa_throw`, which is the same symbol a
+# hand-written throw emits, while libstdc++ uses out-of-line helpers that the scan can tell apart.
+# Keying this on APPLE happened to be right for the one macOS leg and wrong in principle - a Linux
+# Clang build with -stdlib=libc++ would gate on libc++'s own throws and fail for a reason that is
+# not a defect. Ask the compiler instead. See cmake/MduXNoHeapScan.cmake's header.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#include <version>
+#ifndef _LIBCPP_VERSION
+#error not libc++
+#endif
+int main() { return 0; }
+" MDUX_STDLIB_IS_LIBCXX)
+
 if(MDUX_SYMBOL_TOOL)
     add_test(NAME screen.noheap.symbolScan
         COMMAND ${CMAKE_COMMAND}
@@ -1096,7 +1112,7 @@ if(MDUX_SYMBOL_TOOL)
             -DMDUX_NOHEAP_OBJECT_LIST=${mdux_governed_object_list}
             -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
             -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
-            -DMDUX_THROW_SYMBOLS_AMBIGUOUS=${APPLE}
+            -DMDUX_THROW_SYMBOLS_AMBIGUOUS=${MDUX_STDLIB_IS_LIBCXX}
             -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
     )
     set_tests_properties(governed.noThrow.symbolScan PROPERTIES LABELS "governed")
@@ -1112,7 +1128,7 @@ if(MDUX_SYMBOL_TOOL)
     # CXX_SCAN_FOR_MODULES OFF keeps this object out of the module dependency graph: it declares no
     # module and imports none, and a fixture whose job is to be non-conforming has no business in
     # anyone's dyndep.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR APPLE)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR MDUX_STDLIB_IS_LIBCXX)
         message(STATUS
             "governed.noThrow.symbolScan.negative not registered on this standard library - the "
             "governed-throw profile cannot distinguish library and source throws, so there is nothing for a negative test to "
