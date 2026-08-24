@@ -310,11 +310,15 @@ private:
         }
 
         vector<const char*> deviceExtensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-#ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
-        if (hasDeviceExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
-            deviceExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        // Spelled out rather than through VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME, which lives in
+        // vulkan_beta.h and is therefore only defined under VK_ENABLE_BETA_EXTENSIONS. Guarding on
+        // that macro compiles to nothing on every configuration this project builds, so the device
+        // came up without the extension a portability driver requires
+        // (VUID-VkDeviceCreateInfo-pProperties-04451). tests/render/HeadlessDevice.hpp uses the
+        // literal for the same reason.
+        if (hasDeviceExtension("VK_KHR_portability_subset")) {
+            deviceExtensions.push_back("VK_KHR_portability_subset");
         }
-#endif
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -804,7 +808,17 @@ private:
         cout << "║  Press ESC or close window to exit              ║\n";
         cout << "╚══════════════════════════════════════════════════╝\n\n";
 
+        // The smoke test counts presented frames, and drawFrame() reports a frame it could not
+        // present rather than throwing - a swapchain that goes out of date is not an error here.
+        // But this example never recreates the swapchain, so once that happens it never presents
+        // again: without a deadline the loop spins at full speed forever and CI burns its job
+        // limit instead of failing. Bound it in wall-clock time and let the check after the loop
+        // turn every early exit - deadline, or a closed window - into one non-zero exit.
+        constexpr uint32_t smokeFramesRequired = 3;
+        constexpr chrono::seconds smokeDeadline{30};
+
         auto startTime = chrono::high_resolution_clock::now();
+        const auto smokeStartTime = startTime;
         uint32_t frameCount = 0;
         uint32_t smokeFrameCount = 0;
 
@@ -813,10 +827,12 @@ private:
 
             const bool rendered = drawFrame();
             frameCount++;
-            if (smokeTest && rendered) {
-                smokeFrameCount++;
-                if (smokeFrameCount == 3) {
+            if (smokeTest) {
+                if (rendered && ++smokeFrameCount >= smokeFramesRequired) {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+                else if (chrono::high_resolution_clock::now() - smokeStartTime > smokeDeadline) {
+                    break;
                 }
             }
 
@@ -832,6 +848,11 @@ private:
                 frameCount = 0;
                 startTime = currentTime;
             }
+        }
+
+        if (smokeTest && smokeFrameCount < smokeFramesRequired) {
+            throw runtime_error(format("Smoke test presented {} of {} frames within {}s",
+                                       smokeFrameCount, smokeFramesRequired, smokeDeadline.count()));
         }
 
         cout << "\n\n✓ Rendering stopped\n";
