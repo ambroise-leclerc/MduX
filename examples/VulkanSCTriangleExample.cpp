@@ -746,10 +746,18 @@ private:
     // at all - a wait that never returns is not something a check after the call can time out.
     [[nodiscard]] bool drawFrame(uint64_t waitTimeout) {
         // A timed-out fence means the previous frame is still in flight, so this must return
-        // without resetting the fence or submitting over work the GPU has not finished.
-        if (vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, waitTimeout) !=
-            VK_SUCCESS) {
+        // without resetting the fence or submitting over work the GPU has not finished. Every
+        // other non-success result - device loss, host or device allocation failure - is fatal
+        // and must not be reported as a skipped frame: interactive mode would retry it forever,
+        // and the smoke test would blame its own deadline for a Vulkan failure.
+        const VkResult fenceResult =
+            vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, waitTimeout);
+        if (fenceResult == VK_TIMEOUT) {
             return false;
+        }
+        if (fenceResult != VK_SUCCESS) {
+            throw runtime_error(format("Failed to wait for the in-flight fence (VkResult {})",
+                                       static_cast<int>(fenceResult)));
         }
 
         uint32_t imageIndex;
