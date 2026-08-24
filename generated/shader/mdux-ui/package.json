@@ -18,7 +18,7 @@
       "byteOffset": 0,
       "entryPoint": "main",
       "id": "ui.vert",
-      "sha256": "deb1c7ba3b0204512bbc0dc5c09e9e5bb2d1e076331a873a9b5083350182c401",
+      "sha256": "d9bdbdbbf1a287024ce226705d6037fbb4a568616d4b2f0e97994830f73a78b2",
       "stage": "vertex"
     },
     {
@@ -26,7 +26,7 @@
       "byteOffset": 1664,
       "entryPoint": "main",
       "id": "ui.frag",
-      "sha256": "dcd682aa2a1a76684d461e8b99fd3408f790f1aed133601490515c5024c3f4ee",
+      "sha256": "29f386f9815cf1ee2d41382c1a6a4f212a8c26acf7e56920ef8fa32c92823fcb",
       "stage": "fragment"
     }
   ],
@@ -43,6 +43,6 @@
   "sidecar": {
     "byteLength": 3032,
     "path": "shaders.spv",
-    "sha256": "c52b199c2442f863230eead956987d518e19b7458b56ca76d3b68743b645be81"
+    "sha256": "4e22a2a65402e2facea95332b24773c52b72b20ec3bf7a800af3b1752dccb3b8"
   }
 }

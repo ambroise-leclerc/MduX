@@ -319,7 +319,7 @@ const mdux::spec::Register modulesWellFormedSpirv{
                     state->reflections.push_back(*reflection);
                 }
             })
-            .Then("each reflects to its declared stage and entry point",
+            .Then("each reflects to its declared stage, entry point and portable SPIR-V version",
                   [state] {
                       mdux::spec::Checks checks;
                       for (std::size_t i = 0; i < state->package->modules.size(); ++i) {
@@ -331,6 +331,11 @@ const mdux::spec::Register modulesWellFormedSpirv{
                           checks.expect(reflection.entryPoint == module.entryPoint,
                                         std::format("module '{}' reflects to its entry point",
                                                     module.id));
+                          checks.expect(reflection.versionMajor == 1 &&
+                                            reflection.versionMinor <= 5,
+                                        std::format(
+                                            "module '{}' is compatible with Vulkan 1.2",
+                                            module.id));
                           checks.expect(module.byteLength % 4 == 0,
                                         std::format("module '{}' is word aligned", module.id));
                       }
