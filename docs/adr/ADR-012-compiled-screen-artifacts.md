@@ -105,9 +105,10 @@ that way, both binding on #198:
 because per-locale glyph runs remain in text packages. The screen does carry a compact approval
 manifest, however: `TextPackageApproval { locale, packageId, packageSha256 }` for every package the
 compiler measured. The compiler first proves the input file is the canonical serialization, then
-`TextBinding::create()` hashes those already-loaded bytes without allocation and requires an exact
-manifest match. The binding retains that identity, and `render()` refuses it against a screen whose
-manifest does not contain the same record.
+`TextBinding::create()` hashes those already-loaded bytes and the supplied parsed package's canonical
+form without allocation, requires both digests to agree, and then requires an exact manifest match.
+The binding retains that identity, and `render()` refuses it against a screen whose manifest does not
+contain the same record.
 
 This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
 artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is

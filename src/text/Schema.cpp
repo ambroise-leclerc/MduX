@@ -89,6 +89,89 @@ namespace {
     return {};
 }
 
+/// Allocation-free mirror of the canonical JSON writer for TextPackage's fixed schema.
+class PackageDigestWriter {
+public:
+    void text(std::string_view value) noexcept {
+        hasher_.update(std::as_bytes(std::span{value.data(), value.size()}));
+    }
+
+    template <std::size_t Size>
+    void text(const std::array<char, Size>& value) noexcept {
+        hasher_.update(std::as_bytes(std::span{value}));
+    }
+
+    void escaped(std::string_view value) noexcept {
+        text("\"");
+        for (const char character : value) {
+            switch (character) {
+                case '"':
+                    text("\\\"");
+                    break;
+                case '\\':
+                    text("\\\\");
+                    break;
+                case '\b':
+                    text("\\b");
+                    break;
+                case '\f':
+                    text("\\f");
+                    break;
+                case '\n':
+                    text("\\n");
+                    break;
+                case '\r':
+                    text("\\r");
+                    break;
+                case '\t':
+                    text("\\t");
+                    break;
+                default:
+                    if (static_cast<unsigned char>(character) < 0x20) {
+                        constexpr std::string_view digits = "0123456789abcdef";
+                        const auto byte = static_cast<unsigned char>(character);
+                        const std::array<char, 6> escapedCharacter{
+                            '\\', 'u', '0', '0', digits[(byte >> 4) & 0x0fu], digits[byte & 0x0fu]
+                        };
+                        text(escapedCharacter);
+                    } else {
+                        const std::array<char, 1> raw{character};
+                        text(raw);
+                    }
+                    break;
+            }
+        }
+        text("\"");
+    }
+
+    void unsignedInteger(std::uint64_t value) noexcept {
+        std::array<char, 20> digits{};
+        std::size_t length = 0;
+        do {
+            digits[length++] = static_cast<char>('0' + value % 10);
+            value /= 10;
+        } while (value != 0);
+        for (std::size_t index = length; index > 0; --index) {
+            const std::array<char, 1> digit{digits[index - 1]};
+            text(digit);
+        }
+    }
+
+    void digest(const evidence::Digest& value) noexcept {
+        const std::array<char, 64> hex = evidence::toHex(value);
+        text("\"");
+        text(hex);
+        text("\"");
+    }
+
+    [[nodiscard]] evidence::Digest finish() const noexcept {
+        return hasher_.finish();
+    }
+
+private:
+    evidence::Sha256 hasher_{};
+};
+
 [[nodiscard]] ResultVoid<SchemaError> pushElement(json::Value& array, json::Value value) noexcept {
     if (auto done = array.push(std::move(value)); !done.has_value()) {
         return err(SchemaError::MalformedPackage);
@@ -279,6 +362,51 @@ Result<std::string, SchemaError> TextPackage::write() const noexcept {
         return err(SchemaError::MalformedPackage);
     }
     return *text;
+}
+
+Result<evidence::Digest, SchemaError> TextPackage::canonicalSha256() const noexcept {
+    if (auto valid = validate(); !valid.has_value()) {
+        return err(valid.error());
+    }
+
+    PackageDigestWriter writer;
+    writer.text("{\n  \"atlas\": ");
+    writer.escaped(atlasId);
+    writer.text(",\n  \"id\": ");
+    writer.escaped(header.id);
+    writer.text(",\n  \"kind\": ");
+    writer.escaped(header.kind);
+    writer.text(",\n  \"locale\": ");
+    writer.escaped(locale);
+    writer.text(",\n  \"runs\": ");
+    if (runs.empty()) {
+        writer.text("[]");
+    } else {
+        writer.text("[\n");
+        for (std::size_t index = 0; index < runs.size(); ++index) {
+            const TextRun& run = runs[index];
+            writer.text("    {\n      \"byteLength\": ");
+            writer.unsignedInteger(run.byteLength);
+            writer.text(",\n      \"byteOffset\": ");
+            writer.unsignedInteger(run.byteOffset);
+            writer.text(",\n      \"id\": ");
+            writer.escaped(run.id);
+            writer.text(",\n      \"sha256\": ");
+            writer.digest(run.sha256);
+            writer.text(index + 1 < runs.size() ? "\n    },\n" : "\n    }\n");
+        }
+        writer.text("  ]");
+    }
+    writer.text(",\n  \"schemaVersion\": ");
+    writer.unsignedInteger(header.schemaVersion);
+    writer.text(",\n  \"sidecar\": {\n    \"byteLength\": ");
+    writer.unsignedInteger(sidecarByteLength);
+    writer.text(",\n    \"path\": ");
+    writer.escaped(sidecarPath);
+    writer.text(",\n    \"sha256\": ");
+    writer.digest(sidecarSha256);
+    writer.text("\n  }\n}\n");
+    return writer.finish();
 }
 
 // ---------------------------------------------------------------------------

@@ -488,6 +488,41 @@ const mdux::spec::Register packageRoundTrip{
             .Execute();
     }};
 
+const mdux::spec::Register allocationFreeCanonicalDigest{
+    "The allocation-free package digest is the digest of canonical write() bytes", "evidence-unit", [] {
+        return speclab::Test("text-package-canonical-digest")
+            .Given("packages with ordinary, escaped, and empty-run content", [] {})
+            .When("each is hashed both by write() and by canonicalSha256()", [] {})
+            .Then("the digests agree byte for byte",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const auto agrees = [&checks](const TextPackage& package, std::string_view description) {
+                          const auto written = package.write();
+                          const auto streamed = package.canonicalSha256();
+                          checks.expect(written.has_value(), std::format("{} writes", description));
+                          checks.expect(streamed.has_value(), std::format("{} hashes", description));
+                          if (written.has_value() && streamed.has_value()) {
+                              checks.expect(*streamed == digestOf(*written),
+                                            std::format("{} digest matches write()", description));
+                          }
+                      };
+
+                      agrees(validPackage(), "ordinary package");
+
+                      TextPackage escaped = validPackage();
+                      escaped.header.id = "label-\"welcome\"";
+                      escaped.runs[0].id = "title\\primary\nline";
+                      agrees(escaped, "escaped package");
+
+                      TextPackage empty = validPackage();
+                      empty.sidecarByteLength = 0;
+                      empty.runs.clear();
+                      agrees(empty, "empty-run package");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register malformedPackageRejected{
     "Parsing rejects malformed text", "evidence-unit", [] {
         struct State {

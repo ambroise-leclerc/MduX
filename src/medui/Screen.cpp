@@ -177,10 +177,14 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPac
     }
 
     // The compiler admits only canonical package bytes, so hashing the caller's already-loaded
-    // artifact is the exact identity it recorded. This is deliberately not `text.write()`: JSON
-    // serialization allocates, and an allocation failure inside this noexcept governed path would
-    // terminate rather than fail closed.
+    // artifact is the exact identity it recorded. The allocation-free canonical hash additionally
+    // proves those bytes describe the `text` object that will drive rendering; otherwise approved
+    // bytes for package A could be paired with parsed content from package B.
     const mdux::evidence::Digest packageSha256 = mdux::evidence::sha256(packageJson);
+    const auto                   textSha256    = text.canonicalSha256();
+    if (!textSha256.has_value() || *textSha256 != packageSha256) {
+        return mdux::core::err(ScreenError::PackageNotApproved);
+    }
 
     const auto approved = std::ranges::find_if(screen.approvedTextPackages, [&](const TextPackageApproval& candidate) {
         return candidate.locale == text.locale && candidate.packageId == text.header.id && candidate.packageSha256 == packageSha256;

@@ -203,8 +203,10 @@ public:
     /**
      * @brief Proves the screen approved `text`, and that `font`, `text` and `runs` agree.
      *
-     * Hashes the canonical package bytes and sidecar, so it is linear in their combined size -
-     * once, at start-up, never in a frame. Both hashes are allocation-free.
+     * Hashes the canonical package bytes, independently hashes the canonical form represented by
+     * `text`, and hashes the sidecar, so approved bytes cannot be paired with different parsed
+     * wording. This is linear in their combined size - once, at start-up, never in a frame - and
+     * all three hashes are allocation-free.
      *
      * @param screen the compiled screen whose approval manifest authorizes the text package
      * @param font the font package the runs were positioned against

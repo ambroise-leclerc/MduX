@@ -768,6 +768,14 @@ const mdux::spec::Register unapprovedPackageIsRefused{
                       const auto                    digestResult = ms::TextBinding::create(screen, font, changedText, bytesOf(changedJson), changedRuns);
                       checks.expect(!digestResult.has_value() && digestResult.error() == ms::ScreenError::PackageNotApproved,
                                     "same id and locale with different reviewed bytes is PackageNotApproved");
+
+                      // The approved bytes and parsed package are one authenticated input. Supplying
+                      // A's approved JSON alongside B's internally valid text and sidecar must not
+                      // let B's unreviewed wording through merely because its id and locale match.
+                      const std::string approvedJson = packageJsonFor(approvedText);
+                      const auto        splitResult  = ms::TextBinding::create(screen, font, changedText, bytesOf(approvedJson), changedRuns);
+                      checks.expect(!splitResult.has_value() && splitResult.error() == ms::ScreenError::PackageNotApproved,
+                                    "approved JSON paired with different parsed text is PackageNotApproved");
                       checks.raise();
                   })
             .Execute();
