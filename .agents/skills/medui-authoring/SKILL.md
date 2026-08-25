@@ -37,11 +37,14 @@ font approves, and the screen recipe's `[text]` table naming them — a locale t
 no package listed is a build error, because a budget checked against fewer locales than were approved
 is a claim nobody made.
 
-One limit is worth knowing before you write a screen: the runtime draws a `Panel`; every other
-component, a `Label` included, is visited, counted in `FrameStats::deferred` and left undrawn.
-Drawing text means joining a locale-free compiled screen to a text package for the locale the device
-is running, which is [#17](https://github.com/ambroise-leclerc/MduX/issues/17); live-data components
-have no geometry until the frame does.
+The runtime draws a `Panel` and, given a `TextBinding`, a `Label` (#242) — the join a locale-free
+compiled screen needs to reach glyphs: the font package, the text package for the locale the device
+is running, and its sidecar. Without one, a label is deferred rather than refused.
+
+One limit is worth knowing before you write a screen: every other component is visited, counted in
+`FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
+this project has decided — and live-data components have no geometry until the frame does. Both are
+[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -60,8 +63,8 @@ A `.medui` file builds something in MduX today, and it reaches the screen: regis
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
 lavapipe. It carries text too, since #235: a `t("STR-KEY")` compiles, and the box holding it is
-measured against every approved locale's widest translation. What it cannot yet do is *draw* that
-text, for the reason above.
+measured against every approved locale's widest translation. Since #242 the runtime draws it — bind
+the packages with `TextBinding::create()` and a label's glyphs reach the frame.
 
 ## Grammar shape
 
