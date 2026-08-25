@@ -104,8 +104,10 @@ that way, both binding on #198:
 **Locales do not multiply this layout.** One screen and one directory serve every approved locale,
 because per-locale glyph runs remain in text packages. The screen does carry a compact approval
 manifest, however: `TextPackageApproval { locale, packageId, packageSha256 }` for every package the
-compiler measured. `TextBinding::create()` hashes the selected package's canonical form and requires
-an exact manifest match before the runtime can use its runs.
+compiler measured. The compiler first proves the input file is the canonical serialization, then
+`TextBinding::create()` hashes those already-loaded bytes without allocation and requires an exact
+manifest match. The binding retains that identity, and `render()` refuses it against a screen whose
+manifest does not contain the same record.
 
 This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
 artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is
@@ -237,7 +239,8 @@ human should read.
   C++ is `constexpr` and lands in `.rodata`.
 - `static_assert` moves malformed-screen detection from startup to compile.
 - A valid but unreviewed text package cannot be substituted for one the compiler measured; package
-  id and canonical digest are authenticated once when the binding is created.
+  id and canonical digest are authenticated when the binding is created and the retained identity
+  is checked against each render target.
 
 ### Negative
 - **A fourth artifact kind to maintain**, with its own recipe schema, baker and update target.

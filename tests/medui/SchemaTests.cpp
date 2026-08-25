@@ -48,7 +48,7 @@ constexpr std::array<ms::CompiledNode, 3> constNodes{
 };
 
 constexpr std::array<ms::TextPackageApproval, 1> constApprovals{
-    ms::TextPackageApproval{.locale = "en-US", .packageId = "neurosense-en-us", .packageSha256 = {}}
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "neurosense-en-us", .packageSha256 = {1}}
 };
 
 constexpr ms::ScreenPackage constPackage{
@@ -104,7 +104,7 @@ inline constexpr ms::ScreenPackage inlinePackage{
     .schemaVersion        = mdux::evidence::kSchemaVersion,
     .surfaceWidth         = 200,
     .surfaceHeight        = 100,
-    .approvedTextPackages = {},
+    .approvedTextPackages = constApprovals,
     .nodes                = inlineNodes,
     .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
 };
@@ -238,9 +238,14 @@ const mdux::spec::Register textPackageApprovalsAreIdentified{
                       checks.expect(errorOf(noPackage) == ms::SchemaError::EmptyApprovedPackageId,
                                     std::format("an unnamed package is refused, got {}", describe(errorOf(noPackage))));
 
+                      Fixture noDigest;
+                      noDigest.approvedTextPackages[0].packageSha256 = {};
+                      checks.expect(errorOf(noDigest) == ms::SchemaError::EmptyApprovedPackageDigest,
+                                    std::format("an unset package digest is refused, got {}", describe(errorOf(noDigest))));
+
                       Fixture duplicate;
                       duplicate.approvedTextPackages.push_back(
-                          ms::TextPackageApproval{.locale = duplicate.approvedTextPackages[0].locale, .packageId = "another-package", .packageSha256 = {}});
+                          ms::TextPackageApproval{.locale = duplicate.approvedTextPackages[0].locale, .packageId = "another-package", .packageSha256 = {2}});
                       checks.expect(errorOf(duplicate) == ms::SchemaError::DuplicateApprovedLocale,
                                     std::format("a duplicated locale is refused, got {}", describe(errorOf(duplicate))));
 
@@ -248,6 +253,11 @@ const mdux::spec::Register textPackageApprovalsAreIdentified{
                       textFree.approvedTextPackages.clear();
                       textFree.nodes.erase(textFree.nodes.begin() + 1, textFree.nodes.end());
                       checks.expect(!errorOf(textFree).has_value(), "an empty approval manifest remains valid");
+
+                      Fixture textBearing;
+                      textBearing.approvedTextPackages.clear();
+                      checks.expect(errorOf(textBearing) == ms::SchemaError::MissingTextPackageApproval,
+                                    std::format("a text-bearing screen without approvals is refused, got {}", describe(errorOf(textBearing))));
                       checks.raise();
                   })
             .Execute();
@@ -602,7 +612,7 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
                               .schemaVersion        = mdux::evidence::kSchemaVersion,
                               .surfaceWidth         = 400,
                               .surfaceHeight        = 300,
-                              .approvedTextPackages = {},
+                              .approvedTextPackages = constApprovals,
                               .nodes                = storage,
                               .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
                           };
@@ -672,7 +682,7 @@ const mdux::spec::Register unknownPayloadsAreRefused{
                                         .schemaVersion        = mdux::evidence::kSchemaVersion,
                                         .surfaceWidth         = 400,
                                         .surfaceHeight        = 300,
-                                        .approvedTextPackages = {},
+                                        .approvedTextPackages = constApprovals,
                                         .nodes                = nodes,
                                         .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
                       };

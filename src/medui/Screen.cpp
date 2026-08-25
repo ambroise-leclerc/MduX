@@ -133,6 +133,7 @@ struct InkBox {
 mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPackage&           screen,
                                                                  const mdux::font::FontPackage& font,
                                                                  const mdux::text::TextPackage& text,
+                                                                 std::span<const std::byte>     packageJson,
                                                                  std::span<const std::byte>     runs) noexcept {
     // The runs index `font.glyphs` by position, so a package baked against another font names the
     // same numbers for different shapes. Nothing downstream can detect that: every index would still
@@ -175,14 +176,11 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPac
         }
     }
 
-    // Package identity is the canonical package.json, not only the fields the runtime happens to
-    // read. Re-serializing the validated owning package gives the same bytes the baker committed and
-    // prevents a caller from supplying an approved digest beside a different in-memory package.
-    const auto canonical = text.write();
-    if (!canonical.has_value()) {
-        return mdux::core::err(ScreenError::PackageNotApproved);
-    }
-    const mdux::evidence::Digest packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}));
+    // The compiler admits only canonical package bytes, so hashing the caller's already-loaded
+    // artifact is the exact identity it recorded. This is deliberately not `text.write()`: JSON
+    // serialization allocates, and an allocation failure inside this noexcept governed path would
+    // terminate rather than fail closed.
+    const mdux::evidence::Digest packageSha256 = mdux::evidence::sha256(packageJson);
 
     const auto approved = std::ranges::find_if(screen.approvedTextPackages, [&](const TextPackageApproval& candidate) {
         return candidate.locale == text.locale && candidate.packageId == text.header.id && candidate.packageSha256 == packageSha256;
@@ -191,7 +189,7 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPac
         return mdux::core::err(ScreenError::PackageNotApproved);
     }
 
-    return TextBinding{&font, &text, runs};
+    return TextBinding{&font, &text, runs, packageSha256};
 }
 
 std::string_view describe(ScreenError error) noexcept {
@@ -235,6 +233,12 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
         static_cast<void>(list.rollback(start));
         return mdux::core::err(error);
     };
+
+    // A binding retains the identity create() authenticated. Re-checking it against the target
+    // screen closes the cross-screen substitution path without rehashing or allocating.
+    if (!text.approvedBy(screen)) {
+        return refuse(ScreenError::PackageNotApproved);
+    }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
     // draws, and `DrawList` can only enforce the budget it was created with - which may be larger,

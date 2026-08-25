@@ -334,11 +334,15 @@ void ScreenDocument::setHeader(std::string_view                         id,
     surfaceWidth_  = surfaceWidth;
     surfaceHeight_ = surfaceHeight;
     budget_        = budget;
-    approvedTextPackages_.reserve(approvedTextPackages.size());
+    // Build before replacing: `approvedTextPackages` may be a span returned by this document's own
+    // `package()`, so clearing first would invalidate the input we are still reading.
+    std::vector<ms::TextPackageApproval> replacements;
+    replacements.reserve(approvedTextPackages.size());
     for (const ms::TextPackageApproval& approval : approvedTextPackages) {
-        approvedTextPackages_.push_back(
+        replacements.push_back(
             ms::TextPackageApproval{.locale = intern(approval.locale), .packageId = intern(approval.packageId), .packageSha256 = approval.packageSha256});
     }
+    approvedTextPackages_ = std::move(replacements);
 }
 
 void ScreenDocument::addNode(ms::CompiledNode node) {
@@ -531,7 +535,7 @@ private:
     }
     const auto text = member->asString();
     if (!text.has_value()) {
-        sink.fail(memberWrong, std::format("{} member '{}' is not a lowercase SHA-256 string", what, key));
+        sink.fail(memberWrong, std::format("{} member '{}' is not a string", what, key));
         return std::nullopt;
     }
     auto digest = mdux::evidence::digestFromHex(*text);

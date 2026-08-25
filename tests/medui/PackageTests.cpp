@@ -37,6 +37,10 @@ namespace cli = mdux::tools::cli;
 /// The budget every scenario compiles with. Declared rather than computed, as `PackageInputs` says.
 constexpr mdux::draw::DrawBudget testBudget{.maxVertices = 4096, .maxIndices = 6144, .maxCommands = 256};
 
+constexpr std::array fixtureApprovals{
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "every-component-en-us", .packageSha256 = {1}}
+};
+
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
@@ -65,7 +69,7 @@ constexpr mdux::draw::DrawBudget testBudget{.maxVertices = 4096, .maxIndices = 6
 /// The screen carrying all eleven payloads, compiled.
 [[nodiscard]] md::ScreenDocument everyComponent() {
     return md::buildPackage(layoutOf(fixture("accepted-every-component.medui"), 800, 700),
-                            {.id = "every-component", .budget = testBudget, .approvedTextPackages = {}});
+                            {.id = "every-component", .budget = testBudget, .approvedTextPackages = fixtureApprovals});
 }
 
 /// One Label on a small surface: the screen the byte-exact scenario spells out.
@@ -85,16 +89,16 @@ constexpr mdux::draw::DrawBudget testBudget{.maxVertices = 4096, .maxIndices = 6
 }
 
 [[nodiscard]] md::ScreenDocument tinyDocument() {
-    return md::buildPackage(layoutOf(tinyScreen(), 200, 100), {.id = "tiny", .budget = testBudget, .approvedTextPackages = {}});
-}
-
-[[nodiscard]] md::ScreenDocument tinyApprovedDocument() {
     const std::string_view       bytes  = "approved-package";
     const mdux::evidence::Digest digest = mdux::evidence::sha256(std::as_bytes(std::span{bytes.data(), bytes.size()}));
     const std::array             approvals{
         ms::TextPackageApproval{.locale = "en-US", .packageId = "tiny-en-us", .packageSha256 = digest}
     };
     return md::buildPackage(layoutOf(tinyScreen(), 200, 100), {.id = "tiny", .budget = testBudget, .approvedTextPackages = approvals});
+}
+
+[[nodiscard]] md::ScreenDocument tinyApprovedDocument() {
+    return tinyDocument();
 }
 
 [[nodiscard]] const ms::CompiledNode& node(const ms::ScreenPackage& package, std::string_view id) {
@@ -277,6 +281,19 @@ const mdux::spec::Register textPackageApprovalsRoundTripStrictly{
                           checks.expect(after.size() == 1 && after[0] == before[0], "locale, package id and package digest survive");
                       }
 
+                      md::ScreenDocument replaced = tinyApprovedDocument();
+                      const std::array   replacement{
+                          ms::TextPackageApproval{.locale = "fr-FR", .packageId = "tiny-fr-fr", .packageSha256 = {3}}
+                      };
+                      replaced.setHeader("tiny", 200, 100, testBudget, replacement);
+                      checks.expect(replaced.package().approvedTextPackages.size() == 1 && replaced.package().approvedTextPackages[0] == replacement[0],
+                                    "setting the header again replaces rather than appends approvals");
+
+                      const auto aliased = replaced.package().approvedTextPackages;
+                      replaced.setHeader("tiny", 200, 100, testBudget, aliased);
+                      checks.expect(replaced.package().approvedTextPackages.size() == 1 && replaced.package().approvedTextPackages[0] == replacement[0],
+                                    "replacement remains safe when the input aliases document storage");
+
                       const std::size_t marker = written.find("\"packageSha256\": \"");
                       checks.expect(marker != std::string::npos, "the canonical bytes carry the package digest");
                       if (marker != std::string::npos) {
@@ -286,6 +303,12 @@ const mdux::spec::Register textPackageApprovalsRoundTripStrictly{
                           const md::PackageReadResult refused = md::readPackage(malformed, "package.json");
                           checks.expect(!refused.ok() && firstCode(refused) == "SCP002",
                                         std::format("a malformed digest is SCP002, got '{}'", firstCode(refused)));
+
+                          const std::string           nonString = editing(written, std::format("\"{}\"", std::string_view{written}.substr(digest, 64)), "42");
+                          const md::PackageReadResult wrongType = md::readPackage(nonString, "package.json");
+                          checks.expect(!wrongType.ok() && !wrongType.diagnostics.empty()
+                                            && wrongType.diagnostics.front().message.find("is not a string") != std::string::npos,
+                                        "a digest of the wrong JSON type is diagnosed as a type error");
                       }
                       checks.raise();
                   })
@@ -305,7 +328,13 @@ const mdux::spec::Register theBytesAreExactlyDetermined{
                       const std::string  written = md::writePackage(tinyDocument().package());
 
                       const std::string expected = R"({
-  "approvedTextPackages": [],
+  "approvedTextPackages": [
+    {
+      "locale": "en-US",
+      "packageId": "tiny-en-us",
+      "packageSha256": "8a0efead27dcc041c99a973e4f9881b58d8ace2eda79c45cde82e67a369a8d12"
+    }
+  ],
   "budget": {
     "maxCommands": 256,
     "maxIndices": 6144,

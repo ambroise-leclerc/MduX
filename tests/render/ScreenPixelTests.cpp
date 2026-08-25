@@ -164,7 +164,7 @@ struct BoundText {
     /// Through `create()`, which is the only way to obtain one - and which proves the three
     /// committed artifacts describe each other before a frame reads any of them.
     [[nodiscard]] medui::TextBinding binding(const medui::ScreenPackage& screen) const {
-        auto made = medui::TextBinding::create(screen, font, text, runs);
+        auto made = medui::TextBinding::create(screen, font, text, textJson, runs);
         if (!made.has_value()) {
             throw std::runtime_error(std::format("the committed artifacts were refused: {}", medui::describe(made.error())));
         }

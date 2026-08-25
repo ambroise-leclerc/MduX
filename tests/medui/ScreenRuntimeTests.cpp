@@ -60,11 +60,15 @@ constexpr std::array<ms::CompiledNode, 3> mixedNodes{
     ms::CompiledNode{.id = "footer", .bounds = {0, 260, 400, 40}, .payload = footer}
 };
 
+constexpr std::array defaultApprovals{
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "runtime-text", .packageSha256 = {1}}
+};
+
 constexpr ms::ScreenPackage mixedScreen{.id                   = "mixed",
                                         .schemaVersion        = mdux::evidence::kSchemaVersion,
                                         .surfaceWidth         = 400,
                                         .surfaceHeight        = 300,
-                                        .approvedTextPackages = {},
+                                        .approvedTextPackages = defaultApprovals,
                                         .nodes                = mixedNodes,
                                         .budget               = testBudget};
 
@@ -82,7 +86,7 @@ constexpr ms::ScreenPackage doubledScreen{.id                   = "doubled",
                                           .schemaVersion        = mdux::evidence::kSchemaVersion,
                                           .surfaceWidth         = 400,
                                           .surfaceHeight        = 300,
-                                          .approvedTextPackages = {},
+                                          .approvedTextPackages = defaultApprovals,
                                           .nodes                = doubledNodes,
                                           .budget               = testBudget};
 
@@ -589,6 +593,18 @@ constexpr ms::ScreenPackage labelScreen{.id                   = "label",
                                    .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))};
 }
 
+[[nodiscard]] std::string packageJsonFor(const mdux::text::TextPackage& text) {
+    const auto canonical = text.write();
+    if (!canonical.has_value()) {
+        throw speclab::core::AssertionFailure("the fixture text package did not serialize", std::source_location::current());
+    }
+    return *canonical;
+}
+
+[[nodiscard]] std::span<const std::byte> bytesOf(std::string_view text) noexcept {
+    return std::as_bytes(std::span{text.data(), text.size()});
+}
+
 [[nodiscard]] ms::ScreenPackage screenWith(std::span<const ms::TextPackageApproval> approvals) noexcept {
     ms::ScreenPackage screen    = labelScreen;
     screen.approvedTextPackages = approvals;
@@ -598,7 +614,8 @@ constexpr ms::ScreenPackage labelScreen{.id                   = "label",
 /// A binding built from a fixture, or a scenario failure naming what `create()` refused.
 [[nodiscard]] ms::TextBinding
 bindOrThrow(const ms::ScreenPackage& screen, const mdux::font::FontPackage& font, const mdux::text::TextPackage& text, std::span<const std::byte> records) {
-    auto made = ms::TextBinding::create(screen, font, text, records);
+    const std::string packageJson = packageJsonFor(text);
+    auto              made        = ms::TextBinding::create(screen, font, text, bytesOf(packageJson), records);
     if (!made.has_value()) {
         throw speclab::core::AssertionFailure(std::format("the fixture binding was refused: {}", ms::describe(made.error())), std::source_location::current());
     }
@@ -668,10 +685,11 @@ const mdux::spec::Register bindingRefusals{
                       appendRecord(records, 1, 0, 0);
                       const mdux::text::TextPackage approvedText = textFixturePackage("STR-A", records);
                       const std::array              approvals{approvalFor(approvedText)};
-                      const ms::ScreenPackage       screen = screenWith(approvals);
+                      const ms::ScreenPackage       screen       = screenWith(approvals);
+                      const std::string             approvedJson = packageJsonFor(approvedText);
 
                       const auto errorOf = [&](const mdux::text::TextPackage& text, std::span<const std::byte> runs) {
-                          auto made = ms::TextBinding::create(screen, font, text, runs);
+                          auto made = ms::TextBinding::create(screen, font, text, bytesOf(approvedJson), runs);
                           return made.has_value() ? std::optional<ms::ScreenError>{} : std::optional{made.error()};
                       };
 
@@ -735,7 +753,8 @@ const mdux::spec::Register unapprovedPackageIsRefused{
 
                       mdux::text::TextPackage otherId = approvedText;
                       otherId.header.id               = "other-runtime-text";
-                      const auto idResult             = ms::TextBinding::create(screen, font, otherId, approvedRuns);
+                      const std::string otherIdJson   = packageJsonFor(otherId);
+                      const auto        idResult      = ms::TextBinding::create(screen, font, otherId, bytesOf(otherIdJson), approvedRuns);
                       checks.expect(!idResult.has_value() && idResult.error() == ms::ScreenError::PackageNotApproved,
                                     "a different package id is PackageNotApproved");
 
@@ -745,13 +764,49 @@ const mdux::spec::Register unapprovedPackageIsRefused{
                       std::vector<std::byte> changedRuns;
                       appendRecord(changedRuns, 0, 0, 0);
                       const mdux::text::TextPackage changedText  = textFixturePackage("STR-A", changedRuns);
-                      const auto                    digestResult = ms::TextBinding::create(screen, font, changedText, changedRuns);
+                      const std::string             changedJson  = packageJsonFor(changedText);
+                      const auto                    digestResult = ms::TextBinding::create(screen, font, changedText, bytesOf(changedJson), changedRuns);
                       checks.expect(!digestResult.has_value() && digestResult.error() == ms::ScreenError::PackageNotApproved,
                                     "same id and locale with different reviewed bytes is PackageNotApproved");
                       checks.raise();
                   })
             .Execute();
     }};
+
+const mdux::spec::Register bindingCannotCrossScreens{"A binding approved for one screen cannot render another screen", "evidence-unit", [] {
+                                                         return speclab::Test("medui-screen-binding-target")
+                                                             .Given("two screens approving different fitting packages with the same font and key", [] {})
+                                                             .When("the first screen's binding is offered to the second screen", [] {})
+                                                             .Then("the frame is PackageNotApproved and records nothing",
+                                                                   [] {
+                                                                       mdux::spec::Checks            checks;
+                                                                       const mdux::font::FontPackage font = textFixtureFont();
+
+                                                                       std::vector<std::byte> firstRuns;
+                                                                       appendRecord(firstRuns, 1, 0, 0);
+                                                                       const mdux::text::TextPackage firstText = textFixturePackage("STR-A", firstRuns);
+                                                                       const std::array              firstApprovals{approvalFor(firstText)};
+                                                                       const ms::ScreenPackage       firstScreen = screenWith(firstApprovals);
+                                                                       const ms::TextBinding binding = bindOrThrow(firstScreen, font, firstText, firstRuns);
+
+                                                                       std::vector<std::byte> secondRuns;
+                                                                       appendRecord(secondRuns, 0, 0, 0);
+                                                                       const mdux::text::TextPackage secondText = textFixturePackage("STR-A", secondRuns);
+                                                                       const std::array              secondApprovals{approvalFor(secondText)};
+                                                                       const ms::ScreenPackage       secondScreen = screenWith(secondApprovals);
+
+                                                                       Scratch              scratch;
+                                                                       mdux::draw::DrawList list  = scratch.list(testBudget);
+                                                                       const auto           frame = ms::render(secondScreen, list, binding);
+                                                                       checks.expect(!frame.has_value() && frame.error() == ms::ScreenError::PackageNotApproved,
+                                                                                     "the second screen refuses the first screen's binding by identity");
+                                                                       checks.expect(list.vertices().empty() && list.indices().empty()
+                                                                                         && list.commands().empty(),
+                                                                                     "the refused frame records nothing");
+                                                                       checks.raise();
+                                                                   })
+                                                             .Execute();
+                                                     }};
 
 const mdux::spec::Register frameRefusals{"A valid binding that does not serve this screen is refused, and the list is left as found", "evidence-unit", [] {
                                              return speclab::Test("medui-screen-frame-refusals")

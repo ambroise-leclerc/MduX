@@ -447,6 +447,21 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
             return std::nullopt;
         }
 
+        // The device hashes these bytes directly. Accepting a parseable but noncanonical file here
+        // would record one digest while the in-memory package denotes the canonical form of another,
+        // leaving a package that compiles successfully and can never bind. Diagnose that authoring
+        // error on the host, where rebaking it is actionable.
+        const auto canonical = package->write();
+        if (!canonical.has_value() || *canonical != textOf(*bytes)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   "the text package is valid but its package.json is not canonical",
+                   "re-bake the text package instead of editing package.json by hand");
+            return std::nullopt;
+        }
+
         // The sidecar sits beside the package, under the name the package itself records - the same
         // arrangement every other artifact kind uses, so a caller never guesses a filename.
         const std::filesystem::path                 sidecarRelative = std::filesystem::path{relative}.parent_path() / package->sidecarPath;
@@ -589,6 +604,15 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
                "this screen draws text, so the recipe needs a [text] table naming the font package and one text package per "
                "approved locale",
                "a screen that draws text and declares no approved locale would be certified against a set nobody approved");
+        return std::nullopt;
+    }
+    if (!measurable && (!recipe.fontPackage.empty() || !recipe.textPackages.empty())) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "this screen carries no measurable text, so its recipe must not declare a [text] table",
+               "remove the unused font and locale packages; otherwise the report would name inputs the compiler never authenticated");
         return std::nullopt;
     }
 

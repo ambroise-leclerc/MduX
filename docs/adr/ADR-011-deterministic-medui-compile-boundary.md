@@ -88,7 +88,8 @@ device runtime performs none of them, and turns that layout into vertices.**
 | Record each approved locale package id and canonical package digest | build machine | host tools |
 | Compute the `DrawBudget` | build machine | host tools |
 | Emit golden references (see rule below) | build machine | host tools |
-| Authenticate the selected text package against the compiled screen | device startup | governed |
+| Hash the selected package bytes and authenticate them against the compiled screen | device startup | governed |
+| Re-check the retained approval identity against the render target | each frame | governed |
 | **Build a `DrawList` from a compiled screen** | **device** | **governed** |
 
 *Layout*, not *geometry*: the compiler produces rectangles, budgets and the validated token and key
@@ -118,9 +119,12 @@ an approval record per locale: the text package id and SHA-256 of its canonical 
 
 That manifest closes a gap the name-only boundary left open. A second text package could be valid,
 use the same font and key, and still carry wording the compiler never measured or a reviewer never
-approved. `TextBinding::create()` therefore authenticates the running locale's package id and digest
-against the screen before rendering. The existing ink measurement remains a separate refusal for a
-run that exceeds its node; it is not evidence that the wording was approved.
+approved. The compiler refuses parseable but noncanonical text-package JSON, so the file bytes it
+records are the one canonical identity. `TextBinding::create()` hashes those caller-supplied bytes
+without allocating, authenticates the running locale's package id and digest, and retains that
+identity. `render()` checks it against its target screen before recording anything, so a binding
+approved for screen A cannot be reused for screen B. The existing ink measurement remains a
+separate refusal for a run that exceeds its node; it is not evidence that the wording was approved.
 
 **The changed cost is deliberate.** Adding a locale or changing an approved translation now rewrites
 the small approval manifest and the screen package digest, even though the rectangles remain shared.

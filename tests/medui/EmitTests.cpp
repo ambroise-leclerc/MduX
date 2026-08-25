@@ -30,7 +30,12 @@ import mdux.tools.medui.parser;
 namespace {
 
 namespace md  = mdux::tools::medui;
+namespace ms  = mdux::medui;
 namespace cli = mdux::tools::cli;
+
+constexpr std::array fixtureApprovals{
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "every-component-en-us", .packageSha256 = {1}}
+};
 
 /// The budget the fixture package declares, and therefore the one a rebuild must reproduce.
 constexpr mdux::draw::DrawBudget fixtureBudget{.maxVertices = 4096, .maxIndices = 6144, .maxCommands = 256};
@@ -91,7 +96,7 @@ const mdux::spec::Register theEmittedFixtureIsWhatTheCompilerProduces{
                       }
 
                       const std::string produced = md::writePackage(
-                          md::buildPackage(layout, {.id = "every-component", .budget = fixtureBudget, .approvedTextPackages = {}}).package());
+                          md::buildPackage(layout, {.id = "every-component", .budget = fixtureBudget, .approvedTextPackages = fixtureApprovals}).package());
                       checks.expect(produced == fixture("every-component-package.json"), std::format("the committed package is current, got:\n{}", produced));
                       checks.raise();
                   })
@@ -340,7 +345,7 @@ const mdux::spec::Register aDecodedControlCharacterCannotEndTheLiteral{
                       }
 
                       const std::string json = md::writePackage(
-                          md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget, .approvedTextPackages = {}}).package());
+                          md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget, .approvedTextPackages = fixtureApprovals}).package());
                       const std::filesystem::path path = scratch.path() / "package.json";
                       std::ofstream               out{path, std::ios::binary | std::ios::trunc};
                       out.write(json.data(), static_cast<std::streamsize>(json.size()));

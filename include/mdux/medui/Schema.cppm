@@ -98,25 +98,27 @@ inline constexpr std::string_view packageKind = "screen";
 inline constexpr std::string_view colorTokenPrefix = "Theme.Colors.";
 
 enum class SchemaError : std::uint8_t {
-    UnsupportedSchemaVersion,  ///< the package declares a version this module does not read
-    EmptyId,                   ///< the screen has no id, so no directory and no evidence entry
-    NonPositiveSurface,        ///< a surface with no extent cannot contain a rectangle
-    EmptyNodeId,               ///< a node with no id cannot be named by a golden or a requirement
-    DuplicateNodeId,           ///< two nodes share an id, so a golden could name either
-    DegenerateBounds,          ///< a rectangle with no extent, which `DrawList` refuses to record
-    BoundsOutsideSurface,      ///< a rectangle the declared surface does not contain
-    MalformedColorToken,       ///< a colour that is not a `Theme.Colors.<Token>` name
-    UnknownColorToken,         ///< a well-formed name the governed table does not define
-    UnknownPayload,            ///< a payload this module cannot name, or one left valueless
-    EmptyRequiredName,         ///< a spec field the component dictionary requires is empty
-    NoStates,                  ///< a status indicator that can show nothing
-    StateColorCountMismatch,   ///< per-state tints that do not pair one-to-one with the states
-    NonPositiveMaxLength,      ///< a text input that can hold no character
-    EmptyBudget,               ///< a screen with nodes whose budget can hold no primitive
-    BudgetExceedsIndexWidth,   ///< more vertices than a 16-bit index can address
-    EmptyApprovedLocale,       ///< a text-package approval does not name its locale
-    EmptyApprovedPackageId,    ///< a text-package approval does not name its package
-    DuplicateApprovedLocale,   ///< two text-package approvals claim the same locale
+    UnsupportedSchemaVersion,    ///< the package declares a version this module does not read
+    EmptyId,                     ///< the screen has no id, so no directory and no evidence entry
+    NonPositiveSurface,          ///< a surface with no extent cannot contain a rectangle
+    EmptyNodeId,                 ///< a node with no id cannot be named by a golden or a requirement
+    DuplicateNodeId,             ///< two nodes share an id, so a golden could name either
+    DegenerateBounds,            ///< a rectangle with no extent, which `DrawList` refuses to record
+    BoundsOutsideSurface,        ///< a rectangle the declared surface does not contain
+    MalformedColorToken,         ///< a colour that is not a `Theme.Colors.<Token>` name
+    UnknownColorToken,           ///< a well-formed name the governed table does not define
+    UnknownPayload,              ///< a payload this module cannot name, or one left valueless
+    EmptyRequiredName,           ///< a spec field the component dictionary requires is empty
+    NoStates,                    ///< a status indicator that can show nothing
+    StateColorCountMismatch,     ///< per-state tints that do not pair one-to-one with the states
+    NonPositiveMaxLength,        ///< a text input that can hold no character
+    EmptyBudget,                 ///< a screen with nodes whose budget can hold no primitive
+    BudgetExceedsIndexWidth,     ///< more vertices than a 16-bit index can address
+    EmptyApprovedLocale,         ///< a text-package approval does not name its locale
+    EmptyApprovedPackageId,      ///< a text-package approval does not name its package
+    EmptyApprovedPackageDigest,  ///< a text-package approval carries no package identity
+    DuplicateApprovedLocale,     ///< two text-package approvals claim the same locale
+    MissingTextPackageApproval,  ///< a text-bearing screen approves no text package
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
@@ -157,8 +159,12 @@ enum class SchemaError : std::uint8_t {
             return "an approved text package does not name its locale";
         case SchemaError::EmptyApprovedPackageId:
             return "an approved text package does not name its package id";
+        case SchemaError::EmptyApprovedPackageDigest:
+            return "an approved text package does not carry its package digest";
         case SchemaError::DuplicateApprovedLocale:
             return "two approved text packages claim the same locale";
+        case SchemaError::MissingTextPackageApproval:
+            return "a text-bearing screen approves no text package";
     }
     return "unknown schema error";
 }
@@ -781,6 +787,16 @@ struct ScreenPackage {
     return requireColor(spec->colorToken);
 }
 
+/// Whether this payload needs the font/locale inputs the text-budget stage approves.
+///
+/// Kept beside `validatePayload()` so a component added to the closed payload set cannot acquire
+/// text-bearing fields without the schema's approval-manifest rule being visible in the same edit.
+[[nodiscard]] constexpr bool needsTextPackageApproval(NodePayload payload) noexcept {
+    return std::holds_alternative<LabelSpec>(payload) || std::holds_alternative<ClockSpec>(payload) || std::holds_alternative<ButtonSpec>(payload)
+           || std::holds_alternative<CriticalButtonSpec>(payload) || std::holds_alternative<NumericDisplaySpec>(payload)
+           || std::holds_alternative<StatusIndicatorSpec>(payload) || std::holds_alternative<TextInputSpec>(payload);
+}
+
 constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const noexcept {
     using mdux::core::err;
 
@@ -802,6 +818,9 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (approval.packageId.empty()) {
             return err(SchemaError::EmptyApprovedPackageId);
         }
+        if (approval.packageSha256 == evidence::Digest{}) {
+            return err(SchemaError::EmptyApprovedPackageDigest);
+        }
         for (std::size_t earlier = 0; earlier < index; ++earlier) {
             if (approvedTextPackages[earlier].locale == approval.locale) {
                 return err(SchemaError::DuplicateApprovedLocale);
@@ -811,6 +830,10 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
 
     for (std::size_t index = 0; index < nodes.size(); ++index) {
         const CompiledNode& node = nodes[index];
+
+        if (approvedTextPackages.empty() && needsTextPackageApproval(node.payload)) {
+            return err(SchemaError::MissingTextPackageApproval);
+        }
 
         if (node.id.empty()) {
             return err(SchemaError::EmptyNodeId);
