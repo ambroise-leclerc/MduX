@@ -90,7 +90,8 @@ const mdux::spec::Register theEmittedFixtureIsWhatTheCompilerProduces{
                           return;
                       }
 
-                      const std::string produced = md::writePackage(md::buildPackage(layout, {.id = "every-component", .budget = fixtureBudget}).package());
+                      const std::string produced = md::writePackage(
+                          md::buildPackage(layout, {.id = "every-component", .budget = fixtureBudget, .approvedTextPackages = {}}).package());
                       checks.expect(produced == fixture("every-component-package.json"), std::format("the committed package is current, got:\n{}", produced));
                       checks.raise();
                   })
@@ -338,7 +339,8 @@ const mdux::spec::Register aDecodedControlCharacterCannotEndTheLiteral{
                           return;
                       }
 
-                      const std::string           json = md::writePackage(md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget}).package());
+                      const std::string json = md::writePackage(
+                          md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget, .approvedTextPackages = {}}).package());
                       const std::filesystem::path path = scratch.path() / "package.json";
                       std::ofstream               out{path, std::ios::binary | std::ios::trunc};
                       out.write(json.data(), static_cast<std::streamsize>(json.size()));

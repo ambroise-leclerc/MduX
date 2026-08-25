@@ -19,6 +19,7 @@
 import std;
 import speclab;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.medui.schema;
 import mdux.tools.cli;
@@ -199,6 +200,53 @@ const mdux::spec::Register aCompileProducesThreeArtifacts{
                           checks.expect(report->outputs.size() == 2, std::format("package.json and goldens.json are recorded, got {}", report->outputs.size()));
                           checks.expect(report->inputs.size() == 1, std::format("the .medui source is the only input, got {}", report->inputs.size()));
                           checks.expect(report->validate().has_value(), "the report satisfies its own schema");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compileCarriesApprovedPackageIdentity{
+    "A compiled screen carries the exact text package identity it was measured against",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-text-package-approval")
+            .Given("the committed endoscope screen recipe and its approved en-US text package", [] {})
+            .When("the compiler produces package.json", [] {})
+            .Then("the screen records that package's locale, id and exact input digest",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const std::string            recipeText = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto                   recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, std::format("the committed recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, std::format("the committed screen compiles, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const md::PackageReadResult read = md::readPackage(outputs->packageJson, "package.json");
+                      checks.expect(read.ok(), std::format("the compiled package reads back, first diagnostic '{}'", firstCode(read.diagnostics)));
+                      if (read.ok()) {
+                          const ms::ScreenPackage package = read.document.package();
+                          checks.expect(package.approvedTextPackages.size() == 1,
+                                        std::format("one locale is approved, got {}", package.approvedTextPackages.size()));
+                          if (package.approvedTextPackages.size() == 1) {
+                              const ms::TextPackageApproval& approval = package.approvedTextPackages.front();
+                              const std::string              textJson = contentsOf(repoRoot() / "generated/text/endoscope-monitor-en-us/package.json");
+                              checks.expect(approval.locale == "en-US", std::format("the locale is en-US, got '{}'", approval.locale));
+                              checks.expect(approval.packageId == "endoscope-monitor-en-us",
+                                            std::format("the package id is retained, got '{}'", approval.packageId));
+                              checks.expect(approval.packageSha256 == mdux::evidence::sha256(asBytes(textJson)),
+                                            "the approval digest is the exact package.json input digest");
+                          }
                       }
                       checks.raise();
                   })

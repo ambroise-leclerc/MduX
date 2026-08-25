@@ -47,12 +47,13 @@ constexpr std::array<ms::CompiledNode, 3> nodes{
     ms::CompiledNode{.id = "clock", .bounds = {8, 40, 120, 24}, .payload = clock}
 };
 
-constexpr ms::ScreenPackage screen{.id            = "noheap",
-                                   .schemaVersion = mdux::evidence::kSchemaVersion,
-                                   .surfaceWidth  = 400,
-                                   .surfaceHeight = 300,
-                                   .nodes         = nodes,
-                                   .budget        = budget};
+constexpr ms::ScreenPackage screen{.id                   = "noheap",
+                                   .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                   .surfaceWidth         = 400,
+                                   .surfaceHeight        = 300,
+                                   .approvedTextPackages = {},
+                                   .nodes                = nodes,
+                                   .budget               = budget};
 
 static_assert(screen.validate().has_value(), "the screen under measurement must be one a device could hold");
 
@@ -153,12 +154,13 @@ const mdux::spec::Register refusingAFrameAllocatesNothing{
                       constexpr std::array<ms::CompiledNode, 1> refusedNodes{
                           ms::CompiledNode{.id = "wrong", .bounds = {0, 0, 400, 40}, .payload = unknown}
                       };
-                      const ms::ScreenPackage refused{.id            = "refused",
-                                                      .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                      .surfaceWidth  = 400,
-                                                      .surfaceHeight = 300,
-                                                      .nodes         = refusedNodes,
-                                                      .budget        = budget};
+                      const ms::ScreenPackage refused{.id                   = "refused",
+                                                      .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                      .surfaceWidth         = 400,
+                                                      .surfaceHeight        = 300,
+                                                      .approvedTextPackages = {},
+                                                      .nodes                = refusedNodes,
+                                                      .budget               = budget};
 
                       const std::size_t before = allocations();
                       const auto        frame  = ms::render(refused, list);
@@ -193,50 +195,73 @@ const mdux::spec::Register drawingTextAllocatesNothing{
                       // is the join: `render()` reading them per frame.
                       static const mdux::font::FontPackage font = [] {
                           mdux::font::FontPackage built;
-                          built.id         = "noheap-ui";
-                          built.unitsPerEm = 1000;
-                          built.pixelSize  = 10;
-                          built.locales    = {"en-US"};
+                          built.id                     = "noheap-ui";
+                          built.unitsPerEm             = 1000;
+                          built.pixelSize              = 10;
+                          built.locales                = {"en-US"};
                           built.atlas.path             = "atlas.bin";
                           built.atlas.width            = 8;
                           built.atlas.height           = 8;
                           built.atlas.byteLength       = 64;
                           built.atlas.sha256           = std::string(64, 'a');
                           built.atlas.occupancyPercent = 25;
-                          built.glyphs = {{.codePoint = U'A', .glyphIndex = 4, .advanceWidth = 700, .leftSideBearing = 0,
-                                           .x = 0, .y = 0, .width = 4, .height = 6, .bitmapOriginX = 0, .bitmapOriginY = 6}};
-                          built.restrictedCharset = {{.first = U'A', .last = U'A'}};
+                          built.glyphs                 = {
+                              {.codePoint       = U'A',
+                               .glyphIndex      = 4,
+                               .advanceWidth    = 700,
+                               .leftSideBearing = 0,
+                               .x               = 0,
+                               .y               = 0,
+                               .width           = 4,
+                               .height          = 6,
+                               .bitmapOriginX   = 0,
+                               .bitmapOriginY   = 6}
+                          };
+                          built.restrictedCharset = {
+                              {.first = U'A', .last = U'A'}
+                          };
                           return built;
                       }();
 
                       // One record: glyph 0 at the run's own origin, little-endian, as
                       // `mdux::text::draw::decodeRecord()` reads it.
-                      static const std::array<std::byte, 6> records{std::byte{0}, std::byte{0}, std::byte{0},
-                                                                    std::byte{0}, std::byte{0}, std::byte{0}};
+                      static const std::array<std::byte, 6> records{std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0}};
 
                       static const mdux::text::TextPackage text = [] {
                           mdux::text::TextPackage built;
-                          built.header.id        = "noheap-text";
-                          built.header.kind      = std::string{mdux::text::packageKind};
-                          built.atlasId          = "noheap-ui";
-                          built.locale           = "en-US";
-                          built.sidecarPath      = "runs.bin";
+                          built.header.id         = "noheap-text";
+                          built.header.kind       = std::string{mdux::text::packageKind};
+                          built.atlasId           = "noheap-ui";
+                          built.locale            = "en-US";
+                          built.sidecarPath       = "runs.bin";
                           built.sidecarByteLength = records.size();
                           // The digests `create()` checks. Computed rather than written out, so the
                           // fixture cannot drift from the bytes above and start exercising the
                           // rejection path while claiming to measure the accepted one.
-                          built.sidecarSha256     = mdux::evidence::sha256(records);
-                          built.runs.push_back(mdux::text::TextRun{.id         = "STR-TITLE",
-                                                                   .byteOffset = 0,
-                                                                   .byteLength = records.size(),
-                                                                   .sha256     = mdux::evidence::sha256(records)});
+                          built.sidecarSha256 = mdux::evidence::sha256(records);
+                          built.runs.push_back(
+                              mdux::text::TextRun{.id = "STR-TITLE", .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
                           return built;
                       }();
 
                       // Through `create()`, which is the only way to obtain one - and which hashes
                       // the sidecar. That cost is the caller's, once, and sits outside the counter
                       // below on purpose: what this scenario measures is the frame, not the setup.
-                      const auto made = ms::TextBinding::create(font, text, records);
+                      const auto canonical = text.write();
+                      if (!canonical.has_value()) {
+                          checks.expect(false, "the fixture package serializes");
+                          checks.raise();
+                          return;
+                      }
+                      const std::array approvals{
+                          ms::TextPackageApproval{.locale        = text.locale,
+                                                  .packageId     = text.header.id,
+                                                  .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))}
+                      };
+                      ms::ScreenPackage boundScreen    = screen;
+                      boundScreen.approvedTextPackages = approvals;
+
+                      const auto made = ms::TextBinding::create(boundScreen, font, text, records);
                       if (!made.has_value()) {
                           checks.expect(false, "the fixture binding is valid");
                           checks.raise();
@@ -260,13 +285,13 @@ const mdux::spec::Register drawingTextAllocatesNothing{
                       // scenario learned by breaking it: `std::format` allocates, so a per-frame
                       // assertion carrying one would report the test's own allocation as the
                       // runtime's. The outcome is captured and asserted after the counter is read.
-                      std::uint32_t lastRects = 0;
+                      std::uint32_t lastRects   = 0;
                       bool          allRecorded = true;
 
                       const std::size_t before = allocations();
                       for (int frame = 0; frame < 8; ++frame) {
                           list.reset();
-                          const auto recorded = ms::render(screen, list, binding);
+                          const auto recorded = ms::render(boundScreen, list, binding);
                           if (!recorded.has_value()) {
                               allRecorded = false;
                               continue;

@@ -399,6 +399,7 @@ namespace {
 struct LoadedLocale {
     mdux::text::TextPackage package;
     std::vector<std::byte>  sidecar;
+    evidence::Digest        packageSha256{};
 };
 
 /// Reads the font package the recipe names, or reports why it could not.
@@ -433,7 +434,8 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
         if (!bytes.has_value()) {
             return std::nullopt;
         }
-        inputs.push_back(fileRecord(relative, *bytes));
+        const evidence::FileRecord packageRecord = fileRecord(relative, *bytes);
+        inputs.push_back(packageRecord);
 
         auto package = mdux::text::TextPackage::parse(textOf(*bytes));
         if (!package.has_value()) {
@@ -454,7 +456,7 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
         }
         inputs.push_back(fileRecord(sidecarRelative.generic_string(), *sidecar));
 
-        locales.push_back(LoadedLocale{.package = std::move(*package), .sidecar = *sidecar});
+        locales.push_back(LoadedLocale{.package = std::move(*package), .sidecar = *sidecar, .packageSha256 = packageRecord.sha256});
     }
     return locales;
 }
@@ -618,6 +620,13 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
         textPackages.push_back(locale.package);
     }
 
+    std::vector<ms::TextPackageApproval> approvals;
+    approvals.reserve(locales.size());
+    for (const LoadedLocale& locale : locales) {
+        approvals.push_back(
+            ms::TextPackageApproval{.locale = locale.package.locale, .packageId = locale.package.header.id, .packageSha256 = locale.packageSha256});
+    }
+
     // 2. Semantic analysis. The theme tokens are the governed table the schema publishes, not a
     //    second list: `resolveColorToken()` on a device and this check on the host then agree by
     //    construction rather than by review.
@@ -691,7 +700,7 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     const std::vector<GoldenReference> goldens = collectGoldens(layout);
 
     // 7. The compiled screen and its bytes.
-    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget});
+    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals});
     const ms::ScreenPackage package  = document.package();
 
     CompileOutputs outputs;

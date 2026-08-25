@@ -71,7 +71,7 @@ safety-critical nodes live.
 
 | File | Committed | Contents |
 |---|---|---|
-| `package.json` | yes | the compiled screen: compiled nodes, absolute rectangles, `DrawBudget`, requirement ids, and the validated `Theme.Colors.<Token>` and `t("STR-KEY")` names each node draws with. **No locale field, no glyph runs, no RGBA8** |
+| `package.json` | yes | the compiled screen: compiled nodes, absolute rectangles, `DrawBudget`, requirement ids, validated token/key names, and `approvedTextPackages` entries carrying each locale's package id and canonical-package digest. **No selected locale, no glyph runs, no RGBA8** |
 | `goldens.json` | yes | one golden reference per node matching ADR-011's predicate: `@safety_critical`, or an explicit `position:`, or both merged into one entry (#196). Always written, as `[]` when a screen matches no node |
 | `report.json` | yes | the ADR-007 bake report: inputs, digests, tool version |
 
@@ -101,17 +101,16 @@ that way, both binding on #198:
   slug from the screen name rather than using it, and the mapping has to be injective and recorded
   in the recipe, since two screens differing only in case would otherwise collide.
 
-**Locales do not multiply this layout.** One screen, one directory, whatever the approved locale
-count — because ADR-011 keeps the package locale-free and leaves the per-locale glyph runs in the
-text package. `mdux.text.schema`'s `TextPackage` already carries a single `locale` field and "the
-runtime reads no others" (`include/mdux/text/Schema.cppm:145`), so a device pairs one screen package
-with the text package for the locale it is running.
+**Locales do not multiply this layout.** One screen and one directory serve every approved locale,
+because per-locale glyph runs remain in text packages. The screen does carry a compact approval
+manifest, however: `TextPackageApproval { locale, packageId, packageSha256 }` for every package the
+compiler measured. `TextBinding::create()` hashes the selected package's canonical form and requires
+an exact manifest match before the runtime can use its runs.
 
-This question was recorded as open in an earlier revision, on the assumption that the screen carried
-baked glyph runs. It closes with that assumption. The reason to prefer it, stated as a consequence
-rather than a preference: **adding an approved locale rewrites no screen artifact**, so a translation
-update cannot change the digest of a screen whose layout nobody touched. In a byte-compared evidence
-pipeline that is the difference between re-verifying one artifact and re-verifying all of them.
+This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
+artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is
+still not duplicated and no glyph bytes move into the screen; the changed digest records that the
+reviewed words available to that screen changed.
 
 ### 2. The payload is **layout, not geometry**
 
@@ -237,12 +236,17 @@ human should read.
 - A device build links no host-tools module and parses nothing at startup, because the generated
   C++ is `constexpr` and lands in `.rodata`.
 - `static_assert` moves malformed-screen detection from startup to compile.
+- A valid but unreviewed text package cannot be substituted for one the compiler measured; package
+  id and canonical digest are authenticated once when the binding is created.
 
 ### Negative
 - **A fourth artifact kind to maintain**, with its own recipe schema, baker and update target.
 - **Layout diffs are verbose.** Moving a container by eight pixels rewrites every descendant's
   absolute rectangle in `package.json`. The alternative — storing relative offsets and resolving on
   device — is the layout solving ADR-011 forbids, so this is accepted rather than solved.
+- **Translation changes rewrite the screen package digest.** The layout may be unchanged, but its
+  approval manifest is not. This is accepted because the digest now answers which exact wording was
+  approved for the screen; the glyph runs themselves remain in their per-locale packages.
 - **Two files must stay consistent.** A node in `goldens.json` names a node in `package.json`;
   nothing in the format prevents them diverging. The check cannot live in the governed
   `validate()`: decision 4 puts the goldens outside the schema precisely because the runtime never

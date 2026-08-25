@@ -1,4 +1,11 @@
 {
+  "approvedTextPackages": [
+    {
+      "locale": "en-US",
+      "packageId": "endoscope-monitor-en-us",
+      "packageSha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+    }
+  ],
   "budget": {
     "maxCommands": 64,
     "maxIndices": 6144,

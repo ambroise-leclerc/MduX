@@ -31,16 +31,18 @@
  * That is the same split `mdux.ml.schema` makes with `mdux-mlbake`, and it is the price of a type a
  * device can hold in `.rodata`.
  *
- * ## The package is locale-free, and that is load-bearing
+ * ## The layout is locale-free; the approved package identities are not
  *
  * ADR-011, as amended by #203, carries `textKey` and `colorToken` as **validated names** rather than
  * as glyph runs and RGBA8. The device resolves each against a governed table for the locale it is
  * running - a bounded lookup, not a parse - and the per-locale glyph runs stay in the text package
  * where ADR-010 put them.
  *
- * The consequence that decides the file layout: **adding an approved locale rewrites no screen
- * artifact.** Translations change far more often than layouts, and a package carrying runs would
- * make the frequent change rewrite the stable artifact - and its digest, and its review.
+ * The screen still carries no locale-selected glyph run, so one layout serves every approved
+ * locale. It does carry the identity of every text package the compiler measured: locale, package
+ * id and canonical `package.json` digest. A changed translation therefore rewrites this small
+ * approval manifest, deliberately - otherwise a different, individually valid package could be
+ * substituted after review while every local consistency check still passed.
  *
  * The cost, stated as a cost: one rectangle serves every locale, so it must be the one that
  * survives the widest approved translation. That is what #195 measures, and why the budget below
@@ -83,6 +85,7 @@ export module mdux.medui.schema;
 import std;
 import mdux.core.result;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 
 export namespace mdux::medui {
@@ -111,6 +114,9 @@ enum class SchemaError : std::uint8_t {
     NonPositiveMaxLength,      ///< a text input that can hold no character
     EmptyBudget,               ///< a screen with nodes whose budget can hold no primitive
     BudgetExceedsIndexWidth,   ///< more vertices than a 16-bit index can address
+    EmptyApprovedLocale,       ///< a text-package approval does not name its locale
+    EmptyApprovedPackageId,    ///< a text-package approval does not name its package
+    DuplicateApprovedLocale,   ///< two text-package approvals claim the same locale
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
@@ -147,6 +153,12 @@ enum class SchemaError : std::uint8_t {
             return "the screen has nodes and a budget that can hold no primitive";
         case SchemaError::BudgetExceedsIndexWidth:
             return "the vertex budget exceeds what a 16-bit index can address";
+        case SchemaError::EmptyApprovedLocale:
+            return "an approved text package does not name its locale";
+        case SchemaError::EmptyApprovedPackageId:
+            return "an approved text package does not name its package id";
+        case SchemaError::DuplicateApprovedLocale:
+            return "two approved text packages claim the same locale";
     }
     return "unknown schema error";
 }
@@ -547,18 +559,34 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
 }
 
 /**
+ * @brief One text package this screen was compiled and reviewed against.
+ *
+ * The package remains outside the screen: it owns the locale's glyph runs and sidecar. This record
+ * is only its identity, sufficient for `TextBinding::create()` to refuse a different package even
+ * when that package is internally valid, uses the same font and carries the same keys.
+ */
+struct TextPackageApproval {
+    std::string_view locale;           ///< the package's BCP 47 locale
+    std::string_view packageId;        ///< the package header id
+    evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
+
+    [[nodiscard]] constexpr bool operator==(const TextPackageApproval&) const noexcept = default;
+};
+
+/**
  * @brief A whole compiled screen as generated code exposes it and the runtime consumes it.
  *
  * Non-owning and `constexpr`-constructible throughout, so a generated translation unit can place one
  * in read-only memory and `static_assert` that it validates.
  */
 struct ScreenPackage {
-    std::string_view              id;
-    std::uint64_t                 schemaVersion{evidence::kSchemaVersion};
-    std::int32_t                  surfaceWidth{0};
-    std::int32_t                  surfaceHeight{0};
-    std::span<const CompiledNode> nodes;
-    mdux::draw::DrawBudget        budget{};
+    std::string_view                     id;
+    std::uint64_t                        schemaVersion{evidence::kSchemaVersion};
+    std::int32_t                         surfaceWidth{0};
+    std::int32_t                         surfaceHeight{0};
+    std::span<const TextPackageApproval> approvedTextPackages;
+    std::span<const CompiledNode>        nodes;
+    mdux::draw::DrawBudget               budget{};
 
     /// Checks every invariant a consumer is entitled to assume. See the module comment for the one
     /// invariant it deliberately leaves to the compiler: whether the budget is *large enough*.
@@ -764,6 +792,21 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
     }
     if (surfaceWidth <= 0 || surfaceHeight <= 0) {
         return err(SchemaError::NonPositiveSurface);
+    }
+
+    for (std::size_t index = 0; index < approvedTextPackages.size(); ++index) {
+        const TextPackageApproval& approval = approvedTextPackages[index];
+        if (approval.locale.empty()) {
+            return err(SchemaError::EmptyApprovedLocale);
+        }
+        if (approval.packageId.empty()) {
+            return err(SchemaError::EmptyApprovedPackageId);
+        }
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (approvedTextPackages[earlier].locale == approval.locale) {
+                return err(SchemaError::DuplicateApprovedLocale);
+            }
+        }
     }
 
     for (std::size_t index = 0; index < nodes.size(); ++index) {
