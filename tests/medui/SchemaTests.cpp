@@ -47,13 +47,18 @@ constexpr std::array<ms::CompiledNode, 3> constNodes{
     ms::CompiledNode{            .id = "score", .bounds = {250, 60, 120, 60}, .payload = scoreDisplay}
 };
 
+constexpr std::array<ms::TextPackageApproval, 1> constApprovals{
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "neurosense-en-us", .packageSha256 = {1}}
+};
+
 constexpr ms::ScreenPackage constPackage{
-    .id            = "neurosense",
-    .schemaVersion = mdux::evidence::kSchemaVersion,
-    .surfaceWidth  = 400,
-    .surfaceHeight = 300,
-    .nodes         = constNodes,
-    .budget        = mdux::draw::DrawBudget{.maxVertices = 512, .maxIndices = 768, .maxCommands = 16}
+    .id                   = "neurosense",
+    .schemaVersion        = mdux::evidence::kSchemaVersion,
+    .surfaceWidth         = 400,
+    .surfaceHeight        = 300,
+    .approvedTextPackages = constApprovals,
+    .nodes                = constNodes,
+    .budget               = mdux::draw::DrawBudget{.maxVertices = 512, .maxIndices = 768, .maxCommands = 16}
 };
 
 // The module promises a generated screen can be validated at compile time and placed in read-only
@@ -95,12 +100,13 @@ inline constexpr std::array<ms::CompiledNode, 1> inlineNodes{
 };
 
 inline constexpr ms::ScreenPackage inlinePackage{
-    .id            = "inline-screen",
-    .schemaVersion = mdux::evidence::kSchemaVersion,
-    .surfaceWidth  = 200,
-    .surfaceHeight = 100,
-    .nodes         = inlineNodes,
-    .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+    .id                   = "inline-screen",
+    .schemaVersion        = mdux::evidence::kSchemaVersion,
+    .surfaceWidth         = 200,
+    .surfaceHeight        = 100,
+    .approvedTextPackages = constApprovals,
+    .nodes                = inlineNodes,
+    .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
 };
 
 static_assert(inlinePackage.validate().has_value(), "an inline constexpr screen validates at compile time, as generated code is");
@@ -142,20 +148,22 @@ static_assert(ms::resolveColorToken("Theme.Colors.ScoreDigits").value() == std::
 
 /// Owns what the package's spans point at, so a mutated fixture stays self-consistent.
 struct Fixture {
-    std::vector<ms::CompiledNode> nodes{constNodes.begin(), constNodes.end()};
-    std::string                   id{"neurosense"};
-    std::uint64_t                 schemaVersion{mdux::evidence::kSchemaVersion};
-    std::int32_t                  surfaceWidth{400};
-    std::int32_t                  surfaceHeight{300};
-    mdux::draw::DrawBudget        budget{.maxVertices = 512, .maxIndices = 768, .maxCommands = 16};
+    std::vector<ms::TextPackageApproval> approvedTextPackages{constApprovals.begin(), constApprovals.end()};
+    std::vector<ms::CompiledNode>        nodes{constNodes.begin(), constNodes.end()};
+    std::string                          id{"neurosense"};
+    std::uint64_t                        schemaVersion{mdux::evidence::kSchemaVersion};
+    std::int32_t                         surfaceWidth{400};
+    std::int32_t                         surfaceHeight{300};
+    mdux::draw::DrawBudget               budget{.maxVertices = 512, .maxIndices = 768, .maxCommands = 16};
 
     [[nodiscard]] ms::ScreenPackage package() const noexcept {
-        return ms::ScreenPackage{.id            = id,
-                                 .schemaVersion = schemaVersion,
-                                 .surfaceWidth  = surfaceWidth,
-                                 .surfaceHeight = surfaceHeight,
-                                 .nodes         = nodes,
-                                 .budget        = budget};
+        return ms::ScreenPackage{.id                   = id,
+                                 .schemaVersion        = schemaVersion,
+                                 .surfaceWidth         = surfaceWidth,
+                                 .surfaceHeight        = surfaceHeight,
+                                 .approvedTextPackages = approvedTextPackages,
+                                 .nodes                = nodes,
+                                 .budget               = budget};
     }
 };
 
@@ -208,6 +216,52 @@ const mdux::spec::Register identityIsRequired{"A screen with no id and one with 
                                                             })
                                                       .Execute();
                                               }};
+
+const mdux::spec::Register textPackageApprovalsAreIdentified{
+    "Every approved text package names one unique locale and a package id",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-text-package-approvals")
+            .Given("the reference screen with one approved locale", [] {})
+            .When("an approval loses either name, and two approvals claim one locale", [] {})
+            .Then("each malformed manifest is refused with its own schema error",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      Fixture noLocale;
+                      noLocale.approvedTextPackages[0].locale = {};
+                      checks.expect(errorOf(noLocale) == ms::SchemaError::EmptyApprovedLocale,
+                                    std::format("an unnamed locale is refused, got {}", describe(errorOf(noLocale))));
+
+                      Fixture noPackage;
+                      noPackage.approvedTextPackages[0].packageId = {};
+                      checks.expect(errorOf(noPackage) == ms::SchemaError::EmptyApprovedPackageId,
+                                    std::format("an unnamed package is refused, got {}", describe(errorOf(noPackage))));
+
+                      Fixture noDigest;
+                      noDigest.approvedTextPackages[0].packageSha256 = {};
+                      checks.expect(errorOf(noDigest) == ms::SchemaError::EmptyApprovedPackageDigest,
+                                    std::format("an unset package digest is refused, got {}", describe(errorOf(noDigest))));
+
+                      Fixture duplicate;
+                      duplicate.approvedTextPackages.push_back(
+                          ms::TextPackageApproval{.locale = duplicate.approvedTextPackages[0].locale, .packageId = "another-package", .packageSha256 = {2}});
+                      checks.expect(errorOf(duplicate) == ms::SchemaError::DuplicateApprovedLocale,
+                                    std::format("a duplicated locale is refused, got {}", describe(errorOf(duplicate))));
+
+                      Fixture textFree;
+                      textFree.approvedTextPackages.clear();
+                      textFree.nodes.erase(textFree.nodes.begin() + 1, textFree.nodes.end());
+                      checks.expect(!errorOf(textFree).has_value(), "an empty approval manifest remains valid");
+
+                      Fixture textBearing;
+                      textBearing.approvedTextPackages.clear();
+                      checks.expect(errorOf(textBearing) == ms::SchemaError::MissingTextPackageApproval,
+                                    std::format("a text-bearing screen without approvals is refused, got {}", describe(errorOf(textBearing))));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register nodesAreAddressable{"Every node must be addressable, and addressable by exactly one id", "evidence-unit", [] {
                                                    return speclab::Test("medui-schema-node-ids")
@@ -554,12 +608,13 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
 
                       const auto packageWith = [](std::span<const ms::CompiledNode> storage) {
                           return ms::ScreenPackage{
-                              .id            = "screen",
-                              .schemaVersion = mdux::evidence::kSchemaVersion,
-                              .surfaceWidth  = 400,
-                              .surfaceHeight = 300,
-                              .nodes         = storage,
-                              .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                              .id                   = "screen",
+                              .schemaVersion        = mdux::evidence::kSchemaVersion,
+                              .surfaceWidth         = 400,
+                              .surfaceHeight        = 300,
+                              .approvedTextPackages = constApprovals,
+                              .nodes                = storage,
+                              .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
                           };
                       };
 
@@ -623,12 +678,13 @@ const mdux::spec::Register unknownPayloadsAreRefused{
                       };
                       const std::array<ms::CompiledNode, 1> nodes{noSource};
                       const ms::ScreenPackage               package{
-                                        .id            = "screen",
-                                        .schemaVersion = mdux::evidence::kSchemaVersion,
-                                        .surfaceWidth  = 400,
-                                        .surfaceHeight = 300,
-                                        .nodes         = nodes,
-                                        .budget        = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                                        .id                   = "screen",
+                                        .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                        .surfaceWidth         = 400,
+                                        .surfaceHeight        = 300,
+                                        .approvedTextPackages = constApprovals,
+                                        .nodes                = nodes,
+                                        .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
                       };
                       const auto result = package.validate();
                       checks.expect(!result.has_value() && result.error() == ms::SchemaError::EmptyRequiredName,

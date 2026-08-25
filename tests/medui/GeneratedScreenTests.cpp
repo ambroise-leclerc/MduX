@@ -49,6 +49,14 @@ const mdux::spec::Register bothFormsDescribeOneScreen{
                       checks.expect(fromModule.surfaceWidth == fromHeader.surfaceWidth && fromModule.surfaceHeight == fromHeader.surfaceHeight,
                                     "both forms declare one surface");
                       checks.expect(fromModule.budget == fromHeader.budget, "both forms declare one draw budget");
+                      checks.expect(fromModule.approvedTextPackages.size() == fromHeader.approvedTextPackages.size(),
+                                    std::format("both forms hold {} text approvals, header holds {}",
+                                                fromModule.approvedTextPackages.size(),
+                                                fromHeader.approvedTextPackages.size()));
+                      for (std::size_t index = 0; index < std::min(fromModule.approvedTextPackages.size(), fromHeader.approvedTextPackages.size()); ++index) {
+                          checks.expect(fromModule.approvedTextPackages[index] == fromHeader.approvedTextPackages[index],
+                                        std::format("text approval {} is identical in both forms", index));
+                      }
                       checks.expect(fromModule.nodes.size() == fromHeader.nodes.size(),
                                     std::format("both forms hold {} nodes, header holds {}", fromModule.nodes.size(), fromHeader.nodes.size()));
 

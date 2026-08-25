@@ -157,6 +157,14 @@ struct TextPackage {
     /// Serializes to canonical JSON text, trailing newline included. Validates first.
     [[nodiscard]] mdux::core::Result<std::string, SchemaError> write() const noexcept;
 
+    /**
+     * @brief Hashes the exact canonical JSON bytes `write()` would produce, without allocating.
+     *
+     * This lets governed consumers prove that an already parsed package still represents the
+     * approved artifact bytes without serializing JSON on the device path.
+     */
+    [[nodiscard]] mdux::core::Result<evidence::Digest, SchemaError> canonicalSha256() const noexcept;
+
     /// Parses canonical `package.json` text. Strict: rejects a malformed shape, an unsupported
     /// `schemaVersion` and validates the result.
     [[nodiscard]] static mdux::core::Result<TextPackage, SchemaError> parse(

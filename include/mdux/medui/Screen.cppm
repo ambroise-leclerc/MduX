@@ -114,6 +114,7 @@ import std;
 import mdux.core.result;
 import mdux.core.units;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.text.draw;
@@ -131,6 +132,7 @@ enum class ScreenError : std::uint8_t {
     RunTooLong,           ///< a run holds more than `maxGlyphsPerRun` records
     AtlasMismatch,        ///< the text package was baked against a different font package
     SidecarMismatch,      ///< the sidecar is not the one the text package describes
+    PackageNotApproved,   ///< the screen was not compiled against this locale/package/digest
     TextOverflowsNode,    ///< a run's ink is wider or taller than the node that names it
 };
 
@@ -140,10 +142,10 @@ enum class ScreenError : std::uint8_t {
 
 [[nodiscard]] std::string_view describe(ScreenError error) noexcept;
 
-// `AtlasMismatch` and `SidecarMismatch` are `create()`'s, not a frame's: both are properties of the
-// three artifacts a caller bound together, decided once. `TextOverflowsNode` is a frame's, and is
-// the check that makes the placement rule below safe against a binding this module cannot
-// authenticate - see `TextBinding` for what that means and what it does not.
+// `AtlasMismatch` and `SidecarMismatch` are `create()`'s, not a frame's: they are properties of the
+// artifacts a caller bound together, decided once. `PackageNotApproved` can also be a frame's when
+// a valid binding is offered to a different screen, and `TextOverflowsNode` remains defense in depth
+// after package identity is authenticated.
 
 /**
  * @brief The largest run this runtime will draw, in records.
@@ -160,7 +162,7 @@ enum class ScreenError : std::uint8_t {
 inline constexpr std::size_t maxGlyphsPerRun = 256;
 
 /**
- * @brief The packages a locale-free compiled screen is joined to, once its consistency is proved.
+ * @brief The packages a locale-independent screen layout is joined to, once consistency is proved.
  *
  * A compiled screen carries `textKey` rather than glyphs (ADR-011 as amended by #203), which is what
  * lets one screen serve every approved locale. The join is the device's, once, for the locale it is
@@ -169,9 +171,11 @@ inline constexpr std::size_t maxGlyphsPerRun = 256;
  *
  * ## Why this is not an aggregate
  *
- * Three artifacts have to agree before any of them can be trusted, and none of the agreements can be
+ * Four artifacts have to agree before any of them can be trusted, and none of the agreements can be
  * checked cheaply enough to repeat per frame:
  *
+ * - the screen must list this text package's locale, id and canonical-package digest, or a second,
+ *   individually valid package could display wording the screen's review never approved;
  * - the text package must be the one baked against *this* font, or the run records index a glyph
  *   table that assigns different shapes to the same numbers, and the frame draws a plausible
  *   sentence made of the wrong letters;
@@ -181,19 +185,11 @@ inline constexpr std::size_t maxGlyphsPerRun = 256;
  * - every run's range must lie inside it, be a whole number of records, and hash to what the
  *   package recorded.
  *
- * So `create()` proves all of that once and is the only way to obtain a bound `TextBinding`. What
- * `render()` does per frame is a key lookup and a bounds comparison, which is what keeps the
- * bounded-work claim intact. A default-constructed binding is *unbound* and means "this caller has
+ * So `create()` proves all of that once and is the only way to obtain a bound `TextBinding`. The
+ * binding retains the approved locale/id/digest, and `render()` checks that fixed identity against
+ * its target screen before recording anything; this prevents a binding approved by screen A from
+ * being reused for screen B. A default-constructed binding is *unbound* and means "this caller has
  * no text": every text node is deferred, exactly as before #242, which is not an error.
- *
- * ## What it still does not prove
- *
- * That this is the package the compiler measured. A second, individually valid package can carry the
- * same key against the same font with different wording, and nothing in the artifacts links a
- * compiled screen to the packages #195 checked it against. `render()` closes the *consequence* -
- * text wider than its node is refused rather than drawn over its neighbours - but the identity
- * itself needs the compiled screen to carry it, which is a change to what a screen emits (ADR-012)
- * and is tracked separately.
  *
  * Nothing here is owned. The packages outlive the frame - on a device they are static - and the span
  * is the caller's storage, so `render()` allocates nothing by construction rather than by
@@ -205,33 +201,66 @@ public:
     constexpr TextBinding() noexcept = default;
 
     /**
-     * @brief Proves `font`, `text` and `runs` describe each other, or says which one does not.
+     * @brief Proves the screen approved `text`, and that `font`, `text` and `runs` agree.
      *
-     * Hashes the sidecar, so it is linear in its size - once, at start-up, never in a frame.
+     * Hashes the canonical package bytes, independently hashes the canonical form represented by
+     * `text`, and hashes the sidecar, so approved bytes cannot be paired with different parsed
+     * wording. This is linear in their combined size - once, at start-up, never in a frame - and
+     * all three hashes are allocation-free.
      *
+     * @param screen the compiled screen whose approval manifest authorizes the text package
      * @param font the font package the runs were positioned against
      * @param text the text package for the locale being run
+     * @param packageJson the canonical package bytes from which `text` was loaded
      * @param runs the sidecar bytes `text` addresses ranges of
      */
-    [[nodiscard]] static mdux::core::Result<TextBinding, ScreenError> create(const mdux::font::FontPackage& font,
+    [[nodiscard]] static mdux::core::Result<TextBinding, ScreenError> create(const ScreenPackage&           screen,
+                                                                             const mdux::font::FontPackage& font,
                                                                              const mdux::text::TextPackage& text,
+                                                                             std::span<const std::byte>     packageJson,
                                                                              std::span<const std::byte>     runs) noexcept;
 
     /// Whether this binding carries packages. False for a default-constructed one.
-    [[nodiscard]] constexpr bool bound() const noexcept { return font_ != nullptr && text_ != nullptr; }
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return font_ != nullptr && text_ != nullptr;
+    }
 
-    [[nodiscard]] constexpr const mdux::font::FontPackage* font() const noexcept { return font_; }
-    [[nodiscard]] constexpr const mdux::text::TextPackage* text() const noexcept { return text_; }
-    [[nodiscard]] constexpr std::span<const std::byte> runs() const noexcept { return runs_; }
+    [[nodiscard]] constexpr const mdux::font::FontPackage* font() const noexcept {
+        return font_;
+    }
+    [[nodiscard]] constexpr const mdux::text::TextPackage* text() const noexcept {
+        return text_;
+    }
+    [[nodiscard]] constexpr std::span<const std::byte> runs() const noexcept {
+        return runs_;
+    }
+
+    /// Whether `screen` carries the exact locale/id/digest retained by this binding.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        if (!bound()) {
+            return true;
+        }
+        for (const TextPackageApproval& candidate : screen.approvedTextPackages) {
+            if (candidate.locale == locale_ && candidate.packageId == packageId_ && candidate.packageSha256 == packageSha256_) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 private:
-    constexpr TextBinding(const mdux::font::FontPackage* font, const mdux::text::TextPackage* text,
-                          std::span<const std::byte> runs) noexcept
-        : font_{font}, text_{text}, runs_{runs} {}
+    constexpr TextBinding(const mdux::font::FontPackage* font,
+                          const mdux::text::TextPackage* text,
+                          std::span<const std::byte>     runs,
+                          mdux::evidence::Digest         packageSha256) noexcept
+        : font_{font}, text_{text}, runs_{runs}, locale_{text->locale}, packageId_{text->header.id}, packageSha256_{packageSha256} {}
 
     const mdux::font::FontPackage* font_{nullptr};
     const mdux::text::TextPackage* text_{nullptr};
     std::span<const std::byte>     runs_{};
+    std::string_view               locale_{};
+    std::string_view               packageId_{};
+    mdux::evidence::Digest         packageSha256_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline.
@@ -274,7 +303,7 @@ struct FrameStats {
  * list can carry several screens; without the second check the screen's declared budget would be
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
-[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list,
-                                                                 const TextBinding& text = {}) noexcept;
+[[nodiscard]] mdux::core::Result<FrameStats, ScreenError>
+render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text = {}) noexcept;
 
 }  // namespace mdux::medui

@@ -85,8 +85,11 @@ device runtime performs none of them, and turns that layout into vertices.**
 | Validate theme tokens and text keys against every approved locale | build machine | host tools |
 | Solve layout, flatten `Row`, compute absolute rectangles | build machine | host tools |
 | Validate text budgets against every approved locale | build machine | host tools |
+| Record each approved locale package id and canonical package digest | build machine | host tools |
 | Compute the `DrawBudget` | build machine | host tools |
 | Emit golden references (see rule below) | build machine | host tools |
+| Hash the selected package bytes and authenticate them against the compiled screen | device startup | governed |
+| Re-check the retained approval identity against the render target | each frame | governed |
 | **Build a `DrawList` from a compiled screen** | **device** | **governed** |
 
 *Layout*, not *geometry*: the compiler produces rectangles, budgets and the validated token and key
@@ -109,23 +112,31 @@ this conclusion first — `resolve_color_token()` and `THEME_COLORS` are in Trus
 `trustsc-ui` crate, and its `CompiledScreenPackage` carries `text_key` and `color_token` — and the
 parity programme's direction is MduX moving toward it.
 
-**A compiled screen is locale-free.** It carries no locale field and no glyph runs. Per-locale
-glyph runs stay in the text package where ADR-010 already put them, and the two are joined on device
-by looking each node's `textKey` up for the running locale. TrustSC does exactly this in
-`ScreenTextLayout::from_screen(screen, package, locale)`.
+**A compiled screen's layout is locale-free, but its approvals are not.** It carries no selected
+locale and no glyph runs. Per-locale glyph runs stay in the text package where ADR-010 put them, and
+one rectangle and one `DrawBudget` still serve every approved locale. The package now also carries
+an approval record per locale: the text package id and SHA-256 of its canonical `package.json`.
 
-The consequence that decides it: **adding an approved locale touches no screen artifact at all.**
-The alternative — one screen package per locale, carrying baked runs — would add a file and an
-`evidence.screen.<id>` per locale, and would rebake every screen when a translation changed.
-Translations change far more often than layouts, and coupling the two makes the frequent change
-rewrite the stable artifact.
+That manifest closes a gap the name-only boundary left open. A second text package could be valid,
+use the same font and key, and still carry wording the compiler never measured or a reviewer never
+approved. The compiler refuses parseable but noncanonical text-package JSON, so the file bytes it
+records are the one canonical identity. `TextBinding::create()` hashes those caller-supplied bytes
+without allocating, independently streams the parsed package back through the same canonical form,
+and requires the two digests to agree before authenticating and retaining the running locale's
+package id and digest. Approved bytes therefore cannot be paired with different parsed wording.
+`render()` checks the retained identity against its target screen before recording anything, so a
+binding approved for screen A cannot be reused for screen B. The existing ink measurement remains a
+separate refusal for a run that exceeds its node; it is not evidence that the wording was approved.
 
-**The cost of choosing this way, stated as a cost.** A locale-free screen does not know which locale
-it will be paired with, so its `DrawBudget` has to cover the widest approved translation — and a
-device shipping only `en-US` carries the German or Finnish ceiling in its buffers. Per-locale
-packages would size each budget to its own locale, and that is their one real advantage; it is
-given up deliberately. Buffer headroom is cheap and recoverable, while a translation update that
-rewrites every screen's digest is neither.
+**The changed cost is deliberate.** Adding a locale or changing an approved translation now rewrites
+the small approval manifest and the screen package digest, even though the rectangles remain shared.
+That increases review churn, but makes the exact text inputs part of the reviewed screen identity.
+It still avoids one screen package and one `evidence.screen.<id>` per locale, and it keeps all glyph
+runs outside the screen.
+
+The shared `DrawBudget` still has to cover the widest approved translation, so a device shipping
+only `en-US` may carry another locale's ceiling in its buffers. Per-locale screen packages would
+size each budget independently, but would duplicate layout artifacts; that trade remains rejected.
 
 Two things this does *not* relax. The compiler still validates every key against every approved
 locale, and still validates text budgets against the widest approved translation (#195) — that work

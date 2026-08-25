@@ -19,8 +19,12 @@
 import std;
 import speclab;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.evidence.report;
+import mdux.font.schema;
 import mdux.medui.schema;
+import mdux.medui.screen;
+import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.compile;
 import mdux.tools.medui.package;
@@ -200,6 +204,130 @@ const mdux::spec::Register aCompileProducesThreeArtifacts{
                           checks.expect(report->inputs.size() == 1, std::format("the .medui source is the only input, got {}", report->inputs.size()));
                           checks.expect(report->validate().has_value(), "the report satisfies its own schema");
                       }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compileCarriesApprovedPackageIdentity{
+    "A compiled screen carries the exact text package identity it was measured against",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-text-package-approval")
+            .Given("the committed endoscope screen recipe and its approved en-US text package", [] {})
+            .When("the compiler produces package.json", [] {})
+            .Then("the screen records that package's locale, id and exact input digest",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const std::string            recipeText = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto                   recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, std::format("the committed recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, std::format("the committed screen compiles, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const md::PackageReadResult read = md::readPackage(outputs->packageJson, "package.json");
+                      checks.expect(read.ok(), std::format("the compiled package reads back, first diagnostic '{}'", firstCode(read.diagnostics)));
+                      if (read.ok()) {
+                          const ms::ScreenPackage package = read.document.package();
+                          checks.expect(package.approvedTextPackages.size() == 1,
+                                        std::format("one locale is approved, got {}", package.approvedTextPackages.size()));
+                          if (package.approvedTextPackages.size() == 1) {
+                              const ms::TextPackageApproval& approval = package.approvedTextPackages.front();
+                              const std::string              textJson = contentsOf(repoRoot() / "generated/text/endoscope-monitor-en-us/package.json");
+                              checks.expect(approval.locale == "en-US", std::format("the locale is en-US, got '{}'", approval.locale));
+                              checks.expect(approval.packageId == "endoscope-monitor-en-us",
+                                            std::format("the package id is retained, got '{}'", approval.packageId));
+                              checks.expect(approval.packageSha256 == mdux::evidence::sha256(asBytes(textJson)),
+                                            "the approval digest is the exact package.json input digest");
+
+                              const std::string fontJson = contentsOf(repoRoot() / "generated/font/dejavu-ui/package.json");
+                              const std::string runs     = contentsOf(repoRoot() / "generated/text/endoscope-monitor-en-us/runs.bin");
+                              const auto        font     = mdux::font::FontPackage::parse(fontJson);
+                              const auto        text     = mdux::text::TextPackage::parse(textJson);
+                              checks.expect(font.has_value() && text.has_value(), "the committed font and text packages parse without Vulkan");
+                              if (font.has_value() && text.has_value()) {
+                                  const auto binding = ms::TextBinding::create(package, *font, *text, asBytes(textJson), asBytes(runs));
+                                  checks.expect(binding.has_value(), "the compiler digest and runtime digest agree on the committed package");
+                              }
+                          }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register noncanonicalTextPackageIsRefused{
+    "A valid but noncanonical text package is refused where an author can rebake it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-canonical-text-package")
+            .Given("the committed screen inputs with whitespace added to the text package JSON", [] {})
+            .When("the compiler loads the locale package", [] {})
+            .Then("it reports MEDUI-E002 instead of emitting an identity the runtime cannot reproduce",
+                  [] {
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-canonical-text"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("recipes/screen/endoscope-monitor/EndoscopeMonitor.medui");
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path textPath = root.path() / "generated/text/endoscope-monitor-en-us/package.json";
+                      std::filesystem::create_directories(textPath.parent_path());
+                      std::ofstream textFile{textPath, std::ios::binary};
+                      textFile << ' ' << contentsOf(repoRoot() / "generated/text/endoscope-monitor-en-us/package.json");
+                      textFile.close();
+
+                      const std::string recipeText = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto        recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      checks.expect(recipe.has_value(), "the committed recipe parses");
+                      if (recipe.has_value()) {
+                          const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), root.path(), diagnostics);
+                          checks.expect(!outputs.has_value(), "the noncanonical text package is refused");
+                          checks.expect(firstCode(diagnostics) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(diagnostics)));
+                          checks.expect(!diagnostics.empty() && diagnostics.front().message.find("not canonical") != std::string::npos,
+                                        "the diagnostic tells the author which invariant failed");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register unusedTextRecipeIsRefused{
+    "A text-free screen cannot silently ignore a recipe's text packages",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-unused-text-table")
+            .Given("a text-free screen recipe that nevertheless names font and locale packages", [] {})
+            .When("the compiler checks whether the screen needs a text budget", [] {})
+            .Then("it reports MEDUI-E002 before producing an empty approval manifest",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+                      md::Recipe                   recipe = textlessRecipe(diagnostics);
+                      recipe.fontPackage                  = "unused-font.json";
+                      recipe.textPackages                 = {"unused-text.json"};
+
+                      const std::string recipeText = fixture("textless-screen.toml");
+                      const auto        outputs    = md::run(recipe, "recipe.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                      checks.expect(!outputs.has_value(), "unused text inputs are refused rather than ignored");
+                      checks.expect(firstCode(diagnostics) == "MEDUI-E002", std::format("reported as MEDUI-E002, got '{}'", firstCode(diagnostics)));
                       checks.raise();
                   })
             .Execute();

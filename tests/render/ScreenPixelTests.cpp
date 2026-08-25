@@ -109,6 +109,10 @@ constexpr core::ColorRgba8 background{.r = 0, .g = 0, .b = 0, .a = 255};
 /// The screen as a constant expression, so the storage below can be sized from the budget the
 /// artifact bakes rather than from three numbers copied out of it.
 constexpr medui::ScreenPackage compiled = medui::generated::screen_endoscope_monitor::package();
+static_assert(compiled.validate().has_value(), "the committed screen's generated form validates");
+static_assert(compiled.approvedTextPackages.size() == 1, "the committed screen approves one locale package");
+static_assert(compiled.approvedTextPackages[0].locale == "en-US", "the emitted approval keeps its locale");
+static_assert(compiled.approvedTextPackages[0].packageId == "endoscope-monitor-en-us", "the emitted approval keeps its package id");
 
 /// Storage sized once from the screen's own budget, as a device would size it - and sized *by* it,
 /// so the two cannot drift. Hard-coding the three numbers would have left this test claiming a
@@ -138,8 +142,8 @@ void recordFrame(VkCommandBuffer commandBuffer, void* context) {
     }
     std::ostringstream buffer;
     buffer << file.rdbuf();
-    const std::string  text = buffer.str();
-    const auto*        data = reinterpret_cast<const std::byte*>(text.data());
+    const std::string text = buffer.str();
+    const auto*       data = reinterpret_cast<const std::byte*>(text.data());
     return std::vector<std::byte>{data, data + text.size()};
 }
 
@@ -159,8 +163,8 @@ struct BoundText {
 
     /// Through `create()`, which is the only way to obtain one - and which proves the three
     /// committed artifacts describe each other before a frame reads any of them.
-    [[nodiscard]] medui::TextBinding binding() const {
-        auto made = medui::TextBinding::create(font, text, runs);
+    [[nodiscard]] medui::TextBinding binding(const medui::ScreenPackage& screen) const {
+        auto made = medui::TextBinding::create(screen, font, text, textJson, runs);
         if (!made.has_value()) {
             throw std::runtime_error(std::format("the committed artifacts were refused: {}", medui::describe(made.error())));
         }
@@ -192,7 +196,7 @@ struct BoundText {
 
 /// A rectangle in pixels, or nothing.
 struct InkBox {
-    bool   found{false};
+    bool     found{false};
     core::Px left{0};
     core::Px top{0};
     core::Px right{0};   ///< exclusive
@@ -221,8 +225,7 @@ struct InkBox {
     // and a corrupt artifact should make it return "no ink" - which fails the REQUIRE below with the
     // run named - rather than form an out-of-range span and take the process with it. Subtraction
     // rather than `byteOffset + byteLength`, which wraps.
-    if (run->byteOffset > bound.runs.size() || run->byteLength > bound.runs.size() - run->byteOffset
-        || run->byteLength % mdux::text::draw::recordSize != 0) {
+    if (run->byteOffset > bound.runs.size() || run->byteLength > bound.runs.size() - run->byteOffset || run->byteLength % mdux::text::draw::recordSize != 0) {
         return InkBox{};
     }
     const std::span<const std::byte> records{bound.runs.data() + run->byteOffset, static_cast<std::size_t>(run->byteLength)};
@@ -261,8 +264,7 @@ struct InkBox {
 /// The label is drawn over the topbar panel, so "painted" means "differs from the panel's colour" -
 /// which also makes the assertion insensitive to the anti-aliased coverage values themselves. What
 /// is under test is where the glyphs landed, not what shade each edge pixel came out.
-[[nodiscard]] InkBox paintedWithin(std::span<const core::ColorRgba8> pixels, core::Extent2D surface,
-                                   const medui::NodeRect& within, core::ColorRgba8 ground) {
+[[nodiscard]] InkBox paintedWithin(std::span<const core::ColorRgba8> pixels, core::Extent2D surface, const medui::NodeRect& within, core::ColorRgba8 ground) {
     InkBox box;
     for (core::Px y = static_cast<core::Px>(within.y); y < static_cast<core::Px>(within.y + within.height); ++y) {
         for (core::Px x = static_cast<core::Px>(within.x); x < static_cast<core::Px>(within.x + within.width); ++x) {
@@ -502,15 +504,19 @@ TEST_CASE("An authored screen's label reaches pixels where the compiler measured
     // The coverage overload, with the committed atlas. A default renderer would sample a white
     // 1x1 default and every glyph would come out a filled rectangle - which would still "draw
     // text" in the loosest sense and would prove nothing about the atlas.
-    auto renderer = UiRenderer::createWithCoverageAtlas(context, mdux::shader::generated::mdux_ui::package(), package.budget,
-                                                        bound.atlas, bound.font.atlas.width, bound.font.atlas.height);
+    auto renderer = UiRenderer::createWithCoverageAtlas(context,
+                                                        mdux::shader::generated::mdux_ui::package(),
+                                                        package.budget,
+                                                        bound.atlas,
+                                                        bound.font.atlas.width,
+                                                        bound.font.atlas.height);
     REQUIRE(renderer.has_value());
 
     Frame frame;
     auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
     REQUIRE(list.has_value());
 
-    const auto recorded = medui::render(package, *list, bound.binding());
+    const auto recorded = medui::render(package, *list, bound.binding(package));
     REQUIRE(recorded.has_value());
 
     // One fewer deferred node than the unbound frame, and the difference is the label. Asserted as

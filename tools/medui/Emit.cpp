@@ -160,6 +160,28 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     return out;
 }
 
+[[nodiscard]] std::string renderApprovals(const ms::ScreenPackage& package) {
+    if (package.approvedTextPackages.empty()) {
+        return "/// This screen was compiled without text packages.\n"
+               "inline constexpr std::span<const mdux::medui::TextPackageApproval> approvedTextPackages{};\n\n";
+    }
+
+    std::string out = "/// The exact per-locale text packages measured when this screen was compiled.\n"
+                      "inline constexpr mdux::medui::TextPackageApproval approvedTextPackages[] = {\n";
+    for (const ms::TextPackageApproval& approval : package.approvedTextPackages) {
+        out += std::format("    {{.locale = {}, .packageId = {}, .packageSha256 = {{", quoted(approval.locale), quoted(approval.packageId));
+        for (std::size_t index = 0; index < approval.packageSha256.size(); ++index) {
+            if (index != 0) {
+                out += ", ";
+            }
+            out += std::to_string(approval.packageSha256[index]);
+        }
+        out += "}},\n";
+    }
+    out += "};\n\n";
+    return out;
+}
+
 /**
  * @brief One node's payload as a spec initialiser.
  *
@@ -244,6 +266,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     out += std::format("    .schemaVersion = {},\n", package.schemaVersion);
     out += std::format("    .surfaceWidth = {},\n", package.surfaceWidth);
     out += std::format("    .surfaceHeight = {},\n", package.surfaceHeight);
+    out += "    .approvedTextPackages = approvedTextPackages,\n";
     out += "    .nodes = nodes,\n";
     out += std::format("    .budget = {{.maxVertices = {}, .maxIndices = {}, .maxCommands = {}}},\n",
                        package.budget.maxVertices,
@@ -274,6 +297,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     out += "/// The package id this screen was generated from.\n";
     out += std::format("inline constexpr std::string_view id = {};\n\n", quoted(package.id));
 
+    out += renderApprovals(package);
     out += renderStateArrays(package);
 
     // A screen with nothing to draw is valid - `ScreenPackage::validate()` permits it, with an empty

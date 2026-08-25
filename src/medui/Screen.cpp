@@ -61,8 +61,12 @@ struct InkBox {
     mdux::core::Px right{0};   ///< exclusive
     mdux::core::Px bottom{0};  ///< exclusive
 
-    [[nodiscard]] constexpr mdux::core::Px width() const noexcept { return right - left; }
-    [[nodiscard]] constexpr mdux::core::Px height() const noexcept { return bottom - top; }
+    [[nodiscard]] constexpr mdux::core::Px width() const noexcept {
+        return right - left;
+    }
+    [[nodiscard]] constexpr mdux::core::Px height() const noexcept {
+        return bottom - top;
+    }
 };
 
 /**
@@ -76,8 +80,7 @@ struct InkBox {
  * Placement arithmetic is `addGlyphRect()`'s and is not restated: `bitmapOriginX` from the pen, and
  * `bitmapOriginY` measured *up* from the baseline, hence subtracted on a downward y axis.
  */
-[[nodiscard]] mdux::core::Result<InkBox, ScreenError> measureInk(const mdux::font::FontPackage& font,
-                                                                 std::span<const std::byte>     records) noexcept {
+[[nodiscard]] mdux::core::Result<InkBox, ScreenError> measureInk(const mdux::font::FontPackage& font, std::span<const std::byte> records) noexcept {
     InkBox box;
     for (std::size_t offset = 0; offset < records.size(); offset += mdux::text::draw::recordSize) {
         const auto placement = mdux::text::draw::decodeRecord(records.subspan(offset, mdux::text::draw::recordSize));
@@ -117,8 +120,7 @@ struct InkBox {
 ///
 /// The one failure left is the screen's rather than the binding's: a key this package does not
 /// carry means the wrong locale, or the wrong package, was bound for this screen.
-[[nodiscard]] mdux::core::Result<std::span<const std::byte>, ScreenError> runFor(const TextBinding& binding,
-                                                                                  std::string_view   textKey) noexcept {
+[[nodiscard]] mdux::core::Result<std::span<const std::byte>, ScreenError> runFor(const TextBinding& binding, std::string_view textKey) noexcept {
     const mdux::text::TextRun* run = binding.text()->find(textKey);
     if (run == nullptr) {
         return mdux::core::err(ScreenError::UnknownTextKey);
@@ -128,8 +130,10 @@ struct InkBox {
 
 }  // namespace
 
-mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const mdux::font::FontPackage& font,
+mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPackage&           screen,
+                                                                 const mdux::font::FontPackage& font,
                                                                  const mdux::text::TextPackage& text,
+                                                                 std::span<const std::byte>     packageJson,
                                                                  std::span<const std::byte>     runs) noexcept {
     // The runs index `font.glyphs` by position, so a package baked against another font names the
     // same numbers for different shapes. Nothing downstream can detect that: every index would still
@@ -172,7 +176,24 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const mdux::fon
         }
     }
 
-    return TextBinding{&font, &text, runs};
+    // The compiler admits only canonical package bytes, so hashing the caller's already-loaded
+    // artifact is the exact identity it recorded. The allocation-free canonical hash additionally
+    // proves those bytes describe the `text` object that will drive rendering; otherwise approved
+    // bytes for package A could be paired with parsed content from package B.
+    const mdux::evidence::Digest packageSha256 = mdux::evidence::sha256(packageJson);
+    const auto                   textSha256    = text.canonicalSha256();
+    if (!textSha256.has_value() || *textSha256 != packageSha256) {
+        return mdux::core::err(ScreenError::PackageNotApproved);
+    }
+
+    const auto approved = std::ranges::find_if(screen.approvedTextPackages, [&](const TextPackageApproval& candidate) {
+        return candidate.locale == text.locale && candidate.packageId == text.header.id && candidate.packageSha256 == packageSha256;
+    });
+    if (approved == screen.approvedTextPackages.end()) {
+        return mdux::core::err(ScreenError::PackageNotApproved);
+    }
+
+    return TextBinding{&font, &text, runs, packageSha256};
 }
 
 std::string_view describe(ScreenError error) noexcept {
@@ -193,6 +214,8 @@ std::string_view describe(ScreenError error) noexcept {
             return "the text package was baked against a different font package";
         case ScreenError::SidecarMismatch:
             return "the sidecar is not the one the text package describes";
+        case ScreenError::PackageNotApproved:
+            return "the screen was not compiled against this text package";
         case ScreenError::TextOverflowsNode:
             return "a run's ink is larger than the node that names it";
     }
@@ -201,8 +224,7 @@ std::string_view describe(ScreenError error) noexcept {
     return "unknown screen error";
 }
 
-mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list,
-                                                   const TextBinding& text) noexcept {
+mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -215,6 +237,12 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
         static_cast<void>(list.rollback(start));
         return mdux::core::err(error);
     };
+
+    // A binding retains the identity create() authenticated. Re-checking it against the target
+    // screen closes the cross-screen substitution path without rehashing or allocating.
+    if (!text.approvedBy(screen)) {
+        return refuse(ScreenError::PackageNotApproved);
+    }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
     // draws, and `DrawList` can only enforce the budget it was created with - which may be larger,
@@ -246,8 +274,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
 
             const auto labelColour = resolveColorToken(label->colorToken);
             if (!labelColour.has_value()) {
-                return refuse(labelColour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken
-                                                                                : ScreenError::UnknownColorToken);
+                return refuse(labelColour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
             }
 
             const auto records = runFor(text, label->textKey);
@@ -276,8 +303,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             // authenticate. #195 proved this box fits this rectangle for the package it measured;
             // this proves it for the package actually bound, at the cost of one comparison over a
             // walk the placement needs anyway. See Screen.cppm for why the two are not redundant.
-            if (ink->width() > static_cast<mdux::core::Px>(node.bounds.width)
-                || ink->height() > static_cast<mdux::core::Px>(node.bounds.height)) {
+            if (ink->width() > static_cast<mdux::core::Px>(node.bounds.width) || ink->height() > static_cast<mdux::core::Px>(node.bounds.height)) {
                 return refuse(ScreenError::TextOverflowsNode);
             }
 
@@ -287,8 +313,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink->top;
 
             const std::size_t verticesBefore = list.vertices().size();
-            if (const auto recorded =
-                    mdux::text::draw::recordRun(list, *text.font(), *records, originX, originY, toColor(*labelColour));
+            if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), *records, originX, originY, toColor(*labelColour));
                 !recorded.has_value()) {
                 // `recordRun()` rolls its own run back and this rolls the whole frame back. Its error
                 // is not forwarded: every way it can fail here is either something `runFor()` and
