@@ -614,6 +614,11 @@ if(MDUX_BUILD_TESTS)
         -D "RANLIB=${CMAKE_RANLIB}"
         -D "STDLIB_MODULES_JSON=${CMAKE_CXX_STDLIB_MODULES_JSON}"
         -D "OSX_SYSROOT=${CMAKE_OSX_SYSROOT}"
+        # The consumer must select the same standard library as this build, not the compiler's
+        # default. Omitting this is invisible on macOS, where libc++ *is* Clang's default, and fatal
+        # on Linux, where it is not: the nested configure then scans libc++'s std.cppm with
+        # libstdc++'s include path and fails on a missing '__config'. Found by #246's Linux leg.
+        -D "CXX_FLAGS=${CMAKE_CXX_FLAGS}"
         -D "GENERATOR=${CMAKE_GENERATOR}"
         -D "EXPECTED_VERSION=${PROJECT_VERSION}"
         -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"

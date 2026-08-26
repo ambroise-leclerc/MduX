@@ -98,6 +98,11 @@ endif()
 if(DEFINED OSX_SYSROOT AND NOT OSX_SYSROOT STREQUAL "")
     list(APPEND consumer_toolchain_arguments "-DCMAKE_OSX_SYSROOT=${OSX_SYSROOT}")
 endif()
+if(DEFINED CXX_FLAGS AND NOT CXX_FLAGS STREQUAL "")
+    # Carries -stdlib=libc++ where the toolchain sets it. Without this the consumer builds against
+    # the compiler's default standard library while linking a MduX built against another one.
+    list(APPEND consumer_toolchain_arguments "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}")
+endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -B "${consumer_build}" -S "${consumer_src}"
             -G "${GENERATOR}"
