@@ -77,9 +77,10 @@
         {
             "name": "ninja-clang",
             "displayName": "Ninja with Clang",
-            "description": "Ninja generator with Clang 20+ for C++23 modules and import std support. Mirrors the manual-dispatch-only clang-build job in .github/workflows/clang-build.yml, which no push or pull_request trigger runs (see issue #48 for re-enabling it).",
+            "description": "Ninja generator with upstream Clang 21 and libc++ for C++23 modules and import std. Mirrors the clang-build job in .github/workflows/clang-build.yml. The leg is manual-dispatch while #246 establishes whether it runs green; the toolchain file carries the import-std wiring that made the macOS lane work.",
             "generator": "Ninja",
             "binaryDir": "build-clang",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/linux-clang21-libcxx.cmake",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -87,8 +88,6 @@
             },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_C_COMPILER": "clang-20",
-                "CMAKE_CXX_COMPILER": "clang++-20",
                 "MDUX_BUILD_EXAMPLES": "ON",
                 "MDUX_BUILD_TESTS": "ON",
                 "MDUX_BUILD_DOCS": "OFF"

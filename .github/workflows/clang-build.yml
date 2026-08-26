@@ -1,25 +1,49 @@
-# Clang leg — manual-dispatch only, not part of the automatic CI set.
+# Clang leg on Linux — manual-dispatch while issue #246 runs.
 #
-# This job is NOT wired to push or pull_request on purpose: Clang 20's `std` module support is
-# not ready for this codebase (issue #48 added the GCC 16 leg but did not re-enable this one, so
-# the Clang half of that story remains open). It is kept as a live workflow rather than a
-# commented-out `.disabled` file so that:
+# This job is NOT wired to push or pull_request yet, and #246 has now established why — the reason
+# is not the one this comment used to give.
+#
+# The old rationale, kept so nobody restores it: "Clang 20's `std` module support is not ready for
+# this codebase", with the preset pinned to clang-20 to match. That is obsolete twice over. #222 made
+# Clang 21.1.8 with libc++ continuously verified on macOS, and run 32945833117 on this workflow
+# showed `import std` resolving fine on Linux too: libc++-21-dev ships its module manifest at
+# /usr/lib/llvm-21/lib/libc++.modules.json, the toolchain file finds it, and CMake configures
+# cleanly. The module story is no longer the blocker.
+#
+# **The actual blocker, measured rather than assumed.** The build fails on exactly one diagnostic:
+#
+#     src/shader/Schema.cpp:322: error: stack frame size (4120) exceeds limit (4096) in
+#     'mdux::shader::ShaderPackage@mdux.shader.schema::toJson() const' [-Werror,-Wframe-larger-than]
+#
+# 24 bytes over, in one function, and nothing else in the tree. That limit is not incidental: it is
+# the determinism guard from issue #63 (cmake/MduXDeterminism.cmake), and its comment states the
+# reason — "no heap" must not quietly become "enormous stack", which on a device is the same bug
+# wearing a different hat. So the two available fixes are not equivalent. Reducing `toJson()`'s frame
+# is real work; raising the number retires a device-safety guard to accommodate a CI leg, and this
+# comment exists to say that is not a trade this project makes silently.
+#
+# Note the target, because it explains why macOS is green and this is not: the macOS lane is arm64
+# and this runner is x86-64. Same compiler version, different register allocation and ABI. The
+# function is a long linear chain of `json::Value` temporaries in sibling scopes, and Clang reuses
+# those stack slots less aggressively than GCC does.
+#
+# Until that is settled, the leg stays manual-dispatch. Run it from the Actions tab; because it is
+# `workflow_dispatch` only, a red result never blocks a PR, which is what makes it usable as an
+# experiment. The evidence step below is live rather than deferred, so the moment the build passes,
+# this workflow answers the remaining half of #246 without further edits.
+#
+# It is kept as a live workflow rather than a commented-out `.disabled` file so that:
 #
 #   - the YAML stays syntax-checked by GitHub instead of rotting silently,
 #   - Dependabot can see and bump the action versions pinned below,
-#   - re-enabling it is adding a trigger, not a rename plus an un-comment pass.
+#   - enabling it is adding a trigger, not a rename plus an un-comment pass.
 #
-# Run it from the Actions tab when checking whether a newer Clang has caught up. Because it is
-# `workflow_dispatch` only, a red result here never blocks a PR.
-#
-# When it is turned back on for real, add an evidence step matching the MSVC and GCC legs in
-# windows-build.yml / linux-gcc16-build.yml:
-#
-#     - name: Verify evidence artifacts (Clang)
-#       run: ctest --preset ninja-clang -L evidence
-#
-# Clang's floating-point code generation differs from both MSVC's and GCC's, so a third
-# independent toolchain strengthens the byte-identity claim in ADR-007 further (decision 6).
+# On the third-toolchain claim in ADR-007 decision 6: an earlier version of this comment reserved it
+# for whenever this leg came back. It is no longer outstanding. Since #222 the macOS lane runs
+# `ctest --preset ninja-macos-clang -L evidence` on every push, so byte-identity already holds across
+# MSVC, GCC and Clang 21/libc++. What a Linux Clang leg would add is that third toolchain on the
+# same OS as the GCC leg — isolating the standard library and code generator from the platform —
+# which is a sharper claim, not the first one.
 
 name: Clang Build (manual)
 
@@ -74,7 +98,7 @@ jobs:
       with:
         cmake-version: '4.3.1'
 
-    - name: Install LLVM/Clang 20
+    - name: Install LLVM/Clang 21 and libc++
       run: |
         set -euo pipefail
         sudo apt-get update
@@ -91,15 +115,19 @@ jobs:
           | awk -F: '/^fpr:/ {print $10}' | grep -qx "$LLVM_KEY_FPR"
         gpg --dearmor < /tmp/llvm-snapshot.asc > /tmp/llvm.gpg
         sudo install -m 0644 /tmp/llvm.gpg /etc/apt/keyrings/llvm.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main" \
-          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-20.list
+        # Derived, not hardcoded: this job runs on ubuntu-latest, whose codename moves. A pinned
+        # `jammy` line silently installs nothing on a noble runner, and the failure then surfaces as
+        # a missing compiler rather than as a wrong source list.
+        codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-21 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-21.list
         sudo apt-get update
         sudo apt-get install -y \
           ninja-build \
           build-essential \
-          clang-20 \
-          libc++-20-dev \
-          libc++abi-20-dev \
+          clang-21 \
+          libc++-21-dev \
+          libc++abi-21-dev \
           vulkan-tools \
           libvulkan-dev \
           vulkan-utility-libraries-dev \
@@ -107,12 +135,26 @@ jobs:
           libglfw3-dev \
           xvfb
 
-    - name: Setup Clang 20
+    - name: Setup Clang 21
       run: |
-        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 60
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 60
         clang --version
         clang++ --version
+
+    # #246's first question, answered before the configure step so that a missing manifest is
+    # reported as itself rather than as an unresolved `import std` hundreds of lines later. The
+    # toolchain file searches the same locations; this step only makes the finding visible in the log.
+    - name: Report the libc++ std module manifest
+      run: |
+        set -euo pipefail
+        echo "Searching /usr/lib/llvm-21 for libc++.modules.json"
+        found="$(find /usr/lib/llvm-21 -name 'libc++.modules.json' 2>/dev/null || true)"
+        if [ -z "$found" ]; then
+          echo "::warning::No libc++.modules.json in this packaging; import std cannot resolve for libc++. Record on #246."
+        else
+          echo "$found"
+        fi
 
     - name: Verify Vulkan installation
       run: |
@@ -132,3 +174,13 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --preset ninja-clang --output-on-failure
+
+    # The step this workflow's header used to describe as future work. It matches the MSVC and GCC
+    # legs in windows-build.yml / linux-gcc16-build.yml: re-derive every committed artifact and
+    # byte-compare it, on a third standard library and code generator.
+    #
+    # `--no-tests=error` on purpose. Without it a preset that discovered no `evidence` test at all
+    # would pass this step, and the byte-identity claim in ADR-007 decision 6 would rest on a
+    # green tick for zero assertions.
+    - name: Verify evidence artifacts (Clang)
+      run: ctest --preset ninja-clang -L evidence --output-on-failure --no-tests=error
