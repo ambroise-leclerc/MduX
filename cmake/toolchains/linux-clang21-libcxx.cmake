@@ -46,7 +46,21 @@ if(NOT DEFINED CMAKE_CXX_STDLIB_MODULES_JSON)
             "answer, not a configuration mistake: this LLVM packaging does not ship the std module "
             "manifest, so `import std` cannot resolve for libc++ here. Record it on the issue.")
     endif()
+
+    # `file(GLOB_RECURSE)` does not guarantee an order, so taking element 0 of the raw result would
+    # let the chosen manifest depend on directory iteration order - and this toolchain feeds a
+    # pipeline whose entire claim is byte-identical output across machines. Sort first, so the same
+    # installation always selects the same manifest.
+    list(SORT _mdux_libcxx_modules_json)
     list(GET _mdux_libcxx_modules_json 0 _mdux_libcxx_modules_json_first)
+    if(_mdux_libcxx_modules_json_count GREATER 1)
+        # More than one packaging is installed under the same root. Which one is right is a judgement
+        # this file should not make silently, so name them all and let the operator pin it.
+        message(WARNING
+            "Multiple libc++.modules.json under '${_mdux_llvm_root}': "
+            "${_mdux_libcxx_modules_json}. Using '${_mdux_libcxx_modules_json_first}'. Set "
+            "CMAKE_CXX_STDLIB_MODULES_JSON explicitly to choose a different one.")
+    endif()
     set(CMAKE_CXX_STDLIB_MODULES_JSON "${_mdux_libcxx_modules_json_first}"
         CACHE FILEPATH "" FORCE)
 endif()
