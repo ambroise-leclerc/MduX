@@ -319,6 +319,120 @@ ResultVoid<SchemaError> ShaderPackage::validate() const noexcept {
 // ShaderPackage::toJson() / write()
 // ---------------------------------------------------------------------------
 
+namespace {
+
+// `toJson()` used to build all four sections inline. That put every section's `json::Value`
+// temporaries in sibling scopes of one frame, and Clang - unlike GCC - does not reuse those stack
+// slots aggressively: on x86-64 the function measured 4120 bytes against the 4096-byte
+// `-Wframe-larger-than` limit that issue #63 set so "no heap" could not quietly become "enormous
+// stack" (see cmake/MduXDeterminism.cmake). Splitting the sections out gives each its own frame and
+// leaves `toJson()` holding one section's value at a time. The guard stays where it is; the
+// function fits under it. Found by #246's Linux Clang leg, which is the only leg that compiles this
+// for x86-64 with Clang.
+//
+// Each helper is the whole of one section, not a fragment of it, so the composition below reads as
+// the document's shape.
+
+[[nodiscard]] Result<json::Value, SchemaError> sidecarSection(std::string_view path, std::uint64_t byteLength,
+                                                              const evidence::Digest& sha256) noexcept {
+    json::Value sidecar = json::Value::emptyObject();
+    if (auto done = setMember(sidecar, "path", json::Value::string(std::string{path})); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(sidecar, "byteLength", json::Value::unsignedInteger(byteLength)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(sidecar, "sha256", digestToJson(sha256)); !done.has_value()) {
+        return err(done.error());
+    }
+    return sidecar;
+}
+
+[[nodiscard]] Result<json::Value, SchemaError> moduleEntry(const ShaderModule& module) noexcept {
+    json::Value entry = json::Value::emptyObject();
+    if (auto done = setMember(entry, "id", json::Value::string(module.id)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "stage", json::Value::string(std::string{toWire(module.stage)})); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "entryPoint", json::Value::string(module.entryPoint)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "byteOffset", json::Value::unsignedInteger(module.byteOffset)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "byteLength", json::Value::unsignedInteger(module.byteLength)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "sha256", digestToJson(module.sha256)); !done.has_value()) {
+        return err(done.error());
+    }
+    return entry;
+}
+
+[[nodiscard]] Result<json::Value, SchemaError> descriptorEntry(const DescriptorBinding& descriptor) noexcept {
+    json::Value entry = json::Value::emptyObject();
+    if (auto done = setMember(entry, "set", json::Value::unsignedInteger(descriptor.set)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "binding", json::Value::unsignedInteger(descriptor.binding)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "kind", json::Value::string(std::string{toWire(descriptor.kind)})); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "count", json::Value::unsignedInteger(descriptor.count)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "stages", stagesToJson(descriptor.stages)); !done.has_value()) {
+        return err(done.error());
+    }
+    return entry;
+}
+
+[[nodiscard]] Result<json::Value, SchemaError> pushConstantEntry(const PushConstantRange& range) noexcept {
+    json::Value entry = json::Value::emptyObject();
+    if (auto done = setMember(entry, "offset", json::Value::unsignedInteger(range.offset)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "size", json::Value::unsignedInteger(range.size)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = setMember(entry, "stages", stagesToJson(range.stages)); !done.has_value()) {
+        return err(done.error());
+    }
+    return entry;
+}
+
+/// One array section, built by applying `entryOf` to each element. The array lives here rather than
+/// in `toJson()`, which is the point of the split.
+template <typename Element, typename EntryOf>
+[[nodiscard]] Result<json::Value, SchemaError> arraySection(std::span<const Element> elements, EntryOf entryOf) noexcept {
+    json::Value array = json::Value::array({});
+    for (const Element& element : elements) {
+        auto entry = entryOf(element);
+        if (!entry.has_value()) {
+            return err(entry.error());
+        }
+        if (auto done = pushElement(array, std::move(*entry)); !done.has_value()) {
+            return err(done.error());
+        }
+    }
+    return array;
+}
+
+/// Attaches one built section to `root`, so the composition below is one line per member.
+[[nodiscard]] ResultVoid<SchemaError> attach(json::Value& root, std::string key,
+                                             Result<json::Value, SchemaError> section) noexcept {
+    if (!section.has_value()) {
+        return err(section.error());
+    }
+    return setMember(root, std::move(key), std::move(*section));
+}
+
+}  // namespace
+
 Result<json::Value, SchemaError> ShaderPackage::toJson() const noexcept {
     if (auto valid = validate(); !valid.has_value()) {
         return err(valid.error());
@@ -329,115 +443,19 @@ Result<json::Value, SchemaError> ShaderPackage::toJson() const noexcept {
         return err(SchemaError::MalformedPackage);
     }
 
-    json::Value sidecar = json::Value::emptyObject();
-    if (auto done = setMember(sidecar, "path", json::Value::string(sidecarPath));
+    if (auto done = attach(root, "sidecar", sidecarSection(sidecarPath, sidecarByteLength, sidecarSha256));
         !done.has_value()) {
         return err(done.error());
     }
-    if (auto done = setMember(sidecar, "byteLength",
-                              json::Value::unsignedInteger(sidecarByteLength));
+    if (auto done = attach(root, "modules", arraySection(std::span{modules}, moduleEntry)); !done.has_value()) {
+        return err(done.error());
+    }
+    if (auto done = attach(root, "descriptors", arraySection(std::span{descriptors}, descriptorEntry));
         !done.has_value()) {
         return err(done.error());
     }
-    if (auto done = setMember(sidecar, "sha256", digestToJson(sidecarSha256)); !done.has_value()) {
-        return err(done.error());
-    }
-    if (auto done = setMember(root, "sidecar", std::move(sidecar)); !done.has_value()) {
-        return err(done.error());
-    }
-
-    json::Value moduleArray = json::Value::array({});
-    for (const ShaderModule& module : modules) {
-        json::Value entry = json::Value::emptyObject();
-        if (auto done = setMember(entry, "id", json::Value::string(module.id));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "stage",
-                                  json::Value::string(std::string{toWire(module.stage)}));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "entryPoint", json::Value::string(module.entryPoint));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "byteOffset",
-                                  json::Value::unsignedInteger(module.byteOffset));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "byteLength",
-                                  json::Value::unsignedInteger(module.byteLength));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "sha256", digestToJson(module.sha256));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = pushElement(moduleArray, std::move(entry)); !done.has_value()) {
-            return err(done.error());
-        }
-    }
-    if (auto done = setMember(root, "modules", std::move(moduleArray)); !done.has_value()) {
-        return err(done.error());
-    }
-
-    json::Value descriptorArray = json::Value::array({});
-    for (const DescriptorBinding& descriptor : descriptors) {
-        json::Value entry = json::Value::emptyObject();
-        if (auto done = setMember(entry, "set", json::Value::unsignedInteger(descriptor.set));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done =
-                setMember(entry, "binding", json::Value::unsignedInteger(descriptor.binding));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "kind",
-                                  json::Value::string(std::string{toWire(descriptor.kind)}));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "count", json::Value::unsignedInteger(descriptor.count));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "stages", stagesToJson(descriptor.stages));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = pushElement(descriptorArray, std::move(entry)); !done.has_value()) {
-            return err(done.error());
-        }
-    }
-    if (auto done = setMember(root, "descriptors", std::move(descriptorArray));
+    if (auto done = attach(root, "pushConstants", arraySection(std::span{pushConstants}, pushConstantEntry));
         !done.has_value()) {
-        return err(done.error());
-    }
-
-    json::Value pushArray = json::Value::array({});
-    for (const PushConstantRange& range : pushConstants) {
-        json::Value entry = json::Value::emptyObject();
-        if (auto done = setMember(entry, "offset", json::Value::unsignedInteger(range.offset));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "size", json::Value::unsignedInteger(range.size));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = setMember(entry, "stages", stagesToJson(range.stages));
-            !done.has_value()) {
-            return err(done.error());
-        }
-        if (auto done = pushElement(pushArray, std::move(entry)); !done.has_value()) {
-            return err(done.error());
-        }
-    }
-    if (auto done = setMember(root, "pushConstants", std::move(pushArray)); !done.has_value()) {
         return err(done.error());
     }
 
