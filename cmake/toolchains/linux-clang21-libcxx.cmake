@@ -4,9 +4,10 @@
 # resolve for Clang on macOS, and the part that made it work is not macOS-specific: CMake needs to be
 # pointed at libc++'s own `libc++.modules.json`, and the compile must actually select libc++.
 #
-# This leg is manual-dispatch until #246 records whether it runs green. Read the FATAL_ERROR
-# messages below as the experiment's output rather than as breakage: each one names what was missing
-# on the runner, which is the result the issue asks for.
+# #246 established that this works: libc++-21-dev ships its manifest and `import std` resolves, so
+# the leg now runs on every push. The FATAL_ERROR messages below stay verbose anyway - they are what
+# a contributor on a different LLVM packaging will read, and each names what was missing rather than
+# failing later as an unresolved `std` module.
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "The linux-clang21-libcxx toolchain is only valid on Linux hosts.")
 endif()

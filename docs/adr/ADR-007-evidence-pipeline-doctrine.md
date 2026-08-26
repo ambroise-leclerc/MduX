@@ -123,11 +123,17 @@ generated/<kind>/<id>/report.json` already tells an auditor exactly which commit
 changed a committed artifact, authoritatively, for free. Duplicating that inside the file itself
 was redundant even before it turned out to be broken.
 
-### 6. Three toolchains, in the same PR — a claim TrustSC cannot make
-The evidence tests run on Windows/MSVC, Linux/GCC 16, and — since #222 — macOS/Clang 21 with libc++,
-in the same pull request. Byte-identity across independent toolchains, standard libraries and
-floating-point code generators is a strictly stronger determinism claim than TrustSC obtains from a
-single rustc, and it costs nothing extra because all three legs already exist.
+### 6. Four legs, in the same PR — a claim TrustSC cannot make
+The evidence tests run on Windows/MSVC, Linux/GCC 16, macOS/Clang 21 with libc++ (#222), and
+Linux/Clang 21 with libc++ (#246), in the same pull request. Byte-identity across independent
+toolchains, standard libraries and floating-point code generators is a strictly stronger determinism
+claim than TrustSC obtains from a single rustc, and it costs nothing extra because all four legs
+already exist.
+
+The fourth leg is not a fourth toolchain, and it is worth saying why it was added anyway. It runs
+the same compiler and standard library as the macOS lane, on the same operating system as the GCC
+lane. That is what separates "a different toolchain produced identical bytes" from "a different
+*platform* produced identical bytes" — two claims this doctrine had been making as one.
 
 This is written down here specifically so that a future change cannot "simplify" CI to one leg
 without knowingly discarding the claim.
@@ -138,8 +144,10 @@ that leg: it added the GCC 16 leg and left the Clang half of its own title open,
 `clang-build.yml` has carried no `push` or `pull_request` trigger since. The parenthesis asserted in
 the present tense a leg that has never run automatically — the same defect class #116 found in
 ADR-005, in the paragraph written to stop exactly this claim being weakened by accident. The third
-toolchain is real now, but it arrived via macOS rather than the Linux Clang leg, which remains
-manual-dispatch pending #246.
+toolchain arrived via macOS rather than the Linux Clang leg. #246 then made that leg run too, and it
+earned its place immediately: it caught a stack-frame guard violation in `ShaderPackage::toJson()`
+and a standard-library mismatch in the install-tree consumer, both of which three green legs had
+missed.
 
 ## Alternatives Considered
 
