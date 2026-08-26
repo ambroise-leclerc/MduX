@@ -5,8 +5,8 @@
 > queried on GitHub: ten closed, three open (`#16`, `#17`, `#19`). **No epic changed state since the
 > v0.6.0 baseline** — what moved is post-tag content work and one new platform, recorded under
 > [Since the tag](#since-the-tag).
-> Three open non-epic issues are tracked in their owning sections rather than only on GitHub:
-> `#219` under #15, `#153` under #18, and `#246` under the CI claim it corrects.
+> Two open non-epic issues are tracked in their owning sections rather than only on GitHub:
+> `#219` under #15 and `#153` under #18.
 > The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
 > 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
@@ -43,7 +43,7 @@ describes, which is #16 over content #17 teaches to draw.
 | Delivered | 10 |
 | Remaining | 3 |
 | Waves shipped | 5 |
-| Open issues outside an epic | 3 (#153, #219, #246) |
+| Open issues outside an epic | 2 (#153, #219) |
 
 ## The thesis
 
@@ -57,13 +57,13 @@ the whole of Track C.
 |---|---|---|
 | UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). A text package is baked, the committed screen carries a `t("STR-KEY")` measured against it (#235), the governed runtime draws it (#242), and the screen is bound to the packages it was compiled against by digest (#244) - so a label authored in `.medui` reaches pixels through every stage, and a substituted translation is refused rather than drawn. What is still ahead is content rather than path: the rest of the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all three CI legs since #222 - MSVC, GCC 16 and macOS/Clang 21. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
+| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all four CI legs - MSVC, GCC 16, macOS/Clang 21 (#222) and Linux/Clang 21 (#246). | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. **616 tests, 616 passing** at `develop` @ `6124bcb`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
-| Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC, GCC 16 and - since #222 - macOS arm64 / Clang 21 all green in CI. The Linux Clang leg stays manual-dispatch. | Workspace builds `--locked` on Linux and in containers. |
+| Tests | Closed. **616 tests, 616 passing** at `develop` @ `6124bcb`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. #246 added a fourth lane, Linux under Clang 21 and libc++, which caught a stack-frame guard violation and a standard-library mismatch that the other three had all missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC, GCC 16, macOS arm64 / Clang 21 (#222) and Linux / Clang 21 (#246) all green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 > **Why the test count is sourced from CI rather than a local run.** 616/616 is what the macOS lane
 > reports for `6124bcb`, and the GCC 16 and MSVC lanes are green on the same commit. A clean local
@@ -455,21 +455,30 @@ clone-time exposure that a HEAD-only deletion leaves behind.
 
 #### Two claims C++ makes better
 
-Running the evidence tests on MSVC, GCC and — since #222 — Clang 21 with libc++ on Apple Silicon, in
-the same pull request, proves byte-identity across three independent toolchains, standard libraries
-and floating-point code generators. TrustSC gets its determinism from a single `rustc`.
+Running the evidence tests on MSVC, GCC 16 and Clang 21 with libc++ — the last on both Apple
+Silicon (#222) and Linux (#246) — in the same pull request proves byte-identity across three
+independent toolchains, standard libraries and floating-point code generators, on three operating
+systems. TrustSC gets its determinism from a single `rustc`.
 
 The third leg arrived by a route this document did not predict, and finding that out corrected a
 false claim. ADR-007 decision 6 read "and Clang, now that issue #48 re-enabled that leg" — #48 did
 not: `clang-build.yml` has never carried a `push` or `pull_request` trigger. The claim was true in
 substance and wrong about its own evidence, which is the defect class #116 found in ADR-005.
 
-#246 then established what the Linux leg actually blocks on, and it is not what the workflow said.
-`import std` resolves fine against libc++-21 there; the build fails on a single diagnostic — a
-4120-byte stack frame in `ShaderPackage::toJson()` against the 4096-byte limit #63 set so that "no
-heap" could not quietly become "enormous stack". 24 bytes, on x86-64, where the macOS lane is arm64.
-The leg stays manual-dispatch until that is settled on its merits, because raising the limit would
-retire a device-safety guard to accommodate a CI lane.
+#246 then ran the Linux leg, and it is now a fourth lane on every push. `import std` was never the
+blocker there — libc++-21 ships its manifest and resolves fine. Two real defects were, and neither
+was reachable on any other leg: `ShaderPackage::toJson()` exceeded the 4096-byte
+`-Wframe-larger-than` guard #63 set so that "no heap" could not quietly become "enormous stack"
+(4120 bytes, on x86-64, where the macOS lane is arm64 and Clang reuses sibling-scope slots less than
+GCC), and `InstallTreeConsumer` never forwarded compiler flags to its nested configure, so the
+consumer built against the compiler's default standard library rather than the one MduX was built
+with — invisible on macOS, where libc++ *is* that default. The function was split into per-section
+helpers and the forwarding completed; the guard was left where it was.
+
+The fourth lane is not a fourth toolchain, and ADR-007 decision 6 now says what it does buy: the
+same compiler and standard library as the macOS lane, on the same OS as the GCC lane. That separates
+"a different toolchain produced identical bytes" from "a different *platform* produced identical
+bytes" — two claims the doctrine had been making as one.
 
 And "the host baker uses the same ML kernels as the device runtime" stops being a
 discipline: it is one governed module imported by both. If they ever disagree, it is the
@@ -489,5 +498,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 _Epic status re-verified against `develop` @ `6124bcb` · 26 August 2026_
 _13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
-_3 open issues outside an epic: #219 (under #15), #153 (under #18), #246 (Linux Clang evidence leg)_
+_2 open issues outside an epic: #219 (under #15), #153 (under #18)_
 _All epics on GitHub_
