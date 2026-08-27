@@ -118,12 +118,26 @@ jobs:
           libglfw3-dev \
           xvfb
 
-    - name: Setup Clang 21
+    # Verifies the binaries this build actually uses, which are not the ones on PATH. An earlier
+    # version of this step ran `update-alternatives` and then printed `clang --version`; the
+    # alternative did not win over Ubuntu's own, so a step named "Setup Clang 21" printed
+    # "clang version 18.1.3" twice and passed. The build was genuinely Clang 21 - the toolchain file
+    # addresses /usr/lib/llvm-21/bin directly and never consults PATH - but a verification step that
+    # demonstrates the wrong compiler is worse than none, because it is evidence pointing at the
+    # wrong thing.
+    #
+    # The assertion is exact rather than a print, matching the macOS lane's version gate: a silently
+    # different Clang would otherwise change code generation under a byte-identity claim.
+    - name: Verify Clang 21 is the compiler this job uses
       run: |
-        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 60
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 60
-        clang --version
-        clang++ --version
+        set -euo pipefail
+        clangxx=/usr/lib/llvm-21/bin/clang++
+        "$clangxx" --version
+        major="$("$clangxx" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)"
+        if [ "$major" != "21" ]; then
+          echo "::error::${clangxx} reports major version ${major}, expected 21."
+          exit 1
+        fi
 
     # #246's first question, answered before the configure step so that a missing manifest is
     # reported as itself rather than as an unresolved `import std` hundreds of lines later. The

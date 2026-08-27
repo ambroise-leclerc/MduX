@@ -195,7 +195,7 @@ byte-compared, committed artifacts.
 - Six bakers produce one audit record shape, so an auditor learns it once.
 - Authoring dependencies are absent from the device build by construction, verified by the existing
   trust-zone link-graph check rather than by convention.
-- Determinism becomes a test rather than a claim, on two toolchains at once.
+- Determinism becomes a test rather than a claim, on three toolchains and three operating systems at once.
 - The evidence kernel is reusable as-is by issue #18's `ml.determinism.crossToolchain` check, which
   is the same comparison applied to a baked model package.
 
@@ -210,11 +210,11 @@ byte-compared, committed artifacts.
 ### Risks and Mitigations
 - **A baker introduces nondeterminism** (hash-map iteration order, a timestamp, an absolute path, a
   locale-dependent conversion). *Mitigation*: the canonical writer sorts keys and rejects
-  timestamps, absolute paths and decimal floats by construction; the two-leg CI check catches what
+  timestamps, absolute paths and decimal floats by construction; the four-leg CI check catches what
   the writer cannot.
 - **Someone hand-edits a file under `generated/`.** *Mitigation*: the strict reader rejects
   permissive JSON, and re-baking overwrites the edit while the byte-comparison fails the PR.
-- **CI is reduced to one leg for speed.** *Mitigation*: Decision 6 records why both legs exist;
+- **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys;
   removing one is then a documented reversal rather than an unnoticed regression.
 - **`generated/` is swallowed by `.gitignore` again.** *Mitigation*: the `git status --porcelain`
   assertion that follows the evidence tests catches both an uncommitted artifact and a build that
