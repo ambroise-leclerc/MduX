@@ -92,12 +92,16 @@ We use **Doxygen** syntax for code documentation. Follow these guidelines:
 - **Named CI mechanisms:** when prose under `docs/` or a full-line workflow comment names a local
   `*.yml` workflow, a `ctest -L <label>`, or a standalone `mdux-*` CMake/tool target,
   `tools/docs-lint/check_named_mechanisms.py` requires that name to resolve. For workflows,
-  resolving includes having a `push` or `pull_request` trigger. This proves only that the named
-  mechanism exists and is wired up, not that the surrounding claim is true. Fenced code blocks are
-  skipped because they commonly propose future files. For a deliberately aspirational citation in
-  prose, append `<!-- mdux-named-mechanisms:aspirational; issue #NNN -->` on the same line; in a
-  workflow comment, append `mdux-named-mechanisms:aspirational` and the tracking issue to that
-  comment. Keep the exception beside the claim—there is deliberately no suppression list.
+  resolving includes having a trigger that fires without a human: `push`, `pull_request`,
+  `pull_request_target` or `workflow_call`. This proves only that the named mechanism exists and is
+  wired up, not that the surrounding claim is true. Fenced code blocks are skipped because they
+  commonly propose future files, and a fence that is never closed is reported rather than silently
+  hiding the rest of the document. For a deliberately aspirational citation, append
+  `<!-- mdux-named-mechanisms:aspirational; issue #NNN -->` in prose, or
+  `mdux-named-mechanisms:aspirational, issue #NNN` in a workflow comment — **on the same line as the
+  citation**, since the marker exempts its own line and not a surrounding comment block. The
+  tracking issue is required, not decorative: the checker rejects a bare marker, because an
+  exception nobody is tracking is the suppression list this deliberately does not have.
 - **Class documentation:** Include `@brief` with detailed description and usage examples.
 - **Method documentation:**
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.

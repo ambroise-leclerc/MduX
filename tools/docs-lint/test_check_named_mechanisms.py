@@ -167,3 +167,87 @@ class CheckNamedMechanismsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewRegressionTests(CheckNamedMechanismsTests):
+    """One test per defect found reviewing this checker, so none of them can come back quietly."""
+
+    def test_a_citation_closing_a_sentence_keeps_its_full_stop_out_of_the_name(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            self.assertEqual(self.findings_for(root, "Built by mdux-shaderbake.\n"), [])
+
+    def test_yaml_that_is_not_a_workflow_is_not_read_as_a_missing_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            self.assertEqual(self.findings_for(root, "The dependabot.yml file pins actions.\n"), [])
+            # A path that does claim to be a workflow is still checked.
+            self.assertEqual(
+                self.findings_for(root, "See .github/workflows/absent.yml\n"),
+                ["workflow '.github/workflows/absent.yml' does not exist"],
+            )
+
+    def test_every_spelling_of_an_automatic_trigger_is_recognised(self) -> None:
+        block = "name: A\non:\n  # push:\n  push:\n    branches: [ main ]\njobs: {}\n"
+        self.assertTrue(mechanisms.has_automatic_trigger(block))
+        self.assertTrue(mechanisms.has_automatic_trigger("name: A\non: push\njobs: {}\n"))
+        self.assertTrue(mechanisms.has_automatic_trigger('name: A\n"on":\n  pull_request:\njobs: {}\n'))
+        self.assertTrue(mechanisms.has_automatic_trigger("name: A\non: [push]\njobs: {}\n"))
+        self.assertTrue(mechanisms.has_automatic_trigger("name: A\non:\n  workflow_call:\njobs: {}\n"))
+        # A commented-out trigger is not a trigger, and a nested key named push is not one either.
+        self.assertFalse(
+            mechanisms.has_automatic_trigger("name: A\non:\n  # push:\n  workflow_dispatch:\njobs: {}\n")
+        )
+        self.assertFalse(
+            mechanisms.has_automatic_trigger(
+                "name: A\non:\n  workflow_dispatch:\n    inputs:\n      push:\n        type: boolean\njobs: {}\n"
+            )
+        )
+
+    def test_a_checkers_own_diagnostic_name_resolves(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            (root / "tools" / "docs-lint").mkdir(parents=True)
+            (root / "tools" / "docs-lint" / "check_file_headers.py").write_text(
+                'print("mdux-file-headers: OK")\n', encoding="utf-8"
+            )
+            self.assertEqual(self.findings_for(root, "The mdux-file-headers check gates every PR.\n"), [])
+
+    def test_prose_after_a_command_does_not_invent_a_label(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            text = "Run ctest -L evidence and see ctest(1) for -L semantics.\n"
+            self.assertEqual(self.findings_for(root, text), [])
+
+    def test_a_partial_label_selects_the_way_ctest_would(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            self.assertEqual(self.findings_for(root, "ctest -L determin runs it.\n"), [])
+            self.assertEqual(
+                self.findings_for(root, "ctest -L zzz runs it.\n"),
+                ["ctest label 'zzz' is not attached to any test"],
+            )
+
+    def test_unquoted_labels_after_the_first_are_attached(self) -> None:
+        self.assertEqual(mechanisms.split_labels("unit fast"), {"unit", "fast"})
+        # The next property keyword ends the list rather than becoming a label.
+        self.assertEqual(mechanisms.split_labels("unit fast TIMEOUT 5"), {"unit", "fast"})
+
+    def test_an_unclosed_fence_is_reported_rather_than_blinding_the_file(self) -> None:
+        self.assertEqual(mechanisms.unclosed_fence_line("a\n```\nb\n"), 2)
+        self.assertIsNone(mechanisms.unclosed_fence_line("a\n```\nb\n```\n"))
+
+    def test_the_marker_must_name_a_tracking_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = self.make_repository(raw)
+            bare = "ctest -L invented <!-- mdux-named-mechanisms:aspirational -->\n"
+            self.assertEqual(
+                self.findings_for(root, bare),
+                ["aspirational marker names no tracking issue; append 'issue #NNN' to it"],
+            )
+            tracked = "ctest -L invented <!-- mdux-named-mechanisms:aspirational; issue #249 -->\n"
+            self.assertEqual(self.findings_for(root, tracked), [])
+
+    def test_scanning_nothing_is_a_failure_rather_than_a_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            self.assertEqual(mechanisms.main(["--repo-root", raw]), 1)

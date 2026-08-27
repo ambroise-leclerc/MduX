@@ -34,23 +34,39 @@ from pathlib import Path
 
 
 ASPIRATIONAL_MARKER = "mdux-named-mechanisms:aspirational"
+# CONTRIBUTING tells authors to name a tracking issue beside the marker. Checking it is the
+# difference between an exception and an untracked permanent one - the suppression list this
+# checker deliberately does not have, spelled differently.
+ASPIRATIONAL_ISSUE_PATTERN = re.compile(re.escape(ASPIRATIONAL_MARKER) + r"[^\n]*?issue\s+#\d+")
+AUTOMATIC_EVENTS = frozenset({"push", "pull_request", "pull_request_target", "workflow_call"})
 
 FENCE_PATTERN = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})")
 WORKFLOW_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_./-])(?P<path>(?:\.github/workflows/)?[A-Za-z0-9_.-]+\.ya?ml)\b"
 )
+# The gap between `ctest` and its `-L` may hold options and preset names, but not prose: without
+# a bound, "Run ctest -L pixel and see ctest(1) for -L semantics" reads `semantics` as a label.
+# Brackets and commas end a command and start a sentence about one.
 CTEST_LABEL_PATTERN = re.compile(
-    r"\bctest\b[^\n]*?(?:-L|--label-regex)(?:\s+|=)[\"']?"
+    r"\bctest\b(?P<gap>[^\n(),]{0,60}?)(?:-L|--label-regex)(?:\s+|=)[\"']?"
     r"(?P<label>[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_-]+)*)"
 )
+# A name may contain dots but never end on one: a citation closing a sentence would otherwise
+# swallow the full stop and be reported as the target `mdux-shaderbake.`, which nobody wrote.
 MECHANISM_CITATION_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_./-])(?P<name>mdux-[a-z0-9][a-z0-9_.-]*)(?![A-Za-z0-9_./-])"
+    r"(?<![A-Za-z0-9_./-])(?P<name>mdux-[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?)(?![A-Za-z0-9_./-])"
 )
+# Diagnostic prefixes the Python checkers print. They are real, resolvable mechanisms that are
+# neither CMake targets nor `mdux_*.py` files - `mdux-file-headers` lives in `check_file_headers.py`
+# - so without this a true sentence naming one is rejected.
+PYTHON_DIAGNOSTIC_PATTERN = re.compile(r"""["'](?P<name>mdux-[a-z0-9][a-z0-9-]*)(?::|["'])""")
 
 CMAKE_TARGET_PATTERN = re.compile(
-    r"\badd_(?:executable|custom_target)\s*\(\s*(?P<name>[A-Za-z0-9_.+-]+)", re.MULTILINE
+    r"\badd_(?:executable|library|custom_target)\s*\(\s*(?P<name>[A-Za-z0-9_.+-]+)", re.MULTILINE
 )
-CMAKE_LABEL_PATTERN = re.compile(r"\bLABELS\s+(?:\"(?P<quoted>[^\"]+)\"|(?P<bare>[A-Za-z0-9_.;,+-]+))")
+# `LABELS a b` is valid CMake and attaches both. The unquoted branch therefore runs to the end of
+# the argument list, and `split_labels` drops the ALL-CAPS property keyword that follows.
+CMAKE_LABEL_PATTERN = re.compile(r"\bLABELS\s+(?:\"(?P<quoted>[^\"]+)\"|(?P<bare>[^\n)\"]+))")
 STRING_PATTERN = re.compile(r'"(?P<value>(?:\\.|[^"\\])*)"')
 TEST_CASE_PATTERN = re.compile(
     r'\bTEST_CASE\s*\(\s*"(?:\\.|[^"\\])*"\s*,(?P<labels>.*?)\)', re.DOTALL
@@ -81,24 +97,84 @@ class MechanismIndex:
 
 
 def has_automatic_trigger(text: str) -> bool:
-    """Whether a workflow's top-level ``on`` mapping includes push or pull_request."""
+    """Whether a workflow's top-level ``on`` includes an event that fires without a human.
+
+    ``workflow_call`` counts: a reusable workflow runs on every pull request that its callers run
+    on, and reporting it as manual would call a live check dormant - the error this checker exists
+    to catch, made by the checker itself.
+
+    All three YAML spellings are accepted, because rejecting one reports a workflow that does run
+    on every push as having no trigger, which is worse than saying nothing.
+    """
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        inline = re.match(r"^on:\s*\[(?P<events>[^]]*)\]\s*(?:#.*)?$", line)
-        if inline is not None:
-            events = {event.strip().strip("'\"") for event in inline.group("events").split(",")}
-            return bool(events.intersection({"push", "pull_request"}))
-
-        if not re.match(r"^on:\s*(?:#.*)?$", line):
+        # Column 0 only. A `push:` nested under some job's `workflow_call: inputs:` is an input
+        # named push, not a trigger.
+        header = re.match(r"""^(?:on|["']on["']):(?P<rest>.*)$""", line)
+        if header is None:
             continue
+
+        rest = header.group("rest").split("#", 1)[0].strip()
+        if rest.startswith("["):
+            events = {event.strip().strip("'\"") for event in rest.strip("[]").split(",")}
+            return bool(events.intersection(AUTOMATIC_EVENTS))
+        if rest:
+            return rest.strip("'\"") in AUTOMATIC_EVENTS
+
+        # Block form. Only direct children count, and comments and blank lines inside the block
+        # are skipped rather than ending it.
+        child_indent: int | None = None
         for child in lines[index + 1 :]:
-            if child and not child[0].isspace():
+            if not child.strip() or child.lstrip().startswith("#"):
+                continue
+            indent = len(child) - len(child.lstrip())
+            if indent == 0:
                 break
-            match = re.match(r"^\s+(push|pull_request):(?:\s|$)", child)
-            if match is not None:
+            if child_indent is None:
+                child_indent = indent
+            if indent != child_indent:
+                continue
+            key = re.match(r"\s*(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*:", child)
+            if key is not None and key.group("key") in AUTOMATIC_EVENTS:
                 return True
         return False
     return False
+
+
+def label_is_attached(label: str, labels: frozenset[str]) -> bool:
+    """Whether ``ctest -L <label>`` would select anything.
+
+    ``-L`` takes a regular expression, so `-L determin` really does select `determinism`. Matching
+    ctest's own semantics keeps a legitimate partial citation from being called unattached.
+    """
+    if label in labels:
+        return True
+    try:
+        pattern = re.compile(label)
+    except re.error:
+        return False
+    return any(pattern.search(known) is not None for known in labels)
+
+
+def unclosed_fence_line(text: str) -> int | None:
+    """Line number of a fence that is never closed, if there is one.
+
+    An unterminated fence makes every later line invisible to this checker. Silently skipping the
+    rest of a document is the blind spot this tool exists to prevent, so it is reported.
+    """
+    fence_character: str | None = None
+    fence_length = 0
+    opened_at = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        fence = FENCE_PATTERN.match(line)
+        if fence is None:
+            continue
+        token = fence.group("fence")
+        if fence_character is None:
+            fence_character, fence_length, opened_at = token[0], len(token), line_number
+        elif token[0] == fence_character and len(token) >= fence_length:
+            fence_character, fence_length = None, 0
+    return opened_at if fence_character is not None else None
 
 
 def cmake_files(root: Path) -> list[Path]:
@@ -118,7 +194,22 @@ def cmake_files(root: Path) -> list[Path]:
 
 
 def split_labels(value: str) -> set[str]:
-    return {label for label in re.split(r"[\s,;]+", value) if label and "${" not in label}
+    """Label tokens from one LABELS argument list.
+
+    `LABELS a b` attaches both, so the unquoted match runs to the end of the argument list and the
+    next property keyword has to be recognised here. CMake property keywords are ALL-CAPS and this
+    project's labels are lowercase, so the first ALL-CAPS token ends the list.
+    """
+    labels: set[str] = set()
+    for token in re.split(r"[\s,;]+", value):
+        if not token:
+            continue
+        if re.fullmatch(r"[A-Z][A-Z_]*", token):
+            break
+        if "${" in token:
+            continue
+        labels.add(token)
+    return labels
 
 
 def cmake_code(text: str) -> str:
@@ -174,6 +265,14 @@ def build_index(root: Path) -> MechanismIndex:
     if tools_root.is_dir():
         for path in tools_root.rglob("mdux_*.py"):
             targets.add(path.stem.replace("_", "-"))
+        # A checker's diagnostic name is not always its filename: `mdux-file-headers` is printed by
+        # `check_file_headers.py`. Read the names they print rather than inferring from the path,
+        # so documenting a check does not fail the check.
+        for path in sorted(tools_root.rglob("*.py")):
+            if path.name.startswith("test_"):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            targets.update(match.group("name") for match in PYTHON_DIAGNOSTIC_PATTERN.finditer(text))
 
     # A standalone `mdux-*` code span can also name one of the repository's working procedures.
     # Discover those directories rather than maintaining an allow-list: they are real, resolvable
@@ -220,12 +319,25 @@ def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex)
     findings: list[Finding] = []
     for line_number, line in lines:
         if ASPIRATIONAL_MARKER in line:
+            if ASPIRATIONAL_ISSUE_PATTERN.search(line) is None:
+                findings.append(
+                    Finding(
+                        path,
+                        line_number,
+                        "aspirational marker names no tracking issue; append 'issue #NNN' to it",
+                    )
+                )
             continue
 
         for match in WORKFLOW_PATTERN.finditer(line):
             citation = match.group("path")
             name = Path(citation).name
             if name not in index.workflows:
+                # A bare filename is only a workflow citation if it names one. The tree holds YAML
+                # that is not a workflow - `.github/dependabot.yml`, `.github/codeql/*.yml` - and
+                # calling a file that exists missing would be a false positive on true prose.
+                if "/" not in citation:
+                    continue
                 findings.append(Finding(path, line_number, f"workflow '{citation}' does not exist"))
             elif name not in index.automatic_workflows:
                 findings.append(
@@ -238,7 +350,7 @@ def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex)
 
         for match in CTEST_LABEL_PATTERN.finditer(line):
             label = match.group("label")
-            if label not in index.labels:
+            if not label_is_attached(label, index.labels):
                 findings.append(Finding(path, line_number, f"ctest label '{label}' is not attached to any test"))
 
         for match in MECHANISM_CITATION_PATTERN.finditer(line):
@@ -257,9 +369,17 @@ def check_repository(root: Path) -> tuple[list[Finding], int]:
     if docs_root.is_dir():
         for path in sorted(docs_root.rglob("*.md")):
             checked += 1
-            findings.extend(
-                check_lines(path, markdown_prose_lines(path.read_text(encoding="utf-8", errors="replace")), index)
-            )
+            text = path.read_text(encoding="utf-8", errors="replace")
+            opened_at = unclosed_fence_line(text)
+            if opened_at is not None:
+                findings.append(
+                    Finding(
+                        path,
+                        opened_at,
+                        "fenced block is never closed, so the rest of this document is unchecked",
+                    )
+                )
+            findings.extend(check_lines(path, markdown_prose_lines(text), index))
 
     workflow_root = root / ".github" / "workflows"
     if workflow_root.is_dir():
@@ -294,6 +414,17 @@ def main(argv: list[str]) -> int:
         print(
             "mdux-named-mechanisms: fix the citation or append "
             f"'{ASPIRATIONAL_MARKER}' to a deliberately aspirational line",
+            file=sys.stderr,
+        )
+        return 1
+
+    if checked == 0:
+        # A gate that scans nothing and reports success is a green tick over zero assertions - the
+        # exact shape this checker exists to catch. It is reachable: the root is inferred from this
+        # file's location, so moving or vendoring the script would silently empty the scan.
+        print(
+            "mdux-named-mechanisms: no documents or workflows found under "
+            f"'{root}'; --repo-root is wrong or the layout moved",
             file=sys.stderr,
         )
         return 1
