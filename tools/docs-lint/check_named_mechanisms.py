@@ -137,6 +137,12 @@ def has_automatic_trigger(text: str) -> bool:
             key = re.match(r"\s*(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*:", child)
             if key is not None and key.group("key") in AUTOMATIC_EVENTS:
                 return True
+            sequence_item = re.match(
+                r"\s*-\s*[\"']?(?P<event>[A-Za-z_][A-Za-z0-9_-]*)[\"']?\s*(?:#.*)?$",
+                child,
+            )
+            if sequence_item is not None and sequence_item.group("event") in AUTOMATIC_EVENTS:
+                return True
         return False
     return False
 
@@ -220,6 +226,7 @@ def cmake_code(text: str) -> str:
 def cpp_without_comments(text: str) -> str:
     """Blank C++ comments while preserving quoted strings and source positions."""
     def replace(match: re.Match[str]) -> str:
+        """Blank a comment token without changing its line count or quoted tokens."""
         token = match.group(0)
         if not token.startswith("/"):
             return token
@@ -240,6 +247,7 @@ def labels_from_test_source(text: str) -> set[str]:
 
 
 def build_index(root: Path) -> MechanismIndex:
+    """Resolve the workflows, labels, targets, tools, and skills present under ``root``."""
     workflow_dir = root / ".github" / "workflows"
     workflow_paths = sorted((*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")))
     workflows = {path.name: path for path in workflow_paths}
@@ -316,6 +324,7 @@ def workflow_comment_lines(text: str) -> list[tuple[int, str]]:
 
 
 def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex) -> list[Finding]:
+    """Report every unresolved mechanism citation in numbered prose or comment lines."""
     findings: list[Finding] = []
     for line_number, line in lines:
         if ASPIRATIONAL_MARKER in line:
@@ -361,6 +370,7 @@ def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex)
 
 
 def check_repository(root: Path) -> tuple[list[Finding], int]:
+    """Check every Markdown document and workflow comment, returning findings and file count."""
     index = build_index(root)
     findings: list[Finding] = []
     checked = 0
@@ -392,6 +402,7 @@ def check_repository(root: Path) -> tuple[list[Finding], int]:
 
 
 def main(argv: list[str]) -> int:
+    """Run the repository check and render its stable text diagnostic envelope."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--repo-root",
