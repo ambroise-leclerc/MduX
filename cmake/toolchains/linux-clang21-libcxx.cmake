@@ -35,7 +35,20 @@ set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
 # Where Debian/Ubuntu put `libc++.modules.json` is not fixed across LLVM packagings, so search the
 # layouts that exist rather than asserting one. A wrong guess here would fail later and less
 # legibly, as a missing `std` module rather than a missing file.
-if(NOT DEFINED CMAKE_CXX_STDLIB_MODULES_JSON)
+#
+# The manifest is cached, and the compilers above are re-FORCED on every configure, so a bare
+# `if(NOT DEFINED ...)` guard would be wrong in a way that is hard to see: re-configuring an existing
+# build tree with a different MDUX_LLVM_ROOT would take the new root's clang++ and keep the old
+# root's libc++ metadata. Mixing two LLVM installations is not a build that should be allowed to
+# succeed quietly, least of all under a pipeline whose claim is byte-identical output.
+#
+# So record which root the cached manifest was discovered under, and re-discover when it moves. An
+# operator's explicit -DCMAKE_CXX_STDLIB_MODULES_JSON has no recorded root and is left alone, which
+# keeps the manual override the multi-candidate warning below points at.
+if(DEFINED CMAKE_CXX_STDLIB_MODULES_JSON AND NOT DEFINED MDUX_STDLIB_MODULES_JSON_ROOT)
+    # Pinned by the operator; this file does not second-guess it.
+elseif(NOT DEFINED CMAKE_CXX_STDLIB_MODULES_JSON
+       OR NOT MDUX_STDLIB_MODULES_JSON_ROOT STREQUAL "${_mdux_llvm_root}")
     file(GLOB_RECURSE _mdux_libcxx_modules_json
         "${_mdux_llvm_root}/lib/*/libc++.modules.json"
         "${_mdux_llvm_root}/lib/libc++.modules.json"
@@ -64,6 +77,8 @@ if(NOT DEFINED CMAKE_CXX_STDLIB_MODULES_JSON)
     endif()
     set(CMAKE_CXX_STDLIB_MODULES_JSON "${_mdux_libcxx_modules_json_first}"
         CACHE FILEPATH "" FORCE)
+    set(MDUX_STDLIB_MODULES_JSON_ROOT "${_mdux_llvm_root}"
+        CACHE INTERNAL "LLVM root the cached libc++ module manifest was discovered under")
 endif()
 
 foreach(_mdux_required_tool
