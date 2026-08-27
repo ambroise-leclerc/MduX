@@ -89,6 +89,15 @@ We use **Doxygen** syntax for code documentation. Follow these guidelines:
   `tools/docs-lint/check_file_headers.py` now enforces it, in the `Documentation Lint` job. #223
   added it after finding ten files back in the retired order, all in one epic and all copied from
   a neighbour: settling a rule in prose twice had not been enough to keep it true.
+- **Named CI mechanisms:** when prose under `docs/` or a full-line workflow comment names a local
+  `*.yml` workflow, a `ctest -L <label>`, or a standalone `mdux-*` CMake/tool target,
+  `tools/docs-lint/check_named_mechanisms.py` requires that name to resolve. For workflows,
+  resolving includes having a `push` or `pull_request` trigger. This proves only that the named
+  mechanism exists and is wired up, not that the surrounding claim is true. Fenced code blocks are
+  skipped because they commonly propose future files. For a deliberately aspirational citation in
+  prose, append `<!-- mdux-named-mechanisms:aspirational; issue #NNN -->` on the same line; in a
+  workflow comment, append `mdux-named-mechanisms:aspirational` and the tracking issue to that
+  comment. Keep the exception beside the claim—there is deliberately no suppression list.
 - **Class documentation:** Include `@brief` with detailed description and usage examples.
 - **Method documentation:**
   - Use compact notation `/** @brief Description */` for simple one-line descriptions.
