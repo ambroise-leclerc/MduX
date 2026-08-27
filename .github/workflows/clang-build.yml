@@ -1,29 +1,36 @@
-# Clang leg — manual-dispatch only, not part of the automatic CI set.
+# Clang leg on Linux — part of the automatic CI set since #246.
 #
-# This job is NOT wired to push or pull_request on purpose: Clang 20's `std` module support is
-# not ready for this codebase (issue #48 added the GCC 16 leg but did not re-enable this one, so
-# the Clang half of that story remains open). It is kept as a live workflow rather than a
-# commented-out `.disabled` file so that:
+# What #246 found, kept because it corrects two things this file used to assert:
 #
-#   - the YAML stays syntax-checked by GitHub instead of rotting silently,
-#   - Dependabot can see and bump the action versions pinned below,
-#   - re-enabling it is adding a trigger, not a rename plus an un-comment pass.
+#   1. The old rationale — "Clang 20's `std` module support is not ready for this codebase" — was
+#      obsolete. libc++-21-dev ships its module manifest at
+#      /usr/lib/llvm-21/lib/libc++.modules.json, the toolchain file finds it, and `import std`
+#      resolves. The module story was never the remaining blocker.
+#   2. Two real defects were, and both were invisible on every other leg:
+#      - `ShaderPackage::toJson()` measured a 4120-byte frame against the 4096-byte
+#        `-Wframe-larger-than` guard from #63. This is the only leg that compiles that function for
+#        x86-64 with Clang, and Clang reuses sibling-scope stack slots less than GCC does. The
+#        function was split into per-section helpers; the guard was left alone.
+#      - `InstallTreeConsumer` never forwarded the compiler flags to its nested configure, so the
+#        consumer built against the compiler's default standard library rather than the one MduX was
+#        built with. On macOS libc++ *is* the default, which hid it; here it is not.
 #
-# Run it from the Actions tab when checking whether a newer Clang has caught up. Because it is
-# `workflow_dispatch` only, a red result here never blocks a PR.
+# So this leg earns its place by having caught two things three green legs did not, which is the
+# argument for running it on every PR rather than on demand.
 #
-# When it is turned back on for real, add an evidence step matching the MSVC and GCC legs in
-# windows-build.yml / linux-gcc16-build.yml:
-#
-#     - name: Verify evidence artifacts (Clang)
-#       run: ctest --preset ninja-clang -L evidence
-#
-# Clang's floating-point code generation differs from both MSVC's and GCC's, so a third
-# independent toolchain strengthens the byte-identity claim in ADR-007 further (decision 6).
+# On ADR-007 decision 6: this is the toolchain that sharpens the claim. MSVC, GCC 16 and macOS/Clang
+# 21 already gave byte-identity across three toolchains, but the Clang leg there also changes the
+# platform. This one runs the same standard library and code generator as the macOS lane on the same
+# OS as the GCC lane, which separates "different toolchain" from "different platform" — the
+# comparison the doctrine actually wants.
 
-name: Clang Build (manual)
+name: Linux Clang Build
 
 on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +38,7 @@ permissions:
 
 jobs:
   clang-build:
-    name: Linux (Clang, Vulkan)
+    name: Linux (Clang 21, libc++, Vulkan)
     runs-on: ubuntu-latest
     env:
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
@@ -74,7 +81,7 @@ jobs:
       with:
         cmake-version: '4.3.1'
 
-    - name: Install LLVM/Clang 20
+    - name: Install LLVM/Clang 21 and libc++
       run: |
         set -euo pipefail
         sudo apt-get update
@@ -91,15 +98,19 @@ jobs:
           | awk -F: '/^fpr:/ {print $10}' | grep -qx "$LLVM_KEY_FPR"
         gpg --dearmor < /tmp/llvm-snapshot.asc > /tmp/llvm.gpg
         sudo install -m 0644 /tmp/llvm.gpg /etc/apt/keyrings/llvm.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main" \
-          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-20.list
+        # Derived, not hardcoded: this job runs on ubuntu-latest, whose codename moves. A pinned
+        # `jammy` line silently installs nothing on a noble runner, and the failure then surfaces as
+        # a missing compiler rather than as a wrong source list.
+        codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-21 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-21.list
         sudo apt-get update
         sudo apt-get install -y \
           ninja-build \
           build-essential \
-          clang-20 \
-          libc++-20-dev \
-          libc++abi-20-dev \
+          clang-21 \
+          libc++-21-dev \
+          libc++abi-21-dev \
           vulkan-tools \
           libvulkan-dev \
           vulkan-utility-libraries-dev \
@@ -107,12 +118,40 @@ jobs:
           libglfw3-dev \
           xvfb
 
-    - name: Setup Clang 20
+    # Verifies the binaries this build actually uses, which are not the ones on PATH. An earlier
+    # version of this step ran `update-alternatives` and then printed `clang --version`; the
+    # alternative did not win over Ubuntu's own, so a step named "Setup Clang 21" printed
+    # "clang version 18.1.3" twice and passed. The build was genuinely Clang 21 - the toolchain file
+    # addresses /usr/lib/llvm-21/bin directly and never consults PATH - but a verification step that
+    # demonstrates the wrong compiler is worse than none, because it is evidence pointing at the
+    # wrong thing.
+    #
+    # The assertion is exact rather than a print, matching the macOS lane's version gate: a silently
+    # different Clang would otherwise change code generation under a byte-identity claim.
+    - name: Verify Clang 21 is the compiler this job uses
       run: |
-        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 60
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 60
-        clang --version
-        clang++ --version
+        set -euo pipefail
+        clangxx=/usr/lib/llvm-21/bin/clang++
+        "$clangxx" --version
+        major="$("$clangxx" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)"
+        if [ "$major" != "21" ]; then
+          echo "::error::${clangxx} reports major version ${major}, expected 21."
+          exit 1
+        fi
+
+    # #246's first question, answered before the configure step so that a missing manifest is
+    # reported as itself rather than as an unresolved `import std` hundreds of lines later. The
+    # toolchain file searches the same locations; this step only makes the finding visible in the log.
+    - name: Report the libc++ std module manifest
+      run: |
+        set -euo pipefail
+        echo "Searching /usr/lib/llvm-21 for libc++.modules.json"
+        found="$(find /usr/lib/llvm-21 -name 'libc++.modules.json' 2>/dev/null || true)"
+        if [ -z "$found" ]; then
+          echo "::warning::No libc++.modules.json in this packaging; import std cannot resolve for libc++. Record on #246."
+        else
+          echo "$found"
+        fi
 
     - name: Verify Vulkan installation
       run: |
@@ -132,3 +171,13 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --preset ninja-clang --output-on-failure
+
+    # The step this workflow's header used to describe as future work. It matches the MSVC and GCC
+    # legs in windows-build.yml / linux-gcc16-build.yml: re-derive every committed artifact and
+    # byte-compare it, on a third standard library and code generator.
+    #
+    # `--no-tests=error` on purpose. Without it a preset that discovered no `evidence` test at all
+    # would pass this step, and the byte-identity claim in ADR-007 decision 6 would rest on a
+    # green tick for zero assertions.
+    - name: Verify evidence artifacts (Clang)
+      run: ctest --preset ninja-clang -L evidence --output-on-failure --no-tests=error

@@ -123,14 +123,31 @@ generated/<kind>/<id>/report.json` already tells an auditor exactly which commit
 changed a committed artifact, authoritatively, for free. Duplicating that inside the file itself
 was redundant even before it turned out to be broken.
 
-### 6. Two toolchains, in the same PR — a claim TrustSC cannot make
-The evidence tests run on Windows/MSVC **and** Linux/GCC (and Clang, now that issue #48 re-enabled
-that leg) in the same pull request. Byte-identity across independent toolchains, standard libraries
-and floating-point code generators is a strictly stronger determinism claim than TrustSC obtains from
-a single rustc, and it costs nothing extra because both legs already exist.
+### 6. Four legs, in the same PR — a claim TrustSC cannot make
+The evidence tests run on Windows/MSVC, Linux/GCC 16, macOS/Clang 21 with libc++ (#222), and
+Linux/Clang 21 with libc++ (#246), in the same pull request. Byte-identity across independent
+toolchains, standard libraries and floating-point code generators is a strictly stronger determinism
+claim than TrustSC obtains from a single rustc, and it costs nothing extra because all four legs
+already exist.
+
+The fourth leg is not a fourth toolchain, and it is worth saying why it was added anyway. It runs
+the same compiler and standard library as the macOS lane, on the same operating system as the GCC
+lane. That is what separates "a different toolchain produced identical bytes" from "a different
+*platform* produced identical bytes" — two claims this doctrine had been making as one.
 
 This is written down here specifically so that a future change cannot "simplify" CI to one leg
 without knowingly discarding the claim.
+
+**A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
+**and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable
+that leg: it added the GCC 16 leg and left the Clang half of its own title open, and
+`clang-build.yml` has carried no `push` or `pull_request` trigger since. The parenthesis asserted in
+the present tense a leg that has never run automatically — the same defect class #116 found in
+ADR-005, in the paragraph written to stop exactly this claim being weakened by accident. The third
+toolchain arrived via macOS rather than the Linux Clang leg. #246 then made that leg run too, and it
+earned its place immediately: it caught a stack-frame guard violation in `ShaderPackage::toJson()`
+and a standard-library mismatch in the install-tree consumer, both of which three green legs had
+missed.
 
 ## Alternatives Considered
 
@@ -178,7 +195,7 @@ byte-compared, committed artifacts.
 - Six bakers produce one audit record shape, so an auditor learns it once.
 - Authoring dependencies are absent from the device build by construction, verified by the existing
   trust-zone link-graph check rather than by convention.
-- Determinism becomes a test rather than a claim, on two toolchains at once.
+- Determinism becomes a test rather than a claim, on three toolchains and three operating systems at once.
 - The evidence kernel is reusable as-is by issue #18's `ml.determinism.crossToolchain` check, which
   is the same comparison applied to a baked model package.
 
@@ -193,11 +210,11 @@ byte-compared, committed artifacts.
 ### Risks and Mitigations
 - **A baker introduces nondeterminism** (hash-map iteration order, a timestamp, an absolute path, a
   locale-dependent conversion). *Mitigation*: the canonical writer sorts keys and rejects
-  timestamps, absolute paths and decimal floats by construction; the two-leg CI check catches what
+  timestamps, absolute paths and decimal floats by construction; the four-leg CI check catches what
   the writer cannot.
 - **Someone hand-edits a file under `generated/`.** *Mitigation*: the strict reader rejects
   permissive JSON, and re-baking overwrites the edit while the byte-comparison fails the PR.
-- **CI is reduced to one leg for speed.** *Mitigation*: Decision 6 records why both legs exist;
+- **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys;
   removing one is then a documented reversal rather than an unnoticed regression.
 - **`generated/` is swallowed by `.gitignore` again.** *Mitigation*: the `git status --porcelain`
   assertion that follows the evidence tests catches both an uncommitted artifact and a build that
