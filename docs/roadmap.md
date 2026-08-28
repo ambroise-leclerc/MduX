@@ -160,9 +160,11 @@ lane that strengthens the byte-identity claim rather than moving any epic. Nothi
 
 ### Thirteen epics
 
-Child issues exist for every actionable epic. #16's and #17's were promoted on 28 August 2026, when
-#15's closure unblocked them; the convention is that a blocked epic keeps its breakdown as a
-checklist in its own body until then.
+Child issues exist for every actionable epic, and as of 28 August 2026 that is every open epic.
+#16's and #17's children were promoted when #15's closure unblocked them, and #19's remaining
+S4–S6 with them: those had followed #15 and #18, both long closed, so they were actionable under
+this convention and had simply not been promoted. The convention is that a *blocked* epic keeps its
+breakdown as a checklist in its own body until its dependencies close.
 
 ---
 
@@ -386,9 +388,10 @@ and colour checks are exercisable before a single glyph exists.
 Sequential: each child is blocked by its predecessor. Two things landed after the epic was written
 that make it cheaper than it reads — #242 draws a `Label`, so ink containment has real ink to check
 rather than waiting on #17, and #244 makes "every approved locale" a property of the screen's own
-manifest rather than a caller-supplied list. **#252's bounds and colour-hash checks wait on
-nothing**: the epic's own note calls them fully exercisable at the solid-rect slice, which shipped
-in v0.6.0.
+manifest rather than a caller-supplied list. **#252's bounds and colour-hash checks wait on no
+further content** — the epic's own note calls them fully exercisable at the solid-rect slice, which
+shipped in v0.6.0 — but they still follow #251, which fixes the derive-don't-trust rule they
+implement. Content is not the constraint; the governing decision is.
 
 #### #17 — Content components · **Open, unblocked**
 
@@ -451,11 +454,13 @@ machine-readable contract side, which follows the surfaces it describes.
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
 - #118 Stable JSON diagnostic envelope across all tools · _closed_
-- S4 Machine-readable `.medui` grammar
-- S5 Recipe schemas
-- S6 IR dump and tool manifest
+- #263 S4 Machine-readable `.medui` grammar and `--explain`
+- #264 S5 JSON Schemas for every recipe kind
+- #265 S6 `--dump-ir` JSON and a generated tool manifest
 
-_S1–S3 closed; S4–S6 follow #15 and #18_
+_S1–S3 closed. S4–S6 followed #15 and #18 — closed on 23 August and 3 August — so they are
+actionable and were promoted on 28 August 2026. They are independent of one another; #264 needs no
+compiler work and is the cheapest of the three._
 
 ---
 
