@@ -160,8 +160,9 @@ lane that strengthens the byte-identity claim rather than moving any epic. Nothi
 
 ### Thirteen epics
 
-Child issues exist for the six actionable epics. The rest keep their breakdown as a
-checklist in the epic body, promoted when unblocked.
+Child issues exist for every actionable epic. #16's and #17's were promoted on 28 August 2026, when
+#15's closure unblocked them; the convention is that a blocked epic keeps its breakdown as a
+checklist in its own body until then.
 
 ---
 
@@ -370,30 +371,46 @@ table for a format that could have been measured.
 
 _Blocks #16, #17_
 
-#### #16 — Rendered-truth verification · **Blocked #13, #15**
+#### #16 — Rendered-truth verification · **Open, unblocked**
 
 Render offscreen, then check that critical content appears where the compiled screen says
 it will, in the declared tint, in every approved locale — and emit that as evidence. Bounds
 and colour checks are exercisable before a single glyph exists.
 
-- S1 ADR: automated UI verification
-- S2 Bounds, ink containment, colour hash
-- S3 The verify driver
-- S4 Evidence report emission
-- S5 CI across all locales
+- #251 S1 ADR: automated UI verification
+- #252 S2 Bounds, ink containment, colour hash
+- #253 S3 The verify driver
+- #254 S4 Evidence report emission
+- #255 S5 CI across all locales
 
-#### #17 — Content components · **Blocked #15**
+Sequential: each child is blocked by its predecessor. Two things landed after the epic was written
+that make it cheaper than it reads — #242 draws a `Label`, so ink containment has real ink to check
+rather than waiting on #17, and #244 makes "every approved locale" a property of the screen's own
+manifest rather than a caller-supplied list. **#252's bounds and colour-hash checks wait on
+nothing**: the epic's own note calls them fully exercisable at the solid-rect slice, which shipped
+in v0.6.0.
+
+#### #17 — Content components · **Open, unblocked**
 
 The rest of the component dictionary. Two deliberate scope cuts: QOI rather than PNG in v1,
 and no IME — input-method editing is a platform concern that does not belong inside a
 governed renderer.
 
-- S1 Image baker and the `Image` component
-- S2 `SignalTrace` — shares the demonstrator's sample ring
-- S3 `NumericDisplay` and `Clock`
-- S4 `StatusIndicator` — has a waiting consumer in the ECG demonstrator
-- S5 `TextInput` (display and caret only)
-- S6 Buttons with requirement binding
+- #256 S1 Image baker and the `Image` component
+- #257 S2 `SignalTrace` — shares the demonstrator's sample ring
+- #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
+- #259 S4 `StatusIndicator` — has a waiting consumer in the ECG demonstrator
+- #260 S5 `TextInput` (display and caret only)
+- #261 S6 Buttons with requirement binding — touches #219
+
+Largely independent of one another, unlike #16's. **#256 is the one to start**, depending on nothing
+else here.
+
+**#219 orders two of them, and is a prerequisite rather than a nicety.** It closes `ClockFormat` and
+`SystemEvent`. An open format name cannot be *measured*, only looked up, so #258's `Clock` would be
+built against the product-supplied table #195 needs today and then have it removed; and a screen
+that can name any system event can name one nothing implements, which is worst discovered on the
+press of the critical button #261 builds.
 
 ---
 
