@@ -104,9 +104,14 @@ class CheckNamedMechanismsTests(unittest.TestCase):
             root = self.make_repository(raw)
             with (root / "CMakeLists.txt").open("a", encoding="utf-8") as cmake:
                 cmake.write("# add_custom_target(mdux-proposed-target)\n")
+                cmake.write("set(a b) # add_custom_target(mdux-inline-target)\n")
             self.assertEqual(
                 self.findings_for(root, "The `mdux-proposed-target` runs on every change.\n"),
                 ["CMake/tool target 'mdux-proposed-target' does not exist"],
+            )
+            self.assertEqual(
+                self.findings_for(root, "The `mdux-inline-target` runs on every change.\n"),
+                ["CMake/tool target 'mdux-inline-target' does not exist"],
             )
 
     def test_commented_tests_do_not_register_labels(self) -> None:
@@ -221,7 +226,10 @@ class ReviewRegressionTests(CheckNamedMechanismsTests):
         self.assertTrue(mechanisms.has_automatic_trigger("name: A\non: push\njobs: {}\n"))
         self.assertTrue(mechanisms.has_automatic_trigger('name: A\n"on":\n  pull_request:\njobs: {}\n'))
         self.assertTrue(mechanisms.has_automatic_trigger("name: A\non: [push]\njobs: {}\n"))
-        self.assertTrue(mechanisms.has_automatic_trigger("name: A\non:\n  workflow_call:\njobs: {}\n"))
+        self.assertFalse(mechanisms.has_automatic_trigger("name: A\non:\n  workflow_call:\njobs: {}\n"))
+        self.assertFalse(
+            mechanisms.has_automatic_trigger("name: A\non:\n  pull_request_target:\njobs: {}\n")
+        )
         self.assertTrue(mechanisms.has_automatic_trigger("name: A\non:\n  - schedule\n  - push\njobs: {}\n"))
         self.assertTrue(mechanisms.has_automatic_trigger("name: A\non:\n  - 'pull_request' # PRs\njobs: {}\n"))
         # A commented-out trigger is not a trigger, and a nested key named push is not one either.

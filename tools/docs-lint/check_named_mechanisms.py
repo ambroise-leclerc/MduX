@@ -38,7 +38,7 @@ ASPIRATIONAL_MARKER = "mdux-named-mechanisms:aspirational"
 # difference between an exception and an untracked permanent one - the suppression list this
 # checker deliberately does not have, spelled differently.
 ASPIRATIONAL_ISSUE_PATTERN = re.compile(re.escape(ASPIRATIONAL_MARKER) + r"[^\n]*?issue\s+#\d+")
-AUTOMATIC_EVENTS = frozenset({"push", "pull_request", "pull_request_target", "workflow_call"})
+AUTOMATIC_EVENTS = frozenset({"push", "pull_request"})
 
 FENCE_PATTERN = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})")
 WORKFLOW_PATTERN = re.compile(
@@ -67,6 +67,8 @@ CMAKE_TARGET_PATTERN = re.compile(
 # `LABELS a b` is valid CMake and attaches both. The unquoted branch therefore runs to the end of
 # the argument list, and `split_labels` drops the ALL-CAPS property keyword that follows.
 CMAKE_LABEL_PATTERN = re.compile(r"\bLABELS\s+(?:\"(?P<quoted>[^\"]+)\"|(?P<bare>[^\n)\"]+))")
+CMAKE_BRACKET_ARGUMENT_PATTERN = re.compile(r"\[(?P<equals>=*)\[")
+CMAKE_BRACKET_COMMENT_PATTERN = re.compile(r"#\[(?P<equals>=*)\[")
 STRING_PATTERN = re.compile(r'"(?P<value>(?:\\.|[^"\\])*)"')
 TEST_CASE_PATTERN = re.compile(
     r'\bTEST_CASE\s*\(\s*"(?:\\.|[^"\\])*"\s*,(?P<labels>.*?)\)', re.DOTALL
@@ -98,10 +100,6 @@ class MechanismIndex:
 
 def has_automatic_trigger(text: str) -> bool:
     """Whether a workflow's top-level ``on`` includes an event that fires without a human.
-
-    ``workflow_call`` counts: a reusable workflow runs on every pull request that its callers run
-    on, and reporting it as manual would call a live check dormant - the error this checker exists
-    to catch, made by the checker itself.
 
     All three YAML spellings are accepted, because rejecting one reports a workflow that does run
     on every push as having no trigger, which is worse than saying nothing.
@@ -219,8 +217,75 @@ def split_labels(value: str) -> set[str]:
 
 
 def cmake_code(text: str) -> str:
-    """CMake text with full-line comments blanked so proposals are not target evidence."""
-    return "\n".join("" if line.lstrip().startswith("#") else line for line in text.splitlines())
+    """CMake text with comments blanked while quoted and bracket arguments remain intact."""
+    output: list[str] = []
+    index = 0
+    quoted = False
+    bracket_end: str | None = None
+    comment_end: str | None = None
+    while index < len(text):
+        if comment_end is not None:
+            if text.startswith(comment_end, index):
+                output.extend(" " * len(comment_end))
+                index += len(comment_end)
+                comment_end = None
+            else:
+                output.append("\n" if text[index] == "\n" else " ")
+                index += 1
+            continue
+
+        if bracket_end is not None:
+            if text.startswith(bracket_end, index):
+                output.extend(bracket_end)
+                index += len(bracket_end)
+                bracket_end = None
+            else:
+                output.append(text[index])
+                index += 1
+            continue
+
+        character = text[index]
+        if quoted:
+            output.append(character)
+            index += 1
+            if character == "\\" and index < len(text):
+                output.append(text[index])
+                index += 1
+            elif character == '"':
+                quoted = False
+            continue
+
+        if character == '"':
+            quoted = True
+            output.append(character)
+            index += 1
+            continue
+
+        bracket = CMAKE_BRACKET_ARGUMENT_PATTERN.match(text, index)
+        if bracket is not None:
+            opener = bracket.group(0)
+            bracket_end = "]" + bracket.group("equals") + "]"
+            output.extend(opener)
+            index += len(opener)
+            continue
+
+        if character == "#":
+            bracket_comment = CMAKE_BRACKET_COMMENT_PATTERN.match(text, index)
+            if bracket_comment is not None:
+                opener = bracket_comment.group(0)
+                comment_end = "]" + bracket_comment.group("equals") + "]"
+                output.extend(" " * len(opener))
+                index += len(opener)
+                continue
+            newline = text.find("\n", index)
+            end = len(text) if newline == -1 else newline
+            output.extend(" " * (end - index))
+            index = end
+            continue
+
+        output.append(character)
+        index += 1
+    return "".join(output)
 
 
 def cpp_without_comments(text: str) -> str:
