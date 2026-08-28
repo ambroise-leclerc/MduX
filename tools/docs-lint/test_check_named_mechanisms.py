@@ -188,6 +188,10 @@ class ReviewRegressionTests(CheckNamedMechanismsTests):
         with tempfile.TemporaryDirectory() as raw:
             root = self.make_repository(raw)
             self.assertEqual(self.findings_for(root, "Built by mdux-shaderbake.\n"), [])
+            self.assertEqual(
+                self.findings_for(root, "Blocked by mdux-missing.\n"),
+                ["CMake/tool target 'mdux-missing' does not exist"],
+            )
 
     def test_yaml_that_is_not_a_workflow_is_not_read_as_a_missing_workflow(self) -> None:
         """Distinguish ordinary YAML names from explicit local workflow paths."""

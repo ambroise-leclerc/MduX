@@ -54,7 +54,7 @@ CTEST_LABEL_PATTERN = re.compile(
 # A name may contain dots but never end on one: a citation closing a sentence would otherwise
 # swallow the full stop and be reported as the target `mdux-shaderbake.`, which nobody wrote.
 MECHANISM_CITATION_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_./-])(?P<name>mdux-[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?)(?![A-Za-z0-9_./-])"
+    r"(?<![A-Za-z0-9_./-])(?P<name>mdux-[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?)(?![A-Za-z0-9_/-])"
 )
 # Diagnostic prefixes the Python checkers print. They are real, resolvable mechanisms that are
 # neither CMake targets nor `mdux_*.py` files - `mdux-file-headers` lives in `check_file_headers.py`
