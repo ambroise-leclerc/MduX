@@ -152,7 +152,17 @@ class CheckNamedMechanismsTests(unittest.TestCase):
             path = root / ".github" / "workflows" / "claim.yml"
             text = (
                 "# build.yml and `mdux-shaderbake` are current controls.\n"
+                "run: |\n"
+                "  # mdux-imaginary-lint is shell content, not workflow prose.\n"
+                "# build.yml remains a genuine workflow comment after the scalar.\n"
                 "uses: owner/repo/.github/workflows/external.yml@deadbeef\n"
+            )
+            self.assertEqual(
+                mechanisms.workflow_comment_lines(text),
+                [
+                    (1, " build.yml and `mdux-shaderbake` are current controls."),
+                    (4, " build.yml remains a genuine workflow comment after the scalar."),
+                ],
             )
             findings = mechanisms.check_lines(path, mechanisms.workflow_comment_lines(text), index)
             self.assertEqual(findings, [])
@@ -246,6 +256,9 @@ class ReviewRegressionTests(CheckNamedMechanismsTests):
         with tempfile.TemporaryDirectory() as raw:
             root = self.make_repository(raw)
             self.assertEqual(self.findings_for(root, "ctest -L determin runs it.\n"), [])
+            self.assertEqual(
+                self.findings_for(root, "ctest -L 'missing|determinism' runs it.\n"), []
+            )
             self.assertEqual(
                 self.findings_for(root, "ctest -L zzz runs it.\n"),
                 ["ctest label 'zzz' is not attached to any test"],

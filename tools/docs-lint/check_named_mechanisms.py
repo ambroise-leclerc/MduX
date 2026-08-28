@@ -48,8 +48,8 @@ WORKFLOW_PATTERN = re.compile(
 # a bound, "Run ctest -L pixel and see ctest(1) for -L semantics" reads `semantics` as a label.
 # Brackets and commas end a command and start a sentence about one.
 CTEST_LABEL_PATTERN = re.compile(
-    r"\bctest\b(?P<gap>[^\n(),]{0,60}?)(?:-L|--label-regex)(?:\s+|=)[\"']?"
-    r"(?P<label>[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_-]+)*)"
+    r"\bctest\b(?P<gap>[^\n(),]{0,60}?)(?:-L|--label-regex)(?:\s+|=)"
+    r"(?:(?P<quote>[\"'])(?P<quoted>[^\n]*?)(?P=quote)|(?P<bare>[^\s,\])`]+))"
 )
 # A name may contain dots but never end on one: a citation closing a sentence would otherwise
 # swallow the full stop and be reported as the target `mdux-shaderbake.`, which nobody wrote.
@@ -316,11 +316,37 @@ def markdown_prose_lines(text: str) -> list[tuple[int, str]]:
 
 def workflow_comment_lines(text: str) -> list[tuple[int, str]]:
     """Numbered full-line YAML comments; run scripts and action configuration are not prose."""
-    return [
-        (line_number, match.group("comment"))
-        for line_number, line in enumerate(text.splitlines(), start=1)
-        if (match := re.match(r"^\s*#(?P<comment>.*)$", line)) is not None
-    ]
+    comments: list[tuple[int, str]] = []
+    scalar_parent_indent: int | None = None
+    scalar_header = re.compile(
+        r"^(?P<indent>\s*)(?:(?:-\s*)?[^#:\n]+:\s*|-(?:\s*))"
+        r"[|>][1-9+-]{0,2}\s*(?:#.*)?$"
+    )
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        indent = len(line) - len(line.lstrip())
+        if scalar_parent_indent is not None:
+            if not line.strip() or indent > scalar_parent_indent:
+                continue
+            scalar_parent_indent = None
+
+        header = scalar_header.match(line)
+        if header is not None:
+            scalar_parent_indent = len(header.group("indent"))
+            continue
+
+        comment = re.match(r"^\s*#(?P<comment>.*)$", line)
+        if comment is not None:
+            comments.append((line_number, comment.group("comment")))
+    return comments
+
+
+def ctest_label_expression(match: re.Match[str]) -> str:
+    """Complete CTest label expression captured with or without shell quotes."""
+    if match.group("quoted") is not None:
+        return match.group("quoted")
+    # Keep the historical sentence-boundary behavior: a full stop closing prose is not part of
+    # the unquoted expression. Quoted expressions remain byte-for-byte intact.
+    return match.group("bare").rstrip(".")
 
 
 def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex) -> list[Finding]:
@@ -358,7 +384,7 @@ def check_lines(path: Path, lines: list[tuple[int, str]], index: MechanismIndex)
                 )
 
         for match in CTEST_LABEL_PATTERN.finditer(line):
-            label = match.group("label")
+            label = ctest_label_expression(match)
             if not label_is_attached(label, index.labels):
                 findings.append(Finding(path, line_number, f"ctest label '{label}' is not attached to any test"))
 
