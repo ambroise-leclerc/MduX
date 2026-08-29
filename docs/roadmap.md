@@ -1,12 +1,12 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 26 August 2026
-> Epic status re-verified against `develop` @ `6124bcb` · 26 August 2026. All thirteen epics were
-> queried on GitHub: ten closed, three open (`#16`, `#17`, `#19`). **No epic changed state since the
-> v0.6.0 baseline** — what moved is post-tag content work and one new platform, recorded under
-> [Since the tag](#since-the-tag).
-> Two open non-epic issues are tracked in their owning sections rather than only on GitHub:
-> `#219` under #15 and `#153` under #18.
+> Backlog · ambroise-leclerc/MduX · updated 29 August 2026
+> Epic status re-verified against `develop` @ `bdf539c` · 29 August 2026. All thirteen epics were
+> queried on GitHub: ten closed, three open (`#16`, `#17`, `#19`). **No epic has changed state since
+> the v0.6.0 baseline** — what moved is post-tag content work, one new platform and one new CI lane,
+> recorded under [Since the tag](#since-the-tag).
+> Sixteen non-epic issues are open: fourteen are epic children, promoted on 28 August and listed in
+> their epic's section below, and two are standalone — `#219` under #15 and `#153` under #18.
 > The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
 > 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
@@ -43,7 +43,8 @@ describes, which is #16 over content #17 teaches to draw.
 | Delivered | 10 |
 | Remaining | 3 |
 | Waves shipped | 5 |
-| Open issues outside an epic | 2 (#153, #219) |
+| Standalone open issues | 2 (#153, #219) |
+| Open epic children | 14 (#251–#265) |
 
 ## The thesis
 
@@ -62,14 +63,16 @@ the whole of Track C.
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. **616 tests, 616 passing** at `develop` @ `6124bcb`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. #246 added a fourth lane, Linux under Clang 21 and libc++, which caught a stack-frame guard violation and a standard-library mismatch that the other three had all missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Tests | Closed. **616 tests, 616 passing** at `develop` @ `bdf539c`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. #246 added a fourth lane, Linux under Clang 21 and libc++, which caught a stack-frame guard violation and a standard-library mismatch that the other three had all missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
 | Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC, GCC 16, macOS arm64 / Clang 21 (#222) and Linux / Clang 21 (#246) all green in CI. | Workspace builds `--locked` on Linux and in containers. |
 
 > **Why the test count is sourced from CI rather than a local run.** 616/616 is what the macOS lane
-> reports for `6124bcb`, and the GCC 16 and MSVC lanes are green on the same commit. A clean local
-> build of the same commit, with the same preset and the same Clang 21.1.8, fails three
-> `evidence-unit` scenarios — two `SEGFAULT`, one failed assertion — on a host running **macOS
-> 26.5.2 with SDK 26.5**, where the verified lane runs macOS 15. The generated module's own
+> reports for `bdf539c` (run 33149254738), and the GCC 16, MSVC and Linux/Clang lanes are green on
+> the same commit. A local build of the
+> same commit, with the same preset and the same Clang 21.1.8, fails three `evidence-unit` scenarios
+> — two `SEGFAULT`, one failed assertion — on a host running **macOS 26.5.2 with SDK 26.5**, where
+> the verified lane runs macOS 15. The same three failed at `6124bcb` from a build directory deleted
+> and reconfigured from scratch, so they are not stale incremental state. The generated module's own
 > `static_assert(screen.validate().has_value())` compiles, so the same expression is true at compile
 > time and false at run time on that host. The supported configuration is the one in
 > `cmake/toolchains/macos-arm64-llvm.cmake`, and macOS 26 is not it — but a constexpr/runtime
@@ -518,7 +521,7 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status re-verified against `develop` @ `6124bcb` · 26 August 2026_
+_Epic status re-verified against `develop` @ `bdf539c` · 29 August 2026_
 _13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
-_2 open issues outside an epic: #219 (under #15), #153 (under #18)_
+_2 standalone open issues: #219 (under #15), #153 (under #18) · 14 open epic children (#251–#265)_
 _All epics on GitHub_
