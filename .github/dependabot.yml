@@ -8,11 +8,18 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      # `github/codeql-action/init` and `.../analyze` must run at the same version: the analyze step
-      # rejects a configuration written by a different one with "Loaded a configuration file for
-      # version X, but running version Y". Ungrouped, Dependabot opens one PR per sub-action and
-      # each is red on its own, because each leaves the other behind. Grouping them makes the unit
-      # of update the unit that has to move together.
+      # One action, one version, everywhere it is used.
+      #
+      # `init` and `.../analyze` must match or the build breaks outright: analyze rejects a
+      # configuration written by a different version with "Loaded a configuration file for version
+      # X, but running version Y". Ungrouped, Dependabot opens one PR per sub-action, and each is
+      # red on its own because each leaves the other behind.
+      #
+      # The pattern deliberately covers `upload-sarif` in scorecard.yml too, which is a different
+      # workflow and cannot break that way. Letting it drift is still not worth it: #267 merged
+      # ahead of #269 and left this repository running upload-sarif at v4.37.9 against init and
+      # analyze at v4.37.7 - a skew with no upside, from three parts of one release moving
+      # separately. Grouping makes the unit of update the release it comes from.
       codeql-action:
         patterns:
           - "github/codeql-action*"
