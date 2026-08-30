@@ -303,9 +303,9 @@ const mdux::spec::Register semanticSpecialValueForms{"Image references, positive
                                                                        constexpr std::string_view                   source = R"(Screen Forms {
     layout: Vertical { spacing: 0px; padding: 0px; }
     Image { id: logo; width: 32px; height: 32px; source: img("LOGO"); }
-    TextInput { id: input; width: 120px; height: 20px; source: "NAME"; max_length: 16; color: Theme.Colors.Title; }
-    Clock { id: clock; width: 80px; height: 20px; format: TimeFormat.HoursMinutes; }
-    CriticalButton { id: stop; requirement: "REQ-1"; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: SystemEvent.Stop; }
+    TextInput { id: input; width: 120px; height: 20px; source: "NAME"; max_length: 16; color: Theme.Colors.Title; charset: Charset.DigitsToA; }
+    Clock { id: clock; width: 80px; height: 20px; format: TimeSeconds; }
+    CriticalButton { id: stop; requirement: "REQ-1"; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: TriggerHalt; }
 })";
                                                                        const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
                                                                        const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};

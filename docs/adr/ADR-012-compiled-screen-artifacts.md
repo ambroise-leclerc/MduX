@@ -81,6 +81,15 @@ device performs the substitution by a bounded lookup in a governed table. Carryi
 values is also what makes the package readable in a diff: a reviewer sees
 `Theme.Colors.ScoreDigits`, not `[33, 184, 107, 255]`.
 
+**Two fields are members rather than names**, since #219: a `Clock`'s `format` and a
+`CriticalButton`'s `on_press` are enumerations, because the shared contract closes those sets
+(MEDUI-DEC-006) and a name outside one is `MEDUI-E034`. The distinction matters here rather than
+being a typing detail. A validated *name* is proved to resolve against a table a build supplies, so
+what it means is configuration; a *member* means one thing everywhere, which is what lets the
+compiler measure a clock's rendering against its bounds instead of looking it up. `charset` stays a
+name, because the character sets it resolves against are baked per build and the contract does not
+enumerate them.
+
 **All three files spell their members in camelCase**, as the committed font, shader and model
 packages do (`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
 `goldens.json`, whose entry ADR-011 originally spelled in snake_case; that amendment explains why it

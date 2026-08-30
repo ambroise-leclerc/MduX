@@ -91,7 +91,7 @@ const mdux::spec::Register theGeneratedScreenIsTheCompiledOne{
                       const ms::CompiledNode* clock = screen.find("wall-clock");
                       if (clock != nullptr) {
                           const auto* spec = std::get_if<ms::ClockSpec>(&clock->payload);
-                          checks.expect(spec != nullptr && spec->format == "TimeSeconds", "the Clock's format survives emission");
+                          checks.expect(spec != nullptr && spec->format == ms::ClockFormat::TimeSeconds, "the Clock's format survives emission");
                       } else {
                           checks.expect(false, "the generated screen holds the Clock");
                       }
@@ -99,7 +99,7 @@ const mdux::spec::Register theGeneratedScreenIsTheCompiledOne{
                       const ms::CompiledNode* critical = screen.find("halt");
                       if (critical != nullptr) {
                           const auto* spec = std::get_if<ms::CriticalButtonSpec>(&critical->payload);
-                          checks.expect(spec != nullptr && spec->onPress == "TriggerHalt", "the CriticalButton's action survives emission");
+                          checks.expect(spec != nullptr && spec->onPress == ms::SystemEvent::TriggerHalt, "the CriticalButton's action survives emission");
                           checks.expect(spec != nullptr && spec->requirement == "REQ-EC-002", "its requirement survives, for the trace");
                       } else {
                           checks.expect(false, "the generated screen holds the CriticalButton");

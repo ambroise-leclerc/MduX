@@ -550,7 +550,7 @@ const mdux::spec::Register dynamicTextCannotEscapeTheCharset{
                           md::DynamicTextRule{.name = "HH_MM_TZ", .produces = digitsAndZone}
                       };
 
-                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM_TZ; }\n");
+                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM_TZ; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = table});
@@ -581,7 +581,7 @@ const mdux::spec::Register charsetWalkCrossesRangeBoundaries{
                           md::DynamicTextRule{.name = "DIGITS_TO_A", .produces = digitsThroughLetter}
                       };
 
-                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: DIGITS_TO_A; }\n");
+                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: DIGITS_TO_A; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = table});
@@ -613,7 +613,9 @@ const mdux::spec::Register nonScalarRangesAreReported{
                           const std::array<md::DynamicTextRule, 1> table{
                               md::DynamicTextRule{.name = name, .produces = produces}
                           };
-                          const std::string source = screenWith(std::format("    Clock {{ id: now; width: 100px; height: 20px; format: {}; }}\n", name));
+                          const std::string source = screenWith(std::format("    TextInput {{ id: entry; width: 100px; height: 20px; source: \"NAME\"; "
+                                                                            "max_length: 8; color: Theme.Colors.Title; charset: {}; }}\n",
+                                                                            name));
                           return md::checkTextBudgets(layoutOf(source), "budget.medui", {.font = &fontPackage, .locales = locales, .dynamicText = table});
                       };
 
@@ -647,7 +649,7 @@ const mdux::spec::Register unresolvedDynamicTextFailsClosed{
                       const ApprovedText      approved    = approvedText("STR-UNUSED", 1, 1);
                       const auto              locales     = approved.views();
 
-                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n");
+                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = {}});
@@ -678,8 +680,8 @@ const mdux::spec::Register boundedDynamicTextIsAccepted{
                           md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
                       };
 
-                      const std::string          source = screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n"
-                                                                     "    TextInput { id: entry; width: 100px; height: 20px; source: \"OPERATOR_NOTE\"; "
+                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"
+                                                                     "    TextInput { id: note; width: 100px; height: 20px; source: \"OPERATOR_NOTE\"; "
                                                                      "max_length: 16; color: Theme.Colors.Title; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
@@ -759,7 +761,7 @@ const mdux::spec::Register unwalkableFontCharsetIsRefused{
                       const std::array<md::DynamicTextRule, 1> table{
                           md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
                       };
-                      const md::LayoutResult resolved = layoutOf(screenWith("    Clock { id: now; width: 100px; height: 20px; format: HH_MM; }\n"));
+                      const md::LayoutResult resolved = layoutOf(screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"));
 
                       const auto check = [&](const font::FontPackage& fontPackage) {
                           return throwsWiringError([&] {

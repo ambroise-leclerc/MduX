@@ -12,6 +12,7 @@ module mdux.tools.medui.textbudget;
 
 import std;
 import mdux.font.schema;
+import mdux.medui.schema;
 import mdux.text.draw;
 import mdux.text.schema;
 import mdux.tools.cli;
@@ -35,10 +36,11 @@ struct DynamicField {
     std::string_view field;
 };
 
-constexpr std::array dynamicFields{
-    DynamicField{    .component = "Clock",  .field = "format"},
-    DynamicField{.component = "TextInput", .field = "charset"}
-};
+// `Clock` is deliberately absent. Its `format:` is a member of a closed set whose rendering the
+// shared contract fixes (MEDUI-DEC-006), so it is *measured* by `checkClockFormat()` rather than
+// resolved through a product-supplied table. `TextInput`'s `charset:` stays here because a glyph
+// set is still an open name, resolved against the packages a build bakes.
+constexpr std::array dynamicFields{DynamicField{.component = "TextInput", .field = "charset"}};
 
 [[nodiscard]] bool namesDynamicText(std::string_view component, std::string_view field) noexcept {
     return std::ranges::any_of(dynamicFields, [component, field](const DynamicField& entry) {
@@ -294,6 +296,8 @@ private:
                         checkTextKey(node, field, *element);
                     }
                 }
+            } else if (node.source.component == "Clock" && field.name == "format") {
+                checkClockFormat(node, field, *field.value);
             } else if (namesDynamicText(node.source.component, field.name)) {
                 checkDynamicText(field, *field.value);
             }
@@ -377,6 +381,78 @@ private:
         }
 
         return measureRun(*inputs_.font, locale.sidecar.subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength)));
+    }
+
+    /**
+     * @brief Measures a clock against its node, from the rendering its format fixes.
+     *
+     * This is what closing `ClockFormat` bought. The contract pins each member's rendering, so the
+     * widest string a clock can draw is known here - `HH:MM:SS` is six digits and two colons - and
+     * the box can be checked at compile time instead of being trusted.
+     *
+     * The measurement is exact rather than an upper bound because the font package guarantees
+     * tabular figures: `FontPackage::validate()` requires every decimal digit it contains to share
+     * one advance width, so "the widest digit" is *the* digit. Without that rule this would have to
+     * assume the widest glyph in the set and would reject boxes that fit.
+     */
+    void checkClockFormat(const ResolvedNode& node, const ast::Field& field, const ast::Value& value) {
+        if (value.kind != ast::ValueKind::Identifier) {
+            return;  // MEDUI-E033, already reported by analyze().
+        }
+        const auto format = mdux::medui::clockFormatFromWire(value.text);
+        if (!format.has_value()) {
+            return;  // MEDUI-E034, already reported by analyze().
+        }
+
+        std::int64_t width{0};
+        std::int64_t height{0};
+        for (const char character : mdux::medui::rendering(*format)) {
+            // A digit position can hold any decimal digit, so it is measured as the widest one -
+            // which tabular figures make a single value. Every other character in a rendering is a
+            // literal separator and measures as itself.
+            const char32_t point = (character >= '0' && character <= '9') ? U'0' : static_cast<char32_t>(character);
+            const auto     glyph = std::ranges::find(inputs_.font->glyphs, point, &mdux::font::GlyphRecord::codePoint);
+            if (glyph == inputs_.font->glyphs.end()) {
+                report(Code::CharsetEscape,
+                       value.position,
+                       std::format("format '{}' renders U+{:04X}, which font package '{}' cannot draw",
+                                   value.text,
+                                   static_cast<std::uint32_t>(point),
+                                   inputs_.font->id));
+                return;
+            }
+            width  += static_cast<std::int64_t>(glyph->advanceWidth);
+            height  = std::max(height, static_cast<std::int64_t>(glyph->height));
+        }
+
+        // Font units to pixels, the same conversion `measureRun()` rests on. Integer throughout:
+        // this stage decides a compile outcome, and a rounding difference between host toolchains
+        // would make that outcome depend on the compiler.
+        const auto units      = static_cast<std::int64_t>(inputs_.font->unitsPerEm);
+        const auto pixelSize  = static_cast<std::int64_t>(inputs_.font->pixelSize);
+        const std::int64_t px = units == 0 ? 0 : (width * pixelSize) / units;
+
+        if (px > node.bounds.width) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a '{}' clock renders '{}', which needs {}px of width, and '{}' resolved to {}px",
+                               value.text,
+                               mdux::medui::rendering(*format),
+                               px,
+                               node.id,
+                               node.bounds.width));
+        }
+        if (height > node.bounds.height) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a '{}' clock renders '{}', which needs {}px of height, and '{}' resolved to {}px",
+                               value.text,
+                               mdux::medui::rendering(*format),
+                               height,
+                               node.id,
+                               node.bounds.height));
+        }
+        static_cast<void>(field);
     }
 
     /// Checks that a named dynamic-text source can only produce glyphs the font package holds.

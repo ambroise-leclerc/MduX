@@ -582,7 +582,7 @@ const mdux::spec::Register everyComponentNamesItself{
                       const ms::CompiledNode untraced{
                           .id      = "now",
                           .bounds  = {0, 0, 1, 1},
-                          .payload = ms::ClockSpec{.format = "HH_MM"}
+                          .payload = ms::ClockSpec{.format = ms::ClockFormat::TimeSeconds}
                       };
                       checks.expect(ms::requirementOf(traced) == "REQ-1", "a status indicator yields its requirement");
                       checks.expect(ms::requirementOf(untraced).empty(), "a clock has none to yield");

@@ -37,7 +37,7 @@ constexpr mdux::draw::DrawBudget budget{.maxVertices = 512, .maxIndices = 768, .
 
 constexpr ms::PanelSpec panel{.colorToken = "Theme.Colors.TopbarBackground"};
 constexpr ms::LabelSpec label{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"};
-constexpr ms::ClockSpec clock{.format = "TimeSeconds"};
+constexpr ms::ClockSpec clock{.format = ms::ClockFormat::TimeSeconds};
 
 // Every alternative the walk can take: one it draws, and two it defers. A screen of panels alone
 // would leave the deferred branch - the one that touches a variant it does not draw - unmeasured.

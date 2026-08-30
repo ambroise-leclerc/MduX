@@ -122,6 +122,31 @@ Screen NeuroSense500 {
 | `Image` | `id`, `width`, `height`, `source` | `position` |
 | `TextInput` | `id`, `width`, `height`, `source`, `max_length`, `color` | `position`, `charset`, `requirement` |
 
+## Closed named values: `format:` and `on_press:`
+
+Two fields take a member of a fixed set rather than any identifier. The sets are the shared
+contract's (MEDUI-DEC-006), not this compiler's, so the same spellings hold for every
+implementation.
+
+| Field | Component | Members | Renders |
+|---|---|---|---|
+| `format` | `Clock` | `TimeSeconds` | `HH:MM:SS` |
+| | | `DateTimeSeconds` | `YYYY-MM-DD HH:MM:SS` |
+| `on_press` | `CriticalButton` | `NoOp` | nothing |
+| | | `TriggerHalt` | the host's halt path |
+
+A well-formed identifier outside the set is **`MEDUI-E034`**, not `MEDUI-E033`. The distinction is
+worth knowing because the fix differs: `MEDUI-E033` means the *kind* is wrong (`format: 42`), while
+`MEDUI-E034` means the kind is right and only the membership is wrong (`format: HH_MM`).
+
+Because the renderings are fixed above, a clock's box is **measured** rather than declared: the
+compiler knows a `TimeSeconds` clock draws eight glyphs and checks them against the node's bounds.
+There is no product-supplied table to configure, and a box too narrow for the format is a compile
+error.
+
+`charset:` on `TextInput` stays an open name — it resolves against the character sets a build bakes,
+which the contract does not enumerate.
+
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 
 `@safety_critical(cv_check: [Bounds, ColorHash])` on the line before a component emits a golden
