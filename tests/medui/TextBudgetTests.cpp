@@ -533,6 +533,66 @@ const mdux::spec::Register diagnosticsFollowNodeAndLocaleOrder{
             .Execute();
     }};
 
+const mdux::spec::Register clocksSelectAndRunTheBudgetStage{
+    "A Clock-only screen needs a font and measures decimal slots rather than template letters",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-clock-fixed-rendering")
+            .Given("a TimeSeconds clock and a font containing digits and a colon but no H, M or S", [] {})
+            .When("the screen is selected for budgeting and its fixed rendering is measured", [] {})
+            .Then("the Clock selects the stage and its 43px digit rendering fits a 50px box",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+                      const ApprovedText      approved    = approvedText("STR-UNUSED", 1, 1);
+                      const auto              locales     = approved.views();
+                      const std::string       source      = screenWith("    Clock { id: now; width: 50px; height: 20px; format: TimeSeconds; }\n");
+                      const md::ParseResult   parsed      = md::parse(source, "budget.medui");
+
+                      checks.expect(parsed.screen.has_value() && md::needsTextBudget(*parsed.screen), "a Clock-only screen selects the text-budget stage");
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+                      checks.expect(result.ok(), std::format("the digit rendering fits, got {} diagnostics", result.diagnostics.size()));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register clockBoundsUseRenderedInk{
+    "Clock bounds cover the widest digit ink, including bitmap overhang",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-clock-ink-envelope")
+            .Given("a valid tabular font whose zero bitmap begins 20px left of its pen", [] {})
+            .When("a 50px TimeSeconds clock is measured", [] {})
+            .Then("MEDUI-E050 reports the 63px ink envelope rather than accepting its 40px advance sum",
+                  [] {
+                      mdux::spec::Checks checks;
+                      font::FontPackage  fontPackage = fixtureFont();
+                      const auto         zero        = std::ranges::find(fontPackage.glyphs, U'0', &font::GlyphRecord::codePoint);
+                      checks.expect(zero != fontPackage.glyphs.end(), "the fixture contains zero");
+                      if (zero != fontPackage.glyphs.end()) {
+                          zero->bitmapOriginX = -20;
+                      }
+                      checks.expect(fontPackage.validate().has_value(), "bitmap overhang does not invalidate a font package");
+
+                      const ApprovedText         approved = approvedText("STR-UNUSED", 1, 1);
+                      const auto                 locales  = approved.views();
+                      const std::string          source   = screenWith("    Clock { id: now; width: 50px; height: 20px; format: TimeSeconds; }\n");
+                      const md::TextBudgetResult result   = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                                 {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::TextBudgetExceeded);
+                      checks.expect(!result.ok(), "the overhanging clock is rejected");
+                      checks.expect(mentions(reported, "63px"), "the diagnostic names the full ink envelope");
+                      checks.expect(mentions(reported, "50px"), "the diagnostic names the available width");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register dynamicTextCannotEscapeTheCharset{
     "A format that can produce an unbaked character is MEDUI-E053",
     "evidence-unit",
@@ -550,7 +610,8 @@ const mdux::spec::Register dynamicTextCannotEscapeTheCharset{
                           md::DynamicTextRule{.name = "HH_MM_TZ", .produces = digitsAndZone}
                       };
 
-                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM_TZ; }\n");
+                      const std::string source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: "
+                                                            "Theme.Colors.Title; charset: HH_MM_TZ; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = table});
@@ -581,7 +642,8 @@ const mdux::spec::Register charsetWalkCrossesRangeBoundaries{
                           md::DynamicTextRule{.name = "DIGITS_TO_A", .produces = digitsThroughLetter}
                       };
 
-                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: DIGITS_TO_A; }\n");
+                      const std::string source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: "
+                                                            "Theme.Colors.Title; charset: DIGITS_TO_A; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = table});
@@ -649,7 +711,8 @@ const mdux::spec::Register unresolvedDynamicTextFailsClosed{
                       const ApprovedText      approved    = approvedText("STR-UNUSED", 1, 1);
                       const auto              locales     = approved.views();
 
-                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n");
+                      const std::string source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: "
+                                                            "Theme.Colors.Title; charset: HH_MM; }\n");
                       const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = {}});
@@ -670,27 +733,29 @@ const mdux::spec::Register boundedDynamicTextIsAccepted{
         return speclab::Test("medui-textbudget-charset-accepted")
             .Given("a Clock producing digits and a colon, and a TextInput with no charset field", [] {})
             .When("the screen is checked against the font package's restricted charset", [] {})
-            .Then("neither component is reported",
-                  [] {
-                      mdux::spec::Checks                       checks;
-                      const font::FontPackage                  fontPackage = fixtureFont();
-                      const ApprovedText                       approved    = approvedText("STR-UNUSED", 1, 1);
-                      const auto                               locales     = approved.views();
-                      const std::array<md::DynamicTextRule, 1> table{
-                          md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
-                      };
+            .Then(
+                "neither component is reported",
+                [] {
+                    mdux::spec::Checks                       checks;
+                    const font::FontPackage                  fontPackage = fixtureFont();
+                    const ApprovedText                       approved    = approvedText("STR-UNUSED", 1, 1);
+                    const auto                               locales     = approved.views();
+                    const std::array<md::DynamicTextRule, 1> table{
+                        md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
+                    };
 
-                      const std::string          source = screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"
-                                                                     "    TextInput { id: note; width: 100px; height: 20px; source: \"OPERATOR_NOTE\"; "
-                                                                     "max_length: 16; color: Theme.Colors.Title; }\n");
-                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
-                                                                               "budget.medui",
-                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = table});
+                    const std::string source = screenWith(
+                        "    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"
+                        "    TextInput { id: note; width: 100px; height: 20px; source: \"OPERATOR_NOTE\"; "
+                        "max_length: 16; color: Theme.Colors.Title; }\n");
+                    const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                             "budget.medui",
+                                                                             {.font = &fontPackage, .locales = locales, .dynamicText = table});
 
-                      checks.expect(result.ok(), std::format("the screen compiles, got {} diagnostics", result.diagnostics.size()));
-                      checks.expect(result.measurements.empty(), "a screen with no text key measures nothing");
-                      checks.raise();
-                  })
+                    checks.expect(result.ok(), std::format("the screen compiles, got {} diagnostics", result.diagnostics.size()));
+                    checks.expect(result.measurements.empty(), "a screen with no text key measures nothing");
+                    checks.raise();
+                })
             .Execute();
     }};
 
@@ -761,7 +826,8 @@ const mdux::spec::Register unwalkableFontCharsetIsRefused{
                       const std::array<md::DynamicTextRule, 1> table{
                           md::DynamicTextRule{.name = "HH_MM", .produces = digitsAndColon}
                       };
-                      const md::LayoutResult resolved = layoutOf(screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"));
+                      const md::LayoutResult resolved = layoutOf(screenWith("    TextInput { id: entry; width: 100px; height: 20px; source: \"NAME\"; "
+                                                                            "max_length: 8; color: Theme.Colors.Title; charset: HH_MM; }\n"));
 
                       const auto check = [&](const font::FontPackage& fontPackage) {
                           return throwsWiringError([&] {

@@ -157,8 +157,10 @@ constexpr std::string_view schemaRefused = "SCP005";
         return ms::ButtonSpec{.labelKey = name("label"), .colorToken = name("color"), .source = name("source"), .requirement = name("requirement")};
     }
     if (resolved.component == "CriticalButton") {
-        return ms::CriticalButtonSpec{
-            .requirement = name("requirement"), .labelKey = name("label"), .colorToken = name("color"), .onPress = systemEvent("on_press")};
+        return ms::CriticalButtonSpec{.requirement = name("requirement"),
+                                      .labelKey    = name("label"),
+                                      .colorToken  = name("color"),
+                                      .onPress     = systemEvent("on_press")};
     }
     if (resolved.component == "NumericDisplay") {
         return ms::NumericDisplaySpec{.requirement = name("requirement"),
@@ -714,7 +716,7 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         // only refusing here keeps them apart.
         const auto clockFormat = ms::clockFormatFromWire(*format);
         if (!clockFormat.has_value()) {
-            return false;
+            return sink.fail(memberWrong, std::format("{} member 'format' names unknown ClockFormat '{}'", where, *format));
         }
         payload = ms::ClockSpec{.format = *clockFormat};
         return true;
@@ -780,7 +782,7 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         }
         const auto event = ms::systemEventFromWire(*onPress);
         if (!event.has_value()) {
-            return false;
+            return sink.fail(memberWrong, std::format("{} member 'onPress' names unknown SystemEvent '{}'", where, *onPress));
         }
         payload = ms::CriticalButtonSpec{.requirement = *requirement, .labelKey = *labelKey, .colorToken = *colorToken, .onPress = *event};
         return true;

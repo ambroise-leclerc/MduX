@@ -193,6 +193,42 @@ const mdux::spec::Register referenceScreenValidates{"The reference screen valida
                                                             .Execute();
                                                     }};
 
+const mdux::spec::Register closedMembersMustBeSpecifiedAndInRange{
+    "Closed-set payload fields distinguish omission from an out-of-range value",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-closed-members")
+            .Given("Clock and CriticalButton payloads with valid, unspecified and out-of-range members", [] {})
+            .When("each single-node package is validated", [] {})
+            .Then("valid members pass and the two malformed classes report distinct schema errors",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const auto         errorFor = [](ms::NodePayload payload) -> std::optional<ms::SchemaError> {
+                          Fixture fixture;
+                          fixture.nodes = {
+                              ms::CompiledNode{.id = "member", .bounds = {0, 0, 120, 40}, .payload = std::move(payload)}
+                          };
+                          return errorOf(fixture);
+                      };
+
+                      checks.expect(!errorFor(ms::ClockSpec{.format = ms::ClockFormat::TimeSeconds}).has_value(), "a known clock format validates");
+                      checks.expect(errorFor(ms::ClockSpec{}) == ms::SchemaError::UnspecifiedNamedValue, "an omitted clock format is unspecified");
+                      checks.expect(errorFor(ms::ClockSpec{.format = static_cast<ms::ClockFormat>(255)}) == ms::SchemaError::NamedValueOutOfRange,
+                                    "an out-of-range clock format is distinguished from omission");
+
+                      const auto button = [](ms::SystemEvent event) {
+                          return ms::CriticalButtonSpec{.requirement = "REQ-1", .labelKey = "STR-HALT", .colorToken = "Theme.Colors.Fault", .onPress = event};
+                      };
+                      checks.expect(!errorFor(button(ms::SystemEvent::TriggerHalt)).has_value(), "a known system event validates");
+                      checks.expect(errorFor(button(ms::SystemEvent::Unspecified)) == ms::SchemaError::UnspecifiedNamedValue,
+                                    "an omitted system event is unspecified");
+                      checks.expect(errorFor(button(static_cast<ms::SystemEvent>(255))) == ms::SchemaError::NamedValueOutOfRange,
+                                    "an out-of-range system event is distinguished from omission");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register identityIsRequired{"A screen with no id and one with an unreadable version are both refused", "evidence-unit", [] {
                                                   return speclab::Test("medui-schema-identity")
                                                       .Given("the reference screen", [] {})

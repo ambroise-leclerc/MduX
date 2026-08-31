@@ -58,7 +58,7 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
-[`Compliatory/MedUI` at `d5136a8`](https://github.com/Compliatory/MedUI/tree/d5136a8518bd499760ecff2aad215d3721329f20).
+[`Compliatory/MedUI` at `265df19`](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210).
 A `.medui` file builds something in MduX today, and it reaches the screen: register it with
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under

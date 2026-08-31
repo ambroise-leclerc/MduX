@@ -64,10 +64,11 @@ inline constexpr std::string_view compilerToolName = "mdux-meduic";
 /**
  * @brief One named dynamic-text source from the recipe, and every code point it can produce.
  *
- * The governed table an author's `format: TimeSeconds` or `charset: Ascii` resolves against. It is a
- * recipe input rather than a compiler constant for the reason `DynamicTextRule` gives: the names
- * belong to a product's governed tables, and a compiler shipping its own list would be authoritative
- * about a set it does not own.
+ * The governed table an author's `charset: Ascii` resolves against. It is a recipe input rather than
+ * a compiler constant for the reason `DynamicTextRule` gives: charset names belong to a product's
+ * governed tables, and a compiler shipping its own list would be authoritative about a set it does
+ * not own. `Clock.format` is a closed member whose rendering the compiler measures directly, so it
+ * does not appear here.
  *
  * Spelled as parallel arrays because `mdux.tools.toml` implements a subset with no array-of-tables
  * support - the same shape `recipes/font/dejavu-ui.toml` uses for its charset, and the same

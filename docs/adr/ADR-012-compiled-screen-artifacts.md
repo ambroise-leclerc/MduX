@@ -144,8 +144,9 @@ a governed, allocation-free runtime can do.
 behind a `std::variant`, not a single record with every field on it. The flat form was tried first
 and was lossy: it had nowhere to put a `Clock`'s format, a `NumericDisplay`'s template and source, a
 `StatusIndicator`'s state keys and per-state tints, a `CriticalButton`'s `on_press`, or a
-`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Every
-field remains a validated *name* rather than a resolved value, which keeps the boundary ADR-011 fixes.
+`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Open
+fields remain validated *names* rather than resolved values; the closed `Clock.format` and
+`CriticalButton.on_press` fields are typed members. Both keep the boundary ADR-011 fixes.
 
 ### 3. Generated C++ is emitted, never committed
 
