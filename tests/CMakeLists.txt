@@ -563,10 +563,28 @@ add_executable(ml_spec
     ml/KernelTests.cpp
     ml/DeterminismTests.cpp
     ml/RuntimeTests.cpp
+    ml/GeneratedModelTests.cpp
+    ml/GeneratedModelModuleConsumer.cpp
+    ml/GeneratedModelHeaderConsumer.cpp
 )
 
+# Both generated forms are compiled into this one binary. The module joins a build-tree file set;
+# the header is reached through the generated include directory. The target still links Core only,
+# so package consumption cannot acquire the host-tools parser transitively.
+target_sources(ml_spec
+    PRIVATE
+        FILE_SET generated_model_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_MODEL_DIR}
+            FILES ${MDUX_ECG_MODEL_MODULE}
+)
+add_dependencies(ml_spec emit-model-ecg-demo)
+
 target_link_libraries(ml_spec PRIVATE MduX::Core speclab::speclab)
-target_include_directories(ml_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(ml_spec PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MDUX_GENERATED_MODEL_DIR}
+)
 
 set_target_properties(ml_spec
     PROPERTIES
@@ -933,6 +951,7 @@ add_executable(ml_tools_spec
     ml/MlToolsSpecMain.cpp
     ml/SafetensorsTests.cpp
     ml/WeightSwapTests.cpp
+    ml/EmitTests.cpp
 )
 
 target_link_libraries(ml_tools_spec PRIVATE MduX::MlBakeLib speclab::speclab)
@@ -942,6 +961,22 @@ target_include_directories(ml_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # source tree rather than anything the build produces. It reads only, so CI's
 # source-tree-cleanliness gate stays satisfied - the same arrangement shader_spec uses.
 target_compile_definitions(ml_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+# Execute both halves of the generated-name rule over the same ids. A C++-only assertion cannot
+# observe the CMake regex, which is the exact drift the shader emitter once shipped with.
+set(mdux_model_identifier_parity_ids
+    "ecg-demo" "a.b-c" "plain" "2d" "class" "already_fine" "a b" "model.v2")
+set(mdux_model_identifier_parity_lines "")
+foreach(mdux_model_identifier_parity_id IN LISTS mdux_model_identifier_parity_ids)
+    mdux_model_identifier(mdux_model_identifier_parity_value
+                          "${mdux_model_identifier_parity_id}")
+    string(APPEND mdux_model_identifier_parity_lines
+           "${mdux_model_identifier_parity_id}\t${mdux_model_identifier_parity_value}\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/model_identifier_parity.tsv"
+     "${mdux_model_identifier_parity_lines}")
+target_compile_definitions(ml_tools_spec PRIVATE
+    MDUX_MODEL_IDENTIFIER_PARITY_FILE="${CMAKE_CURRENT_BINARY_DIR}/model_identifier_parity.tsv")
 
 set_target_properties(ml_tools_spec
     PROPERTIES

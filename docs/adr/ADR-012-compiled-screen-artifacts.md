@@ -26,12 +26,10 @@ produces a committed artifact and gets a byte-comparison test; an emission produ
 and gets none, "because the bytes it renders are already byte-compared as `package.json` and
 `shaders.spv`." Registering an emission as a bake "would claim a second, redundant piece of
 evidence." All three existing packages follow the bake half — `generated/<kind>/<id>/` holds
-`package.json`, `report.json` and a payload. Only shaders follow the emit half:
-`mdux_emit_shader_package()` is the tree's one emitter, and the `.cppm`/`.hpp` rendering it
-produces lands in the build tree only. Model and font have no generated-source rendering yet — the
-ML example still links a host-tools module to parse `package.json` at startup, which is the
-arrangement #153 is open to undo. Screens take the shader shape from the start rather than
-arriving at it.
+`package.json`, `report.json` and a payload. At the time of this decision only shaders followed the
+emit half. Screens adopted the same shape, and issue #153 subsequently added
+`mdux_emit_model_package()`: the ML example now consumes a compile-time-validated package while its
+weights remain a separate blob. Font packages still have no generated-source rendering.
 
 **The two-form emitter is settled.** `<binary>/mdux_generated/<kind>/<identifier>.cppm` plus a
 `.hpp` carrying the same data, for consumers that cannot import a named module.

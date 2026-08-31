@@ -129,8 +129,9 @@ Built when `MDUX_BUILD_EXAMPLES=ON`.
 | `EcgClassifierExample` | embedded ML: fail-closed startup, golden self-test, classification | no |
 | `VulkanSCTriangleExample` | a real Vulkan device rendering from the baked shader package | yes (or lavapipe) |
 
-`EcgClassifierExample` opens no files at all — both its weights and its model package are linked in
-as byte arrays. Running it prints the golden-vector count it verified before classifying:
+`EcgClassifierExample` opens no files at all: its model package is generated `constexpr` data and
+its weights are a separately linked byte array. It links no host-tools parser. Running it prints the
+golden-vector count it verified before classifying:
 
 ```
 $ ./build/examples/EcgClassifierExample
@@ -219,8 +220,8 @@ Link `MduX::Core` if you want the governed pieces without a Vulkan dependency. T
 convenience — `mdux_verify_trust_zones()` mechanically enforces that `MduXCore`'s link graph never
 reaches Vulkan.
 
-Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-shaderemit`) are **not** exported. They are
-build-time only.
+Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-shaderemit`, `mdux-mlemit`) are **not**
+exported. They are build-time only.
 
 ## Limitations
 

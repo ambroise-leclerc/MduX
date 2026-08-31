@@ -229,11 +229,12 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
-  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`. Not exported.
+  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`. Not
+  exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
-  links `MduX::MlBakeLib`, needs no Vulkan and no window, and embeds its model with
-  `mdux_embed_blob()`)
+  links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
+  embeds only its weight blob with `mdux_embed_blob()`)
 - Tests: sixteen executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
   `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seven on SpecLab

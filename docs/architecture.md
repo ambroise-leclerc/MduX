@@ -107,7 +107,7 @@ performs no checking and confers no compliance.
 |---|---|---|
 | `MduXToolsCommon` | `tools/common/` | TOML subset reader, CLI parser, shared diagnostic envelope |
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
-| `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake` |
+| `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197) and the compiler driver behind `mdux-meduic` (#198) |
 
@@ -195,6 +195,12 @@ baked with, checks the scratch budget, requires at least one golden vector, and 
 them through the real kernels comparing bit patterns. Any divergence returns an error and the object
 is never constructed.
 
+`mdux-mlemit` mechanically renders the committed package metadata and golden vectors as a generated
+module plus a header fallback. Both carry a compile-time schema assertion; weights remain a separate
+caller-supplied blob. `EcgClassifierExample` therefore links only `MduX::Core`, opens no files, and
+runs no parser at startup. The host-only `PackageLoad` remains for dynamic tooling such as the
+two-package weight-swap test.
+
 Floating-point determinism is enforced at configure time by
 [`cmake/MduXDeterminism.cmake`](../cmake/MduXDeterminism.cmake), which sets `-ffp-contract=off` and
 fails the build if `-ffast-math`, `/fp:fast`, `/fp:contract` or similar reaches a governed target
@@ -268,7 +274,6 @@ tracking issue; the issue is authoritative for what remains.
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying a text key measured against a committed text package (#235) and drawn from it by the governed runtime (#242); what remains is the other components' own geometry (#17) |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
-| `constexpr` ML package emitter | [#153](https://github.com/ambroise-leclerc/MduX/issues/153) | would remove the startup JSON parse |
 
 ### The HTML/CSS path is gone, not planned
 

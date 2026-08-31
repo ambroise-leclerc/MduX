@@ -108,26 +108,29 @@ endif()
 
 # The ECG classifier demonstrator (issue #64, ADR-008).
 #
-# Links MduX::MlBakeLib rather than MduX::MduX: it needs no Vulkan and no window, and the governed
-# ML modules come through transitively. The host-tools dependency is only for the package loader -
-# a constexpr package emitter would remove it, and the runtime already needs no parser.
+# Links MduX::Core only: the package is generated `constexpr` source, so the device target needs no
+# host-tools parser, Vulkan, or windowing dependency.
 #
-# The two mdux_embed_blob() calls are the whole "weights are data" story. Pointing them at
-# generated/model/ecg-demo-alt/ instead swaps the model with no change to
-# EcgClassifierExample.cpp - which is exactly what tests/ml/WeightSwapTests.cpp asserts.
+# The one mdux_embed_blob() call is the "weights are data" half. A model swap changes this path and
+# the ID passed to mdux_emit_model_package() at the repository root, while the application source
+# remains untouched; tests/ml/WeightSwapTests.cpp independently exercises both committed packages.
 add_executable(EcgClassifierExample
     EcgClassifierExample.cpp
 )
 
-target_link_libraries(EcgClassifierExample PRIVATE MduX::MlBakeLib)
+target_sources(EcgClassifierExample
+    PRIVATE
+        FILE_SET generated_model_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_MODEL_DIR}
+            FILES ${MDUX_ECG_MODEL_MODULE}
+)
+add_dependencies(EcgClassifierExample emit-model-ecg-demo)
+target_link_libraries(EcgClassifierExample PRIVATE MduX::Core)
 
 mdux_embed_blob(EcgClassifierExample
     FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/weights.bin
     SYMBOL ecgModelWeights
-)
-mdux_embed_blob(EcgClassifierExample
-    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/package.json
-    SYMBOL ecgModelPackage
 )
 
 set_target_properties(EcgClassifierExample
