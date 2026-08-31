@@ -228,9 +228,9 @@ into runtime failures on a device.
 swapped without recompiling the application.
 **Cons:** "Parser" is the operative word — a JSON or binary reader in the governed zone is still a
 reader over external input, with the failure modes and the verification burden that implies. It is
-also the arrangement #153 was opened to *undo* for ML packages, where the device currently links a
-host-tools module to parse `package.json` at startup. Adopting for screens the shape ML is trying
-to leave would be a decision made twice in opposite directions.
+also the arrangement #153 subsequently removed for ML packages: the device now consumes generated
+`constexpr` metadata and links no host-tools parser. Adopting for screens the shape ML left would be
+a decision made twice in opposite directions.
 
 Note that this is rejected as the *only* mechanism, not as a capability. ADR-012 keeps a canonical
 JSON package as the committed evidence artifact; what is rejected is a device reading it.
