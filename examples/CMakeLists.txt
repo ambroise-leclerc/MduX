@@ -111,9 +111,9 @@ endif()
 # Links MduX::Core only: the package is generated `constexpr` source, so the device target needs no
 # host-tools parser, Vulkan, or windowing dependency.
 #
-# The one mdux_embed_blob() call is the "weights are data" half. A model swap changes this path and
-# the ID passed to mdux_emit_model_package() at the repository root, while the application source
-# remains untouched; tests/ml/WeightSwapTests.cpp independently exercises both committed packages.
+# The one mdux_embed_blob() call is the "weights are data" half. The same package ID selects both
+# the generated metadata and its weights, so those two inputs cannot silently diverge here.
+# tests/ml/WeightSwapTests.cpp independently exercises both committed packages.
 add_executable(EcgClassifierExample
     EcgClassifierExample.cpp
 )
@@ -125,11 +125,11 @@ target_sources(EcgClassifierExample
             BASE_DIRS ${MDUX_GENERATED_MODEL_DIR}
             FILES ${MDUX_ECG_MODEL_MODULE}
 )
-add_dependencies(EcgClassifierExample emit-model-ecg-demo)
+add_dependencies(EcgClassifierExample emit-model-${MDUX_ECG_MODEL_ID})
 target_link_libraries(EcgClassifierExample PRIVATE MduX::Core)
 
 mdux_embed_blob(EcgClassifierExample
-    FILE   ${CMAKE_SOURCE_DIR}/generated/model/ecg-demo/weights.bin
+    FILE   ${CMAKE_SOURCE_DIR}/generated/model/${MDUX_ECG_MODEL_ID}/weights.bin
     SYMBOL ecgModelWeights
 )
 

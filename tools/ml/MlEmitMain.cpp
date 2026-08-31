@@ -15,6 +15,7 @@ namespace {
 namespace cli  = mdux::tools::cli;
 namespace emit = mdux::tools::ml;
 
+/// Builds the command-line usage text from the canonical tool name.
 [[nodiscard]] std::string usage() {
     return std::format("usage:\n"
                        "  {} <package.json> <output-dir> [--format=json|text]\n\n"

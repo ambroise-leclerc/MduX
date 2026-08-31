@@ -20,9 +20,9 @@
  *    prints why and exits non-zero rather than classifying anything.
  * 3. **No allocation per prediction.** The scratch buffer is a fixed array sized from the package,
  *    and `predict()` runs entirely within it - verified independently by issue #63.
- * 4. **Weights are data.** Swapping in `ecg-demo-alt` changes the model id and weight path in
- *    CMake, and nothing at all in this file. The weight-swap test
- *    (tests/ml/WeightSwapTests.cpp) is what proves that claim mechanically.
+ * 4. **Weights are data.** The package metadata and corresponding weight path share one configured
+ *    model id. The weight-swap test (tests/ml/WeightSwapTests.cpp) exercises the two committed
+ *    packages dynamically without changing this device example.
  *
  * ## Two things it deliberately does not do yet
  *
@@ -171,7 +171,7 @@ int main() {
     }
 
     std::println("");
-    std::println("Swapping these weights for a manufacturer's own is a re-bake of the recipe and");
-    std::println("two CMake paths - not one character of this file. See #64's test.");
+    std::println("Swapping these weights is a re-bake of the recipe and a change to the configured");
+    std::println("model package - not this source file. See #64's test.");
     return 0;
 }

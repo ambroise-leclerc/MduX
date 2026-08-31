@@ -94,8 +94,9 @@ non-`constexpr` and force multi-megabyte weights into generated source, which MS
 does not survive in reasonable time.
 
 `mdux-mlemit` renders the committed `package.json` into a build-tree module interface and header.
-Both forms hold only layer descriptors, digests, dimensions, and golden bit patterns, and both carry
-a `static_assert` over `ModelPackage::validate()`. A device target therefore links `MduX::Core`,
+Both forms hold the package id and schema version, weight digest and byte length, layer descriptors,
+input/output/scratch dimensions, and golden bit patterns. Both carry a `static_assert` over
+`ModelPackage::validate()`. A device target therefore links `MduX::Core`,
 parses nothing at startup, and still receives weights separately. The host-tools `PackageLoad`
 module remains available for tooling and tests that intentionally load packages dynamically.
 

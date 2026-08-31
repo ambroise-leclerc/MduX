@@ -596,8 +596,9 @@ mdux_emit_shader_package(
 # The ECG model package as compile-time-validated source (issue #153). Only metadata, layer
 # descriptors and golden vectors are emitted; weights remain the separately embedded blob.
 include(cmake/MduXModelEmit.cmake)
+set(MDUX_ECG_MODEL_ID ecg-demo)
 mdux_emit_model_package(
-    ID ecg-demo
+    ID ${MDUX_ECG_MODEL_ID}
     OUT_MODULE MDUX_ECG_MODEL_MODULE
     OUT_HEADER MDUX_ECG_MODEL_HEADER
     OUT_DIR MDUX_GENERATED_MODEL_DIR

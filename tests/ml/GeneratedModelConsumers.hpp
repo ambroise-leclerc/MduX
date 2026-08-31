@@ -6,7 +6,10 @@
 
 namespace mdux::test::generated {
 
+/// Returns the package compiled through its generated module interface.
 [[nodiscard]] mdux::ml::ModelPackage modelFromModule() noexcept;
+
+/// Returns the package compiled through its generated header fallback.
 [[nodiscard]] mdux::ml::ModelPackage modelFromHeader() noexcept;
 
 }  // namespace mdux::test::generated
