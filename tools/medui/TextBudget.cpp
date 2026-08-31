@@ -12,6 +12,7 @@ module mdux.tools.medui.textbudget;
 
 import std;
 import mdux.font.schema;
+import mdux.medui.schema;
 import mdux.text.draw;
 import mdux.text.schema;
 import mdux.tools.cli;
@@ -35,8 +36,11 @@ struct DynamicField {
     std::string_view field;
 };
 
+// `Clock` is deliberately absent. Its `format:` is a member of a closed set whose rendering the
+// shared contract fixes (MEDUI-DEC-006), so it is measured rather than resolved through a
+// product-supplied table. `TextInput`'s `charset:` stays here because a glyph set is still an open
+// name, resolved against the packages a build bakes.
 constexpr std::array dynamicFields{
-    DynamicField{    .component = "Clock",  .field = "format"},
     DynamicField{.component = "TextInput", .field = "charset"}
 };
 
@@ -44,6 +48,39 @@ constexpr std::array dynamicFields{
     return std::ranges::any_of(dynamicFields, [component, field](const DynamicField& entry) {
         return entry.component == component && entry.field == field;
     });
+}
+
+/// Whether a field carries a fixed rendering the compiler measures without a dynamic-text table.
+[[nodiscard]] bool carriesFixedText(std::string_view component, std::string_view field) noexcept {
+    return component == "Clock" && field == "format";
+}
+
+/// The five format-template letters that stand for a decimal digit rather than a literal glyph.
+[[nodiscard]] bool isClockDigitSlot(char character) noexcept {
+    return character == 'H' || character == 'M' || character == 'S' || character == 'Y' || character == 'D';
+}
+
+/// The possible code points at one position of a clock rendering.
+struct ClockSlot {
+    std::array<char32_t, 10> points{};
+    std::size_t              count{0};
+};
+
+[[nodiscard]] ClockSlot clockSlot(char character) noexcept {
+    ClockSlot slot;
+    if (isClockDigitSlot(character)) {
+        for (char32_t digit = U'0'; digit <= U'9'; ++digit) {
+            slot.points[slot.count++] = digit;
+        }
+    } else {
+        slot.points[slot.count++] = static_cast<char32_t>(character);
+    }
+    return slot;
+}
+
+/// Font units to pixels, using the half-up rule the text baker uses for every pen position.
+[[nodiscard]] std::int64_t toPixels(std::int64_t units, const mdux::font::FontPackage& font) noexcept {
+    return (units * static_cast<std::int64_t>(font.pixelSize) + static_cast<std::int64_t>(font.unitsPerEm) / 2) / static_cast<std::int64_t>(font.unitsPerEm);
 }
 
 /// Finds a component in the dictionary semantic analysis published, rather than a second copy of it.
@@ -195,6 +232,9 @@ private:
      */
     void checkFontCharset() const {
         constexpr std::uint32_t lastScalarValue = 0x10FFFF;
+        if (inputs_.font->unitsPerEm == 0 || inputs_.font->pixelSize == 0) {
+            throw std::logic_error(std::format("font package '{}' has no usable font-unit-to-pixel scale", inputs_.font->id));
+        }
         for (const mdux::font::CharsetRange& range : inputs_.font->restrictedCharset) {
             if (range.last < range.first) {
                 throw std::logic_error(std::format("font package '{}' declares a charset range from U+{:04X} down to U+{:04X}",
@@ -294,6 +334,8 @@ private:
                         checkTextKey(node, field, *element);
                     }
                 }
+            } else if (carriesFixedText(node.source.component, field.name)) {
+                checkClockFormat(node, field, *field.value);
             } else if (namesDynamicText(node.source.component, field.name)) {
                 checkDynamicText(field, *field.value);
             }
@@ -377,6 +419,125 @@ private:
         }
 
         return measureRun(*inputs_.font, locale.sidecar.subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength)));
+    }
+
+    /**
+     * @brief Measures a clock against its node, from the rendering its format fixes.
+     *
+     * This is what closing `ClockFormat` bought. The contract pins each member's rendering, so the
+     * widest shape a clock can draw is known here - `HH:MM:SS` is six digit slots and two colons -
+     * and the box can be checked at compile time instead of being trusted.
+     *
+     * Equal digit advances stop the clock from jittering, but they do not make digit ink identical:
+     * bitmap origins and dimensions may differ, and a package may carry kerning. The envelope below
+     * therefore considers all ten digits at every placeholder and the full rendered geometry. Its
+     * extrema may come from different clock values, making it conservative rather than falsely
+     * exact; that is the fail-closed direction for a compile-time bound.
+     */
+    void checkClockFormat(const ResolvedNode& node, const ast::Field& field, const ast::Value& value) {
+        if (value.kind != ast::ValueKind::Identifier) {
+            return;  // MEDUI-E033, already reported by analyze().
+        }
+        const auto format = mdux::medui::clockFormatFromWire(value.text);
+        if (!format.has_value()) {
+            return;  // MEDUI-E034, already reported by analyze().
+        }
+
+        const std::string_view rendering = mdux::medui::rendering(*format);
+        std::int64_t           penMin{0};
+        std::int64_t           penMax{0};
+        std::int64_t           left{0};
+        std::int64_t           right{0};
+        std::int64_t           top{0};
+        std::int64_t           bottom{0};
+        bool                   inked{false};
+
+        for (std::size_t index = 0; index < rendering.size(); ++index) {
+            const ClockSlot slot = clockSlot(rendering[index]);
+            std::int64_t    minAdvance{std::numeric_limits<std::int64_t>::max()};
+            std::int64_t    maxAdvance{0};
+
+            for (std::size_t candidate = 0; candidate < slot.count; ++candidate) {
+                const char32_t                 point = slot.points[candidate];
+                const mdux::font::GlyphRecord* glyph = inputs_.font->find(point);
+                if (glyph == nullptr) {
+                    report(Code::CharsetEscape,
+                           value.position,
+                           std::format("format '{}' can render U+{:04X}, which font package '{}' cannot draw",
+                                       value.text,
+                                       static_cast<std::uint32_t>(point),
+                                       inputs_.font->id));
+                    return;
+                }
+
+                minAdvance = std::min(minAdvance, static_cast<std::int64_t>(glyph->advanceWidth));
+                maxAdvance = std::max(maxAdvance, static_cast<std::int64_t>(glyph->advanceWidth));
+                if (glyph->isBlank()) {
+                    continue;
+                }
+
+                const std::int64_t glyphLeft   = toPixels(penMin, *inputs_.font) + glyph->bitmapOriginX;
+                const std::int64_t glyphRight  = toPixels(penMax, *inputs_.font) + glyph->bitmapOriginX + glyph->width;
+                const std::int64_t glyphTop    = -static_cast<std::int64_t>(glyph->bitmapOriginY);
+                const std::int64_t glyphBottom = glyphTop + glyph->height;
+                if (!inked) {
+                    left   = glyphLeft;
+                    right  = glyphRight;
+                    top    = glyphTop;
+                    bottom = glyphBottom;
+                    inked  = true;
+                } else {
+                    left   = std::min(left, glyphLeft);
+                    right  = std::max(right, glyphRight);
+                    top    = std::min(top, glyphTop);
+                    bottom = std::max(bottom, glyphBottom);
+                }
+            }
+
+            if (index + 1 < rendering.size()) {
+                const ClockSlot next = clockSlot(rendering[index + 1]);
+                std::int64_t    minKerning{std::numeric_limits<std::int64_t>::max()};
+                std::int64_t    maxKerning{std::numeric_limits<std::int64_t>::min()};
+                for (std::size_t current = 0; current < slot.count; ++current) {
+                    for (std::size_t following = 0; following < next.count; ++following) {
+                        const std::int64_t adjustment = inputs_.font->kerningFor(slot.points[current], next.points[following]);
+                        minKerning                    = std::min(minKerning, adjustment);
+                        maxKerning                    = std::max(maxKerning, adjustment);
+                    }
+                }
+                penMin += minAdvance + minKerning;
+                penMax += maxAdvance + maxKerning;
+                if (penMin < 0) {
+                    report(Code::CharsetEscape,
+                           value.position,
+                           std::format("format '{}' can move its pen left of the clock origin with font package '{}'", value.text, inputs_.font->id));
+                    return;
+                }
+            }
+        }
+
+        const TextExtent extent{.width = inked ? right - left : 0, .height = inked ? bottom - top : 0};
+        if (extent.width > node.bounds.width) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a '{}' clock renders '{}', which needs {}px of width, and '{}' resolved to {}px",
+                               value.text,
+                               rendering,
+                               extent.width,
+                               node.id,
+                               node.bounds.width));
+        }
+        if (extent.height > node.bounds.height) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a '{}' clock renders '{}', which needs {}px of height, and '{}' resolved to {}px",
+                               value.text,
+                               rendering,
+                               extent.height,
+                               node.id,
+                               node.bounds.height));
+        }
+        static_cast<void>(field);
     }
 
     /// Checks that a named dynamic-text source can only produce glyphs the font package holds.
@@ -485,7 +646,7 @@ bool needsTextBudget(const ast::Screen& screen) {
             }
             // Asked through the same predicate the measuring pass uses, so a third dynamic-text
             // field reaches this question without anyone having to remember it.
-            if (namesDynamicText(node.component, field.name)) {
+            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)) {
                 return true;
             }
         }

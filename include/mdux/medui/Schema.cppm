@@ -119,10 +119,16 @@ enum class SchemaError : std::uint8_t {
     EmptyApprovedPackageDigest,  ///< a text-package approval carries no package identity
     DuplicateApprovedLocale,     ///< two text-package approvals claim the same locale
     MissingTextPackageApproval,  ///< a text-bearing screen approves no text package
+    UnspecifiedNamedValue,       ///< a closed-set field left at its `Unspecified` sentinel
+    NamedValueOutOfRange,        ///< a closed-set field holding no enumerator of its type
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
     switch (error) {
+        case SchemaError::UnspecifiedNamedValue:
+            return "a field whose value must come from a closed set was left unspecified";
+        case SchemaError::NamedValueOutOfRange:
+            return "a closed-set field holds a value that is not one of its members";
         case SchemaError::UnsupportedSchemaVersion:
             return "the package declares an unsupported schemaVersion";
         case SchemaError::EmptyId:
@@ -325,20 +331,18 @@ struct NodeRect {
  * tokens against the governed table, named values against the tables a build supplies (#195) - so
  * the device performs bounded lookups and no parsing.
  *
- * One consequence worth stating because it diverges from the sibling: `format`, `charset` and
- * `onPress` stay `std::string_view` rather than becoming enumerations. TrustSC closes two of those
- * three in its own crate (`ClockFormat`, `SystemEvent`) and leaves the third - a text input's glyph
- * set - open, so the divergence is real and narrower than it looks.
+ * Two of those fields are **not** names: `format` is a `ClockFormat` and `onPress` a `SystemEvent`,
+ * both closed enumerations. `charset` stays a name, because a glyph set is resolved against the
+ * packages a build bakes rather than against a fixed vocabulary - which is also where TrustSC
+ * leaves it, so all three now agree with the sibling.
  *
- * Closing them here was tried and withdrawn, and the reason is worth recording so the next attempt
- * starts from it: the implemented front end accepts any identifier for `format:` and `on_press:`,
- * #195's budget stage resolves a clock format through a product-supplied table, and the fixtures
- * across three suites write names no two-value enumeration can hold. Closing the set in this module
- * alone would leave the canonical type unable to represent a screen the compiler accepts. Doing it
- * properly needs the semantic domains, the budget rule, the fixtures, the authoring skill and a
- * diagnostic code for "a named value outside a closed set" - which the shared contract does not
- * define today - to move together. That is a coordinated change with its own issue, not a paragraph
- * of this one.
+ * Closing them was tried once and withdrawn (#218), and what made the second attempt work is worth
+ * recording. The blocker was never this module: it was that the shared contract required unknown
+ * formats and system events to fail compilation while never saying what a *known* one is. Two
+ * implementations rejecting different sets both conformed. MEDUI-DEC-006 enumerates the members and
+ * allocates `MEDUI-E034` for one outside the set, so this file transcribes a contract rather than
+ * inventing a local rule - and the fixtures, the semantic domains and #195's budget rule moved with
+ * it in the same change.
  */
 // Every spec member carries a default initialiser. `-Wmissing-field-initializers` is an error in
 // this tree, and the emitter (#197) writes these initialisers from a screen - a type whose optional
@@ -357,8 +361,40 @@ struct LabelSpec {
     [[nodiscard]] constexpr bool operator==(const LabelSpec&) const noexcept = default;
 };
 
+/**
+ * @brief A clock's rendering, closed by the shared contract (MEDUI-DEC-006).
+ *
+ * `Unspecified` is first so that a value-initialised aggregate lands on it. A C++ aggregate fills an
+ * omitted member with the first enumerator, where the Rust sibling's struct literal must name every
+ * field; the sentinel is what recovers the property C++ does not give for free, and
+ * `validatePayload()` refuses it. Without it, an omitted `format` would silently mean `TimeSeconds`.
+ *
+ * The renderings are fixed by the contract, not by this implementation, which is what lets the
+ * budget stage measure a clock rather than look it up.
+ */
+enum class ClockFormat : std::uint8_t {
+    Unspecified,      ///< never valid in a compiled screen; the aggregate default
+    TimeSeconds,      ///< `HH:MM:SS`
+    DateTimeSeconds,  ///< `YYYY-MM-DD HH:MM:SS`
+};
+
+/// The widest rendering each format produces, which is what a text budget measures.
+[[nodiscard]] constexpr std::string_view rendering(ClockFormat format) noexcept {
+    switch (format) {
+        case ClockFormat::TimeSeconds:
+            return "HH:MM:SS";
+        case ClockFormat::DateTimeSeconds:
+            return "YYYY-MM-DD HH:MM:SS";
+        case ClockFormat::Unspecified:
+            return {};
+    }
+    // Named rather than defaulted so that a new enumerator is a warning at this switch instead of a
+    // silent empty rendering, and an out-of-range cast returns nothing rather than aliasing a member.
+    return {};
+}
+
 struct ClockSpec {
-    std::string_view format{};  ///< a named value the build's governed table defines
+    ClockFormat format{ClockFormat::Unspecified};
 
     [[nodiscard]] constexpr bool operator==(const ClockSpec&) const noexcept = default;
 };
@@ -391,11 +427,74 @@ struct ButtonSpec {
     [[nodiscard]] constexpr bool operator==(const ButtonSpec&) const noexcept = default;
 };
 
+/**
+ * @brief What a critical control can ask the host to do, closed by the shared contract.
+ *
+ * Closing this is not tidiness. A screen able to name any event can name one the host does not
+ * implement, and the press of a critical button is the worst place to find that out. `Unspecified`
+ * leads for the same reason it does in `ClockFormat`.
+ */
+enum class SystemEvent : std::uint8_t {
+    Unspecified,  ///< never valid in a compiled screen; the aggregate default
+    NoOp,         ///< the press is recorded and does nothing else
+    TriggerHalt,  ///< the press requests the host's halt path
+};
+
+/// The contract spelling of a clock format. Empty for `Unspecified` or an out-of-range cast, so a
+/// caller writing this into a package writes nothing rather than a member the value is not.
+[[nodiscard]] constexpr std::string_view toWire(ClockFormat format) noexcept {
+    switch (format) {
+        case ClockFormat::TimeSeconds:
+            return "TimeSeconds";
+        case ClockFormat::DateTimeSeconds:
+            return "DateTimeSeconds";
+        case ClockFormat::Unspecified:
+            return {};
+    }
+    return {};
+}
+
+/// The contract spelling of a system event, under the same rule as `toWire(ClockFormat)`.
+[[nodiscard]] constexpr std::string_view toWire(SystemEvent event) noexcept {
+    switch (event) {
+        case SystemEvent::NoOp:
+            return "NoOp";
+        case SystemEvent::TriggerHalt:
+            return "TriggerHalt";
+        case SystemEvent::Unspecified:
+            return {};
+    }
+    return {};
+}
+
+/// The inverse. Nothing for a spelling outside the set - including `""`, so a missing member in a
+/// package is refused rather than read as `Unspecified` and caught later.
+[[nodiscard]] constexpr std::optional<ClockFormat> clockFormatFromWire(std::string_view wire) noexcept {
+    if (wire == "TimeSeconds") {
+        return ClockFormat::TimeSeconds;
+    }
+    if (wire == "DateTimeSeconds") {
+        return ClockFormat::DateTimeSeconds;
+    }
+    return std::nullopt;
+}
+
+/// The inverse for a system event, under the same rule.
+[[nodiscard]] constexpr std::optional<SystemEvent> systemEventFromWire(std::string_view wire) noexcept {
+    if (wire == "NoOp") {
+        return SystemEvent::NoOp;
+    }
+    if (wire == "TriggerHalt") {
+        return SystemEvent::TriggerHalt;
+    }
+    return std::nullopt;
+}
+
 struct CriticalButtonSpec {
     std::string_view requirement{};  ///< required by the dictionary, and by #196's annotation rule
     std::string_view labelKey{};
     std::string_view colorToken{};
-    std::string_view onPress{};
+    SystemEvent      onPress{SystemEvent::Unspecified};
 
     [[nodiscard]] constexpr bool operator==(const CriticalButtonSpec&) const noexcept = default;
 };
@@ -657,6 +756,25 @@ struct ScreenPackage {
 }
 
 /**
+ * @brief Requires a closed-set field to hold one of its members.
+ *
+ * Two rejections rather than one, because they are different mistakes. `Unspecified` means the field
+ * was never set - the aggregate default, which is what a C++ struct gives an omitted member. An
+ * out-of-range value means something cast a number the type has no enumerator for; `toWire` returns
+ * an empty spelling for it, so this catches what that spelling would otherwise hide.
+ */
+template <typename Member>
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> requireMember(Member value) noexcept {
+    if (value == Member::Unspecified) {
+        return mdux::core::err(SchemaError::UnspecifiedNamedValue);
+    }
+    if (toWire(value).empty()) {
+        return mdux::core::err(SchemaError::NamedValueOutOfRange);
+    }
+    return {};
+}
+
+/**
  * @brief Checks one node's payload against what its component's dictionary entry requires.
  *
  * Only what the dictionary already fixes, and nothing this module invents on its own: a name a
@@ -702,7 +820,7 @@ struct ScreenPackage {
         return requireColor(spec->colorToken);
     }
     if (const auto* spec = std::get_if<ClockSpec>(&payload)) {
-        return require(spec->format);
+        return requireMember(spec->format);
     }
     if (const auto* spec = std::get_if<ImageSpec>(&payload)) {
         return require(spec->source);
@@ -726,10 +844,13 @@ struct ScreenPackage {
         return requireColor(spec->colorToken);
     }
     if (const auto* spec = std::get_if<CriticalButtonSpec>(&payload)) {
-        for (const std::string_view name : {spec->requirement, spec->labelKey, spec->onPress}) {
+        for (const std::string_view name : {spec->requirement, spec->labelKey}) {
             if (const auto named = require(name); !named.has_value()) {
                 return named;
             }
+        }
+        if (const auto member = requireMember(spec->onPress); !member.has_value()) {
+            return member;
         }
         return requireColor(spec->colorToken);
     }

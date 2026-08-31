@@ -29,7 +29,7 @@ namespace cli = mdux::tools::cli;
 /// cast in a loop would assume contiguity this enum does not promise. The duplication is the point
 /// - adding an enumerator without adding it here fails `every code is registered`, which is the
 /// nudge that also gets it a table row.
-constexpr std::array<md::Code, 23> allCodes{
+constexpr std::array<md::Code, 24> allCodes{
     md::Code::RecipeUnreadable,
     md::Code::RecipeUnparsed,
     md::Code::RecipeMissingMember,
@@ -47,6 +47,7 @@ constexpr std::array<md::Code, 23> allCodes{
     md::Code::UnknownTextKey,
     md::Code::TextKeyMissingForLocale,
     md::Code::FieldValueKind,
+    md::Code::NamedValueOutsideSet,
     md::Code::TextBudgetExceeded,
     md::Code::LayoutOverflow,
     md::Code::SurfaceExceeded,

@@ -33,6 +33,11 @@ enum class FieldDomain : std::uint8_t {
     ColorTokenList,
     ImageRef,
     Number,
+    /// An identifier that must also be a member of a closed set the shared contract enumerates.
+    /// Kind and membership are separate failures: a wrong kind is `MEDUI-E033`, a non-member
+    /// `MEDUI-E034`, and an author fixes them differently.
+    ClockFormatName,
+    SystemEventName,
 };
 
 /// One field admitted by a component and the value form that field accepts.

@@ -123,6 +123,15 @@ constexpr std::string_view schemaRefused = "SCP005";
     const auto       name   = [&](std::string_view field) {
         return document.intern(textOf(source, field));
     };
+    // Semantic analysis has already refused any spelling outside the set with MEDUI-E034, so a
+    // failure here would mean the two disagree. `Unspecified` then reaches `validate()`, which
+    // refuses it - a loud stop rather than a screen carrying a member it was not given.
+    const auto clockFormat = [&](std::string_view field) {
+        return ms::clockFormatFromWire(textOf(source, field)).value_or(ms::ClockFormat::Unspecified);
+    };
+    const auto systemEvent = [&](std::string_view field) {
+        return ms::systemEventFromWire(textOf(source, field)).value_or(ms::SystemEvent::Unspecified);
+    };
 
     // The only synthetic node the solver produces, and the only way a Panel is ever compiled: an
     // author cannot write one, because `Panel` is not in the component dictionary.
@@ -133,7 +142,7 @@ constexpr std::string_view schemaRefused = "SCP005";
         return ms::LabelSpec{.textKey = name("text"), .colorToken = name("color")};
     }
     if (resolved.component == "Clock") {
-        return ms::ClockSpec{.format = name("format")};
+        return ms::ClockSpec{.format = clockFormat("format")};
     }
     if (resolved.component == "Image") {
         return ms::ImageSpec{.source = name("source")};
@@ -148,7 +157,10 @@ constexpr std::string_view schemaRefused = "SCP005";
         return ms::ButtonSpec{.labelKey = name("label"), .colorToken = name("color"), .source = name("source"), .requirement = name("requirement")};
     }
     if (resolved.component == "CriticalButton") {
-        return ms::CriticalButtonSpec{.requirement = name("requirement"), .labelKey = name("label"), .colorToken = name("color"), .onPress = name("on_press")};
+        return ms::CriticalButtonSpec{.requirement = name("requirement"),
+                                      .labelKey    = name("label"),
+                                      .colorToken  = name("color"),
+                                      .onPress     = systemEvent("on_press")};
     }
     if (resolved.component == "NumericDisplay") {
         return ms::NumericDisplaySpec{.requirement = name("requirement"),
@@ -259,7 +271,7 @@ template <typename Rect>
         putName(spec, "colorToken", label->colorToken);
         putName(spec, "textKey", label->textKey);
     } else if (const auto* clock = std::get_if<ms::ClockSpec>(&payload)) {
-        putName(spec, "format", clock->format);
+        putName(spec, "format", ms::toWire(clock->format));
     } else if (const auto* image = std::get_if<ms::ImageSpec>(&payload)) {
         putName(spec, "source", image->source);
     } else if (const auto* viewport = std::get_if<ms::VulkanViewportSpec>(&payload)) {
@@ -275,7 +287,7 @@ template <typename Rect>
     } else if (const auto* critical = std::get_if<ms::CriticalButtonSpec>(&payload)) {
         putName(spec, "colorToken", critical->colorToken);
         putName(spec, "labelKey", critical->labelKey);
-        putName(spec, "onPress", critical->onPress);
+        putName(spec, "onPress", ms::toWire(critical->onPress));
         putName(spec, "requirement", critical->requirement);
     } else if (const auto* numeric = std::get_if<ms::NumericDisplaySpec>(&payload)) {
         putName(spec, "colorToken", numeric->colorToken);
@@ -699,7 +711,14 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         if (!format.has_value()) {
             return false;
         }
-        payload = ms::ClockSpec{.format = *format};
+        // A spelling outside the set fails the read rather than becoming `Unspecified`. The two are
+        // different faults - a package written by another tool versus one this reader mangled - and
+        // only refusing here keeps them apart.
+        const auto clockFormat = ms::clockFormatFromWire(*format);
+        if (!clockFormat.has_value()) {
+            return sink.fail(memberWrong, std::format("{} member 'format' names unknown ClockFormat '{}'", where, *format));
+        }
+        payload = ms::ClockSpec{.format = *clockFormat};
         return true;
     }
     if (kind == "Image") {
@@ -761,7 +780,11 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         if (!requirement.has_value() || !labelKey.has_value() || !colorToken.has_value() || !onPress.has_value()) {
             return false;
         }
-        payload = ms::CriticalButtonSpec{.requirement = *requirement, .labelKey = *labelKey, .colorToken = *colorToken, .onPress = *onPress};
+        const auto event = ms::systemEventFromWire(*onPress);
+        if (!event.has_value()) {
+            return sink.fail(memberWrong, std::format("{} member 'onPress' names unknown SystemEvent '{}'", where, *onPress));
+        }
+        payload = ms::CriticalButtonSpec{.requirement = *requirement, .labelKey = *labelKey, .colorToken = *colorToken, .onPress = *event};
         return true;
     }
     if (kind == "NumericDisplay") {

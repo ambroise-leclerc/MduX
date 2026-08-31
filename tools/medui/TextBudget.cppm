@@ -234,14 +234,14 @@ struct TextBudgetResult {
 /**
  * @brief Whether this screen has anything for the budget stage to measure.
  *
- * True when the screen carries a text key, or a field whose value names a dynamic-text source -
- * `Clock`'s `format:` and `TextInput`'s `charset:`, the two the table in this module's
- * implementation lists. Both are things `checkTextBudgets()` checks and nothing else does.
+ * True when the screen carries a text key, a fixed rendering such as `Clock.format`, or a field
+ * whose value names a dynamic-text source such as `TextInput.charset`. All three are things
+ * `checkTextBudgets()` checks and nothing else does.
  *
  * Exported so a compiler driver can decide whether a recipe *must* supply a font package and its
- * approved locales, rather than deciding by inspecting the screen itself. The list of dynamic-text
- * fields would otherwise exist in two places, and the second copy is the one that would go stale the
- * day a third field joins them.
+ * approved locales, rather than deciding by inspecting the screen itself. The predicates for fixed
+ * and dynamic text would otherwise exist in two places, and the second copy is the one that would go
+ * stale the day another field joins them.
  */
 [[nodiscard]] bool needsTextBudget(const ast::Screen& screen);
 

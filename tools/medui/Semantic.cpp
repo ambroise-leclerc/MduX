@@ -13,6 +13,7 @@ import std;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.ast;
+import mdux.medui.schema;
 import mdux.tools.medui.diagnostics;
 
 namespace mdux::tools::medui {
@@ -35,7 +36,7 @@ constexpr std::array criticalButtonFields{field("id", true, Identifier),
                                           field("height", true, Size),
                                           field("label", true, TextKey),
                                           field("color", true, ColorToken),
-                                          field("on_press", true, Identifier),
+                                          field("on_press", true, SystemEventName),
                                           field("position", false, Point)};
 constexpr std::array buttonFields{field("id", true, Identifier),
                                   field("width", true, Size),
@@ -81,7 +82,7 @@ constexpr std::array labelFields{field("id", true, Identifier),
 constexpr std::array clockFields{field("id", true, Identifier),
                                  field("width", true, Size),
                                  field("height", true, Size),
-                                 field("format", true, Identifier),
+                                 field("format", true, ClockFormatName),
                                  field("position", false, Point)};
 constexpr std::array imageFields{field("id", true, Identifier),
                                  field("width", true, Size),
@@ -157,8 +158,37 @@ constexpr std::array<ComponentRule, 11> componentRules{
             return value.kind == ast::ValueKind::ImageRef;
         case Number:
             return value.kind == ast::ValueKind::Number && value.number > 0;
+        case ClockFormatName:
+        case SystemEventName:
+            // Kind only. Membership is a separate check, so that a non-member is reported as one
+            // rather than as a value of the wrong kind.
+            return value.kind == ast::ValueKind::Identifier;
     }
     return false;
+}
+
+/// Whether an identifier names a member of the closed set the field admits.
+[[nodiscard]] bool isMember(std::string_view text, FieldDomain domain) noexcept {
+    switch (domain) {
+        case ClockFormatName:
+            return mdux::medui::clockFormatFromWire(text).has_value();
+        case SystemEventName:
+            return mdux::medui::systemEventFromWire(text).has_value();
+        default:
+            return true;
+    }
+}
+
+/// The members a closed-set field admits, listed in a diagnostic so the fix needs no other document.
+[[nodiscard]] std::string_view members(FieldDomain domain) noexcept {
+    switch (domain) {
+        case ClockFormatName:
+            return "TimeSeconds, DateTimeSeconds";
+        case SystemEventName:
+            return "NoOp, TriggerHalt";
+        default:
+            return {};
+    }
 }
 
 [[nodiscard]] std::string_view describe(FieldDomain domain) noexcept {
@@ -183,6 +213,9 @@ constexpr std::array<ComponentRule, 11> componentRules{
             return "img(\"ID\")";
         case Number:
             return "a positive integer";
+        case ClockFormatName:
+        case SystemEventName:
+            return "a named value";
     }
     return "the field's declared value domain";
 }
@@ -309,6 +342,13 @@ private:
                     report(Code::FieldValueKind,
                            fieldValue.value->position,
                            std::format("field '{}' requires {}", fieldValue.name, describe(fieldRule->domain)));
+                } else if (!isMember(fieldValue.value->text, fieldRule->domain)) {
+                    report(Code::NamedValueOutsideSet,
+                           fieldValue.value->position,
+                           std::format("'{}' is not a member of the set '{}' admits; the members are {}",
+                                       fieldValue.value->text,
+                                       fieldValue.name,
+                                       members(fieldRule->domain)));
                 }
             }
         }

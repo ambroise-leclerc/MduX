@@ -313,8 +313,9 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     }
 
     // The governed dynamic-text table. Optional as a table for the same reason [text] is: a screen
-    // with no `format:` and no `charset:` has no name to resolve, and the budget stage refuses an
-    // unknown name rather than accepting one, so an absent table is fail-closed.
+    // with no `charset:` has no open name to resolve, and the budget stage refuses an unknown name
+    // rather than accepting one, so an absent table is fail-closed. A Clock's closed `format:` is
+    // measured directly and never resolves through this table.
     if (const toml::Table* dynamicTable = document.table("dynamicText"); dynamicTable != nullptr) {
         std::vector<std::string>  names;
         std::vector<std::int64_t> firstPoints;

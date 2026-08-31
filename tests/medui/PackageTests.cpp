@@ -393,6 +393,36 @@ const mdux::spec::Register anUndefinedMemberIsRefused{"A member the format does 
                                                               .Execute();
                                                       }};
 
+const mdux::spec::Register unknownClosedMembersAreReported{
+    "Unknown closed-set package spellings fail with an actionable diagnostic",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-package-unknown-closed-member")
+            .Given("canonical bytes carrying an unknown ClockFormat and an unknown SystemEvent", [] {})
+            .When("each package is read", [] {})
+            .Then("both fail as SCP002 and name the field, spelling and closed type",
+                  [] {
+                      mdux::spec::Checks          checks;
+                      const md::ScreenDocument    document = everyComponent();
+                      const std::string           written  = md::writePackage(document.package());
+                      const md::PackageReadResult clock    = md::readPackage(editing(written, "\"TimeSeconds\"", "\"UnknownTime\""), "clock.json");
+                      const md::PackageReadResult event    = md::readPackage(editing(written, "\"TriggerHalt\"", "\"UnknownEvent\""), "event.json");
+
+                      checks.expect(!clock.ok() && firstCode(clock) == "SCP002", std::format("the unknown format is SCP002, got '{}'", firstCode(clock)));
+                      checks.expect(!clock.diagnostics.empty() && clock.diagnostics.front().message.find("format") != std::string::npos
+                                        && clock.diagnostics.front().message.find("ClockFormat") != std::string::npos
+                                        && clock.diagnostics.front().message.find("UnknownTime") != std::string::npos,
+                                    "the format diagnostic identifies the member, type and spelling");
+                      checks.expect(!event.ok() && firstCode(event) == "SCP002", std::format("the unknown event is SCP002, got '{}'", firstCode(event)));
+                      checks.expect(!event.diagnostics.empty() && event.diagnostics.front().message.find("onPress") != std::string::npos
+                                        && event.diagnostics.front().message.find("SystemEvent") != std::string::npos
+                                        && event.diagnostics.front().message.find("UnknownEvent") != std::string::npos,
+                                    "the event diagnostic identifies the member, type and spelling");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register anUnknownComponentIsRefused{"A node naming a component outside the dictionary is refused", "evidence-unit", [] {
                                                            return speclab::Test("medui-package-unknown-kind")
                                                                .Given("committed bytes naming a component that does not exist", [] {})
