@@ -62,6 +62,7 @@ constexpr std::size_t sampleRateHz = 180;
 template <std::size_t Capacity>
 class SampleRing {
 public:
+    /// @brief Adds one sample, overwriting the oldest sample after the ring fills.
     void push(float sample) noexcept {
         samples_[head_] = sample;
         head_           = (head_ + 1) % Capacity;
@@ -70,6 +71,7 @@ public:
         }
     }
 
+    /// @brief Reports whether the ring contains one complete classifier window.
     [[nodiscard]] bool full() const noexcept {
         return filled_ == Capacity;
     }
@@ -103,6 +105,7 @@ private:
 
 }  // namespace
 
+/// @brief Runs the synthetic ECG classifier demonstrator.
 int main() {
     std::println("MduX ECG classifier demonstrator");
     std::println("  NOTE: synthetic weights, no training, no clinical validity. See ADR-008.");

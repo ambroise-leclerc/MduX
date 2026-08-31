@@ -10,7 +10,7 @@ import mdux.ml.schema;
 
 namespace mdux::test::generated {
 
-/// Returns the package compiled through its generated header fallback.
+/// @brief Returns the package compiled through its generated header fallback.
 mdux::ml::ModelPackage modelFromHeader() noexcept {
     return mdux::ml::generated::model_ecg_demo::package();
 }

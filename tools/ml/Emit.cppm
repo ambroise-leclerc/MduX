@@ -46,7 +46,7 @@ struct EmitOutputs {
  */
 [[nodiscard]] std::optional<EmitOutputs> renderModel(const std::filesystem::path& packagePath, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
 
-/// Writes `<stem>.cppm` and `<stem>.hpp`, without restamping unchanged files.
+/// @brief Writes `<stem>.cppm` and `<stem>.hpp`, without restamping unchanged files.
 [[nodiscard]] bool writeModel(const EmitOutputs& outputs, const std::filesystem::path& outputDir, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
 
 /**

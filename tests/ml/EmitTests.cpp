@@ -15,12 +15,12 @@ namespace {
 namespace cli  = mdux::tools::cli;
 namespace emit = mdux::tools::ml;
 
-/// Returns the committed demonstrator package consumed by these scenarios.
+/// @brief Returns the committed demonstrator package consumed by these scenarios.
 [[nodiscard]] std::filesystem::path committedPackagePath() {
     return std::filesystem::path{MDUX_REPO_ROOT} / "generated/model/ecg-demo/package.json";
 }
 
-/// Reads a complete fixture or generated source as binary text.
+/// @brief Reads a complete fixture or generated source as binary text.
 [[nodiscard]] std::string contentsOf(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
     if (!in) {
@@ -31,7 +31,7 @@ namespace emit = mdux::tools::ml;
     return buffer.str();
 }
 
-/// Writes exact binary text to a scenario-owned path.
+/// @brief Writes exact binary text to a scenario-owned path.
 void writeText(const std::filesystem::path& path, std::string_view text) {
     std::ofstream out{path, std::ios::binary | std::ios::trunc};
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
