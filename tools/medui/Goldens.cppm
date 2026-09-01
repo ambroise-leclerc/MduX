@@ -111,25 +111,30 @@ import std;
 import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.layout;
+import mdux.verify;
 
 export namespace mdux::tools::medui {
 
 /**
  * @brief A verification #16's driver performs against a rendered frame.
  *
- * The closed set the shared language defines. Order is the serialisation order: `cvChecks` is
- * sorted by this enumeration so that a screen has one canonical form.
+ * The closed set the shared language defines, named here and *defined* in `mdux.verify` (#252).
+ * Order is the serialisation order: `cvChecks` is sorted by this enumeration so that a screen has
+ * one canonical form.
+ *
+ * An alias rather than a second enumeration, for the reason ADR-012 decision 4 gives about the
+ * golden predicate: the compiler that writes these names and the verifier that reads them back must
+ * not be able to disagree about what the set contains, and two declarations of one closed set agree
+ * until the day they matter. The direction is deliberate too - the governed module owns the type,
+ * because a device-side reader may not depend on a host tool.
  */
-enum class CvCheck : std::uint8_t {
-    Bounds,    ///< the node's content occupies the rectangle the compiler resolved
-    ColorHash  ///< the node's content carries the tint its colour token resolves to
-};
+using mdux::verify::CvCheck;
 
 /// The spelling an author writes and the serialiser emits, e.g. `Bounds`.
-[[nodiscard]] std::string_view spell(CvCheck check) noexcept;
+using mdux::verify::spell;
 
 /// The check `name` spells, or nothing when the name is not one of the closed set.
-[[nodiscard]] std::optional<CvCheck> parseCvCheck(std::string_view name) noexcept;
+using mdux::verify::parseCvCheck;
 
 /**
  * @brief One golden reference: what a verifier must find, and where.

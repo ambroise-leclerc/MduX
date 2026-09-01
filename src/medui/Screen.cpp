@@ -21,28 +21,6 @@ namespace mdux::medui {
 
 namespace {
 
-/// A linear channel as the byte a `R8G8B8A8_UNORM` vertex colour carries.
-///
-/// Quantisation and nothing else: the governed table stores linear RGBA, the vertex colour is read
-/// by the shader as a plain 0..1 UNORM value, so the byte is the linear value scaled. No transfer
-/// function is applied here, because whether the *swapchain* is sRGB is the renderer's decision and
-/// applying one in two places is how a colour ends up encoded twice.
-///
-/// The multiply and the add are separate statements so that neither the rounding nor the result
-/// depends on whether the compiler fuses them. `mdux_enforce_fp_determinism(MduXCore)` already turns
-/// contraction off for this target, and this is the belt to that pair of braces: a frame that is
-/// byte-compared across toolchains cannot afford a last-bit difference in a colour.
-[[nodiscard]] std::uint8_t quantise(float channel) noexcept {
-    const float clamped = channel < 0.0F ? 0.0F : (channel > 1.0F ? 1.0F : channel);
-    const float scaled  = clamped * 255.0F;
-    const float rounded = scaled + 0.5F;
-    return static_cast<std::uint8_t>(rounded);
-}
-
-[[nodiscard]] mdux::core::ColorRgba8 toColor(const std::array<float, 4>& linear) noexcept {
-    return mdux::core::ColorRgba8{.r = quantise(linear[0]), .g = quantise(linear[1]), .b = quantise(linear[2]), .a = quantise(linear[3])};
-}
-
 [[nodiscard]] mdux::core::Rect toRect(const NodeRect& bounds) noexcept {
     return mdux::core::Rect{.x      = static_cast<mdux::core::Px>(bounds.x),
                             .y      = static_cast<mdux::core::Px>(bounds.y),
@@ -313,7 +291,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink->top;
 
             const std::size_t verticesBefore = list.vertices().size();
-            if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), *records, originX, originY, toColor(*labelColour));
+            if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), *records, originX, originY, quantise(*labelColour));
                 !recorded.has_value()) {
                 // `recordRun()` rolls its own run back and this rolls the whole frame back. Its error
                 // is not forwarded: every way it can fail here is either something `runFor()` and
@@ -344,7 +322,7 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
         }
 
-        if (const auto recorded = list.addSolidRect(toRect(node.bounds), toColor(*colour)); !recorded.has_value()) {
+        if (const auto recorded = list.addSolidRect(toRect(node.bounds), quantise(*colour)); !recorded.has_value()) {
             return refuse(ScreenError::BudgetExhausted);
         }
         // Measured rather than predicted: a rectangle costs four vertices and six indices, and
