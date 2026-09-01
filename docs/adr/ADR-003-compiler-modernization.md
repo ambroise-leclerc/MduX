@@ -138,7 +138,7 @@ This ensures the module cache is generated for standard library imports.
 - ✅ Add GCC-specific modules configuration with `-fmodules` flag
 
 ### Phase 2: Documentation Updates (Completed)
-- ✅ Update CLAUDE.md with new requirements
+- ✅ Update the public contributor and agent guidance with new requirements
 - ✅ Update README.md with compiler version specifications
 - ✅ Update project descriptions to reflect modules-based architecture
 - ✅ Document CMake modules configuration requirements
