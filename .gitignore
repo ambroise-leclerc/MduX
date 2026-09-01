@@ -72,9 +72,11 @@ inputs/
 *.temp
 *~
 
-# Vendor-specific AI coding agent instructions (local only).
-# AGENTS.md is the canonical, vendor-neutral instruction source - keep it tracked.
+# Tool-specific AI assistant files (local only).
+# AGENTS.md and .agents/skills/**/SKILL.md are the public, tool-neutral sources.
 CLAUDE.md
+CLAUDE.local.md
+.claude/
 .clauderules
 .cursorrules
 .cursor/
@@ -83,6 +85,7 @@ CLAUDE.md
 .aider.conf.yml
 .aiderrules
 .aider.chat.history.md
+.cline/
 .clinerules
 .clinerules/
 .continuerules
@@ -93,7 +96,21 @@ CLAUDE.md
 .roorules
 .roo/
 GEMINI.md
+.gemini/
+.codex/
+.opencode/
+opencode.json
+.kiro/
+.devin/
+.factory/
+.tabnine/
+.augment/
+.augment-guidelines
 .github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/agents/
+.github/chatmodes/
 
 # Python bytecode from the host-only lint tools (tools/docs-lint, tools/evidence-lint).
 # CI sets PYTHONDONTWRITEBYTECODE=1, but a local run of the self-tests still leaves these behind.
