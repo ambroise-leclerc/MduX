@@ -84,6 +84,7 @@ export module mdux.medui.schema;
 
 import std;
 import mdux.core.result;
+import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
@@ -297,6 +298,48 @@ inline constexpr std::array<ThemeColor, 8> themeColors{
         }
     }
     return mdux::core::err(ThemeError::UnknownToken);
+}
+
+/**
+ * @brief A linear channel as the byte an `R8G8B8A8_UNORM` target carries.
+ *
+ * Quantisation and nothing else: the governed table stores linear RGBA, a vertex colour is read by
+ * the shader as a plain 0..1 UNORM value, so the byte is the linear value scaled. No transfer
+ * function is applied here, because whether the *swapchain* is sRGB is the renderer's decision and
+ * applying one in two places is how a colour ends up encoded twice.
+ *
+ * The multiply and the add are separate statements so that neither the rounding nor the result
+ * depends on whether the compiler fuses them. `mdux_enforce_fp_determinism(MduXCore)` already turns
+ * contraction off for this target, and this is the belt to that pair of braces: a frame that is
+ * byte-compared across toolchains cannot afford a last-bit difference in a colour.
+ *
+ * Exported rather than kept private to the runtime, and that move is #252's rather than tidiness.
+ * The runtime turns a token into the bytes a frame carries; the verifier compares those bytes back
+ * against the same token. Two copies of this arithmetic would agree until the day one of them
+ * rounded differently, and the failure would read as a rendering defect rather than as the drift it
+ * was.
+ *
+ * **NaN is mapped to zero rather than clamped.** A NaN compares false against every bound, so the
+ * two clamps below would both let it through and the conversion to `std::uint8_t` would be undefined
+ * - which is a poor way for a governed function to answer a question. `!(channel >= 0.0F)` is the
+ * one test that catches it and negatives together. Zero because a channel this function cannot
+ * interpret contributes nothing, and because the alternative is an error path on a function whose
+ * only production input is a `constexpr` table of literals: the value is unreachable through
+ * `resolveColorToken()`, and being total costs one comparison.
+ */
+[[nodiscard]] constexpr std::uint8_t quantise(float channel) noexcept {
+    if (!(channel >= 0.0F)) {
+        return 0;
+    }
+    const float clamped = channel > 1.0F ? 1.0F : channel;
+    const float scaled  = clamped * 255.0F;
+    const float rounded = scaled + 0.5F;
+    return static_cast<std::uint8_t>(rounded);
+}
+
+/// The governed table's linear RGBA as the quantised colour a frame actually shows.
+[[nodiscard]] constexpr mdux::core::ColorRgba8 quantise(const std::array<float, 4>& linear) noexcept {
+    return mdux::core::ColorRgba8{.r = quantise(linear[0]), .g = quantise(linear[1]), .b = quantise(linear[2]), .a = quantise(linear[3])};
 }
 
 /**

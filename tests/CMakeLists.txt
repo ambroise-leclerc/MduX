@@ -795,6 +795,46 @@ endif()
 
 mdux_discover_tests(medui_spec)
 
+# Rendered-truth verification checks (issue #252)
+#
+# Links MduX::Core only, and no Vulkan target of any kind. That is the standing evidence for
+# ADR-014 decision 1's first consequence: a framebuffer is an array, so the four checks are pure
+# functions a scenario can exercise on an image it painted, and they can be built and proved before
+# #253's driver exists to render one. A scenario here that needed a GPU would mean they had stopped
+# being pure functions over pixels.
+#
+# GoldenCheckTests covers both `CvCheck`s on synthetic images and, separately,
+# `GoldenExpectation::create()` - the dangling golden id and each duplicated field disagreeing with
+# its named package node, which ADR-014's ownership table assigns to the verifier rather than to the
+# baker's re-derivation. TextCheckTests covers the two mandatory text checks over a node that has no
+# golden entry and declared no `position:`, which is the criterion easiest to satisfy by accident.
+add_executable(verify_spec
+    verify/VerifySpecMain.cpp
+    verify/FramebufferTests.cpp
+    verify/GoldenCheckTests.cpp
+    verify/TextCheckTests.cpp
+)
+
+target_link_libraries(verify_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(verify_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(verify_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(verify_spec)
+
 # .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -

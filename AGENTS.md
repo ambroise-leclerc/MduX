@@ -97,6 +97,7 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.verify` (governed) | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 | `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |
 | `mdux.vulkansc.objects` (imports `mdux.vulkansc.memory`) | `include/mdux/vulkansc/DeviceObjectManager.cppm` | `src/vulkansc/DeviceObjectManager.cpp` |
@@ -235,11 +236,12 @@ look-alike command line; they are not needed to build by hand, and each uses its
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
-- Tests: sixteen executables. Nine on the in-repository MduXTest framework (`core_tests`,
+- Tests: twenty-three executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seven on SpecLab
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fourteen on SpecLab
   (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
-  `ml_noheap_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
+  `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
+  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
   `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,

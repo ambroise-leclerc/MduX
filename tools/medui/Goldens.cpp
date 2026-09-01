@@ -16,6 +16,7 @@ import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.semantic;
+import mdux.verify;
 
 namespace mdux::tools::medui {
 
@@ -317,26 +318,6 @@ private:
 };
 
 }  // namespace
-
-std::string_view spell(CvCheck check) noexcept {
-    switch (check) {
-        case CvCheck::Bounds:
-            return "Bounds";
-        case CvCheck::ColorHash:
-            return "ColorHash";
-    }
-    return "";
-}
-
-std::optional<CvCheck> parseCvCheck(std::string_view name) noexcept {
-    if (name == spell(CvCheck::Bounds)) {
-        return CvCheck::Bounds;
-    }
-    if (name == spell(CvCheck::ColorHash)) {
-        return CvCheck::ColorHash;
-    }
-    return std::nullopt;
-}
 
 SafetyResult validateSafetyAnnotations(const ast::Screen& screen, std::string file) {
     return Validator{std::move(file)}.run(screen);

@@ -79,6 +79,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
+| `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 
 `mdux.core.result` is a naming alias over `std::expected`, not a reimplementation
 ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)).
@@ -209,7 +210,7 @@ from anywhere — including through a dependency's interface options.
 ## Tests
 
 Two frameworks, one discovery contract ([ADR-009](adr/ADR-009-in-repository-test-framework.md)):
-the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across seven.
+the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across fourteen.
 `mdux_discover_tests()` registers one CTest entry per case, so a failure names the scenario rather
 than the binary.
 
