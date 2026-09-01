@@ -290,6 +290,49 @@ const mdux::spec::Register theTintIsComparedExactly{
             .Execute();
     }};
 
+const mdux::spec::Register everyChannelMustAgreeOnOneCoverage{
+    "A pixel inside every channel's range still fails when no single coverage produces it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-golden-color-hash-common-factor")
+            .Given("a region holding one exact-tint pixel and one impossible channel combination", [] {})
+            .When("ColorHash runs", [] {})
+            .Then("the impossible pixel is reported rather than excused by the exact one",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const mv::GoldenExpectation expectation = expect(readoutGolden, textlessScreen, mv::RenderScope::localeFree());
+                      const ColorRgba8            tint        = tintOf(readoutToken);
+
+                      // Over a black ground, this pixel takes red and blue from the tint and green
+                      // from the ground. Every channel is inside its own interval; no coverage
+                      // produces all three, because red and blue demand full coverage and green
+                      // demands none. A per-channel test accepts it, and the exact-tint pixels
+                      // around it would then satisfy the "carries its tint" half and return Held.
+                      const ColorRgba8 impossible{.r = tint.r, .g = ground.g, .b = tint.b, .a = tint.a};
+
+                      Canvas canvas{16, 20, ground};
+                      canvas.fill({4, 4, 8, 6}, tint);
+                      canvas.set(6, 6, impossible);
+
+                      const mv::CheckOutcome outcome = mv::colorHash(canvas.view(), expectation);
+                      checks.expect(outcome.finding == mv::Finding::ForeignColour,
+                                    std::format("no single coverage produces it: {}", mv::describe(outcome.finding)));
+                      checks.expect(outcome.found == ms::NodeRect{6, 6, 1, 1}, "and the outcome names the pixel");
+                      checks.expect(outcome.foundColorValid && outcome.foundColor == impossible, "with the colour it actually found");
+
+                      // ...while a real half-coverage blend, where every channel agrees on the same
+                      // factor, is still admitted. Without this half the assertion above could be
+                      // satisfied by a rule that rejected everything but the tint itself.
+                      Canvas honest{16, 20, ground};
+                      honest.fill({4, 4, 8, 6}, tint);
+                      honest.set(6, 6, mv::blend(ground, tint, 128));
+                      checks.expect(mv::colorHash(honest.view(), expectation).held(), "a genuine half-coverage pixel is still a blend");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aGoldenWithNoTintCannotDischargeColorHash{
     "ColorHash over a golden that resolved no tint fails rather than passing",
     "evidence-unit",

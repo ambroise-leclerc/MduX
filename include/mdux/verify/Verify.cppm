@@ -42,19 +42,24 @@
  * ## What a check is given, and what it may never be given
  *
  * A check takes a `FramebufferView` - bytes, extent, row stride, format - and one of two expectation
- * views. Both views are read-only, caller-owned, and obtainable only through a `create()` that
- * resolves them against a compiled screen; neither carries a Vulkan type, allocates, throws or opens
- * a file. The GPU's involvement ended at the readback that already exists in
- * `mdux.render.offscreen`.
+ * views. Both views are read-only, caller-owned, and obtainable only through a factory that resolves
+ * them against a compiled screen; neither carries a Vulkan type, allocates, throws or opens a file.
+ * The GPU's involvement ended at the readback that already exists in `mdux.render.offscreen`.
  *
  * ADR-014 decision 2 is the rule the `create()` functions enforce: **every expectation is derived
  * from a committed artifact, and none is supplied by the caller.** A golden expectation is built
  * from a `goldens.json` entry *and* the compiled node it names, and it fails closed when the id does
  * not resolve or when the entry's duplicated bounds, text key or colour token disagree with that
- * node. A text expectation is built from the compiled node, the approved locale, the run the
- * approved text package binds and the font package it was baked against. A production caller has
- * exactly those sources. A unit test may construct a synthetic view to exercise a pure check, which
- * is what makes the suite runnable with no GPU.
+ * node. A text expectation is built from the screen, the node and a `mdux::medui::TextBinding` -
+ * the one type in this repository that has already proved the screen's manifest approves this
+ * locale, package id and canonical digest, that the text package was baked against this font, and
+ * that every run's range hashes to what the package recorded. It looks the run up by the node's own
+ * `textKey`; the caller supplies no locale, no bytes and no font.
+ *
+ * The one admitted exception is `TextExpectation::createSynthetic()`, which ADR-014 decision 1
+ * names and bounds in the same sentence: a unit test may construct a synthetic view to exercise a
+ * pure check, and production expectations have exactly the artifact sources decision 2 gives them.
+ * It establishes no provenance and says so; a driver reaching for it is a review finding on #253.
  *
  * The verifier **never re-applies ADR-011's golden predicate**. `collectGoldens()` is its single
  * implementation, it runs in the baker while the AST still carries the predicate's inputs, and
@@ -80,9 +85,13 @@
  *
  * With both in hand the two colour claims are exact, and stay exact without a tolerance:
  *
- * - a pixel the run or the node painted is an alpha blend of the tint over the ground, so each of
- *   its channels lies **between** the ground's and the tint's. A painted pixel outside that closed
- *   interval was painted by something else, and `Finding::ForeignColour` says so.
+ * - a pixel the run or the node painted is an alpha blend of the tint over the ground at **one**
+ *   coverage, so every channel has to agree on which coverage that was. Channel-wise membership of
+ *   the interval between ground and tint is necessary and is *not* sufficient: with a black ground
+ *   and `Theme.Colors.ScoreDigits`, the pixel `(33, 0, 107)` sits inside every channel's interval
+ *   while demanding full coverage of red and blue and none of green, which no blend can produce.
+ *   `colorHash()` therefore intersects the coverage interval each channel implies, in integer
+ *   cross-products, and reports `Finding::ForeignColour` when that intersection is empty.
  * - a **fully covered** pixel is exactly the tint, because coverage modulates alpha and never rgb.
  *   So "carries its tint" is an equality rather than a proximity, which is the same discipline
  *   `tests/render/PixelTests.cpp` applies to a whole frame: a one-channel difference is the smallest
@@ -122,13 +131,14 @@
  * the run fails on the comparison.
  *
  * `localizedTextPresence()` is the one that distinguishes one locale from another, and it does so
- * per glyph: every non-blank record of the approved locale's run must have painted something inside
- * its own placed rectangle, and every pixel of the node *outside* every such rectangle must still be
- * the ground. The second half is what makes it a presence check rather than a plausibility check.
- * The baked atlas slot is exactly the glyph's bitmap, so the renderer paints nothing outside it, and
- * a different translation's run - different glyphs, different advances, different spaces - cannot
- * satisfy both halves at this locale's rectangles. Its limit is the mirror of `goldenBounds()`': a
- * second node overlapping this one would show up as ink where this locale's run paints none.
+ * against the **baked coverage** rather than against the glyph boxes. Every pixel inside a placed
+ * glyph must be what that texel's coverage produces for this node's tint over its ground, and every
+ * pixel of the node outside every placed glyph must still be the ground. Metrics alone would only
+ * support "something is in the right rectangles", which a sparse handful of pixels satisfies and
+ * which two different letters of the same size satisfy equally - so the view carries the sheet, and
+ * the check compares the shape the approved run actually has. Its limit is the mirror of
+ * `goldenBounds()`': a second node overlapping this one would show up as ink where this locale's run
+ * paints none.
  *
  * ## No allocation, no throw, and a `create()` that cannot be brace-elided
  *
@@ -150,6 +160,7 @@ import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.text.draw;
+import mdux.text.schema;
 
 export namespace mdux::verify {
 
@@ -180,6 +191,13 @@ enum class VerifyError : std::uint8_t {
     EmptyRun,                   ///< the approved locale's run paints nothing for this node
     RunTooLong,                 ///< more records than `mdux::medui::maxGlyphsPerRun` admits
     GlyphIndexOutOfRange,       ///< a record names a glyph the font package does not hold
+    TextBindingUnbound,         ///< the caller offered a binding carrying no packages
+    BindingNotApproved,         ///< the screen's manifest does not approve the bound package
+    NodeNotInScreen,            ///< the node is not one of this screen's, so nothing authorises it
+    ScopeIsNotTheBoundLocale,   ///< the render scope names a locale other than the bound package's
+    UnknownTextKey,             ///< the bound package carries no run for this node's text key
+    AtlasSizeMismatch,          ///< the coverage sheet is not the size the font package declares
+    GlyphOutsideAtlas,          ///< a glyph's slot leaves the coverage sheet
 };
 
 [[nodiscard]] std::string_view describe(VerifyError error) noexcept;
@@ -559,43 +577,129 @@ private:
 static_assert(!std::is_aggregate_v<GoldenExpectation>, "a GoldenExpectation must only be obtainable through create()");
 
 /**
+ * @brief The colour a coverage value paints when the tint is composited over the ground.
+ *
+ * The blend the coverage draw path performs, written down where a check can compute it:
+ * `result = tint * a + ground * (1 - a)`, with `a = (tint.a / 255) * (coverage / 255)`.
+ * `tests/render/TextPixelTests.cpp` derives its expectations from the same equation and compares
+ * them to real pixels with no tolerance under lavapipe and MoltenVK, so this is the repository's
+ * established statement of what a covered texel produces rather than a second opinion about it.
+ *
+ * Integer throughout, rounding to nearest: a governed check that reached for a float here would make
+ * its own answer depend on the host's rounding mode, which is the property ADR-007 exists to keep
+ * out of anything evidence-adjacent.
+ */
+[[nodiscard]] mdux::core::ColorRgba8 blend(mdux::core::ColorRgba8 ground, mdux::core::ColorRgba8 tint, std::uint8_t coverage) noexcept;
+
+/**
+ * @brief One placed glyph: where it paints, and which texels of the sheet it paints from.
+ *
+ * Both halves, because a check that had only the rectangle could establish that *something* was
+ * painted in the right box and nothing more - which is exactly the gap that made an earlier revision
+ * of `localizedTextPresence()` claim more than it verified.
+ */
+struct PlacedGlyph {
+    mdux::medui::NodeRect rect{};     ///< where it paints, in frame coordinates
+    std::uint32_t         atlasX{0};  ///< the slot's left edge in the coverage sheet
+    std::uint32_t         atlasY{0};  ///< the slot's top edge in the coverage sheet
+};
+
+/**
  * @brief One compiled text node, in one approved locale, with the run that locale binds to it.
  *
  * The mandatory pair's view. It carries no golden entry and needs none: a `textKey` node's two
  * obligations exist whether or not ADR-011's predicate selected it.
  *
- * The placement rule is not re-decided here. `mdux.medui.screen` puts the run's *ink* box at the
- * node's top-left corner - the box #195 measured against that rectangle - and this view computes the
- * same origin from the same records and the same font, so a check compares the frame against where
- * the runtime would have drawn rather than against a second opinion about where text belongs.
+ * ## Where its authority comes from
+ *
+ * A production expectation is built from a `mdux::medui::TextBinding` and the screen the obligation
+ * is about, and from nothing else. That is not a convenience: `TextBinding::create()` is the one
+ * place in this repository that proves the four artifacts agree - the screen's manifest approves
+ * this locale, package id and canonical digest; the text package was baked against this font; the
+ * sidecar is the one the package describes; and every run's range hashes to what the package
+ * recorded. An expectation that took a locale string and a span of bytes could be pointed at an
+ * unapproved translation and would then produce a *passing* verification outcome, which is a worse
+ * failure than a refusal because it ends up in an evidence artifact.
+ *
+ * So `create()` takes the binding, checks it against the screen and the node, and looks the run up
+ * by the node's own `textKey`. `createSynthetic()` exists beside it for the unit suite and
+ * establishes none of that - see its comment.
+ *
+ * ## The placement rule is not re-decided here
+ *
+ * `mdux.medui.screen` puts the run's *ink* box at the node's top-left corner - the box #195 measured
+ * against that rectangle - and this view computes the same origin from the same records and the same
+ * font, so a check compares the frame against where the runtime would have drawn rather than against
+ * a second opinion about where text belongs.
+ *
+ * ## The coverage sheet, and why the view carries it
+ *
+ * The glyph metrics say where a glyph paints; only the baked atlas says *what* it paints. A view
+ * holding metrics alone can support "something is inside this rectangle", which a sparse handful of
+ * pixels satisfies and which two different letters of the same size satisfy equally. Carrying the
+ * sheet is what lets `localizedTextPresence()` compare against the shape the approved run actually
+ * has, and it costs nothing on the device side: the bytes are the ones the renderer already uploaded
+ * as its atlas.
  */
 class TextExpectation {
 public:
     /**
-     * @brief Binds `node` to the run `records` holds, or refuses.
+     * @brief Raises this node's text obligation for the locale `binding` was proved against.
      *
-     * @param node    the compiled node whose spec carries a `textKey`
-     * @param scope   the approved locale this obligation is discharged in; never locale-free
-     * @param records the run's bytes, as the approved locale's text package addresses them
-     * @param font    the font package those records were baked against
+     * @param screen  the compiled screen whose manifest authorises the bound package
+     * @param node    the compiled node whose spec carries a `textKey`; must be one of `screen`'s
+     * @param binding the packages `TextBinding::create()` has already proved describe each other
+     * @param atlas   the coverage sheet the bound font package describes
+     * @param scope   the render scope; must name the locale the binding carries
      * @param ground  what this node's rectangle shows where the run paints nothing
      *
-     * Refuses a node that carries no text key, a locale-free scope, a partial run, a run longer than
-     * `mdux::medui::maxGlyphsPerRun`, a record naming a glyph the package does not hold, a node whose
-     * colour token does not resolve, and a run that paints no ink at all.
+     * Refuses an unbound binding, a binding the screen does not approve, a node the screen does not
+     * contain, a scope naming a different locale from the bound package's, a node carrying no text
+     * key, a text key the package has no run for, an atlas that is not the size the font package
+     * declares, a glyph slot outside that sheet, a node whose colour token does not resolve, and a
+     * run that paints no ink at all.
      *
-     * The last refusal is a policy rather than an accident. A run whose glyphs are all blank - a
+     * That last refusal is a policy rather than an accident. A run whose glyphs are all blank - a
      * single space - is legitimate for the runtime, which draws nothing and does not count the node
      * as deferred. It is not something a rendered-truth obligation can discharge: there is no ink to
      * find, so a pass would be indistinguishable from a screen that lost its text. ADR-014 decision
      * 3 says a check this build cannot perform fails, so this refuses rather than passing vacuously,
      * and the screen is what changes.
      */
-    [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> create(const mdux::medui::CompiledNode& node,
-                                                                                 RenderScope                      scope,
-                                                                                 std::span<const std::byte>       records,
-                                                                                 const mdux::font::FontPackage&   font,
-                                                                                 mdux::core::ColorRgba8           ground) noexcept;
+    [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> create(const mdux::medui::ScreenPackage& screen,
+                                                                                 const mdux::medui::CompiledNode&  node,
+                                                                                 const mdux::medui::TextBinding&   binding,
+                                                                                 std::span<const std::byte>        atlas,
+                                                                                 RenderScope                       scope,
+                                                                                 mdux::core::ColorRgba8            ground) noexcept;
+
+    /**
+     * @brief Builds a view over caller-supplied parts, establishing no provenance whatever.
+     *
+     * **For unit tests.** ADR-014 decision 1 admits exactly this and bounds it in the same sentence:
+     * "A unit test may construct a synthetic view to exercise a pure check, but production
+     * expectations have exactly the artifact sources decision 2 names." A check is a pure function,
+     * so proving it needs a framebuffer and a view - not a screen, a digest and a baked package -
+     * and refusing to offer that path would mean every scenario carried four real artifacts to test
+     * arithmetic.
+     *
+     * What it does not do is anything `create()` does. It does not see a screen, so it cannot know
+     * that this locale was approved; it does not see a `TextBinding`, so it cannot know that these
+     * records came from the package the screen names, or that the font they index is the one they
+     * were baked against. A driver that reached for this would be producing verification outcomes
+     * about a run nothing authorised, and that is the review finding to raise on #253 rather than a
+     * runtime condition this module can detect.
+     *
+     * The structural refusals `create()` makes are still made here: a node with no text key, a
+     * locale-free scope, a partial or over-long run, a dangling glyph index, an atlas of the wrong
+     * size, a slot outside it, an unresolvable colour token and a run with no ink.
+     */
+    [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> createSynthetic(const mdux::medui::CompiledNode& node,
+                                                                                          RenderScope                      scope,
+                                                                                          std::span<const std::byte>       records,
+                                                                                          const mdux::font::FontPackage&   font,
+                                                                                          std::span<const std::byte>       atlas,
+                                                                                          mdux::core::ColorRgba8           ground) noexcept;
 
     [[nodiscard]] const mdux::medui::CompiledNode& node() const noexcept {
         return *node_;
@@ -612,7 +716,7 @@ public:
     [[nodiscard]] RenderScope scope() const noexcept {
         return scope_;
     }
-    /// The approved locale's tag. Never empty: `create()` refuses a locale-free scope.
+    /// The approved locale's tag. Never empty: both factories refuse a locale-free scope.
     [[nodiscard]] std::string_view locale() const noexcept {
         return scope_.tag();
     }
@@ -621,6 +725,10 @@ public:
     }
     [[nodiscard]] const mdux::font::FontPackage& font() const noexcept {
         return *font_;
+    }
+    /// The coverage sheet the run paints from.
+    [[nodiscard]] std::span<const std::byte> atlas() const noexcept {
+        return atlas_;
     }
     [[nodiscard]] mdux::core::ColorRgba8 tint() const noexcept {
         return tint_;
@@ -636,25 +744,55 @@ public:
     [[nodiscard]] mdux::medui::NodeRect ink() const noexcept {
         return ink_;
     }
-    /// Where record `index` paints, or nothing when it is blank or out of range.
-    [[nodiscard]] std::optional<mdux::medui::NodeRect> glyphRect(std::size_t index) const noexcept;
+    /// Where record `index` paints and paints from, or nothing when it is blank or out of range.
+    [[nodiscard]] std::optional<PlacedGlyph> glyph(std::size_t index) const noexcept;
+
+    /// The coverage the sheet holds for the texel at (`dx`, `dy`) inside `placed`.
+    ///
+    /// Zero for a coordinate outside the glyph, which `create()` has already made unreachable -
+    /// answered rather than assumed, because the alternative is indexing a span with a number this
+    /// function did not check.
+    [[nodiscard]] std::uint8_t coverage(const PlacedGlyph& placed, mdux::core::Px dx, mdux::core::Px dy) const noexcept;
 
 private:
+    /// The structural half both factories share: the run, the sheet, the tint and the ink box.
+    ///
+    /// Deliberately private. What separates a production expectation from a synthetic one is
+    /// provenance, and provenance is established by the caller-facing factories - so the shared part
+    /// must not be reachable as a third way to build one.
+    [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> build(const mdux::medui::CompiledNode& node,
+                                                                                RenderScope                      scope,
+                                                                                std::span<const std::byte>       records,
+                                                                                const mdux::font::FontPackage&   font,
+                                                                                std::span<const std::byte>       atlas,
+                                                                                mdux::core::ColorRgba8           ground) noexcept;
+
     TextExpectation(const mdux::medui::CompiledNode* node,
                     RenderScope                      scope,
                     std::span<const std::byte>       records,
                     const mdux::font::FontPackage*   font,
+                    std::span<const std::byte>       atlas,
                     mdux::core::ColorRgba8           tint,
                     mdux::core::ColorRgba8           ground,
                     mdux::medui::NodeRect            ink,
                     mdux::core::Px                   originX,
                     mdux::core::Px                   originY) noexcept
-        : node_{node}, scope_{scope}, records_{records}, font_{font}, tint_{tint}, ground_{ground}, ink_{ink}, originX_{originX}, originY_{originY} {}
+        : node_{node},
+          scope_{scope},
+          records_{records},
+          font_{font},
+          atlas_{atlas},
+          tint_{tint},
+          ground_{ground},
+          ink_{ink},
+          originX_{originX},
+          originY_{originY} {}
 
     const mdux::medui::CompiledNode* node_{nullptr};
     RenderScope                      scope_{RenderScope::localeFree()};
     std::span<const std::byte>       records_{};
     const mdux::font::FontPackage*   font_{nullptr};
+    std::span<const std::byte>       atlas_{};
     mdux::core::ColorRgba8           tint_{};
     mdux::core::ColorRgba8           ground_{};
     mdux::medui::NodeRect            ink_{};
@@ -683,6 +821,7 @@ enum class Finding : std::uint8_t {
     InkLeftItsNode,      ///< the run's placed ink box is not inside the node's rectangle
     InkExtentDiffers,    ///< the frame's ink is not where the committed run says it would be
     GlyphMissing,        ///< a non-blank record of the approved run painted nothing
+    CoverageDiffers,     ///< a glyph's pixels are not what its baked coverage would produce
     InkOutsideTheRun,    ///< the node shows ink where this locale's run paints none
 };
 
@@ -696,8 +835,13 @@ enum class Finding : std::uint8_t {
  * asks for; everything that sentence needs is here, including the render scope, so a reader can tell
  * a failure in `de-DE` from the same node's pass in `en-US`.
  *
- * `found` is only meaningful for the findings that measured something. `expected` is always the
- * rectangle the check was asked about.
+ * `expected` is **the rectangle this outcome's claim is about**, which is not always the node's box.
+ * `goldenBounds()` and `colorHash()` name the golden's declared rectangle; `inkContainment()` names
+ * the node's rectangle while the failure is about containment and the predicted ink box once the
+ * comparison has moved on to the frame; `localizedTextPresence()` names one glyph's rectangle for a
+ * glyph-level finding and the node's otherwise. `found` is what was measured against it, and is only
+ * meaningful for the findings that measured something - `foundValid` says which. Spelled out here
+ * because a driver formatting "expected X, found Y" has to know what X refers to.
  */
 struct CheckOutcome {
     Finding                finding{Finding::Held};
@@ -750,16 +894,35 @@ struct CheckOutcome {
  * predict an ink box, the runtime's placement rule puts its corner on the node's corner, and this
  * fails when that box leaves the node - and, separately, when the frame's ink inside the node is not
  * the box the artifacts predicted, which is what a clipped, moved or partially drawn run looks like.
+ *
+ * An **extent** claim, deliberately and only. It says the run's ink occupies the box the artifacts
+ * predict and no more; it does not say the glyphs in that box are the approved locale's, and a few
+ * pixels at the box's corners would preserve the extent while saying nothing about what is between
+ * them. Establishing the run's shape is `localizedTextPresence()`'s job, which is why that one
+ * carries the coverage sheet and this one does not.
  */
 [[nodiscard]] CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
 
 /**
  * @brief `LocalizedTextPresence`: the approved locale's bound run is the one on screen.
  *
- * Per glyph, in both directions: every non-blank record of this locale's run must have painted
- * something inside its own placed rectangle, and every pixel of the node outside all of those
- * rectangles must still be the ground. A different translation satisfies neither half at this
- * locale's rectangles, which is what makes this a presence check rather than a plausibility one.
+ * Per glyph and per pixel, in both directions.
+ *
+ * Inside each placed glyph, every pixel must be what the *baked coverage* for that texel produces
+ * when the node's tint is composited over the ground - `blend()`, within one UNORM step. That is the
+ * half that makes this a claim about the approved run rather than about ink in the right boxes: a
+ * texel the atlas leaves at zero must be exactly the ground, a fully covered one must be exactly the
+ * tint, and every value between is pinned to the coverage the baker recorded. A different letter of
+ * the same size, a run drawn from another package's slots, and a sparse handful of pixels that
+ * merely occupy the rectangles all fail it.
+ *
+ * Outside every placed glyph, every pixel of the node must still be the ground. The atlas slot is
+ * exactly the glyph's bitmap, so a correct frame paints nothing there.
+ *
+ * The one-step allowance is for UNORM rounding and nothing else: the blend is computed in floating
+ * point on the device and quantised back to eight bits, and two conforming implementations may
+ * differ in the last bit. It is not a similarity threshold - a wrong shape misses by far more than
+ * one step, and a wrong tint by more still.
  */
 [[nodiscard]] CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
 

@@ -131,6 +131,14 @@ const mdux::spec::Register anImageThatCannotExistIsRefused{
                       // width * height * 4 bytes looks like.
                       checks.expect(mv::FramebufferView::create(bytes, 4, 2, 16, mv::PixelFormat::Rgba8Unorm).has_value(),
                                     "an exactly-sized packed image is admitted");
+
+                      // The regression: a stride at the top of `size_t` makes `(height - 1) * stride
+                      // + rowBytes` wrap to a tiny number, so an addition-based bound admits a
+                      // four-byte span and `pixelAt(0, 1)` then reads at offset SIZE_MAX. Widening
+                      // to 64 bits does not help - unsigned arithmetic wraps at any width - so the
+                      // bound is established by division and subtraction instead.
+                      auto hostile = mv::FramebufferView::create(bytes, 1, 2, std::numeric_limits<std::size_t>::max(), mv::PixelFormat::Rgba8Unorm);
+                      checks.expect(error(std::move(hostile)) == mv::VerifyError::FramebufferTooSmall, "a stride at the top of size_t is refused");
                       checks.raise();
                   })
             .Execute();
