@@ -15,4 +15,6 @@ only requested fixes, then rerun the focused analysis and the tests required by 
 Clang-tidy is advisory for C++ module interfaces in this repository: the current CI analysis uses
 a GCC-generated compilation database that clang-tidy cannot fully parse and does not enforce its
 result. Never present a clean clang-tidy run as proof of governed no-throw, safety, regulatory, or
-release conformance; use the repository verification tests for those claims.
+release conformance. Governed no-throw claims require both `governed.noThrow.symbolScan` and
+`mdux-governed-lint`; the remaining safety, regulatory, and release checks are defined by the
+repository verification suite and CI.
