@@ -908,8 +908,12 @@ struct CheckOutcome {
  *
  * Per glyph and per pixel, in both directions.
  *
- * Inside each placed glyph, every pixel must be what the *baked coverage* for that texel produces
- * when the node's tint is composited over the ground - `blend()`, within one UNORM step. That is the
+ * Inside the run's ink, every pixel must be what the *baked coverage* reaching it produces when the
+ * node's tint is composited over the ground - `blend()`, within one UNORM step per composite. Where
+ * two placed glyphs overlap, the coverages compose as `1 - (1 - a1)(1 - a2)`, because the draw path
+ * records one quad per glyph and blends them in turn and nothing in `FontPackage::validate()`
+ * requires an advance to clear its own bitmap. Comparing such a pixel against either glyph alone
+ * would fail a correct frame. That is the
  * half that makes this a claim about the approved run rather than about ink in the right boxes: a
  * texel the atlas leaves at zero must be exactly the ground, a fully covered one must be exactly the
  * tint, and every value between is pinned to the coverage the baker recorded. A different letter of
@@ -919,10 +923,10 @@ struct CheckOutcome {
  * Outside every placed glyph, every pixel of the node must still be the ground. The atlas slot is
  * exactly the glyph's bitmap, so a correct frame paints nothing there.
  *
- * The one-step allowance is for UNORM rounding and nothing else: the blend is computed in floating
- * point on the device and quantised back to eight bits, and two conforming implementations may
- * differ in the last bit. It is not a similarity threshold - a wrong shape misses by far more than
- * one step, and a wrong tint by more still.
+ * The allowance is for UNORM rounding and nothing else: the blend is computed in floating point on
+ * the device and quantised back to eight bits at every composite, so it is one step per glyph
+ * covering the pixel rather than a fixed slack. It is not a similarity threshold - a wrong shape
+ * misses by far more, and a wrong tint by more still.
  */
 [[nodiscard]] CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
 

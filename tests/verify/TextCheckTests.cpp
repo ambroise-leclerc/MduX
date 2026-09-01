@@ -190,6 +190,21 @@ constexpr std::uint32_t glyphRows  = 6;
     return runOf(runs);
 }
 
+/// The two glyphs placed two pixels apart, so their four-pixel bitmaps overlap by two columns.
+///
+/// Nothing in `FontPackage::validate()` requires an advance to clear its own bitmap, so a font with
+/// tight advances or negative kerning produces exactly this. The draw path records one quad per
+/// glyph and blends them in turn, so the overlap column holds both coverages composited - which a
+/// check comparing against one glyph at a time would call a defect on a correct frame.
+[[nodiscard]] std::vector<std::byte> overlappingRun() {
+    // The *sparse* glyph twice, not the solid one: where a solid glyph overlaps anything the
+    // composition is 255 and so is either coverage alone, which would let a scenario claim a
+    // composited check while testing nothing. Two half-covered texels compose to 192, a value
+    // neither glyph produces by itself.
+    const std::array<std::array<std::byte, 6>, 2> runs{record(2, 0, 6), record(2, 2, 6)};
+    return runOf(runs);
+}
+
 /// A run of nothing but the space.
 [[nodiscard]] std::vector<std::byte> blankRun() {
     const std::array<std::array<std::byte, 6>, 1> runs{record(0, 0, 6)};
@@ -220,7 +235,12 @@ expect(const ms::CompiledNode& node, std::span<const std::byte> records, const m
     return *made;
 }
 
-/// Paints the run exactly as the coverage draw path would: every texel blended over the ground.
+/// Paints the run the way the coverage draw path does: one quad per glyph, blended in turn.
+///
+/// Deliberately *not* a composited expectation computed in one pass. The frame a scenario hands to
+/// the check has to be built the way the device builds one - each glyph blended over whatever the
+/// previous glyphs left - or an overlap scenario would be comparing the check against a fixture that
+/// shared its assumption instead of against a rendered frame.
 void paintRun(Canvas& canvas, const mv::TextExpectation& expectation, ColorRgba8 tint, Px shiftX = 0) {
     for (std::size_t index = 0; index < expectation.glyphCount(); ++index) {
         const std::optional<mv::PlacedGlyph> placed = expectation.glyph(index);
@@ -229,7 +249,9 @@ void paintRun(Canvas& canvas, const mv::TextExpectation& expectation, ColorRgba8
         }
         for (Px dy = 0; dy < placed->rect.height; ++dy) {
             for (Px dx = 0; dx < placed->rect.width; ++dx) {
-                canvas.set(placed->rect.x + dx + shiftX, placed->rect.y + dy, mv::blend(ground, tint, expectation.coverage(*placed, dx, dy)));
+                const Px x = placed->rect.x + dx + shiftX;
+                const Px y = placed->rect.y + dy;
+                canvas.set(x, y, mv::blend(canvas.at(x, y), tint, expectation.coverage(*placed, dx, dy)));
             }
         }
     }
@@ -371,6 +393,54 @@ const mdux::spec::Register sparseInkDoesNotSatisfyPresence{
                       const mv::CheckOutcome presence = mv::localizedTextPresence(sparse.view(), title);
                       checks.expect(presence.finding == mv::Finding::CoverageDiffers, std::format("sparse ink is caught: {}", mv::describe(presence.finding)));
                       checks.expect(presence.foundColorValid && presence.foundColor == ground, "and the outcome names the pixel that was left unpainted");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register overlappingGlyphsAreComposited{
+    "Two glyphs whose bitmaps overlap are checked against their composited coverage",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-text-presence-composites-overlap")
+            .Given("a run placing two four-pixel glyphs two pixels apart", [] {})
+            .When("the frame blends each quad over what the previous one left, as the draw path does", [] {})
+            .Then("the check holds, and still fails when the overlap column is painted from one glyph alone",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const mdux::font::FontPackage font    = twoGlyphFont();
+                      const std::vector<std::byte>  atlas   = syntheticAtlas();
+                      const std::vector<std::byte>  records = overlappingRun();
+                      const mv::TextExpectation     title   = expect(titleNode(), records, font, atlas);
+
+                      const std::optional<mv::PlacedGlyph> first  = title.glyph(0);
+                      const std::optional<mv::PlacedGlyph> second = title.glyph(1);
+                      checks.expect(first.has_value() && second.has_value(), "both glyphs are placed");
+                      if (!first.has_value() || !second.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      // The overlap is the point of the fixture, so it is asserted rather than
+                      // assumed: two columns of the six the two bitmaps span are shared.
+                      checks.expect(second->rect.x - first->rect.x == 2, "the second glyph starts two pixels into the first");
+                      checks.expect(title.ink() == ms::NodeRect{10, 20, 6, 6}, "and the ink box spans both");
+
+                      Canvas canvas{64, 48, ground};
+                      paintRun(canvas, title, tintOf(titleToken));
+                      const mv::CheckOutcome presence = mv::localizedTextPresence(canvas.view(), title);
+                      checks.expect(presence.held(), std::format("the composited frame holds: {}", mv::describe(presence.finding)));
+
+                      // ...and the check has not simply become permissive. Both glyphs cover the
+                      // last shared column at 128, which composes to 192; painting it from one
+                      // glyph's coverage alone is a value the composition does not produce, and it
+                      // misses by four - twice the two-layer allowance.
+                      Canvas single{64, 48, ground};
+                      paintRun(single, title, tintOf(titleToken));
+                      single.set(first->rect.x + 3, first->rect.y, mv::blend(ground, tintOf(titleToken), 128));
+                      const mv::CheckOutcome partial = mv::localizedTextPresence(single.view(), title);
+                      checks.expect(partial.finding == mv::Finding::CoverageDiffers,
+                                    std::format("one glyph's coverage alone is caught: {}", mv::describe(partial.finding)));
                       checks.raise();
                   })
             .Execute();

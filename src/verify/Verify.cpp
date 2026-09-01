@@ -154,13 +154,31 @@ struct Box {
     return true;
 }
 
-/// Whether every channel of `pixel` is within one UNORM step of `expected`.
-[[nodiscard]] bool withinOneStep(ColorRgba8 pixel, ColorRgba8 expected) noexcept {
-    const auto close = [](std::uint8_t left, std::uint8_t right) noexcept {
-        const int difference = static_cast<int>(left) - static_cast<int>(right);
-        return difference <= 1 && difference >= -1;
+/// Whether every channel of `pixel` is within `steps` UNORM steps of `expected`.
+///
+/// One step per quantisation the device performed. A single glyph is one blend and therefore one
+/// step; a pixel two overlapping quads deep was quantised to eight bits twice, so it may differ in
+/// the last bit twice. Bounded by the number of glyphs covering the pixel, never by a fixed slack.
+[[nodiscard]] bool withinSteps(ColorRgba8 pixel, ColorRgba8 expected, std::size_t steps) noexcept {
+    const auto close = [steps](std::uint8_t left, std::uint8_t right) noexcept {
+        const auto difference = static_cast<std::int64_t>(left) - static_cast<std::int64_t>(right);
+        const auto allowed    = static_cast<std::int64_t>(steps == 0 ? 1 : steps);
+        return difference <= allowed && difference >= -allowed;
     };
     return close(pixel.r, expected.r) && close(pixel.g, expected.g) && close(pixel.b, expected.b) && close(pixel.a, expected.a);
+}
+
+/**
+ * @brief Two coverages of one tint over one ground, as the draw path composites them.
+ *
+ * `1 - (1 - a1)(1 - a2)`, in integers. The draw path records one quad per glyph and blends them in
+ * turn, so expanding `t*a2 + (t*a1 + g*(1-a1))*(1-a2)` leaves the tint weighted by exactly this
+ * expression and the ground by its complement. Commutative, so the order glyphs are visited in does
+ * not change the answer.
+ */
+[[nodiscard]] std::uint8_t composeCoverage(std::uint8_t first, std::uint8_t second) noexcept {
+    const auto remaining = (255 - static_cast<int>(first)) * (255 - static_cast<int>(second));
+    return static_cast<std::uint8_t>(255 - (remaining + 127) / 255);
 }
 
 /// The bounding box of every pixel of `region` that is not `ground`.
@@ -708,107 +726,140 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
     const ColorRgba8 ground = expectation.ground();
     const ColorRgba8 tint   = expectation.tint();
 
-    // Half one: every glyph this locale's run paints is on screen in the shape the atlas gives it.
-    // Comparing against the baked coverage rather than against the glyph's box is what makes this a
-    // claim about the approved run: a sparse handful of pixels occupying the rectangles, and a
-    // different letter of the same size, both fail it.
+    // Every placed glyph has to be somewhere this function can look, before any of them is read.
     for (std::size_t index = 0; index < expectation.glyphCount(); ++index) {
         const std::optional<PlacedGlyph> placed = expectation.glyph(index);
-        if (!placed.has_value()) {
-            // A blank, most often the space. It advances the pen and paints nothing, so there is
-            // nothing to find and nothing missing.
-            continue;
-        }
-        outcome.glyphIndex = index;
-        outcome.expected   = placed->rect;
-        if (!frame.contains(placed->rect)) {
+        if (placed.has_value() && !frame.contains(placed->rect)) {
+            outcome.glyphIndex = index;
+            outcome.expected   = placed->rect;
             outcome.found      = placed->rect;
             outcome.foundValid = true;
             return failed(outcome, Finding::RegionOutsideFrame);
         }
+    }
 
-        // The whole glyph is walked before anything is reported, because *which* failure this is
-        // depends on the glyph rather than on the first pixel that disagreed. A run drawn in the
-        // wrong tint disagrees at its very first pixel and has painted plenty; a glyph that is
-        // simply absent disagrees at the same pixel and has painted nothing. Deciding from scan
-        // position would call the first one "painted nothing", which sends a reader to look for a
-        // missing translation instead of a wrong colour.
-        bool       inked     = false;
-        bool       disagreed = false;
-        Px         firstX    = placed->rect.x;
-        Px         firstY    = placed->rect.y;
-        ColorRgba8 firstFound{};
-        ColorRgba8 firstWanted{};
-        for (Px dy = 0; dy < placed->rect.height; ++dy) {
-            for (Px dx = 0; dx < placed->rect.width; ++dx) {
-                const Px                        x     = placed->rect.x + dx;
-                const Px                        y     = placed->rect.y + dy;
-                const std::optional<ColorRgba8> pixel = frame.pixelAt(x, y);
-                if (!pixel.has_value()) {
-                    outcome.found      = atPixel(x, y);
-                    outcome.foundValid = true;
-                    return failed(outcome, Finding::RegionOutsideFrame);
-                }
-                inked = inked || *pixel != ground;
+    // What the run paints at one pixel: the coverage of every glyph that covers it, composed, and
+    // how many did.
+    //
+    // Composed rather than taken one glyph at a time, because the draw path draws one quad per
+    // glyph and blends them in turn - so where two placed rectangles overlap, the frame holds
+    // `1 - (1 - a1)(1 - a2)` of the tint and not either coverage alone. Nothing in
+    // `FontPackage::validate()` requires an advance to clear its own bitmap, so a font with tight
+    // advances or negative kerning can produce that overlap, and comparing against a single glyph's
+    // coverage there would fail a correct frame. The composition is exact because every glyph of one
+    // run carries one tint over one ground: expanding the two blends leaves the tint weighted by
+    // exactly that expression.
+    struct Painted {
+        std::uint8_t coverage{0};
+        std::size_t  layers{0};
+        std::size_t  first{0};
+    };
+    const auto paintedAt = [&expectation](Px x, Px y) noexcept {
+        Painted painted;
+        for (std::size_t index = 0; index < expectation.glyphCount(); ++index) {
+            const std::optional<PlacedGlyph> placed = expectation.glyph(index);
+            if (!placed.has_value() || !holds(placed->rect, x, y)) {
+                continue;
+            }
+            if (painted.layers == 0) {
+                painted.first = index;
+            }
+            ++painted.layers;
+            painted.coverage = composeCoverage(painted.coverage, expectation.coverage(*placed, x - placed->rect.x, y - placed->rect.y));
+        }
+        return painted;
+    };
 
-                const ColorRgba8 wanted = blend(ground, tint, expectation.coverage(*placed, dx, dy));
-                if (!withinOneStep(*pixel, wanted) && !disagreed) {
-                    disagreed   = true;
-                    firstX      = x;
-                    firstY      = y;
-                    firstFound  = *pixel;
-                    firstWanted = wanted;
+    // Whether a glyph's rectangle shows anything at all. It is what separates "this glyph is not on
+    // screen" from "something is, and it is not this glyph as the baker covered it" - two sentences
+    // a reader acts on differently, and a distinction the first disagreeing pixel cannot make: a run
+    // in the wrong tint disagrees at its very first pixel having painted plenty.
+    const auto glyphShowsInk = [&frame, ground](const PlacedGlyph& placed) noexcept {
+        for (Px dy = 0; dy < placed.rect.height; ++dy) {
+            for (Px dx = 0; dx < placed.rect.width; ++dx) {
+                const std::optional<ColorRgba8> pixel = frame.pixelAt(placed.rect.x + dx, placed.rect.y + dy);
+                if (pixel.has_value() && *pixel != ground) {
+                    return true;
                 }
             }
         }
+        return false;
+    };
 
-        if (disagreed) {
-            outcome.found           = atPixel(firstX, firstY);
-            outcome.foundValid      = true;
-            outcome.foundColor      = firstFound;
-            outcome.foundColorValid = true;
-            outcome.expectedColor   = firstWanted;
-            // "Nothing of this glyph is on screen" and "something is, and it is not this glyph as
-            // the baker covered it" are different sentences, and a reader acts on them differently.
-            return failed(outcome, inked ? Finding::CoverageDiffers : Finding::GlyphMissing);
+    const NodeRect ink = expectation.ink();
+    for (Px y = region.y; y < region.y + region.height; ++y) {
+        for (Px x = region.x; x < region.x + region.width; ++x) {
+            const std::optional<ColorRgba8> pixel = frame.pixelAt(x, y);
+            if (!pixel.has_value()) {
+                outcome.found      = atPixel(x, y);
+                outcome.foundValid = true;
+                return failed(outcome, Finding::RegionOutsideFrame);
+            }
+
+            // Outside the run's ink box no glyph can cover this pixel, so the answer is the ground
+            // and the glyph walk is skipped. That keeps the per-pixel cost proportional to the run
+            // only where the run is, rather than over the whole node.
+            const bool    reachable = holds(ink, x, y);
+            const Painted painted   = reachable ? paintedAt(x, y) : Painted{};
+            if (painted.layers == 0) {
+                if (*pixel != ground) {
+                    // The atlas slot is exactly the glyph's bitmap, so a correct frame paints
+                    // nothing here.
+                    outcome.found           = atPixel(x, y);
+                    outcome.foundValid      = true;
+                    outcome.foundColor      = *pixel;
+                    outcome.foundColorValid = true;
+                    return failed(outcome, Finding::InkOutsideTheRun);
+                }
+                continue;
+            }
+
+            // One UNORM step per composite the device performed: it blends in floating point and
+            // quantises back to eight bits at every step, so a pixel two quads deep can differ in
+            // the last bit twice. Not a similarity threshold - a wrong shape misses by far more.
+            const ColorRgba8 wanted = blend(ground, tint, painted.coverage);
+            if (!withinSteps(*pixel, wanted, painted.layers)) {
+                const std::optional<PlacedGlyph> placed = expectation.glyph(painted.first);
+                outcome.glyphIndex                      = painted.first;
+                outcome.expected                        = placed.has_value() ? placed->rect : region;
+                outcome.found                           = atPixel(x, y);
+                outcome.foundValid                      = true;
+                outcome.foundColor                      = *pixel;
+                outcome.foundColorValid                 = true;
+                outcome.expectedColor                   = wanted;
+                return failed(outcome, placed.has_value() && glyphShowsInk(*placed) ? Finding::CoverageDiffers : Finding::GlyphMissing);
+            }
         }
-        if (!inked) {
-            // Every texel of a non-blank glyph agreed with the ground, which can only mean the
-            // sheet's slot for it is empty - a package whose metrics and coverage disagree.
+    }
+
+    // A non-blank glyph whose sheet slot is empty paints nothing, agrees with the ground everywhere,
+    // and would otherwise pass having shown nothing at all - a package whose metrics and coverage
+    // disagree, which is worth its own refusal rather than a silent hold.
+    for (std::size_t index = 0; index < expectation.glyphCount(); ++index) {
+        const std::optional<PlacedGlyph> placed = expectation.glyph(index);
+        if (!placed.has_value()) {
+            continue;
+        }
+        bool covered = false;
+        for (Px dy = 0; dy < placed->rect.height && !covered; ++dy) {
+            for (Px dx = 0; dx < placed->rect.width && !covered; ++dx) {
+                covered = expectation.coverage(*placed, dx, dy) != 0;
+            }
+        }
+        if (!covered) {
+            outcome.glyphIndex = index;
+            outcome.expected   = placed->rect;
             outcome.found      = placed->rect;
             outcome.foundValid = true;
             return failed(outcome, Finding::GlyphMissing);
         }
     }
+
     outcome.glyphIndex    = 0;
     outcome.expected      = region;
     outcome.expectedColor = tint;
-
-    // Half two: nothing painted anywhere else in the node. The atlas slot is exactly the glyph's
-    // bitmap, so a correct frame paints outside no rectangle.
-    for (Px y = region.y; y < region.y + region.height; ++y) {
-        for (Px x = region.x; x < region.x + region.width; ++x) {
-            const std::optional<ColorRgba8> pixel = frame.pixelAt(x, y);
-            if (!pixel.has_value() || *pixel == ground) {
-                continue;
-            }
-            bool attributed = false;
-            for (std::size_t index = 0; index < expectation.glyphCount() && !attributed; ++index) {
-                const std::optional<PlacedGlyph> placed = expectation.glyph(index);
-                attributed                              = placed.has_value() && holds(placed->rect, x, y);
-            }
-            if (!attributed) {
-                outcome.found           = atPixel(x, y);
-                outcome.foundValid      = true;
-                outcome.foundColor      = *pixel;
-                outcome.foundColorValid = true;
-                return failed(outcome, Finding::InkOutsideTheRun);
-            }
-        }
-    }
-
-    outcome.found      = expectation.ink();
-    outcome.foundValid = true;
+    outcome.found         = ink;
+    outcome.foundValid    = true;
     return outcome;
 }
 

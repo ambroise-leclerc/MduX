@@ -318,9 +318,20 @@ inline constexpr std::array<ThemeColor, 8> themeColors{
  * against the same token. Two copies of this arithmetic would agree until the day one of them
  * rounded differently, and the failure would read as a rendering defect rather than as the drift it
  * was.
+ *
+ * **NaN is mapped to zero rather than clamped.** A NaN compares false against every bound, so the
+ * two clamps below would both let it through and the conversion to `std::uint8_t` would be undefined
+ * - which is a poor way for a governed function to answer a question. `!(channel >= 0.0F)` is the
+ * one test that catches it and negatives together. Zero because a channel this function cannot
+ * interpret contributes nothing, and because the alternative is an error path on a function whose
+ * only production input is a `constexpr` table of literals: the value is unreachable through
+ * `resolveColorToken()`, and being total costs one comparison.
  */
 [[nodiscard]] constexpr std::uint8_t quantise(float channel) noexcept {
-    const float clamped = channel < 0.0F ? 0.0F : (channel > 1.0F ? 1.0F : channel);
+    if (!(channel >= 0.0F)) {
+        return 0;
+    }
+    const float clamped = channel > 1.0F ? 1.0F : channel;
     const float scaled  = clamped * 255.0F;
     const float rounded = scaled + 0.5F;
     return static_cast<std::uint8_t>(rounded);

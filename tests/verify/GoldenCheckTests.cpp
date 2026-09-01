@@ -274,14 +274,12 @@ const mdux::spec::Register theTintIsComparedExactly{
                       checks.expect(wrong.foundColorValid && wrong.foundColor.r == 255, "and the outcome carries the pixel it found");
                       checks.expect(wrong.expectedColor == tint, "beside the tint it expected");
 
-                      // A legitimate blend of the tint over the ground at half coverage: inside the
-                      // interval everywhere, and equal to the tint nowhere.
+                      // A legitimate blend of the tint over the ground at half coverage: a possible
+                      // pixel everywhere, and equal to the tint nowhere. Through `blend()` rather
+                      // than `tint / 2`, which is not the same number when a channel is odd and
+                      // would make this scenario fail as ForeignColour for a reason it is not about.
                       Canvas partial{16, 20, ground};
-                      partial.fill({4, 4, 8, 6},
-                                   ColorRgba8{.r = static_cast<std::uint8_t>(tint.r / 2),
-                                              .g = static_cast<std::uint8_t>(tint.g / 2),
-                                              .b = static_cast<std::uint8_t>(tint.b / 2),
-                                              .a = 255});
+                      partial.fill({4, 4, 8, 6}, mv::blend(ground, tint, 128));
                       const mv::CheckOutcome faint = mv::colorHash(partial.view(), expectation);
                       checks.expect(faint.finding == mv::Finding::TintAbsent,
                                     std::format("content that never reaches its tint: {}", mv::describe(faint.finding)));

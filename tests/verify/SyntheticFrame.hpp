@@ -24,7 +24,7 @@ namespace mdux::test::verify {
 class Canvas {
 public:
     Canvas(mdux::core::Px width, mdux::core::Px height, mdux::core::ColorRgba8 ground)
-        : width_{width}, height_{height}, pixels_(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), ground) {}
+        : width_{width}, height_{height}, ground_{ground}, pixels_(static_cast<std::size_t>(width) * static_cast<std::size_t>(height), ground) {}
 
     /// Paints `rect` in `colour`, clipped to the image so a scenario can deliberately overflow.
     void fill(mdux::medui::NodeRect rect, mdux::core::ColorRgba8 colour) {
@@ -40,6 +40,17 @@ public:
             return;
         }
         pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) + static_cast<std::size_t>(x)] = colour;
+    }
+
+    /// The colour at (x, y), or the ground for a coordinate outside the image.
+    ///
+    /// So a scenario can blend a glyph over whatever the previous one left, which is what the draw
+    /// path does and therefore what an overlapping run's frame actually holds.
+    [[nodiscard]] mdux::core::ColorRgba8 at(mdux::core::Px x, mdux::core::Px y) const noexcept {
+        if (x < 0 || y < 0 || x >= width_ || y >= height_) {
+            return ground_;
+        }
+        return pixels_[static_cast<std::size_t>(y) * static_cast<std::size_t>(width_) + static_cast<std::size_t>(x)];
     }
 
     [[nodiscard]] std::span<const mdux::core::ColorRgba8> pixels() const noexcept {
@@ -60,6 +71,7 @@ public:
 private:
     mdux::core::Px                      width_{0};
     mdux::core::Px                      height_{0};
+    mdux::core::ColorRgba8              ground_{};
     std::vector<mdux::core::ColorRgba8> pixels_;
 };
 
