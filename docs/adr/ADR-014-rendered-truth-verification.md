@@ -9,18 +9,20 @@ No MedUI shared decision covers verification, so MduX decides it locally and thi
 shared identity the way [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) and
 [ADR-012](ADR-012-compiled-screen-artifacts.md) do. One part of the mechanism is *not* local,
 however, and decision 3 depends on it: the `cv_check` names an author may write belong to the shared
-language's `safety` capability, pinned in `medui-conformance.toml` at `265df19`, and `MEDUI-E071` is
+language's `safety` capability, pinned in `medui-conformance.toml` at
+`265df1925a672bd556f69123e287215b45cfd210`, and `MEDUI-E071` is
 what rejects a name outside the set. Adding a check name is an upstream change followed by a re-pin,
 never a change to the verifier.
 
 ## Context
 
 Epic #16 renders a compiled screen offscreen, checks that the content a golden reference names
-appears where the compiled screen said it would, in the declared tint, in every approved locale, and
-emits that as an evidence artifact. Its four remaining children build the checks (#252), the driver
-(#253), the artifact (#254) and the CI leg (#255). This record is the first of the five and is
-written before any of them, so that those are applications of a recorded decision rather than a
-decision reconstructed from whatever they produced — the same reason #190 preceded the rest of #15.
+appears where the compiled screen said it would and that every localized text run appears inside its
+node, across every approved locale, then emits that as an evidence artifact. Its four remaining
+children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255). This
+record is the first of the five and is written before any of them, so that those are applications of
+a recorded decision rather than a decision reconstructed from whatever they produced — the same
+reason #190 preceded the rest of #15.
 
 Most of the ground is already fixed, and this ADR should not relitigate it.
 
@@ -84,11 +86,12 @@ the rule and replaces the mechanism.
 
 ### IEC 62304 implications (software lifecycle)
 
-This is the mechanism that lets a system-testing claim point at a machine-checked artifact instead
-of a manual review record. A reviewer confirming that a safety-critical readout appears in the right
-place, in the right colour, in every approved locale, is performing an inspection that is
-expensive, dull, and correct until the day it is not. Re-deriving the same fact from files, on
-every push, is the form of verification this repository's whole evidence argument already takes.
+Once implemented, this is the mechanism that lets a system-testing claim point at a machine-checked
+artifact instead of a manual review record. A reviewer confirming that a safety-critical readout
+appears in the right place, in the right colour, in every approved locale, is performing an
+inspection that is expensive, dull, and correct until the day it is not. Re-deriving the same fact
+from files on every automatic CI event that runs the evidence suite is the form of verification this
+repository's whole evidence argument already takes.
 
 The scope limit is as important as the claim, and this corpus already states it:
 `docs/iec62304/03-development-process.md` records that MduX has no software *system* in §5.7's
@@ -107,9 +110,11 @@ against the widest approved translation (#195).
 
 ### Risk management
 
-The hazard this removes is a screen that renders differently from the screen that was reviewed —
-content outside the rectangle its budget was computed for, or a critical readout in a tint that no
-longer distinguishes an alarm state.
+The failure mode this mechanism is intended to detect is a screen that renders differently from the
+screen that was reviewed — content outside the rectangle its budget was computed for, or a critical
+readout in a tint that no longer distinguishes an alarm state. No formal hazard or risk-control
+record in this repository names that failure mode today, and this ADR does not invent one or claim
+that a risk has already been reduced.
 
 The risk it *introduces* is misplaced confidence. Verification compares a frame against the compiled
 screen, and both come from one source, so no amount of it can show that the screen is the right
@@ -126,17 +131,28 @@ a walk across three committed files rather than a claim in prose.
 
 ### 1. The checks are pure functions over a CPU framebuffer, and they are governed
 
-`mdux.verify` takes a read-only framebuffer view — bytes, width, height, row stride, format — plus
-one golden entry and the compiled node it names, and returns an outcome. No Vulkan type crosses that
-boundary. The GPU's involvement ends at the readback that already exists.
+`mdux.verify` takes a read-only framebuffer view — bytes, width, height, row stride, format — and one
+of two artifact-derived expectation views, and returns an outcome:
+
+- a **golden expectation** carries one golden entry, the compiled node it names and the tint the
+  governed theme table resolves when the check needs one;
+- a **text expectation** carries one compiled node whose spec names a `textKey`, the approved locale,
+  the bound text run and atlas data that the approved font/text artifacts identify, and the resolved
+  tint needed to distinguish the run from its background.
+
+Both views are read-only and caller-owned. The host driver constructs them from committed artifacts;
+the command line cannot supply or amend their values. A unit test may construct a synthetic view to
+exercise a pure check, but production expectations have exactly the artifact sources decision 2
+names. No Vulkan type crosses the boundary. The GPU's involvement ends at the readback that already
+exists.
 
 Two things follow, and both are the point rather than a convenience:
 
 - **No GPU is needed to test a check.** A framebuffer is an array, so a unit test paints a rectangle
   into one and asserts that `GoldenBounds` passes, then moves it by a pixel and asserts that it
   fails. The check suite stays fast, and it can be built and proven before a driver exists.
-- **A failure is legible.** A check names a node, a locale, an expected value and where it looked.
-  That is a sentence someone can act on, which "12,438 pixels differ" is not.
+- **A failure is legible.** A check names a node, a render scope, an expected value and where it
+  looked. That is a sentence someone can act on, which "12,438 pixels differ" is not.
 
 They are **governed**, in `MduXCore`, and that is a choice rather than an inheritance. The checks
 have the same shape as #199's runtime — bounded arithmetic over caller-owned storage, no allocation,
@@ -153,16 +169,18 @@ writer live outside it and call in.
 
 | What | Derived from | Never from |
 |---|---|---|
-| which nodes are checked, and which checks apply to each | `goldens.json` | a list on the command line |
-| where a node is, and in what tint | the node in `package.json`, and the governed theme table | numbers written into the verifier or a test |
-| which locales must be rendered | `approvedTextPackages` in `package.json` | `--locales` read as a list of names |
+| which golden-scoped nodes are checked, and which `cvChecks` apply | `goldens.json` | a list on the command line |
+| which mandatory text checks apply | every node in `package.json` whose compiled spec carries a `textKey` | a `cvCheck`, annotation or command-line switch |
+| where a golden node is, and which names it pins | the golden entry, required to agree exactly with the named node in `package.json` | numbers written into the verifier or a test |
+| what tint or glyph run a name resolves to | the governed theme table and the approved font/text package artifacts | caller-supplied pixels, text or token values |
+| which locales must be rendered | `approvedTextPackages` in `package.json`; one locale-free render scope when that set is empty | `--locales` read as a list of names |
 
 `--locales=all` names the screen's own manifest, and a locale absent from it is an error rather than
 a skip. A caller must not be able to narrow what is verified: a verifier whose scope is an argument
 reports on whatever it was asked about, in a file that reads as though it reported on the screen.
 
-**The expected golden set is derived, not read — and the derivation runs in the baker, on four legs,
-on every push.** This is the replacement for the withdrawn artifact-level comparison, and it is
+**The expected golden set is derived, not read — and the derivation runs in the baker on all four
+automatic CI legs.** This is the replacement for the withdrawn artifact-level comparison, and it is
 stronger than the check the epic asked for rather than a relaxation of it.
 
 `goldens.json` is registered through `mdux_compile_screen()`, a front for `mdux_bake_artifact()`,
@@ -179,7 +197,7 @@ Which mechanism owns which failure, since "derive, don't trust" is otherwise a s
 
 | Failure | Caught by | Where |
 |---|---|---|
-| a golden missing for a node the predicate selects | re-derivation in `evidence.screen.<id>` | CI, four legs, every push |
+| a golden missing for a node the predicate selects | re-derivation in `evidence.screen.<id>` | every automatic CI event that runs the four evidence legs |
 | a predicate that is wrong | #196's fixtures over known screens | unit tests, with the predicate |
 | a golden naming a node that does not exist | the verifier's first lookup | #252, #253 |
 | a node verified in one locale and silently not in another | the obligation set of decision 3 | #253 |
@@ -196,9 +214,18 @@ withdrawn wording pointed the wrong way.
 
 ### 3. Every obligation is discharged, and nothing is skipped
 
-The verifier's unit of work is an **obligation**: one golden entry, one of its `cvChecks`, one
-approved locale. The set is enumerated from the three sources above *before* the first frame is
-rendered, and a run fails unless every obligation in it carries a pass or a fail.
+The verifier has two kinds of **obligation**, both enumerated from the artifact sources above
+*before* the first frame is rendered:
+
+1. a **golden obligation** is one golden entry, one of its `cvChecks`, and one render scope;
+2. a **text obligation** is one compiled node carrying a `textKey`, one of the mandatory
+   `InkContainment` or `LocalizedTextPresence` checks, and one approved locale.
+
+A render scope is each approved locale when the screen carries text. A valid text-bearing screen has
+at least one because `ScreenPackage::validate()` refuses a text node with no approved text package.
+A textless screen instead has one explicit locale-free render scope, so its `Bounds` and `ColorHash`
+obligations do not disappear in a Cartesian product with an empty locale set. A run fails unless
+every obligation in the combined set carries a pass or a fail.
 
 Three consequences, each one a failure a skip would hide:
 
@@ -224,17 +251,25 @@ apply to every node whose compiled spec carries a `textKey`, in every approved l
 leaving the box that was budgeted for it is a defect whether or not anyone annotated the node, and
 #195 already measured that box at compile time — the rendered check is the same claim, verified.
 #252 must therefore not add two `CvCheck` enumerators to make its four checks symmetrical: that set
-belongs to the shared contract, and widening it is an upstream change and a re-pin.
+belongs to the shared contract, and widening it is an upstream change and a re-pin. They are the
+second obligation family above, so a text node does not need a golden entry for either check to run.
 
 ### 4. `verification.json` records expectations and outcomes, never measurements
 
 ADR-007's pattern rather than a second one: canonical JSON through `mdux.evidence.json`, floats as
-`u32` bit patterns, a `report.json` carrying the fully resolved option set, and registration through
-`mdux_bake_artifact()` so the artifact is re-derived and byte-compared on all four legs (#254).
+`u32` bit patterns, and the existing screen `report.json` carrying the fully resolved option set and
+all output digests. `mdux_compile_screen()` remains the **single** owner of
+`mdux_bake_artifact(KIND screen ID <id> ...)`; #254 extends that one screen-bundle production step
+with `verification.json` and adds the file to its fixed `OUTPUTS`. It must not register the same
+kind/id a second time or create a second report at the same path. The one enlarged artifact is then
+re-derived and byte-compared on all four legs.
 
-**What it claims**: that each node listed was found at the rectangle the compiled screen declares
-for it, carrying the tint its colour token resolves to, in each locale listed — against a screen
-package and a goldens sidecar named by digest.
+**What it claims**: each outcome names exactly one obligation and makes only that check's claim. A
+passing `Bounds` outcome says the named golden node was found at its declared rectangle; a passing
+`ColorHash` outcome says it carried the tint its token resolves to; and passing text outcomes say
+the approved locale's run was present and its ink remained inside the node. The file names the
+screen package, goldens sidecar, font package and per-locale text packages it used by digest. It
+never turns a node carrying only `Bounds` into a claim that its tint was checked.
 
 **What it does not claim**: that the screen is correct, complete, legible or clinically appropriate.
 It cannot. The expectation and the thing tested come from one source, so what is verified is that
@@ -312,12 +347,13 @@ the frame.
 ### Positive
 - The checks are unit-testable without a GPU, so #252 can be built and proven before #253 exists.
   The epic's sequencing note becomes a property of the design rather than a hope.
-- A verification failure names a node, a check, a locale and an expected value, which is what
+- A verification failure names a node, a check, a render scope and an expected value, which is what
   separates this from a screenshot test.
 - No new evidence pattern: `verification.json` is a fourth file in a directory whose other three are
-  already re-derived and byte-compared on four legs.
-- The completeness guarantee is re-derived on every push rather than inspected once, and the
-  guarantee is stated as a decision with a named owner per failure rather than as advice.
+  already re-derived and byte-compared on four legs, under the same screen registration and report.
+- The completeness guarantee is re-derived on every automatic CI event that runs the evidence suite
+  rather than inspected once, and the guarantee is stated as a decision with a named owner per
+  failure rather than as advice.
 
 ### Negative
 - **The verifier cannot see a wrong predicate**, and nothing here changes that. #196's fixtures own
@@ -326,24 +362,27 @@ the frame.
   wording because it cannot be removed by any amount of checking.
 - **Two files, one verifier.** ADR-012 decision 4 accepted that cost knowingly on behalf of the
   consumer; the consumer is where it is actually paid.
-- **The epic cannot close on the components that exist.** The only screen in the tree has two golden
-  entries, a `NumericDisplay` and a `SignalTrace`, and the runtime defers both —
+- **The current committed screen cannot pass its golden obligations.** Its two golden entries are a
+  `NumericDisplay` and a `SignalTrace`, and the runtime defers both —
   `tests/render/ScreenPixelTests.cpp` says exactly this and asserts that the golden region is empty,
-  as a tripwire. Decision 3's zero-obligation rule therefore cannot be switched on for
-  `endoscope-monitor` until a golden-eligible component learns to draw, which is #17. #252's checks
-  are exercisable on synthetic images immediately; an end-to-end verified screen is not. Recorded
-  here rather than discovered in #255.
+  as a tripwire. Its drawn `Label` does make the mandatory text obligations exercisable now, but
+  success still requires either drawing the existing golden nodes (#17) or deliberately changing
+  the verified screen so it carries a drawn, golden-eligible node. #17 is the planned route for the
+  committed screen, not a reason to weaken decision 3.
 
 ### Risks
 - **The zero-obligation rule is relaxed to get CI green** when the first verified screen has nothing
   to verify. This is the risk most likely to materialise, and there is no mechanical mitigation. The
   rule to apply in review is that the screen changes, not the rule: a driver may legitimately be
   configured over no screens in a tree that has no verifiable one, but a run *over a screen* that
-  reports success having discharged nothing is the defect this epic exists to remove.
-- **The obligation set grows multiplicatively** — nodes by checks by locales — and a slow
-  verification ends up on a nightly, which is a check nobody reads. *Mitigation*: only the render is
-  per-locale. #253 renders once per locale and runs every check against each frame in memory, rather
-  than rendering per obligation.
+  reports success having discharged nothing is the defect this epic exists to remove. A textless
+  screen with goldens is not empty: its singleton locale-free render scope preserves those
+  obligations.
+- **The obligation set grows multiplicatively** — golden nodes by opted-in checks by render scopes,
+  plus text nodes by two mandatory checks by locales — and a slow verification ends up on a nightly,
+  which is a check nobody reads. *Mitigation*: only the render is per scope. #253 renders once per
+  approved locale, or once for a textless screen, and runs every applicable check against each frame
+  in memory rather than rendering per obligation.
 - **`verification.json` accretes fields a reader mistakes for a stronger claim.** *Mitigation*:
   decision 4's rule is that the artifact records what was expected and whether it held. A field
   answering "how close was it" is a measurement, and it does not belong.
@@ -353,6 +392,9 @@ the frame.
 - Module name `mdux.verify` (governed, in `MduXCore`), following the dotted-lowercase convention.
   The driver and the artifact writer live outside the governed zone.
 - The artifact is `generated/screen/<id>/verification.json`, beside the three files ADR-012 fixes.
+- `mdux_compile_screen()` remains the only `screen/<id>` bake registration. #254 extends its one
+  bundle producer and existing `report.json`; a second `mdux_bake_artifact()` call for the same
+  kind/id would collide in its generated target, test and output directory and is forbidden.
 - Diagnostics use the shared envelope from #118 and the code registry from #191, as every other
   MduX tool does.
 - Nothing in this ADR is implemented at the time it is accepted. #252 builds the checks, #253 the
