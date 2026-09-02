@@ -5,18 +5,25 @@
 import std;
 import mdux.tools.verify.driver;
 
+namespace {
+
+void printDiagnostics(const mdux::tools::verify::RunResult& result, std::ostream& output) {
+    for (std::size_t index = 0; index < result.diagnostics.size(); ++index)
+        std::println(output, "{}", result.diagnostics[index].message);
+}
+
+}  // namespace
+
 int main() {
     namespace vu = mdux::tools::verify;
     const std::filesystem::path root{MDUX_REPO_ROOT};
     const vu::RunResult         result = vu::run(root / "tests/verify_ui/fixtures/textless", root / "generated");
     if (result.state == vu::RunState::CouldNotRun) {
-        for (const auto& diagnostic : result.diagnostics)
-            std::println(std::cout, "{}", diagnostic.message);
+        printDiagnostics(result, std::cout);
         return 77;
     }
     if (result.state != vu::RunState::Passed || result.renderCount != 1 || result.obligations.size() != 2 || result.outcomes.size() != 2) {
-        for (const auto& diagnostic : result.diagnostics)
-            std::println(std::cerr, "{}", diagnostic.message);
+        printDiagnostics(result, std::cerr);
         return 1;
     }
     std::println(std::cout, "mdux-verify-ui textless fixture: 2 obligations discharged in 1 render");
