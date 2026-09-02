@@ -18,7 +18,10 @@ int main() {
     namespace vu = mdux::tools::verify;
     const std::filesystem::path root{MDUX_REPO_ROOT};
     const vu::RunResult         result = vu::run(root / "tests/verify_ui/fixtures/textless", root / "generated");
-    if (result.state == vu::RunState::CouldNotRun) {
+    // 77 is CTest's skip status and must mean exactly one thing: this host has no Vulkan device.
+    // Every other impossibility -- unreadable artifacts, digest drift, a renderer that refused the
+    // fixture -- is a failure, and reporting it as a skip would let CI pass on a broken driver.
+    if (result.state == vu::RunState::NoRenderDevice) {
         printDiagnostics(result, std::cout);
         return 77;
     }

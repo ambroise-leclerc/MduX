@@ -228,7 +228,7 @@ const mdux::spec::Register subsetCli{"A locale subset is rejected", "evidence-un
 
 const mdux::spec::Register distinctExitStatuses{"Check failure and impossible execution have different statuses", "evidence-unit", [] {
                                                     return speclab::Test("verify-ui-exit-statuses")
-                                                        .Given("the three driver outcomes", [] {})
+                                                        .Given("the four driver outcomes", [] {})
                                                         .When("they cross the process boundary", [] {})
                                                         .Then("none is confused with another",
                                                               [] {
@@ -237,6 +237,10 @@ const mdux::spec::Register distinctExitStatuses{"Check failure and impossible ex
                                                                   assertions.expect(vu::exitStatus(vu::RunState::ChecksFailed) == 1, "a made check failed");
                                                                   assertions.expect(vu::exitStatus(vu::RunState::CouldNotRun) == 3,
                                                                                     "the run could not be made");
+                                                                  assertions.expect(vu::exitStatus(vu::RunState::NoRenderDevice) == 3,
+                                                                                    "an absent render device is equally impossible to the caller");
+                                                                  assertions.expect(vu::RunState::NoRenderDevice != vu::RunState::CouldNotRun,
+                                                                                    "yet remains distinguishable from every other impossibility");
                                                                   assertions.raise();
                                                               })
                                                         .Execute();

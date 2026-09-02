@@ -76,6 +76,9 @@ void report(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::pa
     if (!bytes.has_value()) {
         return std::nullopt;
     }
+    if (bytes->empty()) {
+        return std::string{};
+    }
     return std::string{reinterpret_cast<const char*>(bytes->data()), bytes->size()};
 }
 
@@ -738,6 +741,9 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
                "VUI008",
                "verification run could not be made: " + std::string{device.reason()},
                "Install a Vulkan 1.3 implementation; automatic Linux legs use lavapipe and macOS uses MoltenVK.");
+        // The sole impossibility a caller may treat as "this host cannot host the run" rather than
+        // as a defect; every other early return below leaves the default `CouldNotRun`.
+        result.state = RunState::NoRenderDevice;
         return result;
     }
     const mdux::core::Extent2D extent{.width = screen.surfaceWidth, .height = screen.surfaceHeight};
@@ -820,8 +826,22 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
         }
 
         for (const mv::GoldenEntry& golden : goldens) {
-            const auto& node        = *screen.find(golden.nodeId);
-            const auto  expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, node));
+            // The pre-render pass above rejects both of these, so reaching either here means that
+            // validation and rendering have drifted apart. Say so rather than dereferencing null.
+            const auto* node = screen.find(golden.nodeId);
+            if (node == nullptr) {
+                report(result.diagnostics, packagePath, "VUI008", "validated golden node '" + std::string{golden.nodeId} + "' vanished before render");
+                return result;
+            }
+            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node));
+            if (!expectation.has_value()) {
+                report(result.diagnostics,
+                       packagePath,
+                       "VUI008",
+                       "validated golden expectation for node '" + std::string{golden.nodeId}
+                           + "' became unconstructible before render: " + std::string{mv::describe(expectation.error())});
+                return result;
+            }
             for (mv::CvCheck check : golden.cvChecks) {
                 const auto checked = check == mv::CvCheck::Bounds ? mv::goldenBounds(*framebuffer, *expectation) : mv::colorHash(*framebuffer, *expectation);
                 result.outcomes.push_back(own(checked));

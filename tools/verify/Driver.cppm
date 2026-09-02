@@ -29,6 +29,9 @@ enum class RunState : std::uint8_t {
     Passed,
     ChecksFailed,
     CouldNotRun,
+    /// The one impossibility a host may legitimately have: no Vulkan 1.3 device to render on.
+    /// Every other impossibility is `CouldNotRun` and must not be mistaken for an absent GPU.
+    NoRenderDevice,
 };
 
 enum class ObligationKind : std::uint8_t { Golden, Text };
@@ -110,6 +113,7 @@ struct Invocation {
         case RunState::ChecksFailed:
             return 1;
         case RunState::CouldNotRun:
+        case RunState::NoRenderDevice:
             return 3;
     }
     return 3;
