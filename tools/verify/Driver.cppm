@@ -96,7 +96,7 @@ struct Outcome {
  */
 struct BoundArtifact {
     std::string role;    ///< `screenPackage`, `goldens`, `shaderPackage`, `fontPackage`, `textPackage`
-    std::string id;      ///< the artifact id; empty for the screen's own two bundle files
+    std::string id;      ///< the artifact id; the screen's own id for its package and goldens
     std::string locale;  ///< the approved locale a text package carries; empty otherwise
     std::string sha256;  ///< lowercase hex, as every other evidence record spells a digest
 

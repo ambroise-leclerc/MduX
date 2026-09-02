@@ -132,7 +132,19 @@ jobs:
           -DENABLE_SANITIZER_ADDRESS=ON \
           -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
 
+    # detect_leaks=0 for the build itself, which became a thing that renders when #254 made
+    # verification.json a bake output: `mdux-verify-bake` runs here, sanitized, against lavapipe,
+    # and LeakSanitizer reports the same driver-owned 240 bytes through `<unknown module>` that the
+    # rendered-truth step below documents at length. It is not suppressible by name for the reason
+    # given there.
+    #
+    # Nothing is lost by scoping it this way. The other bakers that run during this build are driven
+    # as library calls by `medui_tools_spec` and friends in the leak-detecting step below, so an
+    # owner dropped in a baker is still caught - by the step whose job that is, rather than here.
     - name: Build
+      env:
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       run: cmake --build build-asan
 
     # Everything except the suites that talk to a GPU driver. Leak detection is on here, which is

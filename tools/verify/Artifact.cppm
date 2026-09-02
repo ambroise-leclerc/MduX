@@ -79,8 +79,14 @@ enum class ArtifactError : std::uint8_t {
  * `--locales=all` resolved to the manifest's actual set is the option worth recording: it is the
  * one knob a caller could otherwise use to narrow what was verified, and ADR-007 decision 4 exists
  * so that a resolved set appears in the report rather than the name of one.
+ *
+ * The artifact root the run read from is deliberately *not* here. `BakeReport::validate()` checks
+ * the paths in `inputs`, `outputs` and `recipe`, and does not look inside `options` - so a path
+ * placed here is a path in a byte-compared file that nothing rejects. It also adds no verification
+ * semantics: the report already names every input by repository-relative path, and the locale set
+ * is what says the run was not narrowed.
  */
-[[nodiscard]] mdux::core::Result<evidence::json::Value, ArtifactError> verificationOptions(const RunResult& result, std::string_view artifactRoot);
+[[nodiscard]] mdux::core::Result<evidence::json::Value, ArtifactError> verificationOptions(const RunResult& result);
 
 /**
  * @brief Re-emits the bundle's `report.json` with the verification output and its resolved options.

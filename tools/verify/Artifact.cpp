@@ -93,6 +93,17 @@ mdux::core::Result<std::string, ArtifactError> writeVerification(const RunResult
     if (result.outcomes.size() != result.obligations.size()) {
         return err(ArtifactError::OutcomeMismatch);
     }
+    // Equal counts are not coverage. The driver appends an outcome per obligation in one pass, so
+    // these agree today - but this writer is what turns them into committed evidence, and an
+    // outcome recorded against an obligation the run did not enumerate is exactly the claim the
+    // artifact must not be able to make. Checking the pairing costs one comparison per obligation.
+    for (std::size_t index = 0; index < result.obligations.size(); ++index) {
+        const Obligation& obligation = result.obligations[index];
+        const Outcome&    outcome    = result.outcomes[index];
+        if (outcome.nodeId != obligation.nodeId || outcome.scope != obligation.scope || outcome.check != obligation.check) {
+            return err(ArtifactError::OutcomeMismatch);
+        }
+    }
 
     std::vector<evj::Value> inputs;
     inputs.reserve(result.inputs.size());
@@ -141,7 +152,7 @@ mdux::core::Result<std::string, ArtifactError> writeVerification(const RunResult
     return *text;
 }
 
-mdux::core::Result<evj::Value, ArtifactError> verificationOptions(const RunResult& result, std::string_view artifactRoot) {
+mdux::core::Result<evj::Value, ArtifactError> verificationOptions(const RunResult& result) {
     std::vector<evj::Value> locales;
     for (const Obligation& obligation : result.obligations) {
         const bool seen = std::ranges::any_of(locales, [&obligation](const evj::Value& locale) {
@@ -153,7 +164,7 @@ mdux::core::Result<evj::Value, ArtifactError> verificationOptions(const RunResul
     }
 
     evj::Value options = evj::Value::emptyObject();
-    if (!put(options, "artifactRoot", evj::Value::string(std::string{artifactRoot})) || !put(options, "locales", evj::Value::array(std::move(locales)))) {
+    if (!put(options, "locales", evj::Value::array(std::move(locales)))) {
         return err(ArtifactError::SerializationFailed);
     }
     return options;

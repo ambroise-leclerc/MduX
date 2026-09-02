@@ -58,6 +58,48 @@ void fail(std::string_view message) {
     return true;
 }
 
+/**
+ * @brief Writes both files, or leaves the bundle as it found it.
+ *
+ * The bundle has to stay coherent: a `verification.json` whose `report.json` does not name it would
+ * pass its own byte comparison while the report stopped describing the artifact beside it. Both
+ * texts are already built before anything is written, so the remaining risk is an I/O failure part
+ * way through - which is why each lands in a sibling temporary first and is renamed only once both
+ * are on disk. Renaming within one directory is the cheapest step available; two renames are not
+ * one transaction, but the failure window shrinks from "a serialization died half way" to "a rename
+ * syscall failed after both files were written whole".
+ */
+[[nodiscard]] bool publish(const std::vector<std::pair<std::filesystem::path, std::string>>& files) {
+    std::vector<std::filesystem::path> staged;
+    const auto                         discard = [&staged] {
+        for (const std::filesystem::path& path : staged) {
+            std::error_code ignored;
+            std::filesystem::remove(path, ignored);
+        }
+    };
+
+    for (const auto& [path, text] : files) {
+        std::filesystem::path temporary = path;
+        temporary                      += ".staged";
+        if (!writeText(temporary, text)) {
+            discard();
+            return false;
+        }
+        staged.push_back(std::move(temporary));
+    }
+
+    for (std::size_t index = 0; index < files.size(); ++index) {
+        std::error_code failure;
+        std::filesystem::rename(staged[index], files[index].first, failure);
+        if (failure) {
+            fail(std::format("cannot publish {}: {}", files[index].first.generic_string(), failure.message()));
+            discard();
+            return false;
+        }
+    }
+    return true;
+}
+
 [[nodiscard]] std::optional<std::string> readText(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
     if (!in)
@@ -91,7 +133,11 @@ int main(int argc, char** argv) {
     // bundle, which during a bake is a build directory.
     const vu::RunResult result = vu::run(bundle, std::filesystem::path{"generated"});
 
-    const std::string rendered = cli::render(result.diagnostics, cli::Format::Text, vu::toolName);
+    // Attributed to the process that printed them, not to the library that produced them. The VUI
+    // codes stay the driver's. Only the JSON envelope carries the tool name today, so this changes
+    // nothing a reader sees from a bake - which is the reason to get it right now rather than when
+    // something starts asking this tool for `--format=json` and gets another tool's name back.
+    const std::string rendered = cli::render(result.diagnostics, cli::Format::Text, vu::artifactToolName);
     if (!rendered.empty()) {
         std::print(std::cerr, "{}", rendered);
     }
@@ -109,7 +155,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto options = vu::verificationOptions(result, "generated");
+    auto options = vu::verificationOptions(result);
     if (!options.has_value()) {
         fail(std::format("cannot resolve verification options: {}", vu::describe(options.error())));
         return 1;
@@ -120,9 +166,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Both files or neither: a bundle carrying verification.json whose report does not name it would
-    // pass its own byte comparison while the report stopped describing the artifact beside it.
-    if (!writeText(bundle / std::filesystem::path{vu::verificationFileName}, *verification) || !writeText(reportPath, *extended)) {
+    if (!publish({
+            {bundle / std::filesystem::path{vu::verificationFileName}, *verification},
+            {                                              reportPath,     *extended}
+    })) {
         return 1;
     }
 

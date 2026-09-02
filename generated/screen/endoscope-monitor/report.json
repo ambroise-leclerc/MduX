@@ -33,7 +33,6 @@
       "generated/text/endoscope-monitor-en-us/package.json"
     ],
     "verification": {
-      "artifactRoot": "generated",
       "locales": [
         "en-US"
       ]

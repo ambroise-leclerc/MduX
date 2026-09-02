@@ -146,6 +146,23 @@ const mdux::spec::Register aRunThatCouldNotBeMadeIsNotWritable{
                       vu::RunResult mismatched = completedRun();
                       mismatched.outcomes.pop_back();
                       checks.expect(!vu::writeVerification(mismatched, "demo").has_value(), "and neither is a run whose outcomes do not cover its obligations");
+
+                      // Equal counts are not coverage. An outcome recorded against an obligation
+                      // the run never enumerated is evidence for a claim nobody made, and it is
+                      // invisible to a size check.
+                      vu::RunResult mispaired      = completedRun();
+                      mispaired.outcomes[1].nodeId = "a-node-no-obligation-named";
+                      const auto refusedMispaired  = vu::writeVerification(mispaired, "demo");
+                      checks.expect(!refusedMispaired.has_value() && refusedMispaired.error() == vu::ArtifactError::OutcomeMismatch,
+                                    "an outcome that does not pair with its obligation is refused, not serialized");
+
+                      vu::RunResult wrongScope     = completedRun();
+                      wrongScope.outcomes[0].scope = "de-DE";
+                      checks.expect(!vu::writeVerification(wrongScope, "demo").has_value(), "and so is one attributed to a scope the run did not render");
+
+                      vu::RunResult wrongCheck     = completedRun();
+                      wrongCheck.outcomes[0].check = "ColorHash";
+                      checks.expect(!vu::writeVerification(wrongCheck, "demo").has_value(), "and one that would turn a bounds obligation into a tint claim");
                       checks.raise();
                   })
             .Execute();
@@ -178,7 +195,7 @@ const mdux::spec::Register theReportGainsTheOutputAndItsOptions{
                           checks.raise();
                           return;
                       }
-                      const auto options = vu::verificationOptions(result, "generated");
+                      const auto options = vu::verificationOptions(result);
                       if (!options.has_value()) {
                           checks.expect(false, "the resolved options are built");
                           checks.raise();
@@ -201,6 +218,10 @@ const mdux::spec::Register theReportGainsTheOutputAndItsOptions{
                       // The resolved set, not the `all` that asked for it: ADR-007 decision 4 exists
                       // so a narrowed run cannot look like a full one in the report.
                       checks.expect(extended->contains("\"verification\"") && extended->contains("en-US"), "and records the locales the run actually covered");
+                      // BakeReport::validate() does not look inside `options`, so a path placed
+                      // there is one nothing rejects. The locale set is the resolved option; the
+                      // tree it was read from is not.
+                      checks.expect(!extended->contains("artifactRoot"), "and no path smuggled in through the options object");
                       checks.raise();
                   })
             .Execute();
