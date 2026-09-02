@@ -382,9 +382,9 @@ Render offscreen, then check that critical content appears where the compiled sc
 it will, in the declared tint, in every approved locale — and emit that as evidence. Bounds
 and colour checks are exercisable before a single glyph exists.
 
-- #251 S1 ADR: automated UI verification
-- #252 S2 Bounds, ink containment, colour hash
-- #253 S3 The verify driver
+- #251 S1 ADR: automated UI verification · _closed_
+- #252 S2 Bounds, ink containment, colour hash · _closed_
+- #253 S3 The verify driver · _implemented by this change_
 - #254 S4 Evidence report emission
 - #255 S5 CI across all locales
 

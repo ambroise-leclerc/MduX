@@ -75,9 +75,9 @@ and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#
 twelve of its children have landed: a screen goes from source to a bounded, budgeted,
 golden-annotated set of rectangles, to a committed byte-compared artifact, to `constexpr` C++, to
 draw commands recorded without allocating, to a pixel compared under lavapipe. What the wave leaves
-behind is content rather than path — no text package is baked (`#235`), so a screen carrying
-`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
-component as deferred (`#17`).
+behind is component content rather than path: a baked text package now lets the governed runtime
+draw a `Label`, while live-data and composite components such as `NumericDisplay` and `SignalTrace`
+remain deferred (`#17`).
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -230,18 +230,20 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
-  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`. Not
-  exported.
+  `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
+  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
+  `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, and `mdux-verify-ui`. Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
-- Tests: twenty-three executables. Nine on the in-repository MduXTest framework (`core_tests`,
+- Tests: twenty-five executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fourteen on SpecLab
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fifteen on SpecLab
   (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
   `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
-  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
+  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`) — see ADR-009 — plus the
+  dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest entry per case, so
   `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,

@@ -135,7 +135,7 @@ jobs:
       # sanitizer instrumentation deliberately change those objects; rerunning the static scan
       # here can reject instrumentation/runtime references instead of MduX behavior. The runtime
       # no-heap cases remain in this sanitized invocation.
-      run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|.*\.symbolScan' --output-on-failure --no-tests=error
+      run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|verify_ui_pixel_test|.*\.symbolScan' --output-on-failure --no-tests=error
 
     - name: Run rendered tests under ASan and UBSan
       env:
@@ -145,7 +145,7 @@ jobs:
       run: |
         set -euo pipefail
         render_log="$RUNNER_TEMP/macos-asan-pixel.log"
-        ctest --preset ninja-macos-clang-debug -R offscreen_tests -V --no-tests=error 2>&1 | tee "$render_log"
+        ctest --preset ninja-macos-clang-debug -R 'offscreen_tests|verify_ui_pixel_test' -V --no-tests=error 2>&1 | tee "$render_log"
         if grep -q 'Skipped' "$render_log"; then
           echo '::error::Sanitized rendered-truth tests skipped.'
           exit 1
