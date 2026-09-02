@@ -162,9 +162,12 @@ Seven artifacts are committed today:
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
 cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
-`SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and their geometry does not exist
-until the frame does. What `package.json` carries instead is layout: where each node is, how much it
-may draw, and which validated token and key it draws with.
+`StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does not exist until
+the frame does. What `package.json` carries instead is layout: where each node is, how much it may
+draw, and which validated token and key it draws with. A `NumericDisplay` and a `SignalTrace` are the
+two whose **field** does exist in the artifact — one rectangle, one token — and since #255 the
+runtime paints it; ADR-014 decision 5 is why that is read off the golden sidecar rather than invented
+in the renderer.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -175,9 +178,19 @@ as text, which is the point.
 `mdux-verify-ui --screen=generated/screen/<id> --locales=all` consumes this bundle without changing
 it. It derives render scopes only from the screen manifest, rejects locale subsets and zero
 obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
-problem made impossible. The committed endoscope screen currently reports failed golden checks
-because `NumericDisplay` and `SignalTrace` remain deferred until #17; this is a failed verification,
-not a skipped or successful one.
+problem made impossible. The committed endoscope screen discharges all five of its obligations since
+#255 — two golden checks on the `NumericDisplay`, one on the `SignalTrace`, and the two mandatory
+text checks on the `Label`.
+
+`mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
+committed screen and a new one is gated by being committed. Three legs assert it as a named step —
+lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on macOS — with `--no-tests=error`, so a label
+matching no screen fails rather than passing over nothing, and with a skip guard, since exit 77 means
+an absent device and nothing else. When a check fails, the driver writes `<screen>.<scope>.png` under
+the build tree: the rendered frame dimmed, with each failed obligation's expected rectangle outlined
+in magenta and what was actually found in cyan. CI uploads it. It is an attachment rather than a
+fifth file in the bundle because it *is* the frame, and ADR-014 decision 4 keeps measurements out of
+a byte-compared artifact.
 
 The screen is also the one entry baked by a *sequence* rather than a single tool (#254).
 `mdux-meduic` compiles it, then `mdux-verify-bake` renders the result and writes `verification.json`
@@ -189,9 +202,9 @@ fusing them would make a Vulkan device a prerequisite of every screen compile.
 
 That artifact records one outcome per enumerated obligation and nothing else — no measured pixel, no
 path, no duration. What it says is that the frame agreed with the compiled screen, which is internal
-consistency rather than truth: the expectation and the frame come from one source. It is also why
-the committed file currently records three `NothingPainted` findings; an artifact that hid them
-would be worse than none.
+consistency rather than truth: the expectation and the frame come from one source. It carried three
+`NothingPainted` findings between #254 and #255, because an artifact that hid them would have been
+worse than none; #255 resolved them by drawing the fields rather than by removing the obligations.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an

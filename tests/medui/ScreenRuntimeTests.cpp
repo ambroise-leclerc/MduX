@@ -897,6 +897,49 @@ const mdux::spec::Register aRunOfBlanksDrawsNothing{"A run that paints nothing i
                                                             .Execute();
                                                     }};
 
+const mdux::spec::Register aBlankFieldTokenIsRefusedNotDeferred{
+    "A field component with a blank colour token is refused, not quietly deferred", "evidence-unit", [] {
+        return speclab::Test("screen-blank-field-token")
+            .Given("a NumericDisplay and a SignalTrace whose colour token is empty", [] {})
+            .When("a frame is recorded", [] {})
+            .Then("each is reported as a malformed token rather than counted as deferred",
+                  [] {
+                      mdux::spec::Checks checks;
+                      // The distinction `fieldColorToken()` returns an optional for. A component
+                      // that paints no field is deferred; a component that paints one and names no
+                      // colour is a defect in whatever emitted the screen - `validatePayload()`
+                      // refuses it at compile time, and a screen built by hand at run time never met
+                      // that `static_assert`. Collapsing the two would turn the second into a frame
+                      // that silently omits a safety-critical node.
+                      constexpr ms::NumericDisplaySpec blankNumeric{
+                          .requirement = "REQ-1", .templateId = "TPL-1", .source = "SRC", .colorToken = ""};
+                      constexpr ms::SignalTraceSpec blankTrace{.streamSource = "SRC", .colorToken = ""};
+
+                      for (const auto& payload : std::array<ms::NodePayload, 2>{blankNumeric, blankTrace}) {
+                          std::array<ms::CompiledNode, 1> nodes{
+                              ms::CompiledNode{.id = "field", .bounds = {0, 0, 40, 40}, .payload = payload}
+                          };
+                          const ms::ScreenPackage screen{.id                   = "blank-field",
+                                                         .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                         .surfaceWidth         = 400,
+                                                         .surfaceHeight        = 300,
+                                                         .approvedTextPackages = {},
+                                                         .nodes                = nodes,
+                                                         .budget               = testBudget};
+                          Scratch                 scratch;
+                          auto                    list  = scratch.list(testBudget);
+                          const auto              frame = ms::render(screen, list);
+                          checks.expect(!frame.has_value(), "a field with no colour is refused");
+                          if (!frame.has_value()) {
+                              checks.expect(frame.error() == ms::ScreenError::MalformedColorToken,
+                                            std::format("reported as MalformedColorToken, got '{}'", ms::describe(frame.error())));
+                          }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register anUnboundLabelIsDeferred{"Without a binding a label is deferred exactly as it was before #242", "evidence-unit", [] {
                                                         return speclab::Test("medui-screen-label-unbound")
                                                             .Given("no text binding", [] {})

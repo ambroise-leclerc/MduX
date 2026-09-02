@@ -456,9 +456,11 @@ target_sources(MduXVerifyUiLib
         FILES
             verify/Driver.cppm
             verify/Artifact.cppm
+            verify/Diff.cppm
     PRIVATE
         verify/Driver.cpp
         verify/Artifact.cpp
+        verify/Diff.cpp
 )
 
 target_compile_features(MduXVerifyUiLib PUBLIC cxx_std_23)

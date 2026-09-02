@@ -156,4 +156,39 @@ function(mdux_compile_screen)
             report.json
             verification.json
     )
+
+    # The CI gate #255 asks for, registered here so a second committed screen gets one without
+    # anybody remembering to add it - the same reason the bake registers its own evidence test.
+    #
+    # Its subject is the **committed** bundle, and that is what makes it a different check from the
+    # bake step above rather than a slower copy of it. `mdux-verify-bake` renders the bundle that was
+    # just produced in the build tree; this renders `generated/screen/<id>/`, the bytes a consumer of
+    # this repository actually gets. The two agree today because `evidence.screen.<id>` byte-compares
+    # them - and a gate that assumed that agreement rather than exercising the committed files would
+    # be resting on the check it is supposed to be independent of.
+    #
+    # `--locales=all` is not a choice the invocation makes. It is the only accepted spelling, and the
+    # driver refuses any narrowing of the screen's own manifest (ADR-014 decision 2), so this line
+    # cannot be edited into one that verifies less while still looking like a full run.
+    #
+    # The diff directory is under the build tree, never `generated/`: ADR-014 decision 4 keeps the
+    # image out of the byte-compared bundle, and the "no source-tree writes" gate on the GCC and
+    # macOS legs would report it if that changed. CI uploads this directory when the step fails.
+    # `add_test(NAME ... COMMAND ...)`, and the caution in cmake/MduXTestDiscoveryImpl.cmake does not
+    # transfer. That file writes add_test() lines into a generated CTestTestfile.cmake, which CTest
+    # parses itself and where the keyword form mis-parses; this one is evaluated by CMake at
+    # configure time, where the keyword form is the only one that substitutes an executable target
+    # for its built location. The positional form emits the literal string "mdux-verify-ui" and the
+    # test does not run - verified here before changing it.
+    add_test(NAME "verify.screen.${ARG_ID}"
+        COMMAND mdux-verify-ui
+            "--screen=${CMAKE_SOURCE_DIR}/generated/screen/${ARG_ID}"
+            "--locales=all"
+            "--diff-image-dir=${CMAKE_BINARY_DIR}/verify-diff"
+    )
+    # 77 is the driver's absent-device status and nothing else's - every other impossibility exits 3
+    # and fails. A leg that skips this has no Vulkan device, which #254 already made a build failure
+    # for the bake; the CI steps assert on the skip as well, because a leg whose device disappeared
+    # must not report a green tick over a check that never ran.
+    set_tests_properties("verify.screen.${ARG_ID}" PROPERTIES LABELS "verify" SKIP_RETURN_CODE 77)
 endfunction()

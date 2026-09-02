@@ -11,42 +11,41 @@
  * allocating (#199), and the Vulkan renderer draws them into an offscreen target that is read back
  * and compared pixel by pixel (#125, #126).
  *
- * ## What is on screen, and why it is one rectangle
+ * ## What is on screen
  *
- * The runtime draws a `Panel` and a `Label`. `EndoscopeMonitor`'s Row declares a background, so the
- * solver synthesised one, and that is what appears: a 1280x72 bar in `Theme.Colors.TopbarBackground`,
- * with the screen's title drawn over it from the committed text package (#242). Its image, its video
- * surface, its numeric readout and its waveform are visited, counted as deferred, and left undrawn,
- * because they have no geometry until a sample exists or a package this repository does not yet bake.
+ * The runtime draws a `Panel`, a `Label`, and the two fields #255 added. `EndoscopeMonitor`'s Row
+ * declares a background, so the solver synthesised one, and that is what appears first: a 1280x72
+ * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
+ * text package (#242). Below it the `NumericDisplay` and the `SignalTrace` paint the rectangles they
+ * reserve, in the tokens their author gave them. Its image and its video surface are still visited,
+ * counted as deferred, and left undrawn, because they need a package this repository does not yet
+ * bake and a stream no test supplies.
  *
  * Two scenarios below, deliberately not one. The first renders without a binding and is the older
- * claim unchanged - the panel lands where the compiler put it, every text node deferred. The second
- * binds the committed font and text packages and checks the glyphs. Keeping them apart is what makes
- * the unbound path a tested contract rather than a code path nobody exercises once a binding exists.
+ * claim unchanged - the panel and the fields land where the compiler put them, every text node
+ * deferred. The second binds the committed font and text packages and checks the glyphs. Keeping
+ * them apart is what makes the unbound path a tested contract rather than a code path nobody
+ * exercises once a binding exists.
  *
- * That makes this test thin in content and complete in path, and the distinction is the point. What
- * it proves is not that MduX can draw a clinical screen; it is that a bar and a title on this display
- * came from files an author wrote, through every stage, with nothing hand-carried between them. The
- * content grows when the components learn their geometry; the path does not have to be built again.
+ * What this test proves is not that MduX can draw a clinical screen; it is that a bar, a title and
+ * two reserved fields on this display came from files an author wrote, through every stage, with
+ * nothing hand-carried between them. The content grows as each component learns what to show inside
+ * its field; the path does not have to be built again.
  *
- * ## What the golden sidecar has here, and what it does not
+ * ## What the golden sidecar has here
  *
- * `goldens.json` gets its first consumer in this file, and it is a **static** one: the last scenario
- * reads the committed sidecar and cross-checks every entry against the compiled screen. That is a
- * real check - it fails if the `@safety_critical` annotation is removed, or if a golden's bounds stop
- * matching the node it names - and it is not the consumer ADR-012 describes.
+ * `goldens.json` has two consumers in this file. The **static** one reads the committed sidecar and
+ * cross-checks every entry against the compiled screen: it fails if the `@safety_critical`
+ * annotation is removed, or if a golden's bounds stop matching the node it names.
  *
- * The rendered one cannot exist yet, and the reason is structural rather than an omission here.
- * Both golden nodes on this screen are deferred - a `NumericDisplay` and a `SignalTrace` - so there
- * are no pixels to check `Bounds` or `ColorHash` against, and the only node that *is* drawn is the
- * Row's synthetic `Panel`, which no golden can ever name: `collectGoldens()` skips synthetic nodes,
- * and a `Row` carries neither `requirement:` nor `position:`. So no screen in this repository can
- * have a rendered golden consumer until a golden-eligible component learns to draw, which is #17,
- * and the verifier that would consume it is #16.
- *
- * The scenario below therefore asserts the one rendered fact that is true: the region the golden
- * names is empty today. That is a tripwire rather than a goal - the day the `NumericDisplay` draws,
- * it fails and has to be replaced by the check ADR-012 actually wants.
+ * The **rendered** one is the consumer ADR-012 describes, and until #255 it could not exist. Both
+ * golden nodes on this screen - a `NumericDisplay` and a `SignalTrace` - were deferred by the
+ * runtime, so there were no pixels to check `Bounds` or `ColorHash` against, and the only node that
+ * *was* drawn was the Row's synthetic `Panel`, which no golden can ever name: `collectGoldens()`
+ * skips synthetic nodes, and a `Row` carries neither `requirement:` nor `position:`. The scenario
+ * that stood in for it asserted the one rendered fact that was true - that the region the golden
+ * named was empty - and said in its own comment that it was a tripwire which had to fail the day the
+ * component drew. It did; this is its replacement.
  *
  * ## Compared against the compiled screen, not against a copy of it
  *
@@ -342,25 +341,35 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     // The governed runtime, doing the only work between a compiled screen and a frame.
     const auto recorded = medui::render(package, *list);
     REQUIRE(recorded.has_value());
-    CHECK(recorded->rects == 1);
-    // Five of six nodes are visited and left undrawn, and the frame says so rather than looking
+    // The Row's synthetic panel, and the two fields #255 taught the runtime to paint.
+    CHECK(recorded->rects == 3);
+    // Three of six nodes are visited and left undrawn, and the frame says so rather than looking
     // complete. See this file's header for which, and why each.
-    CHECK(recorded->deferred == 5);
+    CHECK(recorded->deferred == 3);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
     REQUIRE(pixels.has_value());
 
-    // Painted from the package and the governed table, so the expectation moves when the screen
-    // does. The colour is the quantisation the runtime applies - {0.82, 0.84, 0.86, 1.0} linear
-    // becoming {209, 214, 219, 255} - which makes this a check on the whole conversion rather than
-    // on the geometry alone.
-    const medui::CompiledNode* panel = package.find("topbar-background");
-    REQUIRE(panel != nullptr);
-
+    // Each rectangle comes from the package and each colour is the quantisation the runtime applies
+    // - `Theme.Colors.TopbarBackground` is {0.82, 0.84, 0.86, 1.0} linear becoming {209, 214, 219,
+    // 255}, and `ScoreDigits` and `Nominal` are both {0.13, 0.72, 0.42, 1.0} becoming {33, 184, 107,
+    // 255}. Writing the results here rather than resolving the tokens makes this a check on the
+    // whole conversion rather than on the geometry alone; an expectation that called the function
+    // the runtime calls would agree with it whatever that function returned.
+    //
+    // The two fields share a value today, so this scenario would pass with them swapped. What tells
+    // them apart is `verify.screen.endoscope-monitor`, where each is compared against the token its
+    // own node names.
     ExpectedImage expected{surface, background};
-    expected.paint(core::Rect{.x = panel->bounds.x, .y = panel->bounds.y, .width = panel->bounds.width, .height = panel->bounds.height},
-                   core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255});
+    for (const auto& [id, tint] : std::initializer_list<std::pair<std::string_view, core::ColorRgba8>>{
+             {"topbar-background", core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255}},
+             {"insufflation-pressure", core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
+             {"ecg-lead-ii", core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}}}) {
+        const medui::CompiledNode* node = package.find(id);
+        REQUIRE(node != nullptr);
+        expected.paint(core::Rect{.x = node->bounds.x, .y = node->bounds.y, .width = node->bounds.width, .height = node->bounds.height}, tint);
+    }
 
     const auto diff = compare(expected, *pixels);
     CHECK_MESSAGE(diff.matched(), diff.message);
@@ -435,11 +444,19 @@ TEST_CASE("The golden sidecar names this screen's safety-critical content", "pix
     CHECK(sawAnnotated);
 }
 
-TEST_CASE("The safety-critical region is empty, which is what the golden cannot yet check", "pixel") {
-    // A tripwire, not a goal. `insufflation-pressure` is deferred, so its golden's Bounds and
-    // ColorHash have nothing to compare against - and saying that out loud, in a test that fails the
-    // day the component draws, is more honest than a comment nobody re-reads. When #17 gives a
-    // NumericDisplay its geometry, this scenario must be replaced by the check ADR-012 wants.
+TEST_CASE("Every golden region is painted where and in the tint the sidecar pins", "pixel") {
+    // The rendered golden consumer this file's header used to say could not exist. It reads the
+    // committed sidecar and compares the frame against the numbers *that file* carries - not
+    // against the package the runtime drew from - so a sidecar that drifted from the screen fails
+    // here even though both halves would still be internally consistent.
+    //
+    // It replaces the tripwire that asserted the region was empty. That scenario existed to fail the
+    // day a golden-eligible component learned to draw, and #255 is that day.
+    //
+    // This is the same claim `mdux-verify-ui` makes and deliberately not the same mechanism: the
+    // tool resolves expectations through `mdux.verify` and renders through a headless device it
+    // creates itself. Two paths to one fact is the point - a runtime change that satisfied the
+    // driver's own expectation builder would still have to satisfy the bytes on disk here.
     const medui::ScreenPackage package = screen();
     const core::Extent2D       surface = surfaceOf(package);
 
@@ -467,15 +484,66 @@ TEST_CASE("The safety-critical region is empty, which is what the golden cannot 
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
     REQUIRE(pixels.has_value());
 
-    const medui::CompiledNode* traced = package.find("insufflation-pressure");
-    REQUIRE(traced != nullptr);
+    const std::filesystem::path sidecar = std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "screen" / "endoscope-monitor" / "goldens.json";
+    std::ifstream               file{sidecar, std::ios::binary};
+    REQUIRE(file.is_open());
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const auto parsed = mdux::evidence::json::parse(buffer.str());
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->kind() == mdux::evidence::json::Value::Kind::Array);
 
-    // Sampled at the centre of the region the golden pins, which is where content would appear.
-    const auto        centreX = static_cast<std::size_t>(traced->bounds.x + traced->bounds.width / 2);
-    const auto        centreY = static_cast<std::size_t>(traced->bounds.y + traced->bounds.height / 2);
-    const std::size_t index   = centreY * static_cast<std::size_t>(surface.width) + centreX;
-    REQUIRE(index < pixels->size());
-    CHECK((*pixels)[index] == background);
+    const std::span<const mdux::evidence::json::Value> entries = parsed->elements();
+    REQUIRE(!entries.empty());
+
+    for (const mdux::evidence::json::Value& entry : entries) {
+        const auto nodeId = entry.require("nodeId");
+        REQUIRE(nodeId.has_value());
+        const std::string name{(*nodeId)->asString().value_or("")};
+
+        const auto boundsValue = entry.require("bounds");
+        REQUIRE(boundsValue.has_value());
+        const auto member = [&](std::string_view key) -> std::int64_t {
+            const auto found = (*boundsValue)->require(key);
+            REQUIRE(found.has_value());
+            // `asInt()` for a negative coordinate, `asUInt()` for a non-negative one: the writer
+            // emits whichever is exact, so a reader that took only one would reject half the
+            // sidecars it is meant to read.
+            if (const auto signedValue = (*found)->asInt(); signedValue.has_value()) {
+                return *signedValue;
+            }
+            const auto unsignedValue = (*found)->asUInt();
+            REQUIRE(unsignedValue.has_value());
+            return static_cast<std::int64_t>(*unsignedValue);
+        };
+        const std::int64_t left = member("x");
+        const std::int64_t top = member("y");
+        const std::int64_t width = member("width");
+        const std::int64_t height = member("height");
+
+        const auto tokenValue = entry.require("colorToken");
+        REQUIRE(tokenValue.has_value());
+        const auto resolved = medui::resolveColorToken((*tokenValue)->asString().value_or(""));
+        REQUIRE(resolved.has_value());
+        const core::ColorRgba8 tint = medui::quantise(*resolved);
+
+        // Every pixel of the declared rectangle carries the declared tint. Deliberately not paired
+        // with a scan of the ring just outside it: this screen packs `insufflation-pressure` and
+        // `ecg-lead-ii` edge to edge and both tokens resolve to the same value today, so such a scan
+        // reports the neighbour's pixels as this node's spill. That is the attribution limit
+        // `mdux/verify/Verify.cppm` states for `goldenBounds()`, met here for the same reason. The
+        // "not one pixel larger" half is the first scenario's job, and it does it better: it paints
+        // the whole expected surface and compares every pixel of it.
+        std::size_t wrongInside = 0;
+        for (std::int64_t y = top; y < top + height; ++y) {
+            for (std::int64_t x = left; x < left + width; ++x) {
+                const auto index = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+                REQUIRE(index < pixels->size());
+                wrongInside += static_cast<std::size_t>((*pixels)[index] != tint);
+            }
+        }
+        CHECK_MESSAGE(wrongInside == 0, std::format("{}: {} pixels inside the golden rectangle are not its tint", name, wrongInside));
+    }
 }
 
 TEST_CASE("An authored screen's label reaches pixels where the compiler measured it", "pixel") {
@@ -522,10 +590,10 @@ TEST_CASE("An authored screen's label reaches pixels where the compiler measured
     // One fewer deferred node than the unbound frame, and the difference is the label. Asserted as
     // the count rather than as "the label was drawn" so that a future component learning to draw
     // cannot make this scenario pass for a reason it does not name.
-    CHECK(recorded->deferred == 4);
-    // The panel, plus one rectangle per inked glyph. "Endoscope Monitor" is 17 characters of which
-    // the space paints nothing, so 16 glyphs and the panel.
-    CHECK(recorded->rects == 17);
+    CHECK(recorded->deferred == 2);
+    // The panel and the two fields, plus one rectangle per inked glyph. "Endoscope Monitor" is 17
+    // characters of which the space paints nothing, so 16 glyphs and three filled rectangles.
+    CHECK(recorded->rects == 19);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);

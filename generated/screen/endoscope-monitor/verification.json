@@ -33,19 +33,19 @@
   "outcomes": [
     {
       "check": "Bounds",
-      "finding": "NothingPainted",
+      "finding": "Held",
       "nodeId": "insufflation-pressure",
       "scope": "en-US"
     },
     {
       "check": "ColorHash",
-      "finding": "NothingPainted",
+      "finding": "Held",
       "nodeId": "insufflation-pressure",
       "scope": "en-US"
     },
     {
       "check": "Bounds",
-      "finding": "NothingPainted",
+      "finding": "Held",
       "nodeId": "ecg-lead-ii",
       "scope": "en-US"
     },

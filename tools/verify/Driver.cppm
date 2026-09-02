@@ -110,6 +110,35 @@ struct RunResult {
     std::vector<Outcome>                      outcomes;
     std::vector<BoundArtifact>                inputs;
     std::vector<mdux::tools::cli::Diagnostic> diagnostics;
+
+    /// Diff images this run wrote, one per render scope that had a failure. Empty when nothing
+    /// failed, and empty when no destination was configured.
+    ///
+    /// Paths rather than digests, and it is worth saying why that is not the inconsistency it looks
+    /// like beside `inputs`. `BoundArtifact` names inputs by digest because #254 commits them to a
+    /// byte-compared file, where a path would name the machine that baked it. Nothing here is
+    /// committed: these are attachments for a person, and what a person needs from one is where it
+    /// is. See `mdux.tools.verify.diff` for why the image stays outside the artifact entirely.
+    std::vector<std::filesystem::path> diffImages;
+};
+
+/**
+ * @brief What a run is allowed to choose, which is locations and never expectations.
+ *
+ * Epic #16 states the rule this struct is held to - "the caller chooses locations, not expectations"
+ * - and ADR-014 decision 2 is why: a verifier whose scope is an argument reports on whatever it was
+ * asked about, in a file that reads as though it reported on the screen. So there is no member here
+ * that could narrow, widen or substitute what is checked. Both of these move bytes; neither moves a
+ * claim.
+ */
+struct RunOptions {
+    /// Where the committed artifacts other than the screen bundle live. Defaults to the bundle's
+    /// own `generated/` when the single-argument `run()` is used.
+    std::filesystem::path artifactRoot;
+
+    /// Where to write a diff image for each render scope that fails. Empty means write none, which
+    /// is what a run that only wants a verdict asks for. Created if it does not exist.
+    std::filesystem::path diffImageDirectory;
 };
 
 /// Reads `<screenDirectory>/{package,goldens}.json`, resolves every referenced artifact and runs.
@@ -118,8 +147,12 @@ struct RunResult {
 /// Test/integration overload with an explicit committed-artifact root (`generated/`).
 [[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot);
 
+/// The full form. `options.artifactRoot` must be set; the other members may be empty.
+[[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const RunOptions& options);
+
 struct Invocation {
     std::filesystem::path    screenDirectory;
+    std::filesystem::path    diffImageDirectory;
     mdux::tools::cli::Format format{mdux::tools::cli::Format::Text};
 };
 

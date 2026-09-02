@@ -19,10 +19,10 @@ never a change to the verifier.
 Epic #16 renders a compiled screen offscreen, checks that the content a golden reference names
 appears where the compiled screen said it would and that every localized text run appears inside its
 node, across every approved locale, then emits that as an evidence artifact. Its implementation
-children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255).
-Issues #252, #253 and #254 now implement the first three; #255 remains. This record preceded all four so
-that they apply a recorded decision rather than reconstructing one from whatever they produced —
-the same reason #190 preceded the rest of #15.
+children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255). All
+four have landed. This record preceded all four so that they apply a recorded decision rather than
+reconstructing one from whatever they produced — the same reason #190 preceded the rest of #15, and
+decision 5 is what #255 had to add back to it rather than decide in a workflow file.
 
 Most of the ground is already fixed, and this ADR should not relitigate it.
 
@@ -54,12 +54,13 @@ What is genuinely open, and what this ADR therefore has to decide rather than in
 4. what the mechanism is worth to an IEC 62304:2006 §5.7 Software system testing argument, and
    where that worth stops.
 
-**Implementation status.** Issues #252, #253 and #254 implement `mdux.verify`, the host-only
-`mdux-verify-ui` driver and the artifact. The driver loads committed screen, golden, shader, text and
-font artifacts, enumerates the complete obligation set, renders once per scope and reports owning
-outcomes; `mdux-verify-bake` serializes those same outcomes as
-`generated/screen/<id>/verification.json` inside the screen's one bake registration. #255 still owns
-the automatic CI gate and the failure diff.
+**Implementation status.** The epic is implemented. #252, #253 and #254 built `mdux.verify`, the
+host-only `mdux-verify-ui` driver and the artifact: the driver loads committed screen, golden,
+shader, text and font artifacts, enumerates the complete obligation set, renders once per scope and
+reports owning outcomes, and `mdux-verify-bake` serializes those same outcomes as
+`generated/screen/<id>/verification.json` inside the screen's one bake registration. #255 added the
+automatic CI gate, the failure diff, and decision 5 - the draw rule without which the committed
+screen could not discharge the golden obligations it declares.
 
 ### The contradiction this record has to settle
 
@@ -88,8 +89,8 @@ the rule and replaces the mechanism.
 
 ### IEC 62304 implications (software lifecycle)
 
-Once implemented, this is the mechanism that lets a system-testing claim point at a machine-checked
-artifact instead of a manual review record. A reviewer confirming that a safety-critical readout
+This is the mechanism that lets a system-testing claim point at a machine-checked artifact instead
+of a manual review record. A reviewer confirming that a safety-critical readout
 appears in the right place, in the right colour, in every approved locale, is performing an
 inspection that is expensive, dull, and correct until the day it is not. Re-deriving the same fact
 from files on every automatic CI event that runs the evidence suite is the form of verification this
@@ -295,6 +296,70 @@ The same rule excludes a timestamp, a commit SHA, an absolute path and a duratio
 #255 attaches on failure is therefore a CI attachment rather than part of the artifact — a
 measurement for a human, outside the file that is compared.
 
+### 5. A live-data node paints the field it reserves, in the token its golden names
+
+The runtime draws a node's whole resolved rectangle in its single colour token when that node is a
+`NumericDisplay` or a `SignalTrace`. The **reading** inside the field — the digits a template expands
+to, the excursion a waveform makes — stays deferred until #258 and #257 give those components a
+sample to draw from.
+
+This decision was forced by #255 and belongs here rather than in a workflow file, because without it
+the epic's own gate could not be turned on. The consequences section below predicted the state
+exactly: the committed screen's two golden entries name a `NumericDisplay` and a `SignalTrace`, the
+runtime deferred both, and `verification.json` therefore recorded three `NothingPainted` findings. A
+CI gate over that screen is red on the day it is added, and the three ways out that do not involve
+drawing anything — delete the goldens, weaken their checks, verify a different screen — are the three
+#255 forbids by name.
+
+**The rule is read off the artifact, not invented for the occasion**, and that distinction carries
+the decision. `collectGoldens()` applies ADR-011's predicate while the AST still holds its inputs and
+writes, per selected node, `bounds` = that node's whole resolved rectangle and `colorToken` = the
+single token its author gave it. Decision 2 makes exactly those two values the verifier's
+expectation, and `goldenBounds()` reads the first as an equality: the content inside the declared
+rectangle has to *be* that rectangle. So the compiled artifact — in a file four legs byte-compare —
+already asserts that this node's whole rectangle carries that tint. A runtime painting nothing there
+is not declining to invent an appearance; it is disagreeing with the artifact its own compiler
+emitted.
+
+What this does **not** license. `mdux.medui.screen` still refuses to fill a `Label`'s box with its
+text colour, or to give a `Button` a face: neither has a golden that says so, a `Label`'s token is
+its *text* colour over a text-sized box, and no golden can ever name the synthetic `Panel` a `Row`
+produces. A `Clock` carries no token and a `StatusIndicator` carries one per state — no single tint,
+which is the same fact that makes `collectGoldens()` refuse `ColorHash` for such a node — so both
+stay deferred. The rule is "one node, one rectangle, one token a golden can pin", and it is the
+narrowest rule that lets the artifact and the frame agree.
+
+One consequence constrains #257 and #258 rather than being free, and it is better stated than
+discovered. `colorHash()` admits only pixels that are a blend of the node's ground and its tint at
+one coverage, so a reading drawn inside a field in some third colour fails the golden its own screen
+was compiled with. A component whose field a golden pins with `ColorHash` therefore has two ways to
+show a reading and no others: in the field's own tint, or knocked out of it back to the ground.
+
+### 6. The CI gate is a ctest label, and the failure diff is an attachment
+
+`mdux_compile_screen()` registers `verify.screen.<id>` beside the `evidence.screen.<id>` it already
+registers, running `mdux-verify-ui --screen=generated/screen/<id> --locales=all` over the
+**committed** bundle. Three legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on
+macOS — with `--no-tests=error`, so a label that matched no screen fails rather than passing over
+nothing, and with the same skip guard the pixel legs carry, since exit 77 means an absent device and
+nothing else.
+
+Two properties are worth naming. The subject is the committed bundle rather than the freshly baked
+one `mdux-verify-bake` renders during the build; the two agree only because `evidence.screen.<id>`
+byte-compares them, and a gate that assumed that agreement would rest on the check it is meant to be
+independent of. And registering it where the screen is registered is what makes a second committed
+screen gated without anyone remembering to add it — the same argument that put the evidence test
+there.
+
+**The diff image is a CI artifact and never a fifth file in the bundle.** It is the frame, so
+decision 4's rule excludes it: an image is a measurement, and a byte-compared artifact holding one
+would become a property of the driver tuple that produced it. It is written under the build tree,
+uploaded only when the step fails, and nothing reads it back — an image the driver wrote is never an
+input to a verdict, so a defect in it can make a failure harder to read and can never make one pass.
+It is a PNG with an in-tree encoder rather than a linked one, for ADR-007's zero-SOUP reason: a
+compression library in a build tool's dependency graph would need qualifying, for the sake of an
+image no verdict depends on.
+
 ## Alternatives Considered
 
 ### 1. Compare the whole frame against a committed reference image (Rejected)
@@ -364,13 +429,17 @@ the frame.
   wording because it cannot be removed by any amount of checking.
 - **Two files, one verifier.** ADR-012 decision 4 accepted that cost knowingly on behalf of the
   consumer; the consumer is where it is actually paid.
-- **The current committed screen cannot pass its golden obligations.** Its two golden entries are a
-  `NumericDisplay` and a `SignalTrace`, and the runtime defers both —
-  `tests/render/ScreenPixelTests.cpp` says exactly this and asserts that the golden region is empty,
-  as a tripwire. Its drawn `Label` does make the mandatory text obligations exercisable now, but
-  success still requires either drawing the existing golden nodes (#17) or deliberately changing
-  the verified screen so it carries a drawn, golden-eligible node. #17 is the planned route for the
-  committed screen, not a reason to weaken decision 3.
+- **The committed screen could not pass its golden obligations, and decision 5 is how it now does.**
+  Its two golden entries are a `NumericDisplay` and a `SignalTrace`; the runtime deferred both, and
+  `tests/render/ScreenPixelTests.cpp` asserted that the golden region was empty as a tripwire meant
+  to fail the day one of them drew. #255 was that day. The three responses this record and #255 both
+  refused — delete the goldens, weaken their checks, verify a different screen — are what decision 5
+  exists instead of. The tripwire is gone and the scenario that replaced it is the rendered golden
+  consumer ADR-012 describes, reading the committed sidecar against the frame.
+- **The reading inside a field is still deferred**, so a green `verification.json` says the two
+  safety-critical nodes occupy their rectangles in their tints, and says nothing about what they will
+  display. That is a smaller claim than a reader might take "the screen verifies" to mean, and it is
+  the honest one until #257 and #258 land.
 
 ### Risks
 - **The zero-obligation rule is relaxed to get CI green** when the first verified screen has nothing
@@ -413,7 +482,10 @@ the frame.
 - ADR-013: Verified Apple Silicon macOS toolchain — why the pixel-labelled suite may not be skipped
 - `tools/medui/Goldens.cppm` — `collectGoldens()` and the closed `CvCheck` set
 - `tests/render/PixelTests.cpp` and `tests/render/ScreenPixelTests.cpp` — the exact comparator, and
-  the tripwire that stands in for the verifier until #17
+  the rendered golden consumer that replaced the tripwire when decision 5 landed
+- `tools/verify/Diff.cppm` — why the failure image is an attachment rather than an artifact, and why
+  its encoder is written rather than linked
+- `cmake/MduXCompileScreen.cmake` — the `verify.screen.<id>` registration decision 6 describes
 - `docs/iec62304/03-development-process.md` — the §5.7 scope limit quoted above
 - [TrustSC's ADR series](https://github.com/ambroise-leclerc/TrustSC/tree/main/docs/adr) — the
   sibling project's rendered-truth decision, which epic #16 takes its shape from
@@ -423,6 +495,8 @@ the frame.
 - **Decision Date**: 2026-08-31
 - **Approved By**: Project maintainer
 - **Review Date**: reviewed 2026-09-02 when #253 first ran against a drawn, golden-eligible
-  textless fixture, and again the same day when #254 committed the first `verification.json` - which
-  records three `NothingPainted` findings, exactly the consequence this record predicted for the
-  current screen. Review again when #17 draws the deferred golden nodes and #255 gates on them.
+  textless fixture; again the same day when #254 committed the first `verification.json` - which
+  recorded three `NothingPainted` findings, exactly the consequence this record predicted for the
+  current screen; and again when #255 added decisions 5 and 6, which turned those three findings into
+  `Held` and put the gate on three CI legs. Review again when #257 and #258 draw a reading inside a
+  field, since decision 5's `ColorHash` consequence constrains how they may.
