@@ -82,6 +82,15 @@ void report(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::pa
     return std::string{reinterpret_cast<const char*>(bytes->data()), bytes->size()};
 }
 
+/// The lowercase-hex digest of already-read artifact text, spelled the way every other evidence
+/// record spells one. Taken from the bytes the run actually parsed rather than by re-reading the
+/// file, so what the artifact names is what the verification used.
+[[nodiscard]] std::string hexDigest(std::string_view text) {
+    const auto bytes  = std::as_bytes(std::span{text.data(), text.size()});
+    const auto digest = mdux::evidence::toHex(mdux::evidence::sha256(bytes));
+    return std::string{digest.data(), digest.size()};
+}
+
 [[nodiscard]] bool exactMembers(const json::Value& value, std::initializer_list<std::string_view> expected) {
     if (value.kind() != json::Value::Kind::Object || value.members().size() != expected.size()) {
         return false;
@@ -134,12 +143,14 @@ struct OwnedGolden {
     }
 };
 
-[[nodiscard]] std::optional<std::vector<OwnedGolden>> readGoldens(const std::filesystem::path& path, std::vector<cli::Diagnostic>& diagnostics) {
+[[nodiscard]] std::optional<std::vector<OwnedGolden>>
+readGoldens(const std::filesystem::path& path, std::string& digestOut, std::vector<cli::Diagnostic>& diagnostics) {
     const auto text = readText(path);
     if (!text.has_value()) {
         report(diagnostics, path, "VUI002", "cannot read goldens.json");
         return std::nullopt;
     }
+    digestOut = hexDigest(*text);
     auto root = json::parse(*text);
     if (!root.has_value() || root->kind() != json::Value::Kind::Array) {
         report(diagnostics, path, "VUI003", "goldens.json is not a canonical JSON array");
@@ -262,6 +273,7 @@ struct ShaderAssets {
     mdux::shader::ShaderPackage           package;
     std::vector<std::byte>                sidecar;
     std::vector<mdux::shader::ModuleView> modules;
+    std::string                           sha256;  ///< of package.json, for #254's artifact
 
     [[nodiscard]] mdux::shader::PackageView view() const noexcept {
         return {.id = package.header.id, .spirv = sidecar, .modules = modules, .descriptors = package.descriptors, .pushConstants = package.pushConstants};
@@ -291,7 +303,7 @@ struct ShaderAssets {
         report(diagnostics, sidecarPath, "VUI005", "the mdux-ui shader sidecar does not match package.json");
         return std::nullopt;
     }
-    ShaderAssets assets{.package = std::move(*package), .sidecar = std::move(*sidecar), .modules = {}};
+    ShaderAssets assets{.package = std::move(*package), .sidecar = std::move(*sidecar), .modules = {}, .sha256 = hexDigest(*text)};
     assets.modules.reserve(assets.package.modules.size());
     for (const auto& module : assets.package.modules) {
         if (module.byteOffset > std::numeric_limits<std::size_t>::max() || module.byteLength > std::numeric_limits<std::size_t>::max()) {
@@ -654,9 +666,15 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
         report(result.diagnostics, packagePath, "VUI001", "screen package is non-canonical or its id does not match its directory");
         return result;
     }
-    auto ownedGoldens = readGoldens(screenDirectory / "goldens.json", result.diagnostics);
+    std::string goldensDigest;
+    auto        ownedGoldens = readGoldens(screenDirectory / "goldens.json", goldensDigest, result.diagnostics);
     if (!ownedGoldens)
         return result;
+
+    // Recorded as the run binds them, in one fixed order, because #254 commits this list and a
+    // byte-compared file cannot depend on the order a container happened to yield.
+    result.inputs.push_back({.role = "screenPackage", .id = std::string{screen.id}, .locale = {}, .sha256 = hexDigest(*packageText)});
+    result.inputs.push_back({.role = "goldens", .id = std::string{screen.id}, .locale = {}, .sha256 = std::move(goldensDigest)});
     std::vector<mv::GoldenEntry> goldens;
     goldens.reserve(ownedGoldens->size());
     for (const auto& golden : *ownedGoldens)
@@ -677,6 +695,7 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
     auto shader = loadShader(artifactRoot, result.diagnostics);
     if (!shader)
         return result;
+    result.inputs.push_back({.role = "shaderPackage", .id = std::string{shader->package.header.id}, .locale = {}, .sha256 = shader->sha256});
 
     const bool                hasText = std::ranges::any_of(screen.nodes, [](const auto& node) {
         return !mv::textKeyOf(node).empty();
@@ -688,6 +707,12 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
             auto assets = loadLocale(approval, artifactRoot, result.diagnostics);
             if (!assets)
                 return result;
+            // In manifest order, which `ScreenPackage::validate()` already fixes, so the same screen
+            // yields the same list on every leg.
+            result.inputs.push_back(
+                {.role = "textPackage", .id = std::string{assets->text.header.id}, .locale = assets->locale, .sha256 = hexDigest(assets->textJson)});
+            result.inputs.push_back(
+                {.role = "fontPackage", .id = std::string{assets->font.id}, .locale = assets->locale, .sha256 = hexDigest(assets->fontJson)});
             locales.push_back(std::move(*assets));
         }
     }

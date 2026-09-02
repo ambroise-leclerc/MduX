@@ -566,6 +566,12 @@ mdux_compile_screen(
         # but every file a custom command reads is a dependency in its own right; otherwise an
         # independently changed or damaged sidecar would not even ask the screen bake to validate it.
         generated/text/endoscope-monitor-en-us/runs.bin
+        # The atlas, for the same reason applied to the second stage (#254): `loadLocale()` reads
+        # the file the font package names and checks its digest, so the glyphs the verification
+        # renders come from these bytes. Without the edge, an atlas changed on its own leaves all
+        # four outputs newer than their inputs, ninja skips the bake, and evidence.screen.<id>
+        # compares a bundle no producer re-derived - a pass that means nothing.
+        generated/font/dejavu-ui/atlas.bin
 )
 
 # ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last

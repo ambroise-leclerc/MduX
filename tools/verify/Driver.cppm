@@ -82,11 +82,33 @@ struct Outcome {
     }
 };
 
+/**
+ * @brief One committed artifact the run bound, named by role rather than by filesystem path.
+ *
+ * #254 writes these into `verification.json`, which is byte-compared, and a path is exactly what
+ * ADR-007 decision 5 keeps out of such a file: during a bake the screen bundle is read from
+ * `${CMAKE_BINARY_DIR}/mdux_bake/screen/<id>/`, so a recorded path would name the machine that
+ * produced the artifact. A role, an id and a digest identify the same input without that.
+ *
+ * The driver fills these where it already resolves and digests each artifact, so the writer has no
+ * second resolution path to disagree with - the rule ADR-014 decision 2 states for expectations
+ * applies just as much to the inputs the artifact names.
+ */
+struct BoundArtifact {
+    std::string role;    ///< `screenPackage`, `goldens`, `shaderPackage`, `fontPackage`, `textPackage`
+    std::string id;      ///< the artifact id; the screen's own id for its package and goldens
+    std::string locale;  ///< the approved locale a text package carries; empty otherwise
+    std::string sha256;  ///< lowercase hex, as every other evidence record spells a digest
+
+    [[nodiscard]] bool operator==(const BoundArtifact&) const = default;
+};
+
 struct RunResult {
     RunState                                  state{RunState::CouldNotRun};
     std::size_t                               renderCount{0};
     std::vector<Obligation>                   obligations;
     std::vector<Outcome>                      outcomes;
+    std::vector<BoundArtifact>                inputs;
     std::vector<mdux::tools::cli::Diagnostic> diagnostics;
 };
 

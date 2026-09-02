@@ -52,7 +52,7 @@ namespace {
     std::size_t start = 0;
     while (start <= path.size()) {
         const std::size_t slash = path.find('/', start);
-        const std::size_t end = (slash == std::string_view::npos) ? path.size() : slash;
+        const std::size_t end   = (slash == std::string_view::npos) ? path.size() : slash;
         if (path.substr(start, end - start) == "..") {
             return err(ReportError::ParentDirectoryInPath);
         }
@@ -75,8 +75,7 @@ namespace {
         return err(set.error());
     }
     const std::array<char, 64> hex = toHex(record.sha256);
-    if (auto set = object.set("sha256", json::Value::string(std::string{hex.data(), hex.size()}));
-        !set.has_value()) {
+    if (auto set = object.set("sha256", json::Value::string(std::string{hex.data(), hex.size()})); !set.has_value()) {
         return err(set.error());
     }
     return object;
@@ -106,8 +105,7 @@ namespace {
     return FileRecord{.path = std::string{*pathText}, .sha256 = *digest};
 }
 
-[[nodiscard]] Result<json::Value, json::Error> fileRecordsToJson(
-    std::span<const FileRecord> records) noexcept {
+[[nodiscard]] Result<json::Value, json::Error> fileRecordsToJson(std::span<const FileRecord> records) noexcept {
     json::Value array = json::Value::array({});
     for (const FileRecord& record : records) {
         auto object = fileRecordToJson(record);
@@ -121,8 +119,7 @@ namespace {
     return array;
 }
 
-[[nodiscard]] Result<std::vector<FileRecord>, ReportError> fileRecordsFromJson(
-    const json::Value& array) noexcept {
+[[nodiscard]] Result<std::vector<FileRecord>, ReportError> fileRecordsFromJson(const json::Value& array) noexcept {
     if (array.kind() != json::Value::Kind::Array) {
         return err(ReportError::MalformedReport);
     }
@@ -139,8 +136,7 @@ namespace {
 }
 
 /// Reads a required non-empty string member.
-[[nodiscard]] Result<std::string, ReportError> requireString(const json::Value& object,
-                                                              std::string_view key) noexcept {
+[[nodiscard]] Result<std::string, ReportError> requireString(const json::Value& object, std::string_view key) noexcept {
     const auto member = object.require(key);
     if (!member.has_value()) {
         return err(ReportError::MalformedReport);
@@ -160,18 +156,34 @@ namespace {
 
 std::string_view describe(ReportError error) noexcept {
     switch (error) {
-    case ReportError::EmptyToolName:            return "tool name is empty";
-    case ReportError::EmptyToolVersion:         return "tool version is empty";
-    case ReportError::EmptyPath:                return "path is empty";
-    case ReportError::AbsolutePath:             return "path is absolute";
-    case ReportError::BackslashInPath:          return "path contains a backslash";
-    case ReportError::ParentDirectoryInPath:    return "path contains a '..' component";
-    case ReportError::EmptyId:                  return "package id is empty";
-    case ReportError::EmptyKind:                return "package kind is empty";
-    case ReportError::NoOutputs:                return "report lists no outputs";
-    case ReportError::DuplicateOutputPath:      return "report lists an output path twice";
-    case ReportError::UnsupportedSchemaVersion: return "unsupported schema version";
-    case ReportError::MalformedReport:          return "report JSON has an unexpected shape";
+        case ReportError::EmptyToolName:
+            return "tool name is empty";
+        case ReportError::EmptyToolVersion:
+            return "tool version is empty";
+        case ReportError::EmptyPath:
+            return "path is empty";
+        case ReportError::AbsolutePath:
+            return "path is absolute";
+        case ReportError::BackslashInPath:
+            return "path contains a backslash";
+        case ReportError::ParentDirectoryInPath:
+            return "path contains a '..' component";
+        case ReportError::EmptyId:
+            return "package id is empty";
+        case ReportError::EmptyKind:
+            return "package kind is empty";
+        case ReportError::NoOutputs:
+            return "report lists no outputs";
+        case ReportError::DuplicateOutputPath:
+            return "report lists an output path twice";
+        case ReportError::UnsupportedSchemaVersion:
+            return "unsupported schema version";
+        case ReportError::MalformedReport:
+            return "report JSON has an unexpected shape";
+        case ReportError::UnknownStageOutput:
+            return "a production stage names an output the report does not list";
+        case ReportError::DuplicateStageOutput:
+            return "two production stages claim the same output";
     }
     return "unrecognized report error";
 }
@@ -188,7 +200,7 @@ Result<Digest, ReportError> digestFromHex(std::string_view hex) noexcept {
     for (std::size_t i = 0; i < 32; ++i) {
         std::uint8_t byte = 0;
         for (std::size_t nibble = 0; nibble < 2; ++nibble) {
-            const char c = hex[i * 2 + nibble];
+            const char   c     = hex[i * 2 + nibble];
             std::uint8_t value = 0;
             if (c >= '0' && c <= '9') {
                 value = static_cast<std::uint8_t>(c - '0');
@@ -224,8 +236,7 @@ ResultVoid<ReportError> PackageHeader::validate() const noexcept {
 }
 
 ResultVoid<json::Error> PackageHeader::writeInto(json::Value& object) const noexcept {
-    if (auto set = object.set("schemaVersion", json::Value::unsignedInteger(schemaVersion));
-        !set.has_value()) {
+    if (auto set = object.set("schemaVersion", json::Value::unsignedInteger(schemaVersion)); !set.has_value()) {
         return set;
     }
     if (auto set = object.set("id", json::Value::string(id)); !set.has_value()) {
@@ -259,8 +270,7 @@ Result<PackageHeader, ReportError> PackageHeader::readFrom(const json::Value& ob
         return err(kind.error());
     }
 
-    PackageHeader header{
-        .schemaVersion = *versionValue, .id = std::move(*id), .kind = std::move(*kind)};
+    PackageHeader header{.schemaVersion = *versionValue, .id = std::move(*id), .kind = std::move(*kind)};
     if (auto valid = header.validate(); !valid.has_value()) {
         return err(valid.error());
     }
@@ -308,6 +318,29 @@ ResultVoid<ReportError> BakeReport::validate() const noexcept {
             }
         }
     }
+    // A stage may only claim a file the artifact actually has, and no file may have two producers:
+    // the point of recording a stage is to answer "which tool wrote this output", and an answer
+    // naming a file nobody wrote, or naming two tools for one file, is worse than none.
+    for (std::size_t i = 0; i < stages.size(); ++i) {
+        const ToolStage& stage = stages[i];
+        if (stage.tool.empty()) {
+            return err(ReportError::EmptyToolName);
+        }
+        if (stage.toolVersion.empty()) {
+            return err(ReportError::EmptyToolVersion);
+        }
+        const bool listed = std::ranges::any_of(outputs, [&stage](const FileRecord& output) {
+            return output.path == stage.output;
+        });
+        if (!listed) {
+            return err(ReportError::UnknownStageOutput);
+        }
+        for (std::size_t k = 0; k < i; ++k) {
+            if (stages[k].output == stage.output) {
+                return err(ReportError::DuplicateStageOutput);
+            }
+        }
+    }
     return {};
 }
 
@@ -325,9 +358,8 @@ Result<json::Value, ReportError> BakeReport::toJson() const noexcept {
         return object.set(std::move(key), std::move(value)).has_value();
     };
 
-    if (!setMember("schemaVersion", json::Value::unsignedInteger(schemaVersion)) ||
-        !setMember("tool", json::Value::string(tool)) ||
-        !setMember("toolVersion", json::Value::string(toolVersion))) {
+    if (!setMember("schemaVersion", json::Value::unsignedInteger(schemaVersion)) || !setMember("tool", json::Value::string(tool))
+        || !setMember("toolVersion", json::Value::string(toolVersion))) {
         return err(ReportError::MalformedReport);
     }
 
@@ -343,8 +375,7 @@ Result<json::Value, ReportError> BakeReport::toJson() const noexcept {
 
     // An options object the baker never populated is written as {} rather than as null, so the
     // member is always present and always the same kind - a reader needs no special case.
-    json::Value resolvedOptions =
-        options.kind() == json::Value::Kind::Object ? options : json::Value::emptyObject();
+    json::Value resolvedOptions = options.kind() == json::Value::Kind::Object ? options : json::Value::emptyObject();
     if (!setMember("options", std::move(resolvedOptions))) {
         return err(ReportError::MalformedReport);
     }
@@ -352,6 +383,24 @@ Result<json::Value, ReportError> BakeReport::toJson() const noexcept {
     auto outputsJson = fileRecordsToJson(outputs);
     if (!outputsJson.has_value() || !setMember("outputs", std::move(*outputsJson))) {
         return err(ReportError::MalformedReport);
+    }
+
+    // Omitted entirely when empty, which is what let this member be added without re-baking six
+    // artifacts that have one tool and nothing to say about it.
+    if (!stages.empty()) {
+        std::vector<json::Value> stageValues;
+        stageValues.reserve(stages.size());
+        for (const ToolStage& stage : stages) {
+            json::Value entry = json::Value::emptyObject();
+            if (!entry.set("output", json::Value::string(stage.output)).has_value() || !entry.set("tool", json::Value::string(stage.tool)).has_value()
+                || !entry.set("toolVersion", json::Value::string(stage.toolVersion)).has_value()) {
+                return err(ReportError::MalformedReport);
+            }
+            stageValues.push_back(std::move(entry));
+        }
+        if (!setMember("stages", json::Value::array(std::move(stageValues)))) {
+            return err(ReportError::MalformedReport);
+        }
     }
 
     return object;
@@ -393,9 +442,10 @@ Result<BakeReport, ReportError> BakeReport::parse(std::string_view text) noexcep
     BakeReport report;
     report.schemaVersion = *versionValue;
 
-    for (const auto& [key, target] : std::initializer_list<
-             std::pair<std::string_view, std::string*>>{{"tool", &report.tool},
-                                                         {"toolVersion", &report.toolVersion}}) {
+    for (const auto& [key, target] : std::initializer_list<std::pair<std::string_view, std::string*>>{
+             {       "tool",        &report.tool},
+             {"toolVersion", &report.toolVersion}
+    }) {
         auto value = requireString(*document, key);
         if (!value.has_value()) {
             return err(value.error());
@@ -441,6 +491,31 @@ Result<BakeReport, ReportError> BakeReport::parse(std::string_view text) noexcep
         return err(outputs.error());
     }
     report.outputs = std::move(*outputs);
+
+    // Optional: a single-tool report carries no `stages` member at all and must keep parsing.
+    if (const json::Value* stagesJson = document->find("stages"); stagesJson != nullptr) {
+        if (stagesJson->kind() != json::Value::Kind::Array) {
+            return err(ReportError::MalformedReport);
+        }
+        for (const json::Value& entry : stagesJson->elements()) {
+            if (entry.kind() != json::Value::Kind::Object) {
+                return err(ReportError::MalformedReport);
+            }
+            ToolStage stage;
+            for (const auto& [key, target] : std::initializer_list<std::pair<std::string_view, std::string*>>{
+                     {       "tool",        &stage.tool},
+                     {"toolVersion", &stage.toolVersion},
+                     {     "output",      &stage.output}
+            }) {
+                auto value = requireString(entry, key);
+                if (!value.has_value()) {
+                    return err(value.error());
+                }
+                *target = std::move(*value);
+            }
+            report.stages.push_back(std::move(stage));
+        }
+    }
 
     if (auto valid = report.validate(); !valid.has_value()) {
         return err(valid.error());

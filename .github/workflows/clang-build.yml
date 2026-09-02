@@ -114,6 +114,7 @@ jobs:
           vulkan-tools \
           libvulkan-dev \
           vulkan-utility-libraries-dev \
+          mesa-vulkan-drivers \
           spirv-tools \
           libglfw3-dev \
           xvfb
@@ -153,9 +154,18 @@ jobs:
           echo "$found"
         fi
 
-    - name: Verify Vulkan installation
+    # Asserted rather than tolerated, and that changed with #254. This leg used to accept "Vulkan
+    # driver not available (expected in CI)" because nothing here rendered. The screen bundle's
+    # verification.json is now re-derived during the build by a tool that needs a device, so a leg
+    # without lavapipe does not produce a weaker artifact - it fails to build. Finding that out here,
+    # with the ICD list in the log, beats finding it out as a bake step that could not create an
+    # instance several hundred lines later.
+    - name: Verify a Vulkan device is present
       run: |
-        vulkaninfo --summary || echo "Vulkan driver not available (expected in CI)"
+        set -euo pipefail
+        echo "Available Vulkan ICDs:"
+        ls -1 /usr/share/vulkan/icd.d/ || true
+        vulkaninfo --summary
 
     # The preset, not an equivalent-looking configure line: CMakePresets.json's ninja-clang
     # description exists precisely to keep preset and CI from drifting apart, which a
@@ -181,3 +191,16 @@ jobs:
     # green tick for zero assertions.
     - name: Verify evidence artifacts (Clang)
       run: ctest --preset ninja-clang -L evidence --output-on-failure --no-tests=error
+
+    # A skip here would mean the evidence step above compared a verification.json that this leg did
+    # not really re-derive, which #254 forbids. The same guard the GCC and macOS legs carry.
+    - name: Verify rendered tests ran on lavapipe
+      shell: bash
+      run: |
+        set -euo pipefail
+        pixel_log="$RUNNER_TEMP/clang-pixel.log"
+        ctest --preset ninja-clang -L pixel -V --no-tests=error 2>&1 | tee "$pixel_log"
+        if grep -q 'Skipped' "$pixel_log"; then
+          echo '::error::Pixel tests were skipped - no Vulkan device. They must run on this leg.'
+          exit 1
+        fi

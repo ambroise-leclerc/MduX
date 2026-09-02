@@ -828,6 +828,44 @@ enum class Finding : std::uint8_t {
 [[nodiscard]] std::string_view describe(Finding finding) noexcept;
 
 /**
+ * @brief The enumerator's own name, e.g. `NothingPainted` - the spelling a serialiser emits.
+ *
+ * Distinct from `describe()`, and the distinction is the point. `describe()` returns the sentence a
+ * driver prints for a human, and improving that wording should stay free; #254 commits findings into
+ * a byte-compared artifact, where a reworded sentence would fail an evidence comparison on every leg
+ * while nothing about the verification had changed. The same split `spell(CvCheck)` already makes.
+ */
+[[nodiscard]] constexpr std::string_view spell(Finding finding) noexcept {
+    switch (finding) {
+        case Finding::Held:
+            return "Held";
+        case Finding::RegionOutsideFrame:
+            return "RegionOutsideFrame";
+        case Finding::NoTintToCompare:
+            return "NoTintToCompare";
+        case Finding::NothingPainted:
+            return "NothingPainted";
+        case Finding::BoundsDiffer:
+            return "BoundsDiffer";
+        case Finding::TintAbsent:
+            return "TintAbsent";
+        case Finding::ForeignColour:
+            return "ForeignColour";
+        case Finding::InkLeftItsNode:
+            return "InkLeftItsNode";
+        case Finding::InkExtentDiffers:
+            return "InkExtentDiffers";
+        case Finding::GlyphMissing:
+            return "GlyphMissing";
+        case Finding::CoverageDiffers:
+            return "CoverageDiffers";
+        case Finding::InkOutsideTheRun:
+            return "InkOutsideTheRun";
+    }
+    return {};
+}
+
+/**
  * @brief One obligation's result: what was expected, what was found, and where.
  *
  * Structured rather than a formatted string, because this module allocates nothing and a governed

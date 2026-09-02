@@ -9,10 +9,11 @@
 # What this wrapper adds over calling `mdux_bake_artifact()` directly is the two things a caller
 # could otherwise get wrong silently:
 #
-#   - **The three outputs are fixed here**, not per call site. ADR-012 makes `package.json`,
-#     `goldens.json` and `report.json` unconditional, so a screen that pins nothing writes `[]`
-#     rather than one fewer file. A call site listing its own OUTPUTS could drop one and produce a
-#     smaller artifact that still passed its own comparison.
+#   - **The four outputs are fixed here**, not per call site. ADR-012 makes `package.json`,
+#     `goldens.json` and `report.json` unconditional and ADR-014 decision 4 adds `verification.json`,
+#     so a screen that pins nothing writes `[]` rather than one fewer file. A call site listing its
+#     own OUTPUTS could drop one and produce a smaller artifact that still passed its own
+#     comparison.
 #   - **The `.medui` source becomes a dependency automatically**, read out of the recipe. A
 #     forgotten SOURCES entry does not fail: it makes edits to the screen stop triggering a rebake,
 #     so the committed artifact quietly stops matching its source until someone runs the update
@@ -133,14 +134,26 @@ function(mdux_compile_screen)
         KIND screen
         ID ${ARG_ID}
         TOOL mdux-meduic
+        # The second half of the one production sequence (#254): mdux-meduic compiles the screen,
+        # then this renders it and writes verification.json plus the report members naming it. Still
+        # one mdux_bake_artifact() registration for screen/<id>, which ADR-014 decision 4 requires -
+        # a second one would collide in its generated target, its test and its output directory.
+        THEN_TOOLS mdux-verify-bake
         RECIPE ${ARG_RECIPE}
         SOURCES
             ${screen_source}
             ${ARG_SOURCES}
-        # Fixed here rather than per call site: all three are unconditional (ADR-012, decision 1).
+            # The committed artifacts the render reads. They are already dependencies of the compile
+            # for the text packages; the shader package is new here, and it is a real edge: re-baking
+            # mdux-ui changes the frame this screen is verified against.
+            generated/shader/mdux-ui/package.json
+            generated/shader/mdux-ui/shaders.spv
+        # Fixed here rather than per call site: all four are unconditional (ADR-012 decision 1,
+        # ADR-014 decision 4).
         OUTPUTS
             package.json
             goldens.json
             report.json
+            verification.json
     )
 endfunction()

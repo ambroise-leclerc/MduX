@@ -158,7 +158,7 @@ Seven artifacts are committed today:
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
 | `generated/text/endoscope-monitor-en-us/` | `mdux-textbake` | `runs.bin` |
-| `generated/screen/endoscope-monitor/` | `mdux-meduic` | `package.json` + `goldens.json` |
+| `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
 cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
@@ -177,8 +177,21 @@ it. It derives render scopes only from the screen manifest, rejects locale subse
 obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
 problem made impossible. The committed endoscope screen currently reports failed golden checks
 because `NumericDisplay` and `SignalTrace` remain deferred until #17; this is a failed verification,
-not a skipped or successful one. #254 will serialize the same outcomes rather than reimplementing
-the predicates or the producer.
+not a skipped or successful one.
+
+The screen is also the one entry baked by a *sequence* rather than a single tool (#254).
+`mdux-meduic` compiles it, then `mdux-verify-bake` renders the result and writes `verification.json`
+beside it, extending the same `report.json` with the new output's digest and the locale set the run
+resolved. Both stages are one `mdux_bake_artifact()` registration and one `evidence.screen.<id>`
+comparison, so the rendered half cannot end up with weaker evidence than the compiled half. The two
+are separate tools because their dependencies differ: reading a `.medui` file needs no GPU, and
+fusing them would make a Vulkan device a prerequisite of every screen compile.
+
+That artifact records one outcome per enumerated obligation and nothing else — no measured pixel, no
+path, no duration. What it says is that the frame agreed with the compiled screen, which is internal
+consistency rather than truth: the expectation and the frame come from one source. It is also why
+the committed file currently records three `NothingPainted` findings; an artifact that hid them
+would be worse than none.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an

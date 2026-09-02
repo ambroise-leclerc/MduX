@@ -111,6 +111,28 @@ risk_controls = [
 known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry. Note this dependency is also why the project's GCC floor is 16: GCC 15 cannot build it, and upstream dropped GCC 15 support before v0.1.0. One toolchain anomaly is known and shared: GCC 16.2.0 corrupts the module BMIs for speclab.core.testsuite and speclab.runners.testrunner, which turned this repository's develop red (MduX #205) and upstream's CI too (ambroise-leclerc/SpecLab#15). Both projects pin gcc:16.1.0; a working 16.2.x is tracked as ambroise-leclerc/SpecLab#17. Upstream issue numbers are written in full here because a bare #15 or #17 in this repository names the .medui compiler and Content components epics."
 
 [[entries]]
+component_id = "mesa-lavapipe-win"
+name = "Mesa lavapipe (Windows binaries, mesa-dist-win)"
+version = "26.2.0 (asset mesa3d-26.2.0-release-msvc.7z, sha256 dcb2719ef346dab5b609fcb193a5f13cfc4b0502e3f4de1ad43d349477402f47)"
+classification = "build-tool"
+supplier = "Mesa3D project; Windows binaries built and published by pal1000 (mesa-dist-win), not by Mesa itself"
+repository = "https://github.com/pal1000/mesa-dist-win"
+license = "MIT (Mesa); the distribution also bundles LLVM components under Apache-2.0-with-LLVM-exception"
+usage = "The Vulkan software rasterizer the Windows CI leg renders through, so that leg can re-derive generated/screen/<id>/verification.json rather than copy it (#254). CI only: it is downloaded onto the GitHub-hosted runner, is never committed, never linked into any target, and never reaches a developer machine or a built binary. The Linux legs use the distribution's own lavapipe and macOS uses MoltenVK, so this entry covers one leg of four."
+trust_zone = "build"
+integration_path = ".github/workflows/windows-build.yml (Install lavapipe step: pinned download, SHA-256 check, registration in HKLM\\SOFTWARE\\Khronos\\Vulkan\\Drivers)"
+pinned_by = [".github/workflows/windows-build.yml"]
+runtime_deployment = false
+support_model = "Community-maintained project, redistributed by a third party who is not the upstream vendor. No medical-device qualification and no support agreement. The redistribution step is itself part of the trust chain and is why the digest below is pinned rather than the release tag alone."
+boundary_rationale = "A CI-host tool. It renders the frame a verification check is evaluated against, so unlike CMake it does influence committed evidence - but only through pass/fail outcomes, never through bytes it produces: ADR-014 decision 4 keeps every measured sample out of verification.json precisely so the artifact is a property of its declared inputs rather than of the driver that drew the frame."
+risk_controls = [
+    "Pinned by release tag *and* by SHA-256 of the exact asset, verified on the runner before extraction; a substituted or re-cut upload fails the step rather than silently changing what this leg renders with.",
+    "Four-leg byte comparison is the control that matters: the same verification.json is re-derived under lavapipe on two Linux legs, this distribution on Windows, and MoltenVK on macOS. A lavapipe-specific misrender that changed an outcome would disagree with three other drivers and fail evidence.screen.<id>, rather than being committed.",
+    "The Windows leg fails its build outright when no device is present, and its pixel-labelled step fails on a skip, so a silently absent rasterizer cannot become a green run over an artifact nobody re-derived.",
+]
+known_anomaly_tracking = "A defect found in this dependency is recorded as a ProblemReport (mdux.governance.compliance, issue #35) with this component_id in its description; none open as of this entry."
+
+[[entries]]
 name = "DejaVu Sans"
 supplier = "DejaVu fonts project (from Bitstream Vera, Bitstream Inc.)"
 license = "Bitstream-Vera (with the Arev additions; DejaVu changes public domain)"
