@@ -96,6 +96,35 @@ Not the recipe's literal contents — the resolved set with every default expand
 a default silently changes every output while every report still looks unchanged, which is precisely
 the failure a byte-verified pipeline exists to prevent.
 
+### 4b. A report names every tool that produced an output, not only the one it is registered to
+
+`tool` and `toolVersion` name the tool a bake is *registered to*. For five of the seven committed
+artifacts that is the whole story, because one tool writes every file. The screen bundle is not:
+`mdux-meduic` compiles it and `mdux-verify-bake` then renders it and writes `verification.json`
+(ADR-014 decision 4), under one `mdux_bake_artifact()` registration and one report, because a second
+report at the same path is forbidden and a reader holding two would have to decide which is
+authoritative.
+
+So the single report carries a `stages` array, one record per output that a tool other than `tool`
+produced:
+
+```json
+"stages": [
+  { "output": "verification.json", "tool": "mdux-verify-bake", "toolVersion": "0.6.0" }
+]
+```
+
+Absent entirely when a bake has one tool, which is why adding it left the other six artifacts byte
+for byte as they were. `validate()` rejects a stage naming an output the report does not list, and
+two stages claiming one output — an answer naming a file nobody wrote, or two tools for one file, is
+worse than no answer.
+
+This is not a cosmetic field. The purpose stated at the top of this record is to answer "which tool,
+at which version, from which input, produced this binary artifact". Without `stages`, the screen's
+report answers that wrongly for one of its four outputs: it attributes a rendered frame's evidence
+to a compiler that never created a Vulkan device. A digest says what was produced and `options` says
+how it was configured; neither says by whom.
+
 ### 5. No commit SHA in a byte-compared report — it cannot be made to work
 An earlier draft of this ADR had `BakeReport` carry `toolGitSha`, a configure-time `git rev-parse
 HEAD` baked in as a compile definition, with CI rejecting `"unknown"` in a committed report.

@@ -59,6 +59,7 @@ enum class ArtifactError : std::uint8_t {
     MalformedReport,      ///< the bundle's `report.json` did not parse as a bake report
     ReportRewriteFailed,  ///< the extended report failed its own validation
     SerializationFailed,  ///< canonical JSON refused a member this writer built
+    PublishFailed,        ///< a bundle file could not be staged or promoted; the bundle is unchanged
 };
 
 [[nodiscard]] std::string_view describe(ArtifactError error) noexcept;
@@ -89,17 +90,51 @@ enum class ArtifactError : std::uint8_t {
 [[nodiscard]] mdux::core::Result<evidence::json::Value, ArtifactError> verificationOptions(const RunResult& result);
 
 /**
- * @brief Re-emits the bundle's `report.json` with the verification output and its resolved options.
+ * @brief Re-emits the bundle's `report.json` with the verification output, options and producer.
  *
  * The screen bundle has one report, and this extends it rather than adding a second at the same
  * path - ADR-014 decision 4 forbids the second, and a reader holding two reports for one artifact
  * has to decide which is authoritative. `mdux-meduic` writes the report first, naming the two files
  * it produced; this adds the third, which cannot exist until a frame has been rendered.
  *
+ * It also adds the stage record naming *this* tool and its version. The report's top-level `tool`
+ * stays `mdux-meduic`, because that is the tool the bake is registered to - so without the stage a
+ * reader would attribute `verification.json` to the screen compiler, which never saw a frame.
+ * ADR-007 exists to answer which tool at which version produced an artifact; for one of the four
+ * outputs, the unextended report answers it wrongly.
+ *
  * `verificationJson` is the exact text `writeVerification()` returned, so the digest recorded is of
  * the bytes that get committed rather than of a re-serialization that might differ.
  */
 [[nodiscard]] mdux::core::Result<std::string, ArtifactError>
-extendReport(std::string_view reportText, std::string_view verificationJson, const evidence::json::Value& options);
+extendReport(std::string_view reportText, std::string_view verificationJson, const evidence::json::Value& options, std::string_view toolVersion);
+
+/// One file of a bundle to publish, with the exact bytes it should end up holding.
+struct BundleFile {
+    std::filesystem::path path;
+    std::string           text;
+};
+
+/**
+ * @brief The promotion step, injectable so a test can fail the second one.
+ *
+ * Production passes nothing and gets `std::filesystem::rename`. The seam exists because the
+ * property worth testing here - that a failure part way through leaves the bundle exactly as it
+ * was - cannot be provoked from outside: every filesystem state that makes a rename fail also
+ * makes the preceding backup fail, so the interesting ordering never arises by itself.
+ */
+using PromoteStep = std::function<std::error_code(const std::filesystem::path& from, const std::filesystem::path& to)>;
+
+/**
+ * @brief Writes every file, or leaves all of them exactly as they were.
+ *
+ * A bundle has to stay coherent: a `verification.json` whose `report.json` does not name it would
+ * pass its own byte comparison while the report stopped describing the artifact beside it. Two
+ * renames are not one transaction, so this does not claim atomicity - what it guarantees is that
+ * every partial outcome is undone. Each file is staged beside its target, each existing target is
+ * moved aside first, and a failure at any point restores what was there: previous contents where a
+ * file existed, absence where it did not.
+ */
+[[nodiscard]] mdux::core::ResultVoid<ArtifactError> publishBundle(std::span<const BundleFile> files, const PromoteStep& promote = {});
 
 }  // namespace mdux::tools::verify

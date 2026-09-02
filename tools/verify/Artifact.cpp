@@ -62,6 +62,23 @@ using mdux::core::err;
 
 }  // namespace
 
+namespace {
+
+/// Writes `text` to `path`, whole. Returns false on any stream failure.
+[[nodiscard]] bool writeWhole(const std::filesystem::path& path, std::string_view text) {
+    std::ofstream out{path, std::ios::binary | std::ios::trunc};
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    out.close();
+    return static_cast<bool>(out);
+}
+
+void removeQuietly(const std::filesystem::path& path) {
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+}  // namespace
+
 std::string_view describe(ArtifactError error) noexcept {
     switch (error) {
         case ArtifactError::NotRun:
@@ -76,6 +93,8 @@ std::string_view describe(ArtifactError error) noexcept {
             return "the extended bake report failed its own validation";
         case ArtifactError::SerializationFailed:
             return "canonical JSON refused a verification member";
+        case ArtifactError::PublishFailed:
+            return "the bundle could not be written; it has been left as it was";
     }
     return "unknown verification artifact error";
 }
@@ -170,7 +189,8 @@ mdux::core::Result<evj::Value, ArtifactError> verificationOptions(const RunResul
     return options;
 }
 
-mdux::core::Result<std::string, ArtifactError> extendReport(std::string_view reportText, std::string_view verificationJson, const evj::Value& options) {
+mdux::core::Result<std::string, ArtifactError>
+extendReport(std::string_view reportText, std::string_view verificationJson, const evj::Value& options, std::string_view toolVersion) {
     auto report = evidence::BakeReport::parse(reportText);
     if (!report.has_value()) {
         return err(ArtifactError::MalformedReport);
@@ -188,11 +208,97 @@ mdux::core::Result<std::string, ArtifactError> extendReport(std::string_view rep
     }
     report->options = std::move(resolved);
 
+    // The stage that says who wrote the file just added. The report's `tool` names the compiler
+    // this bake is registered to and stays that way; this is the rest of the chain.
+    report->stages.push_back({.tool = std::string{artifactToolName}, .toolVersion = std::string{toolVersion}, .output = std::string{verificationFileName}});
+
     auto text = report->write();
     if (!text.has_value()) {
         return err(ArtifactError::ReportRewriteFailed);
     }
     return *text;
+}
+
+mdux::core::ResultVoid<ArtifactError> publishBundle(std::span<const BundleFile> files, const PromoteStep& promote) {
+    const auto move = [&promote](const std::filesystem::path& from, const std::filesystem::path& to) -> std::error_code {
+        if (promote) {
+            return promote(from, to);
+        }
+        std::error_code failure;
+        std::filesystem::rename(from, to, failure);
+        return failure;
+    };
+
+    std::vector<std::filesystem::path>                staged;
+    std::vector<std::optional<std::filesystem::path>> displaced(files.size());
+    staged.reserve(files.size());
+
+    const auto abandonStaged = [&staged] {
+        for (const std::filesystem::path& path : staged) {
+            removeQuietly(path);
+        }
+    };
+
+    // 1. Every file lands beside its target first, so a serialization or disk failure happens
+    //    before anything the bundle consists of has been touched.
+    for (const BundleFile& file : files) {
+        std::filesystem::path temporary = file.path;
+        temporary                      += ".staged";
+        if (!writeWhole(temporary, file.text)) {
+            removeQuietly(temporary);
+            abandonStaged();
+            return err(ArtifactError::PublishFailed);
+        }
+        staged.push_back(std::move(temporary));
+    }
+
+    // 2. Existing targets move aside rather than being overwritten, so there is something to
+    //    restore. A file that did not exist stays recorded as absent.
+    for (std::size_t index = 0; index < files.size(); ++index) {
+        if (!std::filesystem::exists(files[index].path)) {
+            continue;
+        }
+        std::filesystem::path previous = files[index].path;
+        previous                      += ".previous";
+        if (const std::error_code failure = move(files[index].path, previous); failure) {
+            for (std::size_t done = 0; done < index; ++done) {
+                if (displaced[done].has_value()) {
+                    static_cast<void>(move(*displaced[done], files[done].path));
+                }
+            }
+            abandonStaged();
+            return err(ArtifactError::PublishFailed);
+        }
+        displaced[index] = std::move(previous);
+    }
+
+    // 3. Promote. A failure here is the case this whole dance exists for: everything already
+    //    promoted goes back to what it was, and a target that had no previous version is removed
+    //    rather than left holding a file the bundle never had.
+    for (std::size_t index = 0; index < files.size(); ++index) {
+        if (const std::error_code failure = move(staged[index], files[index].path); failure) {
+            for (std::size_t done = 0; done < index; ++done) {
+                removeQuietly(files[done].path);
+                if (displaced[done].has_value()) {
+                    static_cast<void>(move(*displaced[done], files[done].path));
+                }
+            }
+            for (std::size_t rest = index; rest < files.size(); ++rest) {
+                removeQuietly(staged[rest]);
+                if (displaced[rest].has_value()) {
+                    static_cast<void>(move(*displaced[rest], files[rest].path));
+                }
+            }
+            return err(ArtifactError::PublishFailed);
+        }
+    }
+
+    for (const auto& previous : displaced) {
+        if (previous.has_value()) {
+            removeQuietly(*previous);
+        }
+    }
+    return {};
 }
 
 }  // namespace mdux::tools::verify

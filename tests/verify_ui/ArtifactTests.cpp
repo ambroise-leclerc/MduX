@@ -15,6 +15,7 @@ import mdux.tools.verify.driver;
 import mdux.verify;
 
 #include "../framework/SpecLabBridge.hpp"
+#include "../framework/TemporaryDirectory.hpp"
 
 namespace {
 namespace evj = mdux::evidence::json;
@@ -201,7 +202,7 @@ const mdux::spec::Register theReportGainsTheOutputAndItsOptions{
                           checks.raise();
                           return;
                       }
-                      const auto extended = vu::extendReport(*compiledText, "{}\n", *options);
+                      const auto extended = vu::extendReport(*compiledText, "{}\n", *options, "9.9.9");
                       if (!extended.has_value()) {
                           checks.expect(false, "the report is extended");
                           checks.raise();
@@ -222,9 +223,114 @@ const mdux::spec::Register theReportGainsTheOutputAndItsOptions{
                       // there is one nothing rejects. The locale set is the resolved option; the
                       // tree it was read from is not.
                       checks.expect(!extended->contains("artifactRoot"), "and no path smuggled in through the options object");
+                      // The point of the stage record: the report's own `tool` is the compiler, so
+                      // without this a reader attributes verification.json to a tool that never saw
+                      // a frame - which is the one question ADR-007 exists to answer.
+                      checks.expect(reread->tool == "mdux-meduic", "the report still names the tool the bake is registered to");
+                      checks.expect(reread->stages.size() == 1 && reread->stages.front().tool == "mdux-verify-bake"
+                                        && reread->stages.front().output == "verification.json" && reread->stages.front().toolVersion == "9.9.9",
+                                    "and names the second tool, its version, and the one output it wrote");
                       checks.raise();
                   })
             .Execute();
     }};
+
+const mdux::spec::Register aFailedPromotionLeavesTheBundleAlone{
+    "A bundle that cannot be published completely is not published at all",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-artifact-publish-rollback")
+            .Given("a bundle whose second file cannot be promoted", [] {})
+            .When("it is published", [] {})
+            .Then("both files still hold exactly what they held before",
+                  [] {
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"mdux-verify-publish"};
+                      const std::filesystem::path    first  = scratch.path() / "verification.json";
+                      const std::filesystem::path    second = scratch.path() / "report.json";
+
+                      const auto put = [](const std::filesystem::path& path, std::string_view text) {
+                          std::ofstream out{path, std::ios::binary | std::ios::trunc};
+                          out.write(text.data(), static_cast<std::streamsize>(text.size()));
+                      };
+                      const auto contents = [](const std::filesystem::path& path) {
+                          std::ifstream      in{path, std::ios::binary};
+                          std::ostringstream buffer;
+                          buffer << in.rdbuf();
+                          return buffer.str();
+                      };
+                      put(first, "old verification\n");
+                      put(second, "old report\n");
+
+                      const std::array files{
+                          vu::BundleFile{ .path = first, .text = "new verification\n"},
+                          vu::BundleFile{.path = second,       .text = "new report\n"}
+                      };
+
+                      // The failure is injected on the *second* promotion, after the first has
+                      // already succeeded. That ordering is the whole point: it is the state in
+                      // which a naive implementation leaves a new file beside a stale one.
+                      std::size_t promotions   = 0;
+                      const auto  refuseSecond = [&promotions](const std::filesystem::path& from, const std::filesystem::path& to) -> std::error_code {
+                          if (++promotions == 3) {
+                              return std::make_error_code(std::errc::io_error);
+                          }
+                          std::error_code failure;
+                          std::filesystem::rename(from, to, failure);
+                          return failure;
+                      };
+
+                      const auto published = vu::publishBundle(files, refuseSecond);
+                      checks.expect(!published.has_value() && published.error() == vu::ArtifactError::PublishFailed,
+                                    "publication fails rather than reporting a bundle it did not write");
+                      checks.expect(contents(first) == "old verification\n", "the first file is back to what it held");
+                      checks.expect(contents(second) == "old report\n", "and so is the second, which never changed");
+                      checks.expect(!std::filesystem::exists(first.string() + ".staged") && !std::filesystem::exists(second.string() + ".staged"),
+                                    "and no staged leftovers remain");
+                      checks.expect(!std::filesystem::exists(first.string() + ".previous") && !std::filesystem::exists(second.string() + ".previous"),
+                                    "nor any displaced originals");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aCompletePublicationReplacesBoth{"A bundle that publishes completely replaces every file", "evidence-unit", [] {
+                                                                return speclab::Test("verify-artifact-publish-success")
+                                                                    .Given("a bundle over files that already exist", [] {})
+                                                                    .When("it is published with nothing failing", [] {})
+                                                                    .Then("both hold the new bytes and nothing is left beside them",
+                                                                          [] {
+                                                                              mdux::spec::Checks             checks;
+                                                                              mdux::test::TemporaryDirectory scratch{"mdux-verify-publish-ok"};
+                                                                              const std::filesystem::path    first  = scratch.path() / "verification.json";
+                                                                              const std::filesystem::path    second = scratch.path() / "report.json";
+                                                                              {
+                                                                                  std::ofstream out{second, std::ios::binary};
+                                                                                  out << "old report\n";
+                                                                              }
+
+                                                                              const std::array files{
+                                                                                  vu::BundleFile{ .path = first, .text = "new verification\n"},
+                                                                                  vu::BundleFile{.path = second,       .text = "new report\n"}
+                                                                              };
+                                                                              checks.expect(vu::publishBundle(files).has_value(), "publication succeeds");
+
+                                                                              const auto contents = [](const std::filesystem::path& path) {
+                                                                                  std::ifstream      in{path, std::ios::binary};
+                                                                                  std::ostringstream buffer;
+                                                                                  buffer << in.rdbuf();
+                                                                                  return buffer.str();
+                                                                              };
+                                                                              // The first file did not exist beforehand and the second did, so this covers
+                                                                              // both branches of the displacement bookkeeping in one pass.
+                                                                              checks.expect(contents(first) == "new verification\n",
+                                                                                            "a file that did not exist is created");
+                                                                              checks.expect(contents(second) == "new report\n", "and one that did is replaced");
+                                                                              checks.expect(!std::filesystem::exists(second.string() + ".previous"),
+                                                                                            "with no displaced original left behind");
+                                                                              checks.raise();
+                                                                          })
+                                                                    .Execute();
+                                                            }};
 
 }  // namespace
