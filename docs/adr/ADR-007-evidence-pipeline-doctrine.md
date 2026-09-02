@@ -138,6 +138,20 @@ lane. That is what separates "a different toolchain produced identical bytes" fr
 This is written down here specifically so that a future change cannot "simplify" CI to one leg
 without knowingly discarding the claim.
 
+**Since #254, each leg must also provide a Vulkan device, and that is a new obligation rather than
+an incidental one.** The screen bundle's `verification.json` is re-derived by rendering the screen,
+so a leg without an ICD cannot produce the artifact at all - and #254 forbids treating that as a
+skip, because a leg that copied the committed file would satisfy the byte comparison while providing
+no rendered evidence. Two legs had no device when that landed: Linux/Clang installed the loader
+without `mesa-vulkan-drivers`, and Windows/MSVC installed `Vulkan-Loader` with no ICD behind it, so
+both enumerated zero physical devices while nothing here rendered. Both now carry a software
+rasterizer - lavapipe from the distribution on Linux, and Mesa's own Windows build pinned by release
+tag and SHA-256 on Windows - joining the lavapipe and MoltenVK the GCC and macOS legs already had.
+
+The byte-identity claim survives the addition because the artifact records outcomes rather than
+samples: four drivers agreeing that a check held produce identical bytes, which is exactly the
+property decision 4 of ADR-014 protects by keeping measurements out of the file.
+
 **A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
 **and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable
 that leg: it added the GCC 16 leg and left the Clang half of its own title open, and

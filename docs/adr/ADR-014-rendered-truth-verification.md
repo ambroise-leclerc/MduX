@@ -20,7 +20,7 @@ Epic #16 renders a compiled screen offscreen, checks that the content a golden r
 appears where the compiled screen said it would and that every localized text run appears inside its
 node, across every approved locale, then emits that as an evidence artifact. Its implementation
 children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255).
-Issues #252 and #253 now implement the first two; #254 and #255 remain. This record preceded all four so
+Issues #252, #253 and #254 now implement the first three; #255 remains. This record preceded all four so
 that they apply a recorded decision rather than reconstructing one from whatever they produced —
 the same reason #190 preceded the rest of #15.
 
@@ -54,10 +54,12 @@ What is genuinely open, and what this ADR therefore has to decide rather than in
 4. what the mechanism is worth to an IEC 62304:2006 §5.7 Software system testing argument, and
    where that worth stops.
 
-**Implementation status.** Issues #252 and #253 implement `mdux.verify` and the host-only
-`mdux-verify-ui` driver. The driver loads committed screen, golden, shader, text and font artifacts,
-enumerates the complete obligation set, renders once per scope and reports owning outcomes.
-`verification.json` does not yet exist; #254 owns that artifact and #255 owns its automatic CI gate.
+**Implementation status.** Issues #252, #253 and #254 implement `mdux.verify`, the host-only
+`mdux-verify-ui` driver and the artifact. The driver loads committed screen, golden, shader, text and
+font artifacts, enumerates the complete obligation set, renders once per scope and reports owning
+outcomes; `mdux-verify-bake` serializes those same outcomes as
+`generated/screen/<id>/verification.json` inside the screen's one bake registration. #255 still owns
+the automatic CI gate and the failure diff.
 
 ### The contradiction this record has to settle
 
@@ -421,4 +423,6 @@ the frame.
 - **Decision Date**: 2026-08-31
 - **Approved By**: Project maintainer
 - **Review Date**: reviewed 2026-09-02 when #253 first ran against a drawn, golden-eligible
-  textless fixture; review again when #254 commits the first `verification.json`
+  textless fixture, and again the same day when #254 committed the first `verification.json` - which
+  records three `NothingPainted` findings, exactly the consequence this record predicted for the
+  current screen. Review again when #17 draws the deferred golden nodes and #255 gates on them.
