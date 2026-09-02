@@ -156,6 +156,13 @@ jobs:
       shell: cmd
 
     - name: Build
+      env:
+        # This leg's Vulkan device is a software rasterizer installed by hand two steps above, and
+        # the build renders through it (#254). When a loader declines an ICD it does so silently and
+        # reports only "no usable ICD" at vkCreateInstance, which says nothing about why. Loader
+        # diagnostics turn that into the loader's own sentence, in the log, next to the bake that
+        # failed.
+        VK_LOADER_DEBUG: all
       run: cmake --build --preset ninja-msvc
       shell: cmd
 
