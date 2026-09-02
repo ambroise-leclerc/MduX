@@ -162,12 +162,15 @@ Seven artifacts are committed today:
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
 cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
-`StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does not exist until
-the frame does. What `package.json` carries instead is layout: where each node is, how much it may
-draw, and which validated token and key it draws with. A `NumericDisplay` and a `SignalTrace` are the
-two whose **field** does exist in the artifact — one rectangle, one token — and since #255 the
-runtime paints it; ADR-014 decision 5 is why that is read off the golden sidecar rather than invented
-in the renderer.
+`SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does
+not exist until the frame does. What `package.json` carries instead is layout: where each node is,
+how much it may draw, and which validated token and key it draws with.
+
+Two of those four have one part that *is* in the artifact, and since #255 the runtime paints it: a
+`NumericDisplay` and a `SignalTrace` carry a single colour token over a single rectangle, which is
+exactly the pair their golden entry pins. ADR-014 decision 5 is why that is read off the golden
+sidecar rather than invented in the renderer, and why a `Clock` (no token) and a `StatusIndicator`
+(one per state) are not in it.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit

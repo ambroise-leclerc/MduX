@@ -132,8 +132,14 @@ struct RunResult {
  * claim.
  */
 struct RunOptions {
-    /// Where the committed artifacts other than the screen bundle live. Defaults to the bundle's
-    /// own `generated/` when the single-argument `run()` is used.
+    /// Where the committed artifacts other than the screen bundle live - the `generated/` tree the
+    /// shader, font and text packages sit under. The single-argument `run()` derives it from the
+    /// bundle's own path.
+    ///
+    /// Empty is legal and means the current directory, which is what that derivation yields for a
+    /// relative bundle like `screen/<id>`. So this is deliberately not checked for emptiness: an
+    /// artifact that cannot be found is reported as the unreadable path it is (VUI005, VUI006),
+    /// which names the file and is more use than a guess about why the root was wrong.
     std::filesystem::path artifactRoot;
 
     /// Where to write a diff image for each render scope that fails. Empty means write none, which

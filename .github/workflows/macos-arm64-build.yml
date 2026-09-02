@@ -132,23 +132,6 @@ jobs:
           exit 1
         fi
 
-    # Only on failure, and only then. The image is a measurement of the frame rather than a property
-    # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an
-    # attachment instead - which is worth nothing unless it is actually attached. `if-no-files-found`
-    # is `ignore` because a failure that is not a rendered one (an unreadable artifact, a digest
-    # drift) legitimately produces no image, and a red step should not gain a second red mark saying
-    # so.
-    - name: Upload the rendered-truth diff images
-      if: failure()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      with:
-        name: verify-diff-macos
-        # Both build trees: the release one is the gate, and the sanitized rerun below renders the
-        # same screens again, so a failure that only appears under ASan/UBSan has its picture too.
-        path: |
-          build-macos-clang/verify-diff/
-          build-macos-clang-debug/verify-diff/
-        if-no-files-found: ignore
 
     - name: Smoke-test Vulkan presentation
       run: ./build-macos-clang/examples/VulkanSCTriangleExample --smoke-test
@@ -200,3 +183,26 @@ jobs:
           echo "$status"
           exit 1
         fi
+
+    # Last in the job, and that position is load-bearing rather than tidy. `if: failure()` is
+    # evaluated where the step sits: a failing step skips every later step that is not conditioned on
+    # failure, but a step placed *before* the failure has already been passed over. This upload used
+    # to sit above the sanitizer steps, where it could never have captured a sanitized failure - the
+    # very thing the second path below exists for. At the end it captures both.
+    #
+    # Only on failure. The image is a measurement of the frame rather than a property of the screen,
+    # so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an attachment instead -
+    # which is worth nothing unless it is actually attached. `if-no-files-found` is `ignore` because
+    # a failure that is not a rendered one (an unreadable artifact, a digest drift) legitimately
+    # produces no image, and a red step should not gain a second red mark saying so.
+    - name: Upload the rendered-truth diff images
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-diff-macos
+        # Both build trees: the release one is the gate, and the sanitized rerun renders the same
+        # screens again, so a failure that only appears under ASan/UBSan has its picture too.
+        path: |
+          build-macos-clang/verify-diff/
+          build-macos-clang-debug/verify-diff/
+        if-no-files-found: ignore

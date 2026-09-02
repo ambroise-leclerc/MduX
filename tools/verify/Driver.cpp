@@ -307,7 +307,9 @@ void writeDiffImage(RunResult&                              result,
     std::error_code created;
     std::filesystem::create_directories(directory, created);
     if (created) {
-        warn(result.diagnostics, path, "VUI009", "cannot create the diff image directory: " + created.message());
+        // Attributed to the directory rather than to the file inside it: nothing is wrong with the
+        // filename, and naming it would send a reader looking in the wrong place.
+        warn(result.diagnostics, directory, "VUI009", "cannot create the diff image directory: " + created.message());
         return;
     }
 

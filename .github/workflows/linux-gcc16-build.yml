@@ -209,7 +209,20 @@ jobs:
           exit 1
         fi
 
-    # Only on failure, and only then. The image is a measurement of the frame rather than a property
+
+    - name: Verify no source-tree writes
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        status="$(git status --porcelain)"
+        if [ -n "$status" ]; then
+          echo "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
+          echo "$status"
+          exit 1
+        fi
+
+    # Last in the job. `if: failure()` is evaluated where the step sits, so an upload placed above a
+    # step that can fail is skipped before that failure happens - see the same step in
+    # macos-arm64-build.yml, where it was doing exactly that. Only on failure. The image is a measurement of the frame rather than a property
     # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an
     # attachment instead - which is worth nothing unless it is actually attached. `if-no-files-found`
     # is `ignore` because a failure that is not a rendered one (an unreadable artifact, a digest
@@ -222,13 +235,3 @@ jobs:
         name: verify-diff-gcc16
         path: build-gcc/verify-diff/
         if-no-files-found: ignore
-
-    - name: Verify no source-tree writes
-      run: |
-        git config --global --add safe.directory "$GITHUB_WORKSPACE"
-        status="$(git status --porcelain)"
-        if [ -n "$status" ]; then
-          echo "Build wrote into the source tree (generated/ artifacts must be staged via mdux-bake-update, never produced by a normal build):"
-          echo "$status"
-          exit 1
-        fi

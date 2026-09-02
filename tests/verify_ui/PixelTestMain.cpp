@@ -19,6 +19,7 @@
  */
 import std;
 import mdux.tools.verify.driver;
+import mdux.verify;
 
 namespace {
 
@@ -69,8 +70,22 @@ int main() {
     // Outside the source tree, because the diff image is a measurement of the frame rather than a
     // property of the screen - ADR-014 decision 4 keeps it out of `generated/`, and the "no
     // source-tree writes" gate on every CI leg would catch it if this drifted.
+    //
+    // Checked rather than assumed: `temp_directory_path()` returns an empty path on failure, and
+    // appending to that yields a *relative* directory, so the one thing this scenario is careful to
+    // avoid - writing next to the checkout - is exactly what a silent failure here would do.
     std::error_code             ignored;
-    const std::filesystem::path diffDirectory = std::filesystem::temp_directory_path(ignored) / "mdux-verify-ui-diff";
+    const std::filesystem::path temporary = std::filesystem::temp_directory_path(ignored);
+    if (temporary.empty()) {
+        std::println(std::cerr, "no temporary directory on this host, so the diff image would land in the working directory");
+        return 1;
+    }
+    // A unique token keeps two concurrent runs - a `ctest -j` on one machine, or two developers on a
+    // shared one - from removing each other's directory mid-run. `std::random_device` rather than a
+    // process id because this test runs on the Windows leg too, and `getpid()`/`_getpid()` would
+    // need a platform header in a translation unit that otherwise has none.
+    std::random_device          entropy;
+    const std::filesystem::path diffDirectory = temporary / std::format("mdux-verify-ui-diff-{:08x}", entropy());
     std::filesystem::remove_all(diffDirectory, ignored);
 
     const vu::RunResult failing =
@@ -93,6 +108,24 @@ int main() {
     }
     if (!looksLikePng(failing.diffImages[0])) {
         std::println(std::cerr, "{} is not a PNG", failing.diffImages[0].generic_string());
+        return 1;
+    }
+    // Which obligation failed, not merely that one did. Without this the scenario would still pass
+    // if the fixture stopped exercising the case it was built for - a `Bounds` failure, or both
+    // obligations failing - and the image would then be drawn for a defect nobody intended to test.
+    // The fixture's whole design is one held and one failed obligation in a single scope.
+    const auto failedOutcome = std::ranges::find_if(failing.outcomes, [](const vu::Outcome& outcome) {
+        return !outcome.held();
+    });
+    const bool onlyOneFailed = std::ranges::count_if(failing.outcomes,
+                                                     [](const vu::Outcome& outcome) {
+                                                         return !outcome.held();
+                                                     })
+                               == 1;
+    if (!onlyOneFailed || failedOutcome == failing.outcomes.end() || failedOutcome->nodeId != "trace" || failedOutcome->check != "ColorHash"
+        || failedOutcome->finding != mdux::verify::Finding::ForeignColour) {
+        std::println(std::cerr, "the overdrawn fixture must fail exactly one obligation: ColorHash on 'trace', as ForeignColour");
+        printDiagnostics(failing, std::cerr);
         return 1;
     }
     std::filesystem::remove_all(diffDirectory, ignored);
