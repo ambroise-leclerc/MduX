@@ -188,10 +188,14 @@ text checks on the `Label`.
 `mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
 committed screen and a new one is gated by being committed. Three legs assert it as a named step —
 lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on macOS — with `--no-tests=error`, so a label
-matching no screen fails rather than passing over nothing, and with a skip guard, since exit 77 means
-an absent device and nothing else. When a check fails, the driver writes `<screen>.<scope>.png` under
-the build tree: the rendered frame dimmed, with each failed obligation's expected rectangle outlined
-in magenta and what was actually found in cyan. CI uploads it. It is an attachment rather than a
+matching no screen fails rather than passing over nothing. It has no skip status: `mdux-verify-ui`
+exits 3 for an absent device as for any impossible run, and since #254 made the bake render, a leg
+without a device fails to build long before this test could be reached.
+
+When a check fails, the driver writes `<screen>.<scope>.png` under the build tree — the rendered
+frame dimmed, with each failed obligation's expected rectangle outlined in magenta and what was
+actually found in cyan. The scope is percent-encoded rather than filtered, so two scopes of one
+screen cannot overwrite each other's image. CI uploads it. It is an attachment rather than a
 fifth file in the bundle because it *is* the frame, and ADR-014 decision 4 keeps measurements out of
 a byte-compared artifact.
 

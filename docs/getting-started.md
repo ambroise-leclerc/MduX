@@ -138,7 +138,10 @@ inconsistent artifact).
 
 Add `--diff-image-dir=<dir>` to get a picture of a failure. Each render scope that fails writes
 `<screen>.<scope>.png` there: the frame it rendered, dimmed, with every failed obligation's expected
-rectangle outlined in magenta and whatever was actually found outlined in cyan. It is written only on
+rectangle outlined in magenta and whatever was actually found outlined in cyan. The scope is
+percent-encoded, so an ordinary locale gives `endoscope-monitor.en-US.png` while a textless screen's
+locale-free scope gives `<screen>.%28locale-free%29.png` — encoded rather than filtered so that two
+scopes of one screen can never overwrite each other's image. It is written only on
 a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
 check. CI passes the same flag and uploads the directory when the step fails.
 

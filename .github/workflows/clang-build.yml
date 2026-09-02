@@ -211,20 +211,13 @@ jobs:
     # changing - and `--no-tests=error` is what makes that automatic rather than silent: a label that
     # matched nothing would otherwise pass this step over zero screens.
     #
-    # A skip means the driver found no Vulkan device, which is exit 77 and nothing else's - every
-    # other impossibility exits 3 and fails. #254 already made an absent device a build failure on
-    # this leg, so a skip here would mean the device went away between the bake and the tests; it is
-    # asserted rather than tolerated for the reason the pixel step above gives.
+    # No skip guard here, unlike the pixel step above, because there is no skip to guard against:
+    # `mdux-verify-ui` has no 77 status - an absent device exits 3 - and cmake/MduXCompileScreen.cmake
+    # therefore sets no SKIP_RETURN_CODE. A device that vanished between the bake and the tests fails
+    # this step as itself. Verified with the ICD unset: CTest reports Failed, not Skipped.
     - name: Verify committed screens against their goldens (lavapipe)
       shell: bash
-      run: |
-        set -euo pipefail
-        verify_log="$RUNNER_TEMP/clang-verify.log"
-        ctest --preset ninja-clang -L verify -V --no-tests=error 2>&1 | tee "$verify_log"
-        if grep -q 'Skipped' "$verify_log"; then
-          echo '::error::Rendered-truth verification skipped - no Vulkan device. It must run on this leg.'
-          exit 1
-        fi
+      run: ctest --preset ninja-clang -L verify -V --no-tests=error
 
     # Only on failure, and only then. The image is a measurement of the frame rather than a property
     # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an

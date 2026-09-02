@@ -186,9 +186,17 @@ function(mdux_compile_screen)
             "--locales=all"
             "--diff-image-dir=${CMAKE_BINARY_DIR}/verify-diff"
     )
-    # 77 is the driver's absent-device status and nothing else's - every other impossibility exits 3
-    # and fails. A leg that skips this has no Vulkan device, which #254 already made a build failure
-    # for the bake; the CI steps assert on the skip as well, because a leg whose device disappeared
-    # must not report a green tick over a check that never ran.
-    set_tests_properties("verify.screen.${ARG_ID}" PROPERTIES LABELS "verify" SKIP_RETURN_CODE 77)
+    # No SKIP_RETURN_CODE, deliberately, and it is worth saying why since every neighbouring rendered
+    # test has one. `mdux-verify-ui` has no skip status: an absent device is `RunState::NoRenderDevice`
+    # and exits 3 like every other impossible run, so a `SKIP_RETURN_CODE 77` here would be dead
+    # configuration - CTest reports the run as Failed, which was verified with the ICD unset.
+    #
+    # That is also the behaviour to want. #254 made the bake render, so a leg without a device fails
+    # to *build*; this test cannot be reached in a tree that did not already prove one existed. An
+    # absent device at test time is therefore a device that disappeared, which is an infrastructure
+    # failure - and #255 requires exactly that reading rather than a skip.
+    #
+    # `verify_ui_pixel_test` keeps its 77 because it is a different thing: a test binary that returns
+    # 77 itself, over a fixture, on hosts that may legitimately have no GPU at all.
+    set_tests_properties("verify.screen.${ARG_ID}" PROPERTIES LABELS "verify")
 endfunction()

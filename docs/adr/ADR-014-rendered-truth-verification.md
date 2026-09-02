@@ -341,8 +341,14 @@ show a reading and no others: in the field's own tint, or knocked out of it back
 registers, running `mdux-verify-ui --screen=generated/screen/<id> --locales=all` over the
 **committed** bundle. Three legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on
 macOS — with `--no-tests=error`, so a label that matched no screen fails rather than passing over
-nothing, and with the same skip guard the pixel legs carry, since exit 77 means an absent device and
-nothing else.
+nothing.
+
+It carries **no** skip status, unlike every neighbouring rendered test, and that is the point rather
+than an omission. `mdux-verify-ui` maps an absent device to `RunState::NoRenderDevice` and exits 3
+with every other impossible run, so there is no 77 for `SKIP_RETURN_CODE` to catch. Nor should there
+be: #254 made the bake render, so a leg without a device fails to *build*, and this test cannot be
+reached in a tree that has not already proved one existed. An absent device at test time is a device
+that disappeared, which #255 requires be read as an infrastructure failure rather than a skip.
 
 Two properties are worth naming. The subject is the committed bundle rather than the freshly baked
 one `mdux-verify-bake` renders during the build; the two agree only because `evidence.screen.<id>`

@@ -153,7 +153,8 @@ struct RunOptions {
 /// Test/integration overload with an explicit committed-artifact root (`generated/`).
 [[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot);
 
-/// The full form. `options.artifactRoot` must be set; the other members may be empty.
+/// The full form. Every member of `options` may be empty; see `RunOptions` for what each empty value
+/// means, and in particular why an empty `artifactRoot` is supported input rather than a mistake.
 [[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const RunOptions& options);
 
 struct Invocation {

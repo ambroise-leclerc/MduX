@@ -289,20 +289,10 @@ void writeDiffImage(RunResult&                              result,
         return;
     }
 
-    // The locale-free scope spells itself `(locale-free)`, and a CI artifact whose name carries
-    // parentheses is one people quote wrongly in the shell that fetches it. Everything outside the
-    // portable filename set is dropped rather than substituted, so `(locale-free)` becomes
-    // `locale-free` and an approved locale tag - already `[A-Za-z0-9-]` by the manifest - is
-    // unchanged. Dropping cannot collide two scopes of one screen: `RenderScope` is either the one
-    // locale-free name or a locale from a manifest `validate()` has already refused duplicates in.
-    std::string slug;
-    slug.reserve(scope.size());
-    for (const char character : scope) {
-        if (std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '-' || character == '_' || character == '.') {
-            slug.push_back(character);
-        }
-    }
-    const std::filesystem::path path = directory / std::format("{}.{}.png", screenId, slug);
+    // The filename, and the encoding that keeps two scopes of one screen from overwriting each
+    // other's image, both belong to `mdux.tools.verify.diff` - see `diffImageName()` for why a
+    // filter would not be enough.
+    const std::filesystem::path path = directory / diffImageName(screenId, scope);
 
     std::error_code created;
     std::filesystem::create_directories(directory, created);

@@ -207,6 +207,37 @@ const mdux::spec::Register mismatchedExtentRefused{"Composing and encoding refus
         .Execute();
 }};
 
+const mdux::spec::Register scopeNamesDoNotCollide{"Two scopes of one screen cannot claim the same diff image", "evidence-unit", [] {
+    return speclab::Test("verify-ui-diff-name")
+        .Given("scopes that a filtering encoder would map onto one name", [] {})
+        .When("each is turned into a filename", [] {})
+        .Then("they stay distinct, and an ordinary locale tag is unchanged",
+              [] {
+                  mdux::spec::Checks assertions;
+                  // The common case first: nothing to escape, so nothing changes. An encoding that
+                  // made every filename unreadable would be collision-free and useless.
+                  assertions.expect(vu::diffImageName("endoscope-monitor", "en-US") == "endoscope-monitor.en-US.png",
+                                    "an approved locale tag comes out as itself");
+
+                  // The two collisions a filter produces. `ScreenPackage::validate()` refuses an
+                  // empty locale and a duplicated one and imposes no grammar beyond that, so both
+                  // pairs are reachable from an artifact this pipeline accepts.
+                  assertions.expect(vu::diffImageName("s", "en/US") != vu::diffImageName("s", "enUS"),
+                                    "a separator is escaped rather than dropped");
+                  assertions.expect(vu::diffImageName("s", "(locale-free)") != vu::diffImageName("s", "locale-free"),
+                                    "the locale-free scope cannot be confused with a locale of that name");
+
+                  // No unescaped path separator survives, on either platform's spelling: a scope
+                  // that produced one would not overwrite a sibling image, it would try to write
+                  // into a directory that does not exist.
+                  const std::string awkward = vu::diffImageName("s", "a/b\\c");
+                  assertions.expect(awkward.find('/') == std::string::npos && awkward.find('\\') == std::string::npos,
+                                    std::format("no path separator reaches the filename, got '{}'", awkward));
+                  assertions.raise();
+              })
+        .Execute();
+}};
+
 const mdux::spec::Register encodesRealPng{"The encoder writes a PNG a decoder reads back pixel for pixel", "evidence-unit", [] {
     return speclab::Test("verify-ui-diff-png")
         .Given("a frame whose every pixel differs from its neighbours", [] {})

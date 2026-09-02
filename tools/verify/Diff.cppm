@@ -86,6 +86,23 @@ inline constexpr std::int64_t outlineThickness = 2;
 composeDiff(std::span<const mdux::core::ColorRgba8> frame, std::uint32_t width, std::uint32_t height, std::span<const DiffMark> marks);
 
 /**
+ * @brief The filename one render scope's diff image gets, `<screenId>.<encoded scope>.png`.
+ *
+ * The scope is percent-encoded rather than filtered, and that is a correctness property rather than
+ * cosmetics. `ScreenPackage::validate()` refuses an empty approved locale and a duplicated one and
+ * nothing else - it imposes no `[A-Za-z0-9-]` grammar - so a filter that dropped the characters
+ * outside the portable set would map `en/US` and `enUS` onto one name, and the locale-free scope's
+ * own `(locale-free)` onto a locale literally called `locale-free`. The second failing scope's image
+ * would overwrite the first's, and the frame a reader actually needed would be the one that was
+ * lost.
+ *
+ * Encoding is injective, so two scopes of one screen cannot collide. `%` is legal in a filename on
+ * every platform this project builds on and in an uploaded CI artifact, and an ordinary locale tag
+ * contains nothing to escape and comes out unchanged.
+ */
+[[nodiscard]] std::string diffImageName(std::string_view screenId, std::string_view scope);
+
+/**
  * @brief Encodes RGBA pixels as a PNG.
  *
  * Returns an empty vector when `pixels` is not exactly `width * height`, or when either dimension is

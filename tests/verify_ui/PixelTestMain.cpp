@@ -100,9 +100,11 @@ int main() {
         printDiagnostics(failing, std::cerr);
         return 1;
     }
-    // The name is asserted because CI uploads the directory: a scope whose spelling leaked into a
-    // filename - `(locale-free)` - is a name people quote wrongly in the shell that fetches it.
-    if (failing.diffImages[0] != diffDirectory / "overdrawn.locale-free.png") {
+    // The name is asserted because CI uploads the directory, and because the encoding is what keeps
+    // two scopes of one screen from overwriting each other's image. The locale-free scope spells
+    // itself `(locale-free)`, so its parentheses are escaped and nothing else is - which is exactly
+    // the property that lets a locale literally named `locale-free` coexist with it.
+    if (failing.diffImages[0] != diffDirectory / "overdrawn.%28locale-free%29.png") {
         std::println(std::cerr, "diff image written to unexpected path {}", failing.diffImages[0].generic_string());
         return 1;
     }

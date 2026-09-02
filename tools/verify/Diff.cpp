@@ -159,6 +159,23 @@ std::vector<ColorRgba8> composeDiff(std::span<const ColorRgba8> frame, std::uint
     return pixels;
 }
 
+std::string diffImageName(std::string_view screenId, std::string_view scope) {
+    std::string slug;
+    slug.reserve(scope.size());
+    for (const char character : scope) {
+        const auto byte = static_cast<unsigned char>(character);
+        // Unreserved in the RFC 3986 sense, minus `~`, which some archive tools mangle. Nothing in
+        // the keep set is ever produced by the escape below, which is what makes this injective.
+        if ((byte >= '0' && byte <= '9') || (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || character == '-' || character == '_'
+            || character == '.') {
+            slug.push_back(character);
+            continue;
+        }
+        std::format_to(std::back_inserter(slug), "%{:02X}", byte);
+    }
+    return std::format("{}.{}.png", screenId, slug);
+}
+
 std::vector<std::byte> encodePng(std::span<const ColorRgba8> pixels, std::uint32_t width, std::uint32_t height) {
     if (width == 0 || height == 0 || pixels.size() != static_cast<std::size_t>(width) * height) {
         return {};

@@ -177,9 +177,10 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        # All of them exit 77 with no loader, no ICD or no device, and tests/CMakeLists.txt and
-        # cmake/MduXCompileScreen.cmake set SKIP_RETURN_CODE 77 so CTest reports that as Skipped -
-        # which does not fail a run.
+        # offscreen_tests and verify_ui_pixel_test exit 77 with no loader, no ICD or no device, and
+        # tests/CMakeLists.txt sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does
+        # not fail a run. The verify.screen.<id> gates have no such status and fail outright; the
+        # grep below is for the first two.
         # Without the check below, a runner that lost its ICD would turn the sanitized half of the
         # render path into a silent no-op and this job would stay green, which is the same shape as
         # the CodeQL database that analysed two files. linux-gcc16-build.yml guards its pixel step
