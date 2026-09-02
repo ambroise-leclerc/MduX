@@ -58,7 +58,7 @@ the whole of Track C.
 |---|---|---|
 | UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). A text package is baked, the committed screen carries a `t("STR-KEY")` measured against it (#235), the governed runtime draws it (#242), and the screen is bound to the packages it was compiled against by digest (#244) - so a label authored in `.medui` reaches pixels through every stage, and a substituted translation is refused rather than drawn. What is still ahead is content rather than path: the rest of the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all four CI legs - MSVC, GCC 16, macOS/Clang 21 (#222) and Linux/Clang 21 (#246). | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
+| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all four CI legs - MSVC, GCC 16, macOS/Clang 21 (#222) and Linux/Clang 21 (#246), each of which now also provides a Vulkan device so the screen bundle's rendered `verification.json` is re-derived rather than copied (#254). | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
@@ -384,8 +384,8 @@ and colour checks are exercisable before a single glyph exists.
 
 - #251 S1 ADR: automated UI verification · _closed_
 - #252 S2 Bounds, ink containment, colour hash · _closed_
-- #253 S3 The verify driver · _implemented by this change_
-- #254 S4 Evidence report emission
+- #253 S3 The verify driver · _closed_
+- #254 S4 Evidence report emission · _implemented by this change_
 - #255 S5 CI across all locales
 
 Sequential: each child is blocked by its predecessor. Two things landed after the epic was written

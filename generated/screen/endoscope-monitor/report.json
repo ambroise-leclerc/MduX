@@ -31,7 +31,13 @@
     "surfaceWidth": 1280,
     "textPackages": [
       "generated/text/endoscope-monitor-en-us/package.json"
-    ]
+    ],
+    "verification": {
+      "artifactRoot": "generated",
+      "locales": [
+        "en-US"
+      ]
+    }
   },
   "outputs": [
     {
@@ -41,6 +47,10 @@
     {
       "path": "package.json",
       "sha256": "79bb460bbf10e51b69eeddde9782e3ef99c464a2c8d9e71cc0601623703fde07"
+    },
+    {
+      "path": "verification.json",
+      "sha256": "d8419fd85a48b0e6b6b7a796452fc774253923937b91079a820fb0cef4e2dfee"
     }
   ],
   "recipe": {
