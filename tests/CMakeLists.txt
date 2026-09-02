@@ -835,6 +835,46 @@ endif()
 
 mdux_discover_tests(verify_spec)
 
+# Host-only verification driver (issue #253). Pure planning/CLI policy stays in a normal SpecLab
+# executable and calls MduXVerifyUiLib directly. The end-to-end case is separate because it creates
+# the production driver's own Vulkan device; 77 means the run could not be made, never that it
+# passed. Automatic Linux and macOS legs provide lavapipe and MoltenVK respectively.
+add_executable(verify_ui_spec
+    verify_ui/VerifyUiSpecMain.cpp
+    verify_ui/DriverTests.cpp
+)
+target_link_libraries(verify_ui_spec PRIVATE MduX::VerifyUiLib speclab::speclab)
+target_include_directories(verify_ui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(verify_ui_spec PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_ui_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_ui_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(verify_ui_spec)
+
+add_executable(verify_ui_pixel_test verify_ui/PixelTestMain.cpp)
+target_link_libraries(verify_ui_pixel_test PRIVATE MduX::VerifyUiLib)
+target_compile_definitions(verify_ui_pixel_test PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(verify_ui_pixel_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_ui_pixel_test PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_ui_pixel_test PRIVATE /experimental:module /std:c++latest)
+endif()
+add_test(NAME verify_ui_pixel_test COMMAND verify_ui_pixel_test)
+set_tests_properties(verify_ui_pixel_test PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
+
 # .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -

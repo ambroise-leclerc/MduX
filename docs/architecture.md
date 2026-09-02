@@ -29,7 +29,7 @@ boundary between them enforced at configure time rather than by review:
 |---|---|---|---|
 | **Governed** | `MduXCore`, `MduX_warnings` | `std` only | never throws ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
 | **Adapter** | `MduX` | governed + Vulkan | throws where Vulkan makes it unavoidable |
-| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib`, `MduXTextBakeLib`, `MduXMeduiLib` | anything | may throw freely; never linked into a device target |
+| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib`, `MduXTextBakeLib`, `MduXMeduiLib`, `MduXVerifyUiLib` | anything | may throw freely; never linked into a device target |
 
 `mdux_verify_trust_zones()` in [`cmake/MduXTrustZones.cmake`](../cmake/MduXTrustZones.cmake) walks
 the full link graph of every declared-governed target at the end of configure and fails on a
@@ -111,6 +111,7 @@ performs no checking and confers no compliance.
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197) and the compiler driver behind `mdux-meduic` (#198) |
+| `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
@@ -147,7 +148,7 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
-Six artifacts are committed today:
+Seven artifacts are committed today:
 
 | Artifact | Baker | Payload |
 |---|---|---|
@@ -156,6 +157,7 @@ Six artifacts are committed today:
 | `generated/model/ecg-demo/` | `mdux-mlbake` | `weights.bin` |
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
+| `generated/text/endoscope-monitor-en-us/` | `mdux-textbake` | `runs.bin` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic` | `package.json` + `goldens.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
@@ -166,8 +168,17 @@ may draw, and which validated token and key it draws with.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
-`position:`** in the golden set, which is why the committed screen has one entry: its `SignalTrace`
-is positioned, not annotated. Both files are reviewable as text, which is the point.
+`position:`** in the golden set, which is why the committed screen has two entries: its
+`NumericDisplay` is safety-critical and its `SignalTrace` is positioned. Both files are reviewable
+as text, which is the point.
+
+`mdux-verify-ui --screen=generated/screen/<id> --locales=all` consumes this bundle without changing
+it. It derives render scopes only from the screen manifest, rejects locale subsets and zero
+obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
+problem made impossible. The committed endoscope screen currently reports failed golden checks
+because `NumericDisplay` and `SignalTrace` remain deferred until #17; this is a failed verification,
+not a skipped or successful one. #254 will serialize the same outcomes rather than reimplementing
+the predicates or the producer.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an
@@ -210,7 +221,9 @@ from anywhere — including through a dependency's interface options.
 ## Tests
 
 Two frameworks, one discovery contract ([ADR-009](adr/ADR-009-in-repository-test-framework.md)):
-the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across fourteen.
+the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across fifteen.
+One additional dedicated executable runs the production verification driver against Vulkan and can
+report CTest skip status when no implementation is present.
 `mdux_discover_tests()` registers one CTest entry per case, so a failure names the scenario rather
 than the binary.
 

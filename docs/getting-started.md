@@ -119,6 +119,24 @@ ctest --test-dir build -L regulatory    # corpus indexes and schemas are current
 
 `ctest -R <name>` selects an individual scenario by name.
 
+### Verifying a compiled screen
+
+`mdux-verify-ui` is a host-only build tool. It reads the committed bundle and every artifact that
+bundle identifies, renders once for every approved locale (or once in the explicit locale-free
+scope for a textless screen), then runs the complete obligation set:
+
+```bash
+./build/tools/mdux-verify-ui \
+  --screen=generated/screen/endoscope-monitor \
+  --locales=all
+```
+
+Locale subsets are deliberately rejected. Exit status `0` means every obligation held, `1` means
+the checks ran and at least one failed, `2` is command-line misuse, and `3` means the run could not
+be made (for example a missing Vulkan implementation or inconsistent artifact). The current
+endoscope bundle exits `1` until #17 draws its golden `NumericDisplay` and `SignalTrace`; that is the
+expected fail-closed result, not a tool failure.
+
 ## Examples
 
 Built when `MDUX_BUILD_EXAMPLES=ON`.
@@ -220,8 +238,9 @@ Link `MduX::Core` if you want the governed pieces without a Vulkan dependency. T
 convenience — `mdux_verify_trust_zones()` mechanically enforces that `MduXCore`'s link graph never
 reaches Vulkan.
 
-Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-shaderemit`, `mdux-mlemit`) are **not**
-exported. They are build-time only.
+Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-meduic`,
+`mdux-medui-check`, the emitters and `mdux-verify-ui`) are **not** exported. They are build-time
+only.
 
 ## Limitations
 
@@ -238,10 +257,9 @@ Clang job covers only the exact Apple Silicon tuple above. Cross-toolchain evide
 anchored by MSVC and GCC; the macOS run is an additional check, not a certification claim.
 
 **Rendering is a vertical slice, not a UI toolkit.** `mdux.draw` records solid and textured rects
-into a fixed budget, and `mdux.render.vulkan` draws them. There is **no text, no layout, and no
-widgets** — those are [#14](https://github.com/ambroise-leclerc/MduX/issues/14),
-[#15](https://github.com/ambroise-leclerc/MduX/issues/15) and
-[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+into a fixed budget, `mdux.render.vulkan` draws them, and the `.medui` path supplies bounded layout
+plus baked `Label` text. The remaining component appearances and live-data geometry are still
+[#17](https://github.com/ambroise-leclerc/MduX/issues/17); they are not a general widget toolkit.
 
 **The HTML/CSS path is gone.** If you find documentation elsewhere describing `MedicalUiRenderer`,
 `UiFileWatcher` or loading `.html` files, it is stale — that path was deleted by

@@ -437,3 +437,57 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-textbake PRIVATE /experimental:module /std:c++latest)
 endif()
+
+# ---------------------------------------------------------------------------
+# mdux-verify-ui (issue #253) - rendered-truth verification driver
+# ---------------------------------------------------------------------------
+#
+# Host-only by construction: this target owns artifact I/O and creates a headless Vulkan device,
+# while the predicates it calls remain in governed `mdux.verify`. It is an internal build tool,
+# never installed or exported, and no example links it. The library/executable split keeps artifact
+# planning and execution directly testable; the executable is only argument and exit-status policy.
+add_library(MduXVerifyUiLib)
+add_library(MduX::VerifyUiLib ALIAS MduXVerifyUiLib)
+
+target_sources(MduXVerifyUiLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES verify/Driver.cppm
+    PRIVATE verify/Driver.cpp
+)
+
+target_compile_features(MduXVerifyUiLib PUBLIC cxx_std_23)
+target_link_libraries(MduXVerifyUiLib PUBLIC MduX::MeduiLib)
+target_link_libraries(MduXVerifyUiLib PRIVATE MduX::MduX MduX_warnings)
+
+set_target_properties(MduXVerifyUiLib PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXVerifyUiLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXVerifyUiLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-verify-ui verify/VerifyUiMain.cpp)
+target_link_libraries(mdux-verify-ui PRIVATE MduX::VerifyUiLib MduX_warnings)
+
+set_target_properties(mdux-verify-ui PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-verify-ui PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-verify-ui PRIVATE /experimental:module /std:c++latest)
+endif()

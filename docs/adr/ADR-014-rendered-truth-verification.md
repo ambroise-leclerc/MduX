@@ -18,11 +18,11 @@ never a change to the verifier.
 
 Epic #16 renders a compiled screen offscreen, checks that the content a golden reference names
 appears where the compiled screen said it would and that every localized text run appears inside its
-node, across every approved locale, then emits that as an evidence artifact. Its four remaining
-children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255). This
-record is the first of the five and is written before any of them, so that those are applications of
-a recorded decision rather than a decision reconstructed from whatever they produced — the same
-reason #190 preceded the rest of #15.
+node, across every approved locale, then emits that as an evidence artifact. Its implementation
+children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255).
+#252 and #253 now implement the first two; #254 and #255 remain. This record preceded all four so
+that they apply a recorded decision rather than reconstructing one from whatever they produced —
+the same reason #190 preceded the rest of #15.
 
 Most of the ground is already fixed, and this ADR should not relitigate it.
 
@@ -54,10 +54,10 @@ What is genuinely open, and what this ADR therefore has to decide rather than in
 4. what the mechanism is worth to an IEC 62304:2006 §5.7 Software system testing argument, and
    where that worth stops.
 
-**Nothing described below runs today.** `mdux.verify` is not in the tree, no driver renders for
-verification, and no `verification.json` exists. Every mechanism named in the decision is either an
-existing one cited by name or an issue that will build it, and the distinction is marked at each
-point.
+**Implementation status.** `mdux.verify` and the host-only `mdux-verify-ui` driver run today (#252,
+#253). The driver loads committed screen, golden, shader, text and font artifacts, enumerates the
+complete obligation set, renders once per scope and reports owning outcomes. `verification.json`
+does not yet exist; #254 owns that artifact and #255 owns its automatic CI gate.
 
 ### The contradiction this record has to settle
 
@@ -345,8 +345,8 @@ the frame.
 ## Consequences
 
 ### Positive
-- The checks are unit-testable without a GPU, so #252 can be built and proven before #253 exists.
-  The epic's sequencing note becomes a property of the design rather than a hope.
+- The checks are unit-testable without a GPU, so #252 was built and proven before #253. The epic's
+  sequencing note became a property of the design rather than a hope.
 - A verification failure names a node, a check, a render scope and an expected value, which is what
   separates this from a screenshot test.
 - No new evidence pattern: `verification.json` is a fourth file in a directory whose other three are
@@ -395,10 +395,11 @@ the frame.
 - `mdux_compile_screen()` remains the only `screen/<id>` bake registration. #254 extends its one
   bundle producer and existing `report.json`; a second `mdux_bake_artifact()` call for the same
   kind/id would collide in its generated target, test and output directory and is forbidden.
-- Diagnostics use the shared envelope from #118 and the code registry from #191, as every other
-  MduX tool does.
-- Nothing in this ADR is implemented at the time it is accepted. #252 builds the checks, #253 the
-  driver, #254 the artifact and #255 the CI leg, in that order.
+- Diagnostics use the shared envelope from #118. Source diagnostics retain #191's `MEDUI-E`
+  registry; malformed committed screen packages retain their `SCP` family, and the driver owns the
+  stable `VUI` family for planning, artifact binding, execution and rendered findings.
+- #252 implements the checks and #253 implements the host-only `MduXVerifyUiLib` /
+  `mdux-verify-ui` driver. #254 still owns the artifact and #255 the CI leg, in that order.
 
 ## References
 - ADR-004: Trust zones in C++ — why the driver and the writer are not governed
@@ -419,5 +420,5 @@ the frame.
 ## Approval
 - **Decision Date**: 2026-08-31
 - **Approved By**: Project maintainer
-- **Review Date**: when #253's driver first runs against a screen carrying a drawn, golden-eligible
-  node — the first point at which this decision is exercised rather than described
+- **Review Date**: reviewed 2026-09-02 when #253 first ran against a drawn, golden-eligible
+  textless fixture; review again when #254 commits the first `verification.json`

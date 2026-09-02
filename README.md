@@ -153,6 +153,7 @@ Derived from the targets and tests that build on `develop`.
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
 | `mdux-mlbake`, `mdux-mlemit` | Implemented | safetensors import, golden generation, byte-verified model packages, generated `constexpr` metadata |
 | `MduXMeduiLib` | Implemented | The `.medui` compiler end to end: parsing, semantic validation, integer-only bounded layout, per-locale text budgets, golden references, the canonical package, two C++ emitters, and the `mdux-meduic` / `mdux-medui-check` tools ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
+| `MduXVerifyUiLib`, `mdux-verify-ui` | Implemented | host-only rendered-truth driver: artifact-derived obligations across every approved locale, offscreen Vulkan execution, and distinct failed-check / impossible-run outcomes ([#253](https://github.com/ambroise-leclerc/MduX/issues/253)) |
 | Text and glyph rendering | Implemented | host-side shaping into baked runs, an R8 coverage atlas, and a governed draw path; a compiled screen's `Label` is joined to a text package at run time and drawn ([#14](https://github.com/ambroise-leclerc/MduX/issues/14), [#242](https://github.com/ambroise-leclerc/MduX/issues/242)). A `Button`'s text is not drawn, because a button is more than its text ([#17](https://github.com/ambroise-leclerc/MduX/issues/17)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
