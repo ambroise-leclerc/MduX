@@ -230,8 +230,9 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
-  `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`; the bakers and emitters,
-  `mdux-meduic`, `mdux-medui-check`, and `mdux-verify-ui`. Not exported.
+  `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
+  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
+  `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, and `mdux-verify-ui`. Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and

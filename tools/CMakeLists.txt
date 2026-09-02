@@ -458,8 +458,8 @@ target_sources(MduXVerifyUiLib
 )
 
 target_compile_features(MduXVerifyUiLib PUBLIC cxx_std_23)
-target_link_libraries(MduXVerifyUiLib PUBLIC MduX::MeduiLib)
-target_link_libraries(MduXVerifyUiLib PRIVATE MduX::MduX MduX_warnings)
+target_link_libraries(MduXVerifyUiLib PUBLIC MduX::MeduiLib MduX::ToolsCommon)
+target_link_libraries(MduXVerifyUiLib PRIVATE MduX::MduX Vulkan::Vulkan MduX_warnings)
 
 set_target_properties(MduXVerifyUiLib PROPERTIES
     CXX_STANDARD 23

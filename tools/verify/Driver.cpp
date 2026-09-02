@@ -33,6 +33,17 @@ namespace mv   = mdux::verify;
 
 constexpr mdux::core::ColorRgba8 clearColor{.r = 0, .g = 0, .b = 0, .a = 255};
 
+[[nodiscard]] std::filesystem::path normalizeScreenDirectory(std::filesystem::path path) {
+    path = path.lexically_normal();
+    while (!path.has_filename()) {
+        const std::filesystem::path parent = path.parent_path();
+        if (parent == path)
+            break;
+        path = parent;
+    }
+    return path;
+}
+
 void report(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path& file, std::string code, std::string message, std::string fix = {}) {
     diagnostics.push_back(cli::Diagnostic{.file     = file.generic_string(),
                                           .code     = std::move(code),
@@ -461,18 +472,36 @@ private:
             reason_ = "no graphics-capable Vulkan queue family";
             return;
         }
-        family_                                = static_cast<std::uint32_t>(std::distance(families.begin(), family));
-        const float                   priority = 1.0F;
-        const VkDeviceQueueCreateInfo queueInfo{.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                                .pNext            = nullptr,
-                                                .flags            = 0,
-                                                .queueFamilyIndex = family_,
-                                                .queueCount       = 1,
-                                                .pQueuePriorities = &priority};
-        std::uint32_t                 extensionCount = 0;
-        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, nullptr);
-        std::vector<VkExtensionProperties> extensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, extensions.data());
+        family_                                     = static_cast<std::uint32_t>(std::distance(families.begin(), family));
+        const float                        priority = 1.0F;
+        const VkDeviceQueueCreateInfo      queueInfo{.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                                     .pNext            = nullptr,
+                                                     .flags            = 0,
+                                                     .queueFamilyIndex = family_,
+                                                     .queueCount       = 1,
+                                                     .pQueuePriorities = &priority};
+        std::vector<VkExtensionProperties> extensions;
+        while (true) {
+            std::uint32_t extensionCount = 0;
+            if (vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, nullptr) != VK_SUCCESS) {
+                reason_ = "device-extension count enumeration failed";
+                return;
+            }
+            if (extensionCount == 0) {
+                extensions.clear();
+                break;
+            }
+            extensions.resize(extensionCount);
+            const VkResult enumerated = vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, extensions.data());
+            if (enumerated == VK_SUCCESS) {
+                extensions.resize(extensionCount);
+                break;
+            }
+            if (enumerated != VK_INCOMPLETE) {
+                reason_ = "device-extension enumeration failed";
+                return;
+            }
+        }
         std::vector<const char*> enabled;
         if (std::ranges::any_of(extensions, [](const auto& value) {
                 return std::string_view{value.extensionName} == "VK_KHR_portability_subset";
@@ -601,10 +630,11 @@ PlanResult enumerate(const mdux::medui::ScreenPackage& screen, std::span<const m
     return result;
 }
 
-RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot) {
-    RunResult  result;
-    const auto packagePath = screenDirectory / "package.json";
-    const auto packageText = readText(packagePath);
+RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::filesystem::path& artifactRoot) {
+    RunResult                   result;
+    const std::filesystem::path screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
+    const auto                  packagePath     = screenDirectory / "package.json";
+    const auto                  packageText     = readText(packagePath);
     if (!packageText) {
         report(result.diagnostics, packagePath, "VUI001", "cannot read screen package.json");
         return result;
@@ -632,6 +662,8 @@ RunResult run(const std::filesystem::path& screenDirectory, const std::filesyste
     PlanResult plan    = enumerate(screen, goldens);
     result.obligations = std::move(plan.obligations);
     if (!plan.ok()) {
+        if (result.obligations.empty())
+            result.state = RunState::ChecksFailed;
         for (auto& diagnostic : plan.diagnostics) {
             diagnostic.file = packagePath.generic_string();
             result.diagnostics.push_back(std::move(diagnostic));
@@ -827,7 +859,8 @@ RunResult run(const std::filesystem::path& screenDirectory, const std::filesyste
 }
 
 RunResult run(const std::filesystem::path& screenDirectory) {
-    return run(screenDirectory, screenDirectory.parent_path().parent_path());
+    const std::filesystem::path normalized = normalizeScreenDirectory(screenDirectory);
+    return run(normalized, normalized.parent_path().parent_path());
 }
 
 std::string usage() {
@@ -855,7 +888,7 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
         if (argument.starts_with("--screen=")) {
             if (screenSeen || argument.size() == std::string_view{"--screen="}.size())
                 throw cli::UsageError{"--screen must occur once with a non-empty bundle path\n\n" + usage()};
-            result.screenDirectory = argument.substr(std::string_view{"--screen="}.size());
+            result.screenDirectory = normalizeScreenDirectory(std::filesystem::path{argument.substr(std::string_view{"--screen="}.size())});
             screenSeen             = true;
             continue;
         }

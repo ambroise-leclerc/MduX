@@ -145,6 +145,30 @@ const mdux::spec::Register zeroPlan{"A zero-obligation screen is not a successfu
                                             .Execute();
                                     }};
 
+const mdux::spec::Register zeroRun{"A zero-obligation run is a verification failure", "evidence-unit", [] {
+                                       return speclab::Test("verify-ui-zero-run")
+                                           .Given("a canonical textless bundle with no golden", [] {})
+                                           .When("the production driver plans the run", [] {})
+                                           .Then("it returns status one without creating a Vulkan device",
+                                                 [] {
+                                                     const std::filesystem::path root{MDUX_REPO_ROOT};
+                                                     const vu::RunResult         result = vu::run(root / "tests/verify_ui/fixtures/zero", root / "generated");
+                                                     mdux::spec::Checks          assertions;
+                                                     assertions.expect(result.state == vu::RunState::ChecksFailed,
+                                                                       "an empty verification is a verification failure");
+                                                     assertions.expect(vu::exitStatus(result.state) == 1, "CI receives the failure status");
+                                                     assertions.expect(result.renderCount == 0, "planning fails before rendering");
+                                                     assertions.expect(result.outcomes.empty(), "no outcome is invented");
+                                                     assertions.expect(std::ranges::any_of(result.diagnostics,
+                                                                                           [](const auto& diagnostic) {
+                                                                                               return diagnostic.code == "VUI004";
+                                                                                           }),
+                                                                       "the zero-obligation diagnostic is retained");
+                                                     assertions.raise();
+                                                 })
+                                           .Execute();
+                                   }};
+
 const mdux::spec::Register allLocalesCli{"The exact all-locales invocation is accepted", "evidence-unit", [] {
                                              return speclab::Test("verify-ui-all-locales-cli")
                                                  .Given("a committed screen path", [] {})
@@ -163,6 +187,23 @@ const mdux::spec::Register allLocalesCli{"The exact all-locales invocation is ac
                                                        })
                                                  .Execute();
                                          }};
+
+const mdux::spec::Register trailingSeparatorCli{"A trailing screen separator is normalized", "evidence-unit", [] {
+                                                    return speclab::Test("verify-ui-trailing-screen-separator")
+                                                        .Given("the path form commonly produced by shell completion", [] {})
+                                                        .When("the CLI boundary parses it", [] {})
+                                                        .Then("identity and artifact-root derivation see the bundle directory",
+                                                              [] {
+                                                                  constexpr std::array arguments{std::string_view{"--screen=generated/screen/demo/"},
+                                                                                                 std::string_view{"--locales=all"}};
+                                                                  const auto           invocation = vu::parseArguments(arguments);
+                                                                  mdux::spec::Checks   assertions;
+                                                                  assertions.expect(invocation.screenDirectory == "generated/screen/demo",
+                                                                                    "the trailing separator is removed");
+                                                                  assertions.raise();
+                                                              })
+                                                        .Execute();
+                                                }};
 
 const mdux::spec::Register subsetCli{"A locale subset is rejected", "evidence-unit", [] {
                                          return speclab::Test("verify-ui-subset-cli")

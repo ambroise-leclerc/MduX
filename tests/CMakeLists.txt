@@ -845,6 +845,7 @@ add_executable(verify_ui_spec
 )
 target_link_libraries(verify_ui_spec PRIVATE MduX::VerifyUiLib speclab::speclab)
 target_include_directories(verify_ui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(verify_ui_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 set_target_properties(verify_ui_spec PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON

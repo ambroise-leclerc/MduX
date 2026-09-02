@@ -24,7 +24,7 @@ export namespace mdux::tools::verify {
 
 inline constexpr std::string_view toolName = "mdux-verify-ui";
 
-/// Stable process outcomes. In particular, an impossible run is not a failed check.
+/// Stable process outcomes. In particular, an impossible run is not a verification failure.
 enum class RunState : std::uint8_t {
     Passed,
     ChecksFailed,
@@ -102,7 +102,7 @@ struct Invocation {
 [[nodiscard]] Invocation  parseArguments(std::span<const std::string_view> arguments);
 [[nodiscard]] Invocation  parseArguments(int argc, const char* const* argv);
 
-/// 0 pass, 1 completed checks with failures, 2 usage, 3 run impossible.
+/// 0 pass, 1 verification failure, 2 usage, 3 run impossible.
 [[nodiscard]] constexpr int exitStatus(RunState state) noexcept {
     switch (state) {
         case RunState::Passed:

@@ -132,8 +132,9 @@ scope for a textless screen), then runs the complete obligation set:
 ```
 
 Locale subsets are deliberately rejected. Exit status `0` means every obligation held, `1` means
-the checks ran and at least one failed, `2` is command-line misuse, and `3` means the run could not
-be made (for example a missing Vulkan implementation or inconsistent artifact). The current
+verification failed (a check failed or the plan contained zero obligations), `2` is command-line
+misuse, and `3` means the run could not be made (for example a missing Vulkan implementation or
+inconsistent artifact). The current
 endoscope bundle exits `1` until #17 draws its golden `NumericDisplay` and `SignalTrace`; that is the
 expected fail-closed result, not a tool failure.
 

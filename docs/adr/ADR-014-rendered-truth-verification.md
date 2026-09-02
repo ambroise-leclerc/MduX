@@ -20,7 +20,7 @@ Epic #16 renders a compiled screen offscreen, checks that the content a golden r
 appears where the compiled screen said it would and that every localized text run appears inside its
 node, across every approved locale, then emits that as an evidence artifact. Its implementation
 children build the checks (#252), the driver (#253), the artifact (#254) and the CI leg (#255).
-#252 and #253 now implement the first two; #254 and #255 remain. This record preceded all four so
+Issues #252 and #253 now implement the first two; #254 and #255 remain. This record preceded all four so
 that they apply a recorded decision rather than reconstructing one from whatever they produced —
 the same reason #190 preceded the rest of #15.
 
@@ -54,10 +54,10 @@ What is genuinely open, and what this ADR therefore has to decide rather than in
 4. what the mechanism is worth to an IEC 62304:2006 §5.7 Software system testing argument, and
    where that worth stops.
 
-**Implementation status.** `mdux.verify` and the host-only `mdux-verify-ui` driver run today (#252,
-#253). The driver loads committed screen, golden, shader, text and font artifacts, enumerates the
-complete obligation set, renders once per scope and reports owning outcomes. `verification.json`
-does not yet exist; #254 owns that artifact and #255 owns its automatic CI gate.
+**Implementation status.** Issues #252 and #253 implement `mdux.verify` and the host-only
+`mdux-verify-ui` driver. The driver loads committed screen, golden, shader, text and font artifacts,
+enumerates the complete obligation set, renders once per scope and reports owning outcomes.
+`verification.json` does not yet exist; #254 owns that artifact and #255 owns its automatic CI gate.
 
 ### The contradiction this record has to settle
 
