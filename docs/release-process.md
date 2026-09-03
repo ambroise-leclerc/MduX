@@ -187,9 +187,10 @@ $ gh release create vX.Y.Z --verify-tag --title "vX.Y.Z — Wave N: <what it is>
 
 **A green check is not evidence that the CI ran.** GitHub does not run `pull_request` workflows
 when it cannot construct a merge commit, so an unmergeable release PR can display a passing review
-bot while every build, test and lint check is absent. Do not merge or tag from that state. The
-required checks on `master` must all be present and green; an absent check remains pending under
-branch protection. Resolve the conflict and wait for the workflows to run.
+bot while every build, test and lint check is absent. Do not merge or tag from that state. Every
+check `master` expects must be present and green before you merge, and verifying that is manual
+today: the repository configures no required status checks, so nothing holds an absent check
+pending and nothing blocks the merge. Resolve the conflict and wait for the workflows to run.
 
 Four things this spells out because cutting v0.6.0 found each of them the hard way.
 
@@ -226,10 +227,11 @@ unpushed commit, the pull must fail rather than quietly add a merge, because an 
 indistinguishable in the final count from the drift this step exists to measure.
 
 [`branch-topology.yml`](../.github/workflows/branch-topology.yml) enforces that invariant on every
-push to `develop`, on every mergeable pull request covered by the repository's branch convention,
-and once a day. If it reports commits unique to `master`, back-merge `origin/master` into `develop`
-before continuing feature or release work; do not make a duplicate change independently on both
-branches.
+push to `master` or `develop`, and once a day. Deliberately not on a pull request: the counts come
+from the branch tips, which no PR can move, so a PR would report the state of the branches around it
+and stay red until someone with push access to `develop` acted. If the check reports commits unique
+to `master`, back-merge `origin/master` into `develop` before continuing feature or release work; do
+not make a duplicate change independently on both branches.
 
 **Merge the release PR, do not squash it.** A squash gives the release commit a single parent, so no
 release-branch commit is in `master`'s ancestry, and the back-merge falls back to the last common
