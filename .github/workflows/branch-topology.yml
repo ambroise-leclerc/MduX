@@ -1,0 +1,83 @@
+name: Branch Topology
+
+on:
+  push:
+    # A push to master is what creates drift, so observe it directly rather than waiting for the
+    # cron: a release merged at 06:00 would otherwise go unverified until the next morning.
+    branches: [ master, develop ]
+  pull_request:
+    # A pull request gets only the release-branch-only rule below; the drift leg belongs to `push`
+    # and `schedule`, because it measures branch tips no pull request can move. The filter stays
+    # wide so ordinary and stacked PRs still report a check. `edited` covers base retargeting.
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+    types: [ opened, synchronize, reopened, edited ]
+  schedule:
+    # A backstop for what the push events cannot see: a run cancelled or skipped, or history
+    # rewritten in place by a force-push.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branch-topology:
+    name: Branch Topology
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository history
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Fetch the authoritative branch tips
+      run: |
+        git fetch --no-tags origin \
+          +refs/heads/master:refs/remotes/origin/master \
+          +refs/heads/develop:refs/remotes/origin/develop
+
+    - name: Enforce the release topology
+      env:
+        BASE_REF: ${{ github.base_ref }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REF: ${{ github.head_ref }}
+        HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        set -euo pipefail
+        failed=0
+
+        # Drift belongs to the branch tips, not to any one pull request: the counts below are the
+        # same whatever a PR contains. Measured on `pull_request`, this leg would redden every open
+        # PR for the window between a release merge and the back-merge of step 9 — demanding of
+        # each contributor an admin push to develop that none of them can make.
+        if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+          # Capture the counts before splitting them. `read x y <<< "$(cmd)"` takes its exit status
+          # from `read`, never from the substitution, so a `git rev-list` that fails — an unfetched
+          # ref, a renamed branch — would leave both variables empty, and `(( master_only != 0 ))`
+          # reads an empty variable as zero. The guard would pass precisely when git is broken, so
+          # assert the counts are numbers rather than trusting the arithmetic to notice.
+          counts="$(git rev-list --left-right --count origin/master...origin/develop)"
+          read -r master_only develop_only <<< "${counts}"
+          if [[ ! "${master_only}" =~ ^[0-9]+$ || ! "${develop_only}" =~ ^[0-9]+$ ]]; then
+            echo "::error::git rev-list returned no usable commit counts: '${counts}'"
+            exit 1
+          fi
+
+          echo "master-only commits: ${master_only}; develop-only commits: ${develop_only}"
+          if (( master_only != 0 )); then
+            echo "::error::master carries ${master_only} commit(s) develop lacks; back-merge master as described in docs/release-process.md step 9"
+            failed=1
+          fi
+        fi
+
+        if [[ "${EVENT_NAME}" == "pull_request" && "${BASE_REF}" == "master" ]]; then
+          if [[ "${HEAD_REPOSITORY}" != "${GITHUB_REPOSITORY}" || \
+                ! "${HEAD_REF}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::master accepts only same-repository release/vX.Y.Z pull requests; target develop for ordinary work"
+            failed=1
+          fi
+        fi
+
+        exit "${failed}"
