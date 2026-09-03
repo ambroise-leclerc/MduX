@@ -276,7 +276,7 @@ issue number, a dash, then the slugified issue title.
 14-text-schema
 ```
 
-This is not cosmetic. Every workflow filters `pull_request` on the pattern `[0-9]+-*`, and
+This is not cosmetic. Every workflow filters pull requests on the pattern `[0-9]+-*`, and
 **those filters match a pull request's base branch, not its head**. A PR whose base matches no
 listed pattern reports no checks at all — not failures, *nothing* — which is the failure mode
 easiest to miss on review. So:
@@ -292,7 +292,15 @@ easiest to miss on review. So:
   convention and is kept only for branches already in flight.
 - A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
   it**. If you need one, add its pattern to the `branches:` list of every workflow under
-  `.github/workflows/` that has a `pull_request:` trigger.
+  `.github/workflows/` that has a `pull_request:` or `pull_request_target:` trigger.
+
+`branch-topology.yml` is the one workflow on `pull_request_target` rather than `pull_request`,
+because it is the one that polices the pull request it runs on: `pull_request` would evaluate the
+head branch's copy of the definition, so a PR targeting `master` could delete the rule in the same
+diff the rule exists to reject. The practical consequence when editing that file is that **your
+change is checked by the base branch's version, not yours** — the new definition only takes effect
+once merged. The job never checks out or executes a pull request's code, which is what keeps that
+trigger safe; do not add a `ref:` to its checkout.
 
 `push:` triggers stay limited to `master` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
@@ -302,6 +310,12 @@ review-bot check while every build, test and lint check is absent. Treat missing
 evidence, never as a pass. Branch protection on `master` requires status checks, so an absent
 required check remains pending and blocks the merge. Resolve the conflict and wait for every
 required check to report success.
+
+`Branch Topology` is not evidence either, and for the opposite reason: `pull_request_target` needs
+no merge commit, so it runs and passes on an unmergeable PR exactly as it does on a healthy one. It
+is also required on `master`, which makes it the one required check that can report green while the
+other eleven sit pending — the most visible reassurance on precisely the PR that has earned none. It
+says the base branch is legitimate, and nothing whatever about whether the build ran.
 
 ### Stacked delivery
 

@@ -5,10 +5,16 @@ on:
     # A push to master is what creates drift, so observe it directly rather than waiting for the
     # cron: a release merged at 06:00 would otherwise go unverified until the next morning.
     branches: [ master, develop ]
-  pull_request:
-    # A pull request gets only the release-branch-only rule below; the drift leg belongs to `push`
-    # and `schedule`, because it measures branch tips no pull request can move. The filter stays
-    # wide so ordinary and stacked PRs still report a check. `edited` covers base retargeting.
+  pull_request_target:
+    # `pull_request_target`, not `pull_request`, because this workflow polices the pull request it
+    # runs on. On `pull_request` GitHub evaluates the definition from the merge commit — the head
+    # branch's copy — so a PR targeting master could edit this file in its own diff and delete the
+    # rule below. `pull_request_target` loads the definition from the base branch, which the author
+    # cannot reach without first merging. Two consequences worth knowing: the job never checks out
+    # or runs any pull request's code (it reads only the branch tips and the event metadata, and
+    # `permissions` stays read-only), which is what makes the trigger safe here; and a change to
+    # this file takes effect only once it is on the base branch, so a PR editing it is still
+    # checked by the previous version.
     branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
     types: [ opened, synchronize, reopened, edited ]
   schedule:
@@ -27,6 +33,9 @@ jobs:
 
     steps:
     - name: Checkout repository history
+      # No `ref:`, deliberately. Under `pull_request_target` the default is the base branch, and
+      # pointing it at the pull request's head would check out author-controlled content into a
+      # trusted context — the hazard that makes this trigger worth warning about.
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
@@ -49,10 +58,10 @@ jobs:
         failed=0
 
         # Drift belongs to the branch tips, not to any one pull request: the counts below are the
-        # same whatever a PR contains. Measured on `pull_request`, this leg would redden every open
+        # same whatever a PR contains. Measured on a pull request, this leg would redden every open
         # PR for the window between a release merge and the back-merge of step 9 — demanding of
         # each contributor an admin push to develop that none of them can make.
-        if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+        if [[ "${EVENT_NAME}" != pull_request* ]]; then
           # Capture the counts before splitting them. `read x y <<< "$(cmd)"` takes its exit status
           # from `read`, never from the substitution, so a `git rev-list` that fails — an unfetched
           # ref, a renamed branch — would leave both variables empty, and `(( master_only != 0 ))`
@@ -72,7 +81,10 @@ jobs:
           fi
         fi
 
-        if [[ "${EVENT_NAME}" == "pull_request" && "${BASE_REF}" == "master" ]]; then
+        # Matches `pull_request_target` and `pull_request` alike: only the former is configured
+        # above, but an exact test for one event name is how this rule silently stops running if
+        # the trigger is ever changed back.
+        if [[ "${EVENT_NAME}" == pull_request* && "${BASE_REF}" == "master" ]]; then
           if [[ "${HEAD_REPOSITORY}" != "${GITHUB_REPOSITORY}" || \
                 ! "${HEAD_REF}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::master accepts only same-repository release/vX.Y.Z pull requests; target develop for ordinary work"
