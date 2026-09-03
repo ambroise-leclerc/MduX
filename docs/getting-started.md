@@ -104,6 +104,29 @@ build and a plain `build/` one do not collide.
 | `MDUX_BUILD_TESTS` | `ON` |
 | `MDUX_BUILD_DOCS` | `OFF` |
 | `MDUX_ENABLE_REGULATORY_DOCS` | `ON` |
+| `ENABLE_CACHE` | `ON` |
+| `CACHE_OPTION` | `ccache` |
+| `CACHE_BINARY` | empty (search `PATH` for `CACHE_OPTION`) |
+
+### Compiler cache
+
+When `ccache` is available, MduX keeps it enabled without trusting it to understand C++20 named
+modules — [upstream still tracks that support as open](https://github.com/ccache/ccache/issues/1252).
+Module interfaces compile directly because a cache hit cannot restore their BMI output.
+On Clang, a module consumer remains cacheable, but the contents of every imported BMI are added to
+its cache key; changing an exported layout therefore invalidates the consumer even when its source
+is unchanged. Module command formats the launcher does not recognize bypass the cache rather than
+risk a stale object. Ordinary translation units remain eligible for the selected cache.
+
+This behavior requires ccache 4.8 or newer for cached Clang module consumers. An older ccache still
+works, but named-module compilations bypass it. `-DENABLE_CACHE=OFF` disables the launcher entirely;
+`-DCACHE_OPTION=<program>` selects another launcher, for which named-module compilations also bypass
+the cache until that program's BMI handling is qualified. `-DCACHE_BINARY=<path>` pins a particular
+cache executable, for example when bisecting a ccache version regression.
+
+`build.cache.namedModuleIntegrity` is the negative check behind this policy: it changes the layout
+of an exported struct without touching its consumer, asserts that the consumer observes the new
+layout, then forces a content-identical rebuild and asserts that it was a real ccache hit.
 
 ### Selecting suites
 
