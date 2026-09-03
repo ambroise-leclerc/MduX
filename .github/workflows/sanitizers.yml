@@ -158,9 +158,10 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
-        ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test' --output-on-failure --no-tests=error
+        ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' --output-on-failure --no-tests=error
 
-    # offscreen_tests and verify_ui_pixel_test run against lavapipe, and the Vulkan ICD leaks 512
+    # offscreen_tests, verify_ui_pixel_test and the verify.screen.<id> gates all run against
+    # lavapipe, and the Vulkan ICD leaks 512
     # bytes once, on a thread it starts itself, through pthread_once - a stack with no MduX frame in
     # it at all. That is the driver's allocation to free, not this project's, and it is not
     # suppressible by name because the frames resolve to `<unknown module>`.
@@ -176,8 +177,10 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        # Both tests exit 77 with no loader, no ICD or no device, and tests/CMakeLists.txt sets
-        # SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does not fail a run.
+        # offscreen_tests and verify_ui_pixel_test exit 77 with no loader, no ICD or no device, and
+        # tests/CMakeLists.txt sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does
+        # not fail a run. The verify.screen.<id> gates have no such status and fail outright; the
+        # grep below is for the first two.
         # Without the check below, a runner that lost its ICD would turn the sanitized half of the
         # render path into a silent no-op and this job would stay green, which is the same shape as
         # the CodeQL database that analysed two files. linux-gcc16-build.yml guards its pixel step
@@ -187,8 +190,18 @@ jobs:
         # rather than assumed - `false | tee /dev/null` exits 0 under `bash -e` and 1 with pipefail.
         set -o pipefail
         LOG="$RUNNER_TEMP/asan-pixel.log"
-        ctest --test-dir build-asan -R 'offscreen_tests|verify_ui_pixel_test' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+        ctest --test-dir build-asan -R 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
         if grep -q "Skipped" "$LOG"; then
           echo "::error::a rendered-truth test was skipped - no Vulkan device, so part of the render path was not sanitized"
           exit 1
         fi
+
+    # The same attachment the three render legs make, for the same reason (#255): a sanitized
+    # verification failure is still a failure a reader should be able to see rather than reconstruct.
+    - name: Upload the rendered-truth diff images
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-diff-asan
+        path: build-asan/verify-diff/
+        if-no-files-found: ignore

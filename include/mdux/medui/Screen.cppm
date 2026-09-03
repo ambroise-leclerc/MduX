@@ -15,30 +15,58 @@
  * ## What this runtime draws, and what it does not
  *
  * It draws a `Panel`: a filled rectangle in the colour its token resolves to. It draws a `Label`
- * too, when the caller supplies the packages a locale-free screen has to be joined to. Every other
- * component is visited, counted, and left undrawn - and that is a stated limit rather than an
- * omission, so it is worth saying exactly why for each.
+ * too, when the caller supplies the packages a locale-free screen has to be joined to. Since #255 it
+ * also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves: the node's whole resolved
+ * rectangle, in the single colour token that node carries. Every other component is visited,
+ * counted, and left undrawn - and that is a stated limit rather than an omission, so it is worth
+ * saying exactly why for each.
  *
  * - `Label` draws **text**, and does so through `TextBinding` (#242). A compiled screen carries a
  *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
  *   locale the device is running. Without a binding there is nothing to join to and the node is
  *   deferred exactly as before, which is also what a screen with no text costs: nothing.
- * - `Button`, `CriticalButton`, `TextInput` carry text keys as well, and are still deferred. Their
- *   text is not the whole of their appearance - a button has a face, a text input has a caret and a
- *   selection - and this module will not invent those. They arrive with #17.
- * - `Clock`, `NumericDisplay`, `SignalTrace`, `StatusIndicator` draw from **live data**. Their
- *   geometry does not exist until the frame does - that is ADR-012's reason a screen bakes layout
- *   rather than vertices - so what they paint is a function of a sample this module is not given.
+ * - `NumericDisplay` and `SignalTrace` draw their field, and the **reading inside it** is still
+ *   deferred: the digits a template expands to and the excursion a waveform makes are functions of a
+ *   sample this module is not given, and they arrive with #258 and #257.
+ * - `Button`, `CriticalButton`, `TextInput` carry text keys or live sources as well, and are still
+ *   deferred whole. Their text is not the whole of their appearance - a button has a face, a text
+ *   input has a caret and a selection - and this module will not invent those. They arrive with #17.
+ * - `Clock` carries no colour token at all, and a `StatusIndicator` carries one per state, so
+ *   neither has a single tint a field could be painted in - which is the same reason
+ *   `collectGoldens()` refuses `ColorHash` for such a node. They stay deferred until #258 and #259.
  * - `Image` draws a **baked image package**, which this repository does not yet produce.
  *
- * What is deliberately *not* claimed: that a `Label`'s box should be filled with its colour, or that
- * a `Button` has a face in its. Those are per-component appearance decisions, and nothing in this
- * project settles them today - not the ADRs, which stop at "where each node is and which validated
- * token it draws with", and not the sibling, whose `render_frame` returns frame statistics rather
- * than geometry (`crates/trustsc-ui/src/lib.rs:539`). Inventing them here would make this module
- * authoritative over a question it has no evidence for, so it counts what it cannot decide and says
- * so in `FrameStats::deferred`. A device integrator sees "eleven nodes, one drawn" rather than a
- * screen that quietly renders less than it looks like it should.
+ * ## Why the field is read off the artifact rather than invented here
+ *
+ * This module used to defer `NumericDisplay` and `SignalTrace` too, on the ground that "what they
+ * paint is a function of a sample this module is not given" - and that remains true of the reading.
+ * It was never true of the field, and the artifact says so.
+ *
+ * `collectGoldens()` applies ADR-011's predicate while the AST still carries its inputs and writes
+ * one entry per selected node into `goldens.json`: `bounds` is that node's **whole** resolved
+ * rectangle and `colorToken` is the single token the author gave it. ADR-014 decision 2 makes those
+ * two values the verifier's expectation, and `mdux::verify::goldenBounds()` reads the first as an
+ * equality - the content inside the declared rectangle has to *be* that rectangle, edge for edge.
+ * So the compiled artifact already asserts, on the author's behalf and in a file four CI legs
+ * byte-compare, that this node's whole rectangle carries that tint. A runtime that painted nothing
+ * there would not be declining to invent an appearance; it would be disagreeing with the artifact
+ * its own compiler emitted, which is the state ADR-014's consequences recorded and #255 closes.
+ *
+ * What is still deliberately *not* claimed: that a `Label`'s box should be filled with its colour,
+ * or that a `Button` has a face in its. Neither has a golden that says so - a `Label`'s token is its
+ * *text* colour and its box is text-sized, and no golden can name the synthetic `Panel` a `Row`
+ * produces. Those remain per-component appearance decisions this project has not settled, not in the
+ * ADRs, which stop at "where each node is and which validated token it draws with", and not in the
+ * sibling, whose `render_frame` returns frame statistics rather than geometry
+ * (`crates/trustsc-ui/src/lib.rs:539`). So this module still counts what it cannot decide and says
+ * so in `FrameStats::deferred`.
+ *
+ * One consequence of the field rule is worth stating rather than discovering, because it constrains
+ * #257 and #258 rather than being free. `ColorHash` admits only pixels that are a blend of the
+ * node's ground and its tint at one coverage, so a reading drawn *inside* a field in some third
+ * colour fails the golden its own screen was compiled with. A component whose field a golden pins
+ * with `ColorHash` therefore has two ways to show a reading and no others: in the field's own tint,
+ * or knocked out of it back to the ground.
  *
  * ## Where a label's glyphs go, and why that is not an invention
  *
@@ -121,6 +149,40 @@ import mdux.text.draw;
 import mdux.text.schema;
 
 export namespace mdux::medui {
+
+/**
+ * @brief The token a node paints its whole resolved rectangle with, or `nullopt` for a node that has
+ *        no such rectangle to paint.
+ *
+ * One spelling of the field rule, so `render()` and any test that wants to name the drawn set read
+ * the same function rather than two lists that agree until a component is added to one of them.
+ *
+ * A `Panel` is here because a `Row` declared a background and a background *is* a filled box. A
+ * `NumericDisplay` and a `SignalTrace` are here because the golden entry their own compiler emits
+ * pairs their whole rectangle with their single token, and `goldenBounds()` reads that pairing as an
+ * equality - see the module comment. Everything else is deferred: a `Clock` has no token, a
+ * `StatusIndicator` has one per state and therefore no single tint, and the rest have an appearance
+ * with more than one part that nothing in this project has settled.
+ *
+ * **`nullopt` and an empty token are different answers**, and collapsing them would lose a refusal.
+ * `nullopt` means "this component does not paint a field", which is a deferral. An engaged optional
+ * holding an empty string means "this component paints a field and its token is blank", which
+ * `validatePayload()` refuses at compile time and `render()` must refuse at run time - a screen built
+ * by hand never met that `static_assert`, and a deferral would let it draw a frame that silently
+ * omits a node instead.
+ */
+[[nodiscard]] constexpr std::optional<std::string_view> fieldColorToken(const NodePayload& payload) noexcept {
+    if (const auto* panel = std::get_if<PanelSpec>(&payload); panel != nullptr) {
+        return panel->colorToken;
+    }
+    if (const auto* numeric = std::get_if<NumericDisplaySpec>(&payload); numeric != nullptr) {
+        return numeric->colorToken;
+    }
+    if (const auto* trace = std::get_if<SignalTraceSpec>(&payload); trace != nullptr) {
+        return trace->colorToken;
+    }
+    return std::nullopt;
+}
 
 /// Why a frame was refused. Every one leaves the draw list exactly as it was found.
 enum class ScreenError : std::uint8_t {
@@ -272,10 +334,16 @@ static_assert(!std::is_aggregate_v<TextBinding>, "a TextBinding must only be obt
 /**
  * @brief What one frame did, and what it left undone.
  *
- * `deferred` is the honest half: it counts nodes this runtime visited and could not paint, for the
- * reasons the module comment gives one by one. A caller that expects a screen to be fully drawn can
- * assert it is zero; today, on any screen carrying live data, it will not be - and on one carrying
- * text it will not be either unless a `TextBinding` was supplied.
+ * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
+ * for the reasons the module comment gives one by one. A caller that expects a screen to be fully
+ * drawn can assert it is zero; today, on a screen carrying an `Image`, a `VulkanViewport`, a
+ * `Clock`, a `StatusIndicator` or any of the three interactive components, it will not be - and on
+ * one carrying text it will not be either unless a `TextBinding` was supplied.
+ *
+ * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255: its field is drawn, and
+ * only the reading inside it waits on a sample. That distinction is the point of the counter - a
+ * node whose rectangle is painted is a node a golden reference can check, whatever it will later
+ * show in it.
  */
 struct FrameStats {
     std::uint32_t nodes{0};     ///< nodes visited

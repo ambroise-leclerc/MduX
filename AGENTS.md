@@ -232,7 +232,8 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
   `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
   `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
-  `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, and `mdux-verify-ui`. Not exported.
+  `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, `mdux-verify-ui`, and `mdux-verify-bake`.
+  Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
@@ -247,7 +248,9 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
-  `pixel`, `regulatory`.
+  `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
+  screen by `mdux_compile_screen()`; asserted on the three render legs, and distinct from `evidence`
+  because it compares a frame to a screen rather than bytes to bytes).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

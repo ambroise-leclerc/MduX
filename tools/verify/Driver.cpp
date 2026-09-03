@@ -22,6 +22,7 @@ import mdux.shader.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.package;
+import mdux.tools.verify.diff;
 import mdux.verify;
 
 namespace mdux::tools::verify {
@@ -50,6 +51,19 @@ void report(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::pa
                                           .severity = cli::Severity::Error,
                                           .message  = std::move(message),
                                           .fixHint  = std::move(fix)});
+}
+
+/// A finding that does not change the verdict, so it must not be spelled like one.
+///
+/// The only user today is the diff image (VUI009). Whether that file was written says nothing about
+/// whether the screen verified, and an `error:` line for it would put a second, unrelated failure in
+/// front of a reader who is already looking at a real one.
+void warn(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path& file, std::string code, std::string message) {
+    diagnostics.push_back(cli::Diagnostic{.file     = file.generic_string(),
+                                          .code     = std::move(code),
+                                          .severity = cli::Severity::Warning,
+                                          .message  = std::move(message),
+                                          .fixHint  = {}});
 }
 
 [[nodiscard]] std::optional<std::vector<std::byte>> readBytes(const std::filesystem::path& path) {
@@ -243,6 +257,66 @@ readGoldens(const std::filesystem::path& path, std::string& digestOut, std::vect
         result.push_back(std::move(golden));
     }
     return result;
+}
+
+/**
+ * @brief Writes one render scope's diff image, and says where it went or why it did not.
+ *
+ * A failure to write is a diagnostic and never a verdict. The image is an attachment for a person,
+ * so a full disk must not turn a verification failure into a different failure - nor, worse, let a
+ * real one be missed because the process died reporting that it could not draw a picture of it.
+ */
+void writeDiffImage(RunResult&                              result,
+                    const std::filesystem::path&            directory,
+                    std::string_view                        screenId,
+                    std::string_view                        scope,
+                    std::span<const mdux::core::ColorRgba8> frame,
+                    std::uint32_t                           width,
+                    std::uint32_t                           height,
+                    std::span<const Outcome>                scopeOutcomes) {
+    std::vector<DiffMark> marks;
+    for (const Outcome& outcome : scopeOutcomes) {
+        if (outcome.held()) {
+            continue;
+        }
+        marks.push_back(DiffMark{.nodeId     = outcome.nodeId,
+                                 .check      = outcome.check,
+                                 .expected   = outcome.expected,
+                                 .found      = outcome.found,
+                                 .foundValid = outcome.foundValid});
+    }
+    if (marks.empty()) {
+        return;
+    }
+
+    // The filename, and the encoding that keeps two scopes of one screen from overwriting each
+    // other's image, both belong to `mdux.tools.verify.diff` - see `diffImageName()` for why a
+    // filter would not be enough.
+    const std::filesystem::path path = directory / diffImageName(screenId, scope);
+
+    std::error_code created;
+    std::filesystem::create_directories(directory, created);
+    if (created) {
+        // Attributed to the directory rather than to the file inside it: nothing is wrong with the
+        // filename, and naming it would send a reader looking in the wrong place.
+        warn(result.diagnostics, directory, "VUI009", "cannot create the diff image directory: " + created.message());
+        return;
+    }
+
+    const std::vector<mdux::core::ColorRgba8> composed = composeDiff(frame, width, height, marks);
+    const std::vector<std::byte>              encoded  = encodePng(composed, width, height);
+    if (encoded.empty()) {
+        warn(result.diagnostics, path, "VUI009", "the readback could not be encoded as a diff image");
+        return;
+    }
+
+    std::ofstream file{path, std::ios::binary | std::ios::trunc};
+    file.write(reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
+    if (!file) {
+        warn(result.diagnostics, path, "VUI009", "cannot write the diff image");
+        return;
+    }
+    result.diffImages.push_back(path);
 }
 
 [[nodiscard]] mdux::core::ColorRgba8 groundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
@@ -645,7 +719,8 @@ PlanResult enumerate(const mdux::medui::ScreenPackage& screen, std::span<const m
     return result;
 }
 
-RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::filesystem::path& artifactRoot) {
+RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOptions& options) {
+    const std::filesystem::path& artifactRoot = options.artifactRoot;
     RunResult                   result;
     const std::filesystem::path screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
     const auto                  packagePath     = screenDirectory / "package.json";
@@ -849,6 +924,9 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
             report(result.diagnostics, packagePath, "VUI008", "readback cannot form a framebuffer: " + std::string{mv::describe(framebuffer.error())});
             return result;
         }
+        // Where this scope's outcomes begin, so the diff image below marks the failures of the frame
+        // it is drawn on rather than every failure the run has accumulated.
+        const std::size_t scopeOutcomeBase = result.outcomes.size();
 
         for (const mv::GoldenEntry& golden : goldens) {
             // The pre-render pass above rejects both of these, so reaching either here means that
@@ -881,6 +959,22 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
                 result.outcomes.push_back(own(mv::localizedTextPresence(*framebuffer, *expectation)));
             }
         }
+
+        // Written here rather than after the loop, because `pixels` is the target's own storage and
+        // the next scope's render overwrites it. A run that failed in three locales needs the frame
+        // that failed in each, not three copies of the last one.
+        if (!options.diffImageDirectory.empty()) {
+            writeDiffImage(result,
+                           options.diffImageDirectory,
+                           screen.id,
+                           scope.name(),
+                           *pixels,
+                           // Non-negative by `ScreenPackage::validate()`, which refuses a surface
+                           // that is not, and by `FramebufferView::createPacked()` above.
+                           static_cast<std::uint32_t>(screen.surfaceWidth),
+                           static_cast<std::uint32_t>(screen.surfaceHeight),
+                           std::span{result.outcomes}.subspan(scopeOutcomeBase));
+        }
     }
 
     if (result.outcomes.size() != result.obligations.size()) {
@@ -903,22 +997,33 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const std::
     return result;
 }
 
+RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot) {
+    return run(screenDirectory, RunOptions{.artifactRoot = artifactRoot, .diffImageDirectory = {}});
+}
+
 RunResult run(const std::filesystem::path& screenDirectory) {
     const std::filesystem::path normalized = normalizeScreenDirectory(screenDirectory);
     return run(normalized, normalized.parent_path().parent_path());
 }
 
 std::string usage() {
-    return std::format("usage:\n  {} --screen=<generated/screen/id> --locales=all [--format=json|text]\n\n"
+    return std::format("usage:\n  {} --screen=<generated/screen/id> --locales=all [--format=json|text]\n"
+                       "  {:{}}  [--diff-image-dir=<dir>]\n\n"
                        "Verifies every golden check in every render scope and both mandatory text checks\n"
-                       "for every approved locale. The locale manifest cannot be narrowed.\n",
-                       toolName);
+                       "for every approved locale. The locale manifest cannot be narrowed.\n\n"
+                       "--diff-image-dir names where to write <screen>.<scope>.png for each render scope\n"
+                       "that fails. It chooses a location, never an expectation: the same checks run and\n"
+                       "the same status is returned whether or not it is given.\n",
+                       toolName,
+                       "",
+                       toolName.size());
 }
 
 Invocation parseArguments(std::span<const std::string_view> arguments) {
     Invocation result;
     bool       screenSeen  = false;
     bool       localesSeen = false;
+    bool       diffSeen    = false;
     for (std::string_view argument : arguments) {
         if (argument == "--help" || argument == "-h")
             throw cli::UsageError{usage()};
@@ -945,6 +1050,14 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
         }
         if (argument.starts_with("--locales="))
             throw cli::UsageError{"locale selection cannot narrow the approved manifest; use --locales=all\n\n" + usage()};
+        if (argument.starts_with("--diff-image-dir=")) {
+            constexpr std::string_view flag = "--diff-image-dir=";
+            if (diffSeen || argument.size() == flag.size())
+                throw cli::UsageError{"--diff-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
+            result.diffImageDirectory = std::filesystem::path{argument.substr(flag.size())};
+            diffSeen                  = true;
+            continue;
+        }
         throw cli::UsageError{"unrecognized argument '" + std::string{argument} + "'\n\n" + usage()};
     }
     if (!screenSeen || !localesSeen)

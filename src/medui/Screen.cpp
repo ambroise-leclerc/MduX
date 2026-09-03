@@ -309,15 +309,20 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             continue;
         }
 
-        const auto* panel = std::get_if<PanelSpec>(&node.payload);
-        if (panel == nullptr) {
+        const std::optional<std::string_view> field = fieldColorToken(node.payload);
+        if (!field.has_value()) {
             // Visited and left undrawn. The module comment says which components these are and why
             // each one's appearance is not decidable from a compiled screen alone.
             ++stats.deferred;
             continue;
         }
 
-        const auto colour = resolveColorToken(panel->colorToken);
+        // One path for every node whose whole rectangle is filled with one token - the `Row`
+        // background the solver synthesised, and since #255 the field a `NumericDisplay` or a
+        // `SignalTrace` reserves. They differ in what will later be drawn *inside* the rectangle and
+        // not at all in what fills it, so a second copy of this arithmetic would only be a place for
+        // the two to drift.
+        const auto colour = resolveColorToken(*field);
         if (!colour.has_value()) {
             return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
         }

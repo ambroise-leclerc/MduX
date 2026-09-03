@@ -181,6 +181,22 @@ The byte-identity claim survives the addition because the artifact records outco
 samples: four drivers agreeing that a check held produce identical bytes, which is exactly the
 property decision 4 of ADR-014 protects by keeping measurements out of the file.
 
+**#255 added a second, differently-scoped verification, and the leg count is deliberately not four.**
+The bake above re-derives `verification.json` on all four legs and byte-compares it. The
+`verify.screen.<id>` gate runs `mdux-verify-ui` over the **committed** bundle, and it is asserted as
+a named step on **three** of them: Linux/GCC 16 and Linux/Clang 21 under lavapipe, macOS/Clang 21
+under MoltenVK. Windows/MSVC runs it too - it is an ordinary ctest and that leg's full suite executes
+it - but no step there asserts it separately, so a Windows runner that lost its ICD would report the
+test as skipped and the leg would stay green on that one check. The three legs above fail on a skip.
+
+That asymmetry is a statement about what each leg is for rather than an oversight. The four-leg claim
+is about *bytes*: identical artifacts from unrelated toolchains, and Windows carries its full weight
+there. This gate is about *pixels*, and the render legs are the ones this repository already treats
+as owning that question - ADR-013 makes skipping the pixel suite a failure on macOS, and the two
+Linux legs guard theirs the same way. Adding a fourth assertion would mean adopting Mesa's Windows
+build as a gate-critical dependency rather than a build one; that is a change worth making
+deliberately, in a diff of its own, if the Windows ICD proves as stable as the distribution ones.
+
 **A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
 **and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable
 that leg: it added the GCC 16 leg and left the Clang half of its own title open, and
@@ -249,6 +265,11 @@ byte-compared, committed artifacts.
   produces a CI failure rather than a silent problem, but it is still an extra step to learn.
 - Bakers must be runnable in every CI leg, which constrains them to portable C++ with no
   host-specific dependencies.
+- Since #254, every leg must also *render*, which turned a Vulkan device from an accident of two legs
+  into an obligation of four and put a software rasterizer in the dependency set of two of them. And
+  since #255 three of the four assert a second, non-byte-compared check on top of that, so a leg is
+  no longer either "runs the evidence suite" or not — decision 6 now records two different scopes,
+  and a future reduction has to say which one it is giving up.
 
 ### Risks and Mitigations
 - **A baker introduces nondeterminism** (hash-map iteration order, a timestamp, an absolute path, a
@@ -257,8 +278,14 @@ byte-compared, committed artifacts.
   the writer cannot.
 - **Someone hand-edits a file under `generated/`.** *Mitigation*: the strict reader rejects
   permissive JSON, and re-baking overwrites the edit while the byte-comparison fails the PR.
-- **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys;
+- **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys,
+  now including which three assert the `verify.screen.<id>` gate and why Windows is not among them;
   removing one is then a documented reversal rather than an unnoticed regression.
+- **The two scopes in decision 6 drift apart again.** That paragraph has already stated a leg set its
+  own decision did not support once (#246), and #255 added a second set beside the first, which is
+  exactly the shape that produced the earlier drift. *Mitigation*: none mechanical. The rule for a
+  reviewer is that a change to which legs run what is a change to decision 6 and to the consequences
+  above in the same diff, and that #255's acceptance criteria asked for precisely this pairing.
 - **`generated/` is swallowed by `.gitignore` again.** *Mitigation*: the `git status --porcelain`
   assertion that follows the evidence tests catches both an uncommitted artifact and a build that
   wrote into the source tree.

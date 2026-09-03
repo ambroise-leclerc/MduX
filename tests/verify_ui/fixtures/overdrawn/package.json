@@ -1,0 +1,42 @@
+{
+  "approvedTextPackages": [],
+  "budget": {
+    "maxCommands": 2,
+    "maxIndices": 12,
+    "maxVertices": 8
+  },
+  "id": "overdrawn",
+  "kind": "screen",
+  "nodes": [
+    {
+      "bounds": {
+        "height": 8,
+        "width": 16,
+        "x": 0,
+        "y": 0
+      },
+      "id": "trace",
+      "kind": "SignalTrace",
+      "spec": {
+        "colorToken": "Theme.Colors.Nominal",
+        "streamSource": "ECG_LEAD_II"
+      }
+    },
+    {
+      "bounds": {
+        "height": 4,
+        "width": 16,
+        "x": 0,
+        "y": 0
+      },
+      "id": "cover",
+      "kind": "Panel",
+      "spec": {
+        "colorToken": "Theme.Colors.TopbarBackground"
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "surfaceHeight": 16,
+  "surfaceWidth": 16
+}

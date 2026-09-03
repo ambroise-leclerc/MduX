@@ -134,9 +134,26 @@ scope for a textless screen), then runs the complete obligation set:
 Locale subsets are deliberately rejected. Exit status `0` means every obligation held, `1` means
 verification failed (a check failed or the plan contained zero obligations), `2` is command-line
 misuse, and `3` means the run could not be made (for example a missing Vulkan implementation or
-inconsistent artifact). The current
-endoscope bundle exits `1` until #17 draws its golden `NumericDisplay` and `SignalTrace`; that is the
-expected fail-closed result, not a tool failure.
+inconsistent artifact).
+
+Add `--diff-image-dir=<dir>` to get a picture of a failure. Each render scope that fails writes
+`<screen>.<scope>.png` there: the frame it rendered, dimmed, with every failed obligation's expected
+rectangle outlined in magenta and whatever was actually found outlined in cyan. The scope is
+percent-encoded, so an ordinary locale gives `endoscope-monitor.en-US.png` while a textless screen's
+locale-free scope gives `<screen>.%28locale-free%29.png` — encoded rather than filtered so that two
+scopes of one screen can never overwrite each other's image. It is written only on
+a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
+check. CI passes the same flag and uploads the directory when the step fails.
+
+You do not have to run it by hand to get it run. `mdux_compile_screen()` registers the same
+invocation as the ctest `verify.screen.<id>`, so:
+
+```bash
+ctest --preset <preset> -L verify -V --no-tests=error
+```
+
+verifies every committed screen. `--no-tests=error` matters: without it, a label that matched no
+screen would pass the step over nothing.
 
 ## Examples
 

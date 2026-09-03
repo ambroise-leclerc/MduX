@@ -33,9 +33,10 @@ runtime joins the compiled screen to a text package and the title reaches the di
 since made that join *authenticated* rather than conventional: a screen carries the digests of the
 text packages it was compiled against, `TextBinding::create()` refuses one it was not, and
 `render()` refuses a binding that another screen approved. What is left
-is the rest of the dictionary, still counted as deferred (#17). The golden
-sidecar gains a static consumer in `ScreenPixelTests` and still awaits the rendered one ADR-012
-describes, which is #16 over content #17 teaches to draw.
+is the rest of the dictionary, still counted as deferred (#17) - less the two fields #255 taught the
+runtime to paint. The golden sidecar has both consumers it was written for: the static one in
+`ScreenPixelTests` that checks it against the compiled screen, and, since #255, the rendered one
+ADR-012 describes.
 
 | Metric | Count |
 |---|---|
@@ -385,8 +386,15 @@ and colour checks are exercisable before a single glyph exists.
 - #251 S1 ADR: automated UI verification · _closed_
 - #252 S2 Bounds, ink containment, colour hash · _closed_
 - #253 S3 The verify driver · _closed_
-- #254 S4 Evidence report emission · _implemented by this change_
-- #255 S5 CI across all locales
+- #254 S4 Evidence report emission · _closed_
+- #255 S5 CI across all locales · _implemented by this change_
+
+**#255 closes the epic at 5/5.** It also had to settle something #16 left to #17: the committed
+screen's two golden nodes were deferred by the runtime, so the gate this child exists to add would
+have been red on the day it was added. ADR-014 decision 5 is the answer - a `NumericDisplay` and a
+`SignalTrace` paint the field they reserve, in the token their own golden entry names, while the
+reading inside it still waits on #257 and #258. The three cheaper answers (delete the goldens, weaken
+their checks, verify a different screen) are the three #255 forbids by name.
 
 Sequential: each child is blocked by its predecessor. Two things landed after the epic was written
 that make it cheaper than it reads — #242 draws a `Label`, so ink containment has real ink to check

@@ -843,6 +843,7 @@ add_executable(verify_ui_spec
     verify_ui/VerifyUiSpecMain.cpp
     verify_ui/DriverTests.cpp
     verify_ui/ArtifactTests.cpp
+    verify_ui/DiffTests.cpp
 )
 target_link_libraries(verify_ui_spec PRIVATE MduX::VerifyUiLib speclab::speclab)
 target_include_directories(verify_ui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
