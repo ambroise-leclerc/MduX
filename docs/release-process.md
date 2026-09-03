@@ -188,9 +188,9 @@ $ gh release create vX.Y.Z --verify-tag --title "vX.Y.Z — Wave N: <what it is>
 **A green check is not evidence that the CI ran.** GitHub does not run `pull_request` workflows
 when it cannot construct a merge commit, so an unmergeable release PR can display a passing review
 bot while every build, test and lint check is absent. Do not merge or tag from that state. Every
-check `master` expects must be present and green before you merge, and verifying that is manual
-today: the repository configures no required status checks, so nothing holds an absent check
-pending and nothing blocks the merge. Resolve the conflict and wait for the workflows to run.
+check `master` expects must be present and green before you merge. Branch protection keeps an
+absent required check pending and blocks the merge. Resolve the conflict and wait for every
+required workflow to report success.
 
 Four things this spells out because cutting v0.6.0 found each of them the hard way.
 
