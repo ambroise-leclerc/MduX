@@ -5,16 +5,24 @@ on:
     # A push to master is what creates drift, so observe it directly rather than waiting for the
     # cron: a release merged at 06:00 would otherwise go unverified until the next morning.
     branches: [ master, develop ]
+  pull_request:
+    # Stage one of two, and this block goes away in stage two. Dropping it in the same change that
+    # adds `pull_request_target` would leave this workflow with no live event on its own pull
+    # request: GitHub decides whether to run a `pull_request_target` workflow from the definition
+    # on the default branch, which does not declare that trigger until this merges. Removing it
+    # later is itself checked by the trusted definition, which is the point of staging.
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+    types: [ opened, synchronize, reopened, edited ]
   pull_request_target:
-    # `pull_request_target`, not `pull_request`, because this workflow polices the pull request it
-    # runs on. On `pull_request` GitHub evaluates the definition from the merge commit — the head
-    # branch's copy — so a PR targeting master could edit this file in its own diff and delete the
-    # rule below. `pull_request_target` loads the definition from the base branch, which the author
-    # cannot reach without first merging. Two consequences worth knowing: the job never checks out
-    # or runs any pull request's code (it reads only the branch tips and the event metadata, and
-    # `permissions` stays read-only), which is what makes the trigger safe here; and a change to
-    # this file takes effect only once it is on the base branch, so a PR editing it is still
-    # checked by the previous version.
+    # `pull_request_target`, not `pull_request` alone, because this workflow polices the pull
+    # request it runs on. On `pull_request` GitHub evaluates the definition from the merge commit —
+    # the head branch's copy — so a PR targeting master could edit this file in its own diff and
+    # delete the rule below. `pull_request_target` is evaluated from the repository's *default*
+    # branch (`develop`), not from the pull request's base: a release PR to master and a stacked PR
+    # to an issue branch are both checked by develop's copy, which no contributor reaches without
+    # merging there first. The trigger is privileged, so the job never checks out or runs any pull
+    # request's code — it reads the branch tips it fetches by name plus the event metadata, and
+    # `permissions` stays read-only.
     branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
     types: [ opened, synchronize, reopened, edited ]
   schedule:
@@ -33,9 +41,11 @@ jobs:
 
     steps:
     - name: Checkout repository history
-      # No `ref:`, deliberately. Under `pull_request_target` the default is the base branch, and
-      # pointing it at the pull request's head would check out author-controlled content into a
-      # trusted context — the hazard that makes this trigger worth warning about.
+      # No `ref:`, deliberately. Under `pull_request_target` the default is the repository's
+      # default branch, and pointing it at the pull request's head would check out
+      # author-controlled content into a privileged context — the hazard that makes this trigger
+      # worth warning about. Whichever ref lands here, the step below fetches master and develop
+      # by name, so the comparison never depends on what was checked out.
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
