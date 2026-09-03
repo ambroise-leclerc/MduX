@@ -26,7 +26,7 @@ using cli::Severity;
 // Numbers are assigned in blocks, with gaps left inside each block on purpose: a new grammar rule
 // should land next to the grammar rules rather than at the end of the table, and it can only do
 // that if its block has room. The blocks are documented on the enum in Diagnostics.cppm.
-constexpr std::array<CodeInfo, 23> table{{
+constexpr std::array<CodeInfo, 24> table{{
     {Code::RecipeUnreadable, "MEDUI-E000", Severity::Error,
      "the recipe file could not be opened",
      "check the path passed on the command line, and that the file is readable"},
@@ -84,6 +84,11 @@ constexpr std::array<CodeInfo, 23> table{{
     {Code::FieldValueKind, "MEDUI-E033", Severity::Error,
      "a field value has the wrong semantic kind",
      "use the value form assigned to this field in the shared component model"},
+    {Code::NamedValueOutsideSet, "MEDUI-E034", Severity::Error,
+     "a named value is outside the closed set its field admits",
+     "use one of the members the shared component model lists for this field. This is not "
+     "MEDUI-E033: the value is a well-formed identifier, so its kind is right and only its "
+     "membership is wrong"},
 
     {Code::TextBudgetExceeded, "MEDUI-E050", Severity::Error,
      "a component's bounds cannot contain the widest approved translation",

@@ -88,6 +88,7 @@ enum class Code : std::uint8_t {
     UnknownTextKey,
     TextKeyMissingForLocale,
     FieldValueKind,
+    NamedValueOutsideSet,
 
     // 050-069: the bounds and budgets that make the runtime's job finite.
     TextBudgetExceeded,

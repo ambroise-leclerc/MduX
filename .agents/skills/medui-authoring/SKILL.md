@@ -10,7 +10,7 @@ governs the *authoring* of a `.medui` screen; for the baking mechanics behind it
 `evidence-pipeline`, and for the compliance framing of a safety-critical node see
 `regulatory-citations`.
 
-## Status: an authored screen reaches pixels; the text half is what remains
+## Status: an authored screen reaches pixels, text included up to the draw
 
 **A `.medui` lexer, AST, parser, semantic analyzer, integer-only bounded layout solver, text-budget
 check, and golden-reference pass exist** in the host-tools zone (`tools/medui/`). The diagnostic
@@ -30,12 +30,21 @@ and a `.hpp` carrying `static_assert(screen.validate().has_value())`, so a malfo
 build error rather than a startup failure (#197). A governed runtime draws one without allocating
 (#199), and `mdux-medui-check` validates a single file (#200).
 
-Two limits are worth knowing before you write a screen. A font package is baked; **no text package
-is** — the per-locale glyph runs a `t("STR-KEY")` resolves against — so a screen carrying a text key
-cannot be compiled end to end
-([#235](https://github.com/ambroise-leclerc/MduX/issues/235)). And the runtime draws a `Panel`; every other component is visited,
-counted in `FrameStats::deferred` and left undrawn, because text needs that package and live-data
-components have no geometry until the frame does.
+A font package and a text package are both baked (#235), so a screen carrying `t("STR-KEY")` compiles
+end to end and its boxes are measured against the widest approved translation. Writing one means
+writing three files, not one: the `.medui` source, a `recipes/text/<id>-<locale>.toml` per locale the
+font approves, and the screen recipe's `[text]` table naming them — a locale the font approves with
+no package listed is a build error, because a budget checked against fewer locales than were approved
+is a claim nobody made.
+
+The runtime draws a `Panel` and, given a `TextBinding`, a `Label` (#242) — the join a locale-free
+compiled screen needs to reach glyphs: the font package, the text package for the locale the device
+is running, and its sidecar. Without one, a label is deferred rather than refused.
+
+One limit is worth knowing before you write a screen: every other component is visited, counted in
+`FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
+this project has decided — and live-data components have no geometry until the frame does. Both are
+[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -49,11 +58,13 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
-[`Compliatory/MedUI` at `d5136a8`](https://github.com/Compliatory/MedUI/tree/d5136a8518bd499760ecff2aad215d3721329f20).
+[`Compliatory/MedUI` at `265df19`](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210).
 A `.medui` file builds something in MduX today, and it reaches the screen: register it with
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
-lavapipe. What it cannot yet do is carry text, for the reason above.
+lavapipe. It carries text too, since #235: a `t("STR-KEY")` compiles, and the box holding it is
+measured against every approved locale's widest translation. Since #242 the runtime draws it — bind
+the packages with `TextBinding::create()` and a label's glyphs reach the frame.
 
 ## Grammar shape
 
@@ -110,6 +121,31 @@ Screen NeuroSense500 {
 | `Clock` | `id`, `width`, `height`, `format` | `position` |
 | `Image` | `id`, `width`, `height`, `source` | `position` |
 | `TextInput` | `id`, `width`, `height`, `source`, `max_length`, `color` | `position`, `charset`, `requirement` |
+
+## Closed named values: `format:` and `on_press:`
+
+Two fields take a member of a fixed set rather than any identifier. The sets are the shared
+contract's (MEDUI-DEC-006), not this compiler's, so the same spellings hold for every
+implementation.
+
+| Field | Component | Members | Renders |
+|---|---|---|---|
+| `format` | `Clock` | `TimeSeconds` | `HH:MM:SS` |
+| | | `DateTimeSeconds` | `YYYY-MM-DD HH:MM:SS` |
+| `on_press` | `CriticalButton` | `NoOp` | nothing |
+| | | `TriggerHalt` | the host's halt path |
+
+A well-formed identifier outside the set is **`MEDUI-E034`**, not `MEDUI-E033`. The distinction is
+worth knowing because the fix differs: `MEDUI-E033` means the *kind* is wrong (`format: 42`), while
+`MEDUI-E034` means the kind is right and only the membership is wrong (`format: HH_MM`).
+
+Because the renderings are fixed above, a clock's box is **measured** rather than declared: the
+compiler knows a `TimeSeconds` clock draws eight glyphs and checks them against the node's bounds.
+There is no product-supplied table to configure, and a box too narrow for the format is a compile
+error.
+
+`charset:` on `TextInput` stays an open name — it resolves against the character sets a build bakes,
+which the contract does not enumerate.
 
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 

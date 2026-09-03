@@ -47,8 +47,9 @@
  * ## What the artifact contains, and what it deliberately does not
  *
  * `package.json` carries the compiled nodes, their absolute rectangles, the draw budget, and the
- * validated names each node draws with. It carries no resolved colour, no glyph run, no locale and
- * no vertex - ADR-011 fixes that boundary and ADR-012 explains it. One consequence is worth naming
+ * validated names each node draws with, plus the locale/package/digest approval records the runtime
+ * uses to authenticate a binding. It carries no selected locale, no resolved colour, no glyph run
+ * and no vertex - ADR-011 fixes that boundary and ADR-012 explains it. One consequence is worth naming
  * because it is unusual for this repository: **a screen package contains no floating-point number at
  * all**, so the `{"bits": N}` encoding that ADR-007 requires for a float never appears in one. Every
  * number here is an integer the layout solver computed in integer arithmetic.
@@ -115,8 +116,9 @@ export namespace mdux::tools::medui {
  * nodes, and `DrawList` fails closed against it at run time.
  */
 struct PackageInputs {
-    std::string_view       id;
-    mdux::draw::DrawBudget budget{};
+    std::string_view                                  id;
+    mdux::draw::DrawBudget                            budget{};
+    std::span<const mdux::medui::TextPackageApproval> approvedTextPackages;
 };
 
 /**
@@ -142,7 +144,11 @@ public:
     [[nodiscard]] mdux::medui::ScreenPackage package() const noexcept;
 
     /// Records the header. Interns `id`, so the caller's storage need not outlive the call.
-    void setHeader(std::string_view id, std::int32_t surfaceWidth, std::int32_t surfaceHeight, mdux::draw::DrawBudget budget);
+    void setHeader(std::string_view                                  id,
+                   std::int32_t                                      surfaceWidth,
+                   std::int32_t                                      surfaceHeight,
+                   mdux::draw::DrawBudget                            budget,
+                   std::span<const mdux::medui::TextPackageApproval> approvedTextPackages);
 
     /// Appends a node. Its views must already point into this document - `intern()` produces them.
     ///
@@ -161,13 +167,14 @@ public:
     [[nodiscard]] std::span<const std::string_view> internList(std::span<const std::string> items);
 
 private:
-    std::deque<std::string>                   text_;
-    std::deque<std::vector<std::string_view>> lists_;
-    std::vector<mdux::medui::CompiledNode>    nodes_;
-    std::string_view                          id_;
-    std::int32_t                              surfaceWidth_{0};
-    std::int32_t                              surfaceHeight_{0};
-    mdux::draw::DrawBudget                    budget_{};
+    std::deque<std::string>                       text_;
+    std::deque<std::vector<std::string_view>>     lists_;
+    std::vector<mdux::medui::TextPackageApproval> approvedTextPackages_;
+    std::vector<mdux::medui::CompiledNode>        nodes_;
+    std::string_view                              id_;
+    std::int32_t                                  surfaceWidth_{0};
+    std::int32_t                                  surfaceHeight_{0};
+    mdux::draw::DrawBudget                        budget_{};
 };
 
 /**

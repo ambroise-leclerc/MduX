@@ -96,6 +96,35 @@ Not the recipe's literal contents — the resolved set with every default expand
 a default silently changes every output while every report still looks unchanged, which is precisely
 the failure a byte-verified pipeline exists to prevent.
 
+### 4b. A report names every tool that produced an output, not only the one it is registered to
+
+`tool` and `toolVersion` name the tool a bake is *registered to*. For five of the seven committed
+artifacts that is the whole story, because one tool writes every file. The screen bundle is not:
+`mdux-meduic` compiles it and `mdux-verify-bake` then renders it and writes `verification.json`
+(ADR-014 decision 4), under one `mdux_bake_artifact()` registration and one report, because a second
+report at the same path is forbidden and a reader holding two would have to decide which is
+authoritative.
+
+So the single report carries a `stages` array, one record per output that a tool other than `tool`
+produced:
+
+```json
+"stages": [
+  { "output": "verification.json", "tool": "mdux-verify-bake", "toolVersion": "0.6.0" }
+]
+```
+
+Absent entirely when a bake has one tool, which is why adding it left the other six artifacts byte
+for byte as they were. `validate()` rejects a stage naming an output the report does not list, and
+two stages claiming one output — an answer naming a file nobody wrote, or two tools for one file, is
+worse than no answer.
+
+This is not a cosmetic field. The purpose stated at the top of this record is to answer "which tool,
+at which version, from which input, produced this binary artifact". Without `stages`, the screen's
+report answers that wrongly for one of its four outputs: it attributes a rendered frame's evidence
+to a compiler that never created a Vulkan device. A digest says what was produced and `options` says
+how it was configured; neither says by whom.
+
 ### 5. No commit SHA in a byte-compared report — it cannot be made to work
 An earlier draft of this ADR had `BakeReport` carry `toolGitSha`, a configure-time `git rev-parse
 HEAD` baked in as a compile definition, with CI rejecting `"unknown"` in a committed report.
@@ -123,14 +152,61 @@ generated/<kind>/<id>/report.json` already tells an auditor exactly which commit
 changed a committed artifact, authoritatively, for free. Duplicating that inside the file itself
 was redundant even before it turned out to be broken.
 
-### 6. Two toolchains, in the same PR — a claim TrustSC cannot make
-The evidence tests run on Windows/MSVC **and** Linux/GCC (and Clang, now that issue #48 re-enabled
-that leg) in the same pull request. Byte-identity across independent toolchains, standard libraries
-and floating-point code generators is a strictly stronger determinism claim than TrustSC obtains from
-a single rustc, and it costs nothing extra because both legs already exist.
+### 6. Four legs, in the same PR — a claim TrustSC cannot make
+The evidence tests run on Windows/MSVC, Linux/GCC 16, macOS/Clang 21 with libc++ (#222), and
+Linux/Clang 21 with libc++ (#246), in the same pull request. Byte-identity across independent
+toolchains, standard libraries and floating-point code generators is a strictly stronger determinism
+claim than TrustSC obtains from a single rustc, and it costs nothing extra because all four legs
+already exist.
+
+The fourth leg is not a fourth toolchain, and it is worth saying why it was added anyway. It runs
+the same compiler and standard library as the macOS lane, on the same operating system as the GCC
+lane. That is what separates "a different toolchain produced identical bytes" from "a different
+*platform* produced identical bytes" — two claims this doctrine had been making as one.
 
 This is written down here specifically so that a future change cannot "simplify" CI to one leg
 without knowingly discarding the claim.
+
+**Since #254, each leg must also provide a Vulkan device, and that is a new obligation rather than
+an incidental one.** The screen bundle's `verification.json` is re-derived by rendering the screen,
+so a leg without an ICD cannot produce the artifact at all - and #254 forbids treating that as a
+skip, because a leg that copied the committed file would satisfy the byte comparison while providing
+no rendered evidence. Two legs had no device when that landed: Linux/Clang installed the loader
+without `mesa-vulkan-drivers`, and Windows/MSVC installed `Vulkan-Loader` with no ICD behind it, so
+both enumerated zero physical devices while nothing here rendered. Both now carry a software
+rasterizer - lavapipe from the distribution on Linux, and Mesa's own Windows build pinned by release
+tag and SHA-256 on Windows - joining the lavapipe and MoltenVK the GCC and macOS legs already had.
+
+The byte-identity claim survives the addition because the artifact records outcomes rather than
+samples: four drivers agreeing that a check held produce identical bytes, which is exactly the
+property decision 4 of ADR-014 protects by keeping measurements out of the file.
+
+**#255 added a second, differently-scoped verification, and the leg count is deliberately not four.**
+The bake above re-derives `verification.json` on all four legs and byte-compares it. The
+`verify.screen.<id>` gate runs `mdux-verify-ui` over the **committed** bundle, and it is asserted as
+a named step on **three** of them: Linux/GCC 16 and Linux/Clang 21 under lavapipe, macOS/Clang 21
+under MoltenVK. Windows/MSVC runs it too - it is an ordinary ctest and that leg's full suite executes
+it - but no step there asserts it separately, so a Windows runner that lost its ICD would report the
+test as skipped and the leg would stay green on that one check. The three legs above fail on a skip.
+
+That asymmetry is a statement about what each leg is for rather than an oversight. The four-leg claim
+is about *bytes*: identical artifacts from unrelated toolchains, and Windows carries its full weight
+there. This gate is about *pixels*, and the render legs are the ones this repository already treats
+as owning that question - ADR-013 makes skipping the pixel suite a failure on macOS, and the two
+Linux legs guard theirs the same way. Adding a fourth assertion would mean adopting Mesa's Windows
+build as a gate-critical dependency rather than a build one; that is a change worth making
+deliberately, in a diff of its own, if the Windows ICD proves as stable as the distribution ones.
+
+**A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
+**and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable
+that leg: it added the GCC 16 leg and left the Clang half of its own title open, and
+`clang-build.yml` has carried no `push` or `pull_request` trigger since. The parenthesis asserted in
+the present tense a leg that has never run automatically — the same defect class #116 found in
+ADR-005, in the paragraph written to stop exactly this claim being weakened by accident. The third
+toolchain arrived via macOS rather than the Linux Clang leg. #246 then made that leg run too, and it
+earned its place immediately: it caught a stack-frame guard violation in `ShaderPackage::toJson()`
+and a standard-library mismatch in the install-tree consumer, both of which three green legs had
+missed.
 
 ## Alternatives Considered
 
@@ -178,7 +254,7 @@ byte-compared, committed artifacts.
 - Six bakers produce one audit record shape, so an auditor learns it once.
 - Authoring dependencies are absent from the device build by construction, verified by the existing
   trust-zone link-graph check rather than by convention.
-- Determinism becomes a test rather than a claim, on two toolchains at once.
+- Determinism becomes a test rather than a claim, on three toolchains and three operating systems at once.
 - The evidence kernel is reusable as-is by issue #18's `ml.determinism.crossToolchain` check, which
   is the same comparison applied to a baked model package.
 
@@ -189,16 +265,27 @@ byte-compared, committed artifacts.
   produces a CI failure rather than a silent problem, but it is still an extra step to learn.
 - Bakers must be runnable in every CI leg, which constrains them to portable C++ with no
   host-specific dependencies.
+- Since #254, every leg must also *render*, which turned a Vulkan device from an accident of two legs
+  into an obligation of four and put a software rasterizer in the dependency set of two of them. And
+  since #255 three of the four assert a second, non-byte-compared check on top of that, so a leg is
+  no longer either "runs the evidence suite" or not — decision 6 now records two different scopes,
+  and a future reduction has to say which one it is giving up.
 
 ### Risks and Mitigations
 - **A baker introduces nondeterminism** (hash-map iteration order, a timestamp, an absolute path, a
   locale-dependent conversion). *Mitigation*: the canonical writer sorts keys and rejects
-  timestamps, absolute paths and decimal floats by construction; the two-leg CI check catches what
+  timestamps, absolute paths and decimal floats by construction; the four-leg CI check catches what
   the writer cannot.
 - **Someone hand-edits a file under `generated/`.** *Mitigation*: the strict reader rejects
   permissive JSON, and re-baking overwrites the edit while the byte-comparison fails the PR.
-- **CI is reduced to one leg for speed.** *Mitigation*: Decision 6 records why both legs exist;
+- **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys,
+  now including which three assert the `verify.screen.<id>` gate and why Windows is not among them;
   removing one is then a documented reversal rather than an unnoticed regression.
+- **The two scopes in decision 6 drift apart again.** That paragraph has already stated a leg set its
+  own decision did not support once (#246), and #255 added a second set beside the first, which is
+  exactly the shape that produced the earlier drift. *Mitigation*: none mechanical. The rule for a
+  reviewer is that a change to which legs run what is a change to decision 6 and to the consequences
+  above in the same diff, and that #255's acceptance criteria asked for precisely this pairing.
 - **`generated/` is swallowed by `.gitignore` again.** *Mitigation*: the `git status --porcelain`
   assertion that follows the evidence tests catches both an uncommitted artifact and a build that
   wrote into the source tree.

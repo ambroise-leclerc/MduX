@@ -2,11 +2,11 @@
   "inputs": [
     {
       "path": "recipes/shader/triangle/triangle.vert.spv",
-      "sha256": "300c39c3e011b48608edf2f2a98d3f32061f341e0a447de2b071de9fc1927537"
+      "sha256": "dc869e96742a2a52dab4d6f844237b6569ebddda529975f85515df1cfec111cb"
     },
     {
       "path": "recipes/shader/triangle/triangle.frag.spv",
-      "sha256": "d19262c97d479f7dd8a30ed99a9e79195b9fb31146c8a6f059473bba804d4e46"
+      "sha256": "eb52a292e5d591bc556696184afdaf49a09c1d00b17f64dff5cde875c03091fa"
     }
   ],
   "options": {
@@ -24,18 +24,18 @@
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "e15b1e8fd40a1ce6ce6701f5ee834803e19296038b3723938a6cdcd62f9f9e20"
+      "sha256": "e57dd408ac9b94074549166a16e4f5e5f2bfa26869c205a7697019eee139b1ed"
     },
     {
       "path": "shaders.spv",
-      "sha256": "5e4f62d873c70fdb39b956aa989e201eb22e103bcc75a70982f5cf04931a017f"
+      "sha256": "d6bcb7c9a208aa069d0759ab4006d3432bc44701183c1ebe2a85d5856b66bbe5"
     }
   ],
   "recipe": {
     "path": "recipes/shader/triangle.toml",
-    "sha256": "c441ad238fa03cc241fafb12f24ae4c302bd772ebdc05db07aef3780160bd71c"
+    "sha256": "ae5303c8c6e6503f1a8b2559d1cbebe7d154fda79edb42d7c01d7338803fedd7"
   },
   "schemaVersion": 1,
   "tool": "mdux-shaderbake",
-  "toolVersion": "0.6.0"
+  "toolVersion": "0.7.0"
 }

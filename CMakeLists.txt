@@ -1,29 +1,26 @@
 cmake_minimum_required(VERSION 4.0.0)
 
-# CRITICAL: Must be the first thing after cmake_minimum_required for toolchain detection
-# Official UUID for CMake 4.0.3 import std support
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+# CMake still gates import std behind an experimental UUID. Fail explicitly when this project has
+# not reviewed a newer CMake series instead of silently accepting an unknown gate value.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.4")
+    message(FATAL_ERROR
+        "CMake ${CMAKE_VERSION} has not been qualified for MduX import std support; use a 4.0-4.3 release.")
+endif()
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+else()
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
-project(MduX VERSION 0.6.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
+project(MduX VERSION 0.7.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Debug: Check if import std support was detected
 message(STATUS "CMAKE_EXPERIMENTAL_CXX_IMPORT_STD: ${CMAKE_EXPERIMENTAL_CXX_IMPORT_STD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
-if(TARGET __CMAKE::CXX23)
-    message(STATUS "__CMAKE::CXX23 target available")
-else()
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.40")
-        message(STATUS "__CMAKE::CXX23 target NOT available, but MSVC ${CMAKE_CXX_COMPILER_VERSION} should support import std with /experimental:module")
-    else()
-        message(WARNING "__CMAKE::CXX23 target NOT available - import std; will not work")
-    endif()
-endif()
 
 # Compiler version requirements for C++23 modules support
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -47,8 +44,72 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
         message(FATAL_ERROR "Clang 20 or later is required for C++23 modules support. Current version: ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    message(FATAL_ERROR
+        "AppleClang is unsupported. Apple Silicon macOS requires upstream LLVM/Clang 21.1.8; "
+        "configure with --preset ninja-macos-clang.")
 else()
-    message(WARNING "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or Clang 20+ for C++23 modules support.")
+    message(FATAL_ERROR "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or upstream Clang 20+ for C++23 modules support.")
+endif()
+
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    message(FATAL_ERROR
+        "Unsupported Apple target '${CMAKE_SYSTEM_NAME}'. MduX supports Apple Silicon macOS only.")
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+        message(FATAL_ERROR "MduX supports macOS only on Apple Silicon (arm64).")
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR
+            "MduX on macOS requires upstream LLVM/Clang 21.1.8; AppleClang and GCC are unsupported.")
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "21.1.8")
+        message(FATAL_ERROR
+            "MduX's verified macOS compiler is upstream Clang 21.1.8 exactly; found "
+            "${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.1")
+        message(FATAL_ERROR "MduX's verified macOS CMake is 4.3.1 exactly; found ${CMAKE_VERSION}.")
+    endif()
+    function(_mdux_verify_llvm_archive_tool tool_path expected_name)
+        get_filename_component(tool_name "${tool_path}" NAME)
+        if(NOT tool_name STREQUAL expected_name)
+            message(FATAL_ERROR
+                "The macOS build requires ${expected_name}, but CMake selected '${tool_path}'. "
+                "Configure with --preset ninja-macos-clang.")
+        endif()
+
+        execute_process(
+            COMMAND "${tool_path}" --version
+            RESULT_VARIABLE tool_result
+            OUTPUT_VARIABLE tool_stdout
+            ERROR_VARIABLE tool_stderr
+        )
+        string(CONCAT tool_banner "${tool_stdout}" "\n" "${tool_stderr}")
+        if(NOT tool_result EQUAL 0 OR
+           NOT tool_banner MATCHES "LLVM version 21\\.1\\.8([^0-9.]|$)")
+            message(FATAL_ERROR
+                "The macOS build requires LLVM 21.1.8 ${expected_name}; '${tool_path} --version' "
+                "returned '${tool_banner}'.")
+        endif()
+    endfunction()
+
+    _mdux_verify_llvm_archive_tool("${CMAKE_AR}" "llvm-ar")
+    _mdux_verify_llvm_archive_tool("${CMAKE_RANLIB}" "llvm-ranlib")
+endif()
+
+# Check after the compiler/platform diagnostics so unsupported macOS combinations get the specific
+# remediation rather than a generic missing-import-metadata error.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+    message(STATUS "C++23 import std metadata available")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.40")
+    message(STATUS "__CMAKE::CXX23 target NOT available, but MSVC ${CMAKE_CXX_COMPILER_VERSION} should support import std with /experimental:module")
+else()
+    message(FATAL_ERROR
+        "The selected compiler and standard library do not provide C++23 import std support. "
+        "CMAKE_CXX_COMPILER_IMPORT_STD='${CMAKE_CXX_COMPILER_IMPORT_STD}'.")
 endif()
 
 # Generator validation.
@@ -77,8 +138,10 @@ if(NOT CMAKE_GENERATOR MATCHES "Ninja")
 endif()
 
 # Platform validation
-if(NOT WIN32 AND NOT UNIX)
-    message(FATAL_ERROR "MduX only supports Windows and Linux platforms.")
+if(NOT WIN32 AND
+   NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux") AND
+   NOT (CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
+    message(FATAL_ERROR "MduX only supports Windows, Linux, and Apple Silicon macOS.")
 endif()
 
 # Force 64-bit architecture on Windows for Vulkan compatibility
@@ -90,6 +153,11 @@ endif()
 
 # C++23 Modules support
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+# Initialize every subsequently-created C++ target with import std support. Checking for CMake's
+# internal target here is too early on Clang: CMake creates it while applying this property.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+    set(CMAKE_CXX_MODULE_STD ON)
+endif()
 
 # Compiler-specific modules configuration
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -199,6 +267,7 @@ target_sources(MduXCore
             include/mdux/text/Schema.cppm
             include/mdux/medui/Schema.cppm
             include/mdux/medui/Screen.cppm
+            include/mdux/verify/Verify.cppm
     PRIVATE
         src/evidence/Digest.cpp
         src/evidence/Json.cpp
@@ -211,6 +280,7 @@ target_sources(MduXCore
         src/text/Draw.cpp
         src/text/Schema.cpp
         src/medui/Screen.cpp
+        src/verify/Verify.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
         src/governance/Program.cpp
@@ -219,7 +289,7 @@ target_sources(MduXCore
 target_compile_features(MduXCore PUBLIC cxx_std_23)
 target_include_directories(MduXCore PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 
-if(TARGET __CMAKE::CXX23)
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(MduXCore PROPERTIES CXX_MODULE_STD ON)
 endif()
 
@@ -248,16 +318,12 @@ target_sources(MduX
 
 target_compile_features(MduX_options INTERFACE cxx_std_23)
 
-# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
-if(TARGET __CMAKE::CXX23)
+# Only set CXX_MODULE_STD when compiler metadata advertises it.
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(MduX PROPERTIES CXX_MODULE_STD ON)
     message(STATUS "CXX_MODULE_STD enabled for MduX target")
 else()
-    # Not fatal on its own: `import std` is opt-in per CMake version and toolchain, and the
-    # project still builds without it. The Visual Studio case that used to be caught here is
-    # now caught by the generator check near the top of this file, which rejects every
-    # non-Ninja generator rather than only that one.
-    message(STATUS "CXX_MODULE_STD disabled - __CMAKE::CXX23 target not available")
+    message(STATUS "CXX_MODULE_STD disabled - compiler metadata unavailable")
 endif()
 
 target_include_directories(MduX PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
@@ -437,6 +503,31 @@ mdux_bake_artifact(
         atlas.bin
 )
 
+# The first committed text package (#235), and the artifact that lets a screen carry text at all.
+#
+# `SOURCES` names a file under generated/ deliberately. The input is the *committed* font package,
+# not the one this build happens to produce - a text package positioned against an atlas that only
+# exists in somebody's build tree would be evidence of nothing. Listing it here is what makes
+# re-baking the font invalidate this artifact rather than leaving it describing an atlas that moved.
+#
+# It is placed between the font and the screen for a reader's benefit and for nothing else:
+# registration order is **not** an execution order, and `mdux-bake-update` may stage this package
+# after the screen that consumes it has already been baked against the previous one. See
+# cmake/MduXBake.cmake, "Artifacts that consume other artifacts", for why that is contained and what
+# the workflow is.
+mdux_bake_artifact(
+    KIND text
+    ID endoscope-monitor-en-us
+    TOOL mdux-textbake
+    RECIPE recipes/text/endoscope-monitor-en-us.toml
+    SOURCES
+        generated/font/dejavu-ui/package.json
+    OUTPUTS
+        package.json
+        report.json
+        runs.bin
+)
+
 mdux_bake_artifact(
     KIND shader
     ID triangle
@@ -456,13 +547,31 @@ mdux_bake_artifact(
 # and the same evidence.screen.<id> byte comparison as a font or a shader, because nothing about a
 # screen justifies weaker evidence than its neighbours.
 #
-# It draws no text on purpose: no text package is baked in this tree yet, so the text-budget stage
-# has nothing to measure against and a screen carrying t("STR-KEY") would be refused for declaring no
-# approved locale. #201 lands the text half.
+# It draws text since #235, which is what puts the text-budget stage (#195) over a committed
+# artifact rather than only over packages a test builds: `checkTextBudgets()` measures the screen's
+# label against the widest translation the recipe's approved locales carry.
+#
+# The two packages are named as SOURCES so the screen re-bakes when either moves. A forgotten entry
+# would not fail - it would make the committed screen quietly stop matching the text it was compiled
+# against, which is the drift the whole artifact exists to make impossible.
 include(cmake/MduXCompileScreen.cmake)
 mdux_compile_screen(
     ID endoscope-monitor
     RECIPE recipes/screen/endoscope-monitor.toml
+    SOURCES
+        generated/font/dejavu-ui/package.json
+        generated/text/endoscope-monitor-en-us/package.json
+        # The sidecar too, and not as belt and braces: `loadLocales()` reads these bytes directly
+        # and records their digest among the screen's inputs. The package also records that digest,
+        # but every file a custom command reads is a dependency in its own right; otherwise an
+        # independently changed or damaged sidecar would not even ask the screen bake to validate it.
+        generated/text/endoscope-monitor-en-us/runs.bin
+        # The atlas, for the same reason applied to the second stage (#254): `loadLocale()` reads
+        # the file the font package names and checks its digest, so the glyphs the verification
+        # renders come from these bytes. Without the edge, an atlas changed on its own leaves all
+        # four outputs newer than their inputs, ninja skips the bake, and evidence.screen.<id>
+        # compares a bundle no producer re-derived - a pass that means nothing.
+        generated/font/dejavu-ui/atlas.bin
 )
 
 # ...and the generated C++ for it (issue #201). Build-tree only, never committed. This is the last
@@ -492,6 +601,17 @@ mdux_emit_shader_package(
     OUT_DIR MDUX_GENERATED_SHADER_DIR
 )
 
+# The ECG model package as compile-time-validated source (issue #153). Only metadata, layer
+# descriptors and golden vectors are emitted; weights remain the separately embedded blob.
+include(cmake/MduXModelEmit.cmake)
+set(MDUX_ECG_MODEL_ID ecg-demo)
+mdux_emit_model_package(
+    ID ${MDUX_ECG_MODEL_ID}
+    OUT_MODULE MDUX_ECG_MODEL_MODULE
+    OUT_HEADER MDUX_ECG_MODEL_HEADER
+    OUT_DIR MDUX_GENERATED_MODEL_DIR
+)
+
 if(MDUX_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
@@ -509,6 +629,15 @@ if(MDUX_BUILD_TESTS)
         "${CMAKE_COMMAND}"
         -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
         -D "CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -D "AR=${CMAKE_AR}"
+        -D "RANLIB=${CMAKE_RANLIB}"
+        -D "STDLIB_MODULES_JSON=${CMAKE_CXX_STDLIB_MODULES_JSON}"
+        -D "OSX_SYSROOT=${CMAKE_OSX_SYSROOT}"
+        # The consumer must select the same standard library as this build, not the compiler's
+        # default. Omitting this is invisible on macOS, where libc++ *is* Clang's default, and fatal
+        # on Linux, where it is not: the nested configure then scans libc++'s std.cppm with
+        # libstdc++'s include path and fails on a missing '__config'. Found by #246's Linux leg.
+        -D "CXX_FLAGS=${CMAKE_CXX_FLAGS}"
         -D "GENERATOR=${CMAKE_GENERATOR}"
         -D "EXPECTED_VERSION=${PROJECT_VERSION}"
         -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"

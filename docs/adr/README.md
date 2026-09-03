@@ -7,9 +7,9 @@ in the index below, numbers contiguous from ADR-001.
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | Accepted | 2025-07-15 |
+| [ADR-001](ADR-001-multiplatform-graphics-framework.md) | Multiplatform low-level graphics framework selection | Accepted; platform scope superseded by ADR-013 | 2025-07-15 |
 | [ADR-002](ADR-002-testing-framework-selection.md) | Testing framework selection (Catch2) | **Superseded by ADR-009** | 2026-08-03 |
-| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | Accepted | 2025-07-26 |
+| [ADR-003](ADR-003-compiler-modernization.md) | Compiler modernization for C++23 modules | Accepted; macOS toolchain scope superseded by ADR-013 | 2025-07-26 |
 | [ADR-004](ADR-004-trust-zones-in-cpp.md) | Trust zones in C++ | Accepted | 2026-07-26 |
 | [ADR-005](ADR-005-error-handling-and-exceptions-policy.md) | Error handling and exceptions policy | Accepted | 2026-07-26 |
 | [ADR-006](ADR-006-no-reproduction-of-normative-standard-text.md) | No reproduction of normative standard text | Accepted | 2026-07-26 |
@@ -19,8 +19,10 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-010](ADR-010-no-on-device-text-shaping.md) | No on-device text shaping | Accepted | 2026-08-06 |
 | [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) | The deterministic `.medui` compile boundary | Accepted | 2026-08-11 |
 | [ADR-012](ADR-012-compiled-screen-artifacts.md) | What a compiled screen emits, and which parts are committed | Accepted | 2026-08-11 |
+| [ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) | Verified Apple Silicon macOS toolchain | Accepted | 2026-08-23 |
+| [ADR-014](ADR-014-rendered-truth-verification.md) | What rendered-truth verification checks, and what it cannot | Accepted | 2026-08-31 |
 
-Every number from 001 to 012 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 014 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
@@ -54,7 +56,7 @@ decision record that lists only benefits documents an advertisement rather than 
 ## Writing a new ADR
 
 1. Copy [`template.md`](template.md).
-2. Take the next free number from the index above — currently **ADR-013**.
+2. Take the next free number from the index above — currently **ADR-015**.
 3. Name the file `ADR-NNN-short-description.md`, lowercase and hyphenated.
 4. Add a row to the index in this file. An ADR that is not indexed does not exist.
 5. If it supersedes an earlier decision, set that ADR's status to `Superseded by ADR-NNN`, link

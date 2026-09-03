@@ -31,16 +31,18 @@
  * That is the same split `mdux.ml.schema` makes with `mdux-mlbake`, and it is the price of a type a
  * device can hold in `.rodata`.
  *
- * ## The package is locale-free, and that is load-bearing
+ * ## The layout is locale-free; the approved package identities are not
  *
  * ADR-011, as amended by #203, carries `textKey` and `colorToken` as **validated names** rather than
  * as glyph runs and RGBA8. The device resolves each against a governed table for the locale it is
  * running - a bounded lookup, not a parse - and the per-locale glyph runs stay in the text package
  * where ADR-010 put them.
  *
- * The consequence that decides the file layout: **adding an approved locale rewrites no screen
- * artifact.** Translations change far more often than layouts, and a package carrying runs would
- * make the frequent change rewrite the stable artifact - and its digest, and its review.
+ * The screen still carries no locale-selected glyph run, so one layout serves every approved
+ * locale. It does carry the identity of every text package the compiler measured: locale, package
+ * id and canonical `package.json` digest. A changed translation therefore rewrites this small
+ * approval manifest, deliberately - otherwise a different, individually valid package could be
+ * substituted after review while every local consistency check still passed.
  *
  * The cost, stated as a cost: one rectangle serves every locale, so it must be the one that
  * survives the widest approved translation. That is what #195 measures, and why the budget below
@@ -82,7 +84,9 @@ export module mdux.medui.schema;
 
 import std;
 import mdux.core.result;
+import mdux.core.units;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 
 export namespace mdux::medui {
@@ -95,26 +99,37 @@ inline constexpr std::string_view packageKind = "screen";
 inline constexpr std::string_view colorTokenPrefix = "Theme.Colors.";
 
 enum class SchemaError : std::uint8_t {
-    UnsupportedSchemaVersion,  ///< the package declares a version this module does not read
-    EmptyId,                   ///< the screen has no id, so no directory and no evidence entry
-    NonPositiveSurface,        ///< a surface with no extent cannot contain a rectangle
-    EmptyNodeId,               ///< a node with no id cannot be named by a golden or a requirement
-    DuplicateNodeId,           ///< two nodes share an id, so a golden could name either
-    DegenerateBounds,          ///< a rectangle with no extent, which `DrawList` refuses to record
-    BoundsOutsideSurface,      ///< a rectangle the declared surface does not contain
-    MalformedColorToken,       ///< a colour that is not a `Theme.Colors.<Token>` name
-    UnknownColorToken,         ///< a well-formed name the governed table does not define
-    UnknownPayload,            ///< a payload this module cannot name, or one left valueless
-    EmptyRequiredName,         ///< a spec field the component dictionary requires is empty
-    NoStates,                  ///< a status indicator that can show nothing
-    StateColorCountMismatch,   ///< per-state tints that do not pair one-to-one with the states
-    NonPositiveMaxLength,      ///< a text input that can hold no character
-    EmptyBudget,               ///< a screen with nodes whose budget can hold no primitive
-    BudgetExceedsIndexWidth,   ///< more vertices than a 16-bit index can address
+    UnsupportedSchemaVersion,    ///< the package declares a version this module does not read
+    EmptyId,                     ///< the screen has no id, so no directory and no evidence entry
+    NonPositiveSurface,          ///< a surface with no extent cannot contain a rectangle
+    EmptyNodeId,                 ///< a node with no id cannot be named by a golden or a requirement
+    DuplicateNodeId,             ///< two nodes share an id, so a golden could name either
+    DegenerateBounds,            ///< a rectangle with no extent, which `DrawList` refuses to record
+    BoundsOutsideSurface,        ///< a rectangle the declared surface does not contain
+    MalformedColorToken,         ///< a colour that is not a `Theme.Colors.<Token>` name
+    UnknownColorToken,           ///< a well-formed name the governed table does not define
+    UnknownPayload,              ///< a payload this module cannot name, or one left valueless
+    EmptyRequiredName,           ///< a spec field the component dictionary requires is empty
+    NoStates,                    ///< a status indicator that can show nothing
+    StateColorCountMismatch,     ///< per-state tints that do not pair one-to-one with the states
+    NonPositiveMaxLength,        ///< a text input that can hold no character
+    EmptyBudget,                 ///< a screen with nodes whose budget can hold no primitive
+    BudgetExceedsIndexWidth,     ///< more vertices than a 16-bit index can address
+    EmptyApprovedLocale,         ///< a text-package approval does not name its locale
+    EmptyApprovedPackageId,      ///< a text-package approval does not name its package
+    EmptyApprovedPackageDigest,  ///< a text-package approval carries no package identity
+    DuplicateApprovedLocale,     ///< two text-package approvals claim the same locale
+    MissingTextPackageApproval,  ///< a text-bearing screen approves no text package
+    UnspecifiedNamedValue,       ///< a closed-set field left at its `Unspecified` sentinel
+    NamedValueOutOfRange,        ///< a closed-set field holding no enumerator of its type
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
     switch (error) {
+        case SchemaError::UnspecifiedNamedValue:
+            return "a field whose value must come from a closed set was left unspecified";
+        case SchemaError::NamedValueOutOfRange:
+            return "a closed-set field holds a value that is not one of its members";
         case SchemaError::UnsupportedSchemaVersion:
             return "the package declares an unsupported schemaVersion";
         case SchemaError::EmptyId:
@@ -147,6 +162,16 @@ enum class SchemaError : std::uint8_t {
             return "the screen has nodes and a budget that can hold no primitive";
         case SchemaError::BudgetExceedsIndexWidth:
             return "the vertex budget exceeds what a 16-bit index can address";
+        case SchemaError::EmptyApprovedLocale:
+            return "an approved text package does not name its locale";
+        case SchemaError::EmptyApprovedPackageId:
+            return "an approved text package does not name its package id";
+        case SchemaError::EmptyApprovedPackageDigest:
+            return "an approved text package does not carry its package digest";
+        case SchemaError::DuplicateApprovedLocale:
+            return "two approved text packages claim the same locale";
+        case SchemaError::MissingTextPackageApproval:
+            return "a text-bearing screen approves no text package";
     }
     return "unknown schema error";
 }
@@ -276,6 +301,48 @@ inline constexpr std::array<ThemeColor, 8> themeColors{
 }
 
 /**
+ * @brief A linear channel as the byte an `R8G8B8A8_UNORM` target carries.
+ *
+ * Quantisation and nothing else: the governed table stores linear RGBA, a vertex colour is read by
+ * the shader as a plain 0..1 UNORM value, so the byte is the linear value scaled. No transfer
+ * function is applied here, because whether the *swapchain* is sRGB is the renderer's decision and
+ * applying one in two places is how a colour ends up encoded twice.
+ *
+ * The multiply and the add are separate statements so that neither the rounding nor the result
+ * depends on whether the compiler fuses them. `mdux_enforce_fp_determinism(MduXCore)` already turns
+ * contraction off for this target, and this is the belt to that pair of braces: a frame that is
+ * byte-compared across toolchains cannot afford a last-bit difference in a colour.
+ *
+ * Exported rather than kept private to the runtime, and that move is #252's rather than tidiness.
+ * The runtime turns a token into the bytes a frame carries; the verifier compares those bytes back
+ * against the same token. Two copies of this arithmetic would agree until the day one of them
+ * rounded differently, and the failure would read as a rendering defect rather than as the drift it
+ * was.
+ *
+ * **NaN is mapped to zero rather than clamped.** A NaN compares false against every bound, so the
+ * two clamps below would both let it through and the conversion to `std::uint8_t` would be undefined
+ * - which is a poor way for a governed function to answer a question. `!(channel >= 0.0F)` is the
+ * one test that catches it and negatives together. Zero because a channel this function cannot
+ * interpret contributes nothing, and because the alternative is an error path on a function whose
+ * only production input is a `constexpr` table of literals: the value is unreachable through
+ * `resolveColorToken()`, and being total costs one comparison.
+ */
+[[nodiscard]] constexpr std::uint8_t quantise(float channel) noexcept {
+    if (!(channel >= 0.0F)) {
+        return 0;
+    }
+    const float clamped = channel > 1.0F ? 1.0F : channel;
+    const float scaled  = clamped * 255.0F;
+    const float rounded = scaled + 0.5F;
+    return static_cast<std::uint8_t>(rounded);
+}
+
+/// The governed table's linear RGBA as the quantised colour a frame actually shows.
+[[nodiscard]] constexpr mdux::core::ColorRgba8 quantise(const std::array<float, 4>& linear) noexcept {
+    return mdux::core::ColorRgba8{.r = quantise(linear[0]), .g = quantise(linear[1]), .b = quantise(linear[2]), .a = quantise(linear[3])};
+}
+
+/**
  * @brief One node's absolute rectangle, in integer surface pixels.
  *
  * Integer throughout, as ADR-011 decision 5 requires: the solver never divides into a fraction, so
@@ -307,20 +374,18 @@ struct NodeRect {
  * tokens against the governed table, named values against the tables a build supplies (#195) - so
  * the device performs bounded lookups and no parsing.
  *
- * One consequence worth stating because it diverges from the sibling: `format`, `charset` and
- * `onPress` stay `std::string_view` rather than becoming enumerations. TrustSC closes two of those
- * three in its own crate (`ClockFormat`, `SystemEvent`) and leaves the third - a text input's glyph
- * set - open, so the divergence is real and narrower than it looks.
+ * Two of those fields are **not** names: `format` is a `ClockFormat` and `onPress` a `SystemEvent`,
+ * both closed enumerations. `charset` stays a name, because a glyph set is resolved against the
+ * packages a build bakes rather than against a fixed vocabulary - which is also where TrustSC
+ * leaves it, so all three now agree with the sibling.
  *
- * Closing them here was tried and withdrawn, and the reason is worth recording so the next attempt
- * starts from it: the implemented front end accepts any identifier for `format:` and `on_press:`,
- * #195's budget stage resolves a clock format through a product-supplied table, and the fixtures
- * across three suites write names no two-value enumeration can hold. Closing the set in this module
- * alone would leave the canonical type unable to represent a screen the compiler accepts. Doing it
- * properly needs the semantic domains, the budget rule, the fixtures, the authoring skill and a
- * diagnostic code for "a named value outside a closed set" - which the shared contract does not
- * define today - to move together. That is a coordinated change with its own issue, not a paragraph
- * of this one.
+ * Closing them was tried once and withdrawn (#218), and what made the second attempt work is worth
+ * recording. The blocker was never this module: it was that the shared contract required unknown
+ * formats and system events to fail compilation while never saying what a *known* one is. Two
+ * implementations rejecting different sets both conformed. MEDUI-DEC-006 enumerates the members and
+ * allocates `MEDUI-E034` for one outside the set, so this file transcribes a contract rather than
+ * inventing a local rule - and the fixtures, the semantic domains and #195's budget rule moved with
+ * it in the same change.
  */
 // Every spec member carries a default initialiser. `-Wmissing-field-initializers` is an error in
 // this tree, and the emitter (#197) writes these initialisers from a screen - a type whose optional
@@ -339,8 +404,40 @@ struct LabelSpec {
     [[nodiscard]] constexpr bool operator==(const LabelSpec&) const noexcept = default;
 };
 
+/**
+ * @brief A clock's rendering, closed by the shared contract (MEDUI-DEC-006).
+ *
+ * `Unspecified` is first so that a value-initialised aggregate lands on it. A C++ aggregate fills an
+ * omitted member with the first enumerator, where the Rust sibling's struct literal must name every
+ * field; the sentinel is what recovers the property C++ does not give for free, and
+ * `validatePayload()` refuses it. Without it, an omitted `format` would silently mean `TimeSeconds`.
+ *
+ * The renderings are fixed by the contract, not by this implementation, which is what lets the
+ * budget stage measure a clock rather than look it up.
+ */
+enum class ClockFormat : std::uint8_t {
+    Unspecified,      ///< never valid in a compiled screen; the aggregate default
+    TimeSeconds,      ///< `HH:MM:SS`
+    DateTimeSeconds,  ///< `YYYY-MM-DD HH:MM:SS`
+};
+
+/// The widest rendering each format produces, which is what a text budget measures.
+[[nodiscard]] constexpr std::string_view rendering(ClockFormat format) noexcept {
+    switch (format) {
+        case ClockFormat::TimeSeconds:
+            return "HH:MM:SS";
+        case ClockFormat::DateTimeSeconds:
+            return "YYYY-MM-DD HH:MM:SS";
+        case ClockFormat::Unspecified:
+            return {};
+    }
+    // Named rather than defaulted so that a new enumerator is a warning at this switch instead of a
+    // silent empty rendering, and an out-of-range cast returns nothing rather than aliasing a member.
+    return {};
+}
+
 struct ClockSpec {
-    std::string_view format{};  ///< a named value the build's governed table defines
+    ClockFormat format{ClockFormat::Unspecified};
 
     [[nodiscard]] constexpr bool operator==(const ClockSpec&) const noexcept = default;
 };
@@ -373,11 +470,74 @@ struct ButtonSpec {
     [[nodiscard]] constexpr bool operator==(const ButtonSpec&) const noexcept = default;
 };
 
+/**
+ * @brief What a critical control can ask the host to do, closed by the shared contract.
+ *
+ * Closing this is not tidiness. A screen able to name any event can name one the host does not
+ * implement, and the press of a critical button is the worst place to find that out. `Unspecified`
+ * leads for the same reason it does in `ClockFormat`.
+ */
+enum class SystemEvent : std::uint8_t {
+    Unspecified,  ///< never valid in a compiled screen; the aggregate default
+    NoOp,         ///< the press is recorded and does nothing else
+    TriggerHalt,  ///< the press requests the host's halt path
+};
+
+/// The contract spelling of a clock format. Empty for `Unspecified` or an out-of-range cast, so a
+/// caller writing this into a package writes nothing rather than a member the value is not.
+[[nodiscard]] constexpr std::string_view toWire(ClockFormat format) noexcept {
+    switch (format) {
+        case ClockFormat::TimeSeconds:
+            return "TimeSeconds";
+        case ClockFormat::DateTimeSeconds:
+            return "DateTimeSeconds";
+        case ClockFormat::Unspecified:
+            return {};
+    }
+    return {};
+}
+
+/// The contract spelling of a system event, under the same rule as `toWire(ClockFormat)`.
+[[nodiscard]] constexpr std::string_view toWire(SystemEvent event) noexcept {
+    switch (event) {
+        case SystemEvent::NoOp:
+            return "NoOp";
+        case SystemEvent::TriggerHalt:
+            return "TriggerHalt";
+        case SystemEvent::Unspecified:
+            return {};
+    }
+    return {};
+}
+
+/// The inverse. Nothing for a spelling outside the set - including `""`, so a missing member in a
+/// package is refused rather than read as `Unspecified` and caught later.
+[[nodiscard]] constexpr std::optional<ClockFormat> clockFormatFromWire(std::string_view wire) noexcept {
+    if (wire == "TimeSeconds") {
+        return ClockFormat::TimeSeconds;
+    }
+    if (wire == "DateTimeSeconds") {
+        return ClockFormat::DateTimeSeconds;
+    }
+    return std::nullopt;
+}
+
+/// The inverse for a system event, under the same rule.
+[[nodiscard]] constexpr std::optional<SystemEvent> systemEventFromWire(std::string_view wire) noexcept {
+    if (wire == "NoOp") {
+        return SystemEvent::NoOp;
+    }
+    if (wire == "TriggerHalt") {
+        return SystemEvent::TriggerHalt;
+    }
+    return std::nullopt;
+}
+
 struct CriticalButtonSpec {
     std::string_view requirement{};  ///< required by the dictionary, and by #196's annotation rule
     std::string_view labelKey{};
     std::string_view colorToken{};
-    std::string_view onPress{};
+    SystemEvent      onPress{SystemEvent::Unspecified};
 
     [[nodiscard]] constexpr bool operator==(const CriticalButtonSpec&) const noexcept = default;
 };
@@ -547,18 +707,34 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
 }
 
 /**
+ * @brief One text package this screen was compiled and reviewed against.
+ *
+ * The package remains outside the screen: it owns the locale's glyph runs and sidecar. This record
+ * is only its identity, sufficient for `TextBinding::create()` to refuse a different package even
+ * when that package is internally valid, uses the same font and carries the same keys.
+ */
+struct TextPackageApproval {
+    std::string_view locale;           ///< the package's BCP 47 locale
+    std::string_view packageId;        ///< the package header id
+    evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
+
+    [[nodiscard]] constexpr bool operator==(const TextPackageApproval&) const noexcept = default;
+};
+
+/**
  * @brief A whole compiled screen as generated code exposes it and the runtime consumes it.
  *
  * Non-owning and `constexpr`-constructible throughout, so a generated translation unit can place one
  * in read-only memory and `static_assert` that it validates.
  */
 struct ScreenPackage {
-    std::string_view              id;
-    std::uint64_t                 schemaVersion{evidence::kSchemaVersion};
-    std::int32_t                  surfaceWidth{0};
-    std::int32_t                  surfaceHeight{0};
-    std::span<const CompiledNode> nodes;
-    mdux::draw::DrawBudget        budget{};
+    std::string_view                     id;
+    std::uint64_t                        schemaVersion{evidence::kSchemaVersion};
+    std::int32_t                         surfaceWidth{0};
+    std::int32_t                         surfaceHeight{0};
+    std::span<const TextPackageApproval> approvedTextPackages;
+    std::span<const CompiledNode>        nodes;
+    mdux::draw::DrawBudget               budget{};
 
     /// Checks every invariant a consumer is entitled to assume. See the module comment for the one
     /// invariant it deliberately leaves to the compiler: whether the budget is *large enough*.
@@ -623,6 +799,25 @@ struct ScreenPackage {
 }
 
 /**
+ * @brief Requires a closed-set field to hold one of its members.
+ *
+ * Two rejections rather than one, because they are different mistakes. `Unspecified` means the field
+ * was never set - the aggregate default, which is what a C++ struct gives an omitted member. An
+ * out-of-range value means something cast a number the type has no enumerator for; `toWire` returns
+ * an empty spelling for it, so this catches what that spelling would otherwise hide.
+ */
+template <typename Member>
+[[nodiscard]] constexpr mdux::core::ResultVoid<SchemaError> requireMember(Member value) noexcept {
+    if (value == Member::Unspecified) {
+        return mdux::core::err(SchemaError::UnspecifiedNamedValue);
+    }
+    if (toWire(value).empty()) {
+        return mdux::core::err(SchemaError::NamedValueOutOfRange);
+    }
+    return {};
+}
+
+/**
  * @brief Checks one node's payload against what its component's dictionary entry requires.
  *
  * Only what the dictionary already fixes, and nothing this module invents on its own: a name a
@@ -668,7 +863,7 @@ struct ScreenPackage {
         return requireColor(spec->colorToken);
     }
     if (const auto* spec = std::get_if<ClockSpec>(&payload)) {
-        return require(spec->format);
+        return requireMember(spec->format);
     }
     if (const auto* spec = std::get_if<ImageSpec>(&payload)) {
         return require(spec->source);
@@ -692,10 +887,13 @@ struct ScreenPackage {
         return requireColor(spec->colorToken);
     }
     if (const auto* spec = std::get_if<CriticalButtonSpec>(&payload)) {
-        for (const std::string_view name : {spec->requirement, spec->labelKey, spec->onPress}) {
+        for (const std::string_view name : {spec->requirement, spec->labelKey}) {
             if (const auto named = require(name); !named.has_value()) {
                 return named;
             }
+        }
+        if (const auto member = requireMember(spec->onPress); !member.has_value()) {
+            return member;
         }
         return requireColor(spec->colorToken);
     }
@@ -753,6 +951,16 @@ struct ScreenPackage {
     return requireColor(spec->colorToken);
 }
 
+/// Whether this payload needs the font/locale inputs the text-budget stage approves.
+///
+/// Kept beside `validatePayload()` so a component added to the closed payload set cannot acquire
+/// text-bearing fields without the schema's approval-manifest rule being visible in the same edit.
+[[nodiscard]] constexpr bool needsTextPackageApproval(NodePayload payload) noexcept {
+    return std::holds_alternative<LabelSpec>(payload) || std::holds_alternative<ClockSpec>(payload) || std::holds_alternative<ButtonSpec>(payload)
+           || std::holds_alternative<CriticalButtonSpec>(payload) || std::holds_alternative<NumericDisplaySpec>(payload)
+           || std::holds_alternative<StatusIndicatorSpec>(payload) || std::holds_alternative<TextInputSpec>(payload);
+}
+
 constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const noexcept {
     using mdux::core::err;
 
@@ -766,8 +974,30 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         return err(SchemaError::NonPositiveSurface);
     }
 
+    for (std::size_t index = 0; index < approvedTextPackages.size(); ++index) {
+        const TextPackageApproval& approval = approvedTextPackages[index];
+        if (approval.locale.empty()) {
+            return err(SchemaError::EmptyApprovedLocale);
+        }
+        if (approval.packageId.empty()) {
+            return err(SchemaError::EmptyApprovedPackageId);
+        }
+        if (approval.packageSha256 == evidence::Digest{}) {
+            return err(SchemaError::EmptyApprovedPackageDigest);
+        }
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (approvedTextPackages[earlier].locale == approval.locale) {
+                return err(SchemaError::DuplicateApprovedLocale);
+            }
+        }
+    }
+
     for (std::size_t index = 0; index < nodes.size(); ++index) {
         const CompiledNode& node = nodes[index];
+
+        if (approvedTextPackages.empty() && needsTextPackageApproval(node.payload)) {
+            return err(SchemaError::MissingTextPackageApproval);
+        }
 
         if (node.id.empty()) {
             return err(SchemaError::EmptyNodeId);

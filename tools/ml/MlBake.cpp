@@ -32,7 +32,6 @@ namespace {
 
 constexpr std::string_view weightsFileName = "weights.bin";
 
-constexpr std::string_view recipeUnreadable = "mdux.ml.bake.recipeUnreadable";
 constexpr std::string_view recipeInvalid = "mdux.ml.bake.recipeInvalid";
 constexpr std::string_view weightsUnreadable = "mdux.ml.bake.weightsUnreadable";
 constexpr std::string_view goldenFailed = "mdux.ml.bake.goldenGenerationFailed";

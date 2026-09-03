@@ -827,8 +827,9 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
             }
             const std::uint8_t raw = std::to_integer<std::uint8_t>(span[cursor]);
             ++cursor;
-            const std::int16_t delta = sameOrPositive ? static_cast<std::int16_t>(static_cast<std::uint16_t>(raw))
-                                                      : -static_cast<std::int16_t>(static_cast<std::uint16_t>(raw));
+            const std::int32_t signedDelta = sameOrPositive ? static_cast<std::int32_t>(raw)
+                                                            : -static_cast<std::int32_t>(raw);
+            const std::int16_t delta = static_cast<std::int16_t>(signedDelta);
             const auto         next  = checkedAdd(x, delta);
             if (!next) {
                 return err(ParseError::CoordinateOverflow);
@@ -864,8 +865,9 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
             }
             const std::uint8_t raw = std::to_integer<std::uint8_t>(span[cursor]);
             ++cursor;
-            const std::int16_t delta = sameOrPositive ? static_cast<std::int16_t>(static_cast<std::uint16_t>(raw))
-                                                      : -static_cast<std::int16_t>(static_cast<std::uint16_t>(raw));
+            const std::int32_t signedDelta = sameOrPositive ? static_cast<std::int32_t>(raw)
+                                                            : -static_cast<std::int32_t>(raw);
+            const std::int16_t delta = static_cast<std::int16_t>(signedDelta);
             const auto         next  = checkedAdd(y, delta);
             if (!next) {
                 return err(ParseError::CoordinateOverflow);

@@ -2,11 +2,11 @@
   "inputs": [
     {
       "path": "recipes/shader/mdux-ui/ui.vert.spv",
-      "sha256": "deb1c7ba3b0204512bbc0dc5c09e9e5bb2d1e076331a873a9b5083350182c401"
+      "sha256": "d9bdbdbbf1a287024ce226705d6037fbb4a568616d4b2f0e97994830f73a78b2"
     },
     {
       "path": "recipes/shader/mdux-ui/ui.frag.spv",
-      "sha256": "dcd682aa2a1a76684d461e8b99fd3408f790f1aed133601490515c5024c3f4ee"
+      "sha256": "29f386f9815cf1ee2d41382c1a6a4f212a8c26acf7e56920ef8fa32c92823fcb"
     }
   ],
   "options": {
@@ -24,18 +24,18 @@
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "0b8743c277666ec2203e85aac99607d0552f8337e5dc03c6f4514d0a97edea4b"
+      "sha256": "d3a6531a26084f559fe514b190ce3b06bdfb7452be90a45a1b5b7fd35464c105"
     },
     {
       "path": "shaders.spv",
-      "sha256": "c52b199c2442f863230eead956987d518e19b7458b56ca76d3b68743b645be81"
+      "sha256": "4e22a2a65402e2facea95332b24773c52b72b20ec3bf7a800af3b1752dccb3b8"
     }
   ],
   "recipe": {
     "path": "recipes/shader/mdux-ui.toml",
-    "sha256": "45160f29ea6f456aae843386c09ca39fee601694c718e52038308cfbdb091123"
+    "sha256": "8a74fef3ab961d47cc3bcfebb667e8db8f780004d517fce690b3abb8db996e2f"
   },
   "schemaVersion": 1,
   "tool": "mdux-shaderbake",
-  "toolVersion": "0.6.0"
+  "toolVersion": "0.7.0"
 }

@@ -1,0 +1,69 @@
+{
+  "id": "endoscope-monitor",
+  "inputs": [
+    {
+      "id": "endoscope-monitor",
+      "role": "screenPackage",
+      "sha256": "79bb460bbf10e51b69eeddde9782e3ef99c464a2c8d9e71cc0601623703fde07"
+    },
+    {
+      "id": "endoscope-monitor",
+      "role": "goldens",
+      "sha256": "60c555cbeceb4e897e5a4302c0d667aaca84dd72d28ef2c13d96178d86eb1a2a"
+    },
+    {
+      "id": "mdux-ui",
+      "role": "shaderPackage",
+      "sha256": "d3a6531a26084f559fe514b190ce3b06bdfb7452be90a45a1b5b7fd35464c105"
+    },
+    {
+      "id": "endoscope-monitor-en-us",
+      "locale": "en-US",
+      "role": "textPackage",
+      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+    },
+    {
+      "id": "dejavu-ui",
+      "locale": "en-US",
+      "role": "fontPackage",
+      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+    }
+  ],
+  "kind": "screen",
+  "outcomes": [
+    {
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "insufflation-pressure",
+      "scope": "en-US"
+    },
+    {
+      "check": "ColorHash",
+      "finding": "Held",
+      "nodeId": "insufflation-pressure",
+      "scope": "en-US"
+    },
+    {
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "ecg-lead-ii",
+      "scope": "en-US"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "screen-title",
+      "scope": "en-US"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "screen-title",
+      "scope": "en-US"
+    }
+  ],
+  "renderScopes": [
+    "en-US"
+  ],
+  "schemaVersion": 1
+}

@@ -10,10 +10,9 @@
  * module is the other way of getting one - parse the committed `package.json` - and it lives in
  * the host-tools zone precisely so that the governed runtime keeps having no parser in it.
  *
- * It is what the demonstrator and the weight-swap test use. Both could equally be served by a
- * `constexpr` emitter (the shader pipeline has one, issue #121); that is worth adding, and until
- * it exists this keeps the device-side contract honest by keeping the parsing on this side of the
- * boundary.
+ * The weight-swap test deliberately keeps using this path because it loads two committed packages
+ * dynamically. Device targets instead use `mdux-mlemit`'s generated `constexpr` package and link
+ * no host-tools module (issue #153).
  *
  * ## Why the result is a `unique_ptr`
  *

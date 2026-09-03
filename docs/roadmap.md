@@ -1,16 +1,21 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 23 August 2026
-> Epic status verified at the v0.6.0 release baseline, `develop` @ `acbe102` · 23 August 2026 ·
-> `#15` closed, all twelve children.
-> The divergence table below was last re-verified on 17 August 2026 and is not re-checked here.
+> Backlog · ambroise-leclerc/MduX · updated 3 September 2026
+> Epic status re-verified against `develop` @ `51eb779` · 3 September 2026. All thirteen epics were
+> queried on GitHub: eleven closed, two open (`#17`, `#19`). **#16 closed at 5/5 and ships in
+> v0.7.0**, which half-opens Wave 6 — its other epic, #17, remains.
+> Twelve non-epic issues are open: nine are epic children listed in their epic's section below, and
+> three are standalone follow-ups from #255 — `#280`, `#281` and `#282`.
+> The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
+> 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. Five waves have shipped — the renderer draws its first
-pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
-what the build actually produces, #14 closed Wave 4 with the font and text pipeline, and
-v0.6.0 closes Wave 5 with #15, the compiler that generates the screens it draws.
+backlog that closes the gap. Five waves have shipped and a sixth is half-shipped — the renderer
+draws its first pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
+what the build actually produces, #14 closed Wave 4 with the font and text pipeline, v0.6.0 closes
+Wave 5 with #15, the compiler that generates the screens it draws, and v0.7.0 adds #16, which checks
+that what the compiler produced is what reaches the screen.
 All twelve of its children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
@@ -22,17 +27,25 @@ device links without a parser. The first compiled screen is committed under
 `mdux-medui-check` validates a single file while naming the two checks a file on its own cannot
 cover. With #201 the chain reaches pixels: `ScreenPixelTests` renders the committed screen through
 the governed runtime and compares the frame pixel by pixel under lavapipe. What the epic leaves for
-its successors is content rather than path: no text package is baked yet (#235), so a screen carrying
-`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
-component as deferred (#17). The golden sidecar gains a static consumer in `ScreenPixelTests` and
-still awaits the rendered one ADR-012 describes, which is #16 over content #17 teaches to draw.
+its successors is content rather than path: #235 has since baked a text package, so the committed
+screen carries a `t("STR-KEY")` measured against it, #242 has since drawn it — the governed
+runtime joins the compiled screen to a text package and the title reaches the display — and #244 has
+since made that join *authenticated* rather than conventional: a screen carries the digests of the
+text packages it was compiled against, `TextBinding::create()` refuses one it was not, and
+`render()` refuses a binding that another screen approved. What is left
+is the rest of the dictionary, still counted as deferred (#17) - less the two fields #255 taught the
+runtime to paint. The golden sidecar has both consumers it was written for: the static one in
+`ScreenPixelTests` that checks it against the compiled screen, and, since #255, the rendered one
+ADR-012 describes.
 
 | Metric | Count |
 |---|---|
 | Epics | 13 |
-| Delivered | 10 |
-| Remaining | 3 |
-| Waves shipped | 5 |
+| Delivered | 11 |
+| Remaining | 2 |
+| Waves shipped | 5, plus half of Wave 6 (#16 in v0.7.0; #17 open) |
+| Standalone open issues | 3 (#280, #281, #282) |
+| Open epic children | 9 (#256–#261, #263–#265) |
 
 ## The thesis
 
@@ -44,15 +57,27 @@ the whole of Track C.
 
 | Area | MduX today | TrustSC today |
 |---|---|---|
-| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). What is still ahead is content rather than path: the text package, and the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
+| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). A text package is baked, the committed screen carries a `t("STR-KEY")` measured against it (#235), the governed runtime draws it (#242), and the screen is bound to the packages it was compiled against by digest (#244) - so a label authored in `.medui` reaches pixels through every stage, and a substituted translation is refused rather than drawn. What is still ahead is content rather than path: the rest of the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
 | Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Six artifacts committed under `generated/`, re-derived and byte-compared on both CI legs. | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
+| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all four CI legs - MSVC, GCC 16, macOS/Clang 21 (#222) and Linux/Clang 21 (#246), each of which now also provides a Vulkan device so the screen bundle's rendered `verification.json` is re-derived rather than copied (#254). | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
 | ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
 | Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
 | Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
 | Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. 438 tests at `v0.5.0`, and more since, across the in-repository `MduXTest` and SpecLab BDD scenarios. Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
-| Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC and GCC 16 both green in CI. | Workspace builds `--locked` on Linux and in containers. |
+| Tests | Closed. **616 tests, 616 passing** at `develop` @ `bdf539c`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. #246 added a fourth lane, Linux under Clang 21 and libc++, which caught a stack-frame guard violation and a standard-library mismatch that the other three had all missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
+| Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC, GCC 16, macOS arm64 / Clang 21 (#222) and Linux / Clang 21 (#246) all green in CI. | Workspace builds `--locked` on Linux and in containers. |
+
+> **Why the test count is sourced from CI rather than a local run.** 616/616 is what the macOS lane
+> reports for `bdf539c` (run 33149254738), and the GCC 16, MSVC and Linux/Clang lanes are green on
+> the same commit. A local build of the
+> same commit, with the same preset and the same Clang 21.1.8, fails three `evidence-unit` scenarios
+> — two `SEGFAULT`, one failed assertion — on a host running **macOS 26.5.2 with SDK 26.5**, where
+> the verified lane runs macOS 15. The same three failed at `6124bcb` from a build directory deleted
+> and reconfigured from scratch, so they are not stale incremental state. The generated module's own
+> `static_assert(screen.validate().has_value())` compiles, so the same expression is true at compile
+> time and false at run time on that host. The supported configuration is the one in
+> `cmake/toolchains/macos-arm64-llvm.cmake`, and macOS 26 is not it — but a constexpr/runtime
+> divergence is worth a look before it becomes the supported host.
 
 ## Dependency order
 
@@ -60,8 +85,9 @@ the whole of Track C.
 
 An epic opens when every epic it depends on has closed. Five waves have shipped
 (v0.2.0, v0.3.0, v0.4.0, v0.5.0, v0.6.0), one epic per wave closing the dependency it held.
-Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is open: #16 and
-#17 were blocked on it and are not any more. #19 spans waves by design; its S3–S6 follow #15.
+Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is half done: #16
+closed at 5/5 and shipped in v0.7.0, and #17 remains. #19 spans waves by design; its S3–S6 follow
+#15.
 
 ```text
 Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
@@ -69,7 +95,7 @@ Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
 Wave 5 · shipped v0.6.0     #15 (done)
-Wave 6                      #16  #17
+Wave 6 · half-shipped v0.7.0  #16 (done)  #17
 ```
 
 #### When v0.6.0 gets cut
@@ -111,12 +137,54 @@ Two things worth settling before the tag rather than during it:
   non-linear boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented
   cause: #23 purged normative text from git history.
 
+#### What v0.7.0 ships
+
+Twenty commits separate this tag from `v0.6.0`'s back-merge, and unlike the previous inter-tag
+window, **one of them closed an epic**. Two are not product changes and have no row below: the
+back-merge itself, and #238, which recorded what cutting v0.6.0 taught the procedure.
+
+| Merged | PR | Issue | What it changed |
+|---|---|---|---|
+| 23 Aug | #239, #240 | #235 | A text package is baked and committed, and the compiled screen carries a `t("STR-KEY")` measured against it. |
+| 24 Aug | #241 | #222 | macOS Apple Silicon becomes a continuously verified target: Clang 21, libc++, MoltenVK, on every push. |
+| 25 Aug | #243 | #242 | The governed runtime draws a `Label` — compiled screen plus text package reaches pixels. |
+| 25 Aug | #245 | #244 | The screen records the digests of the text packages it was compiled against, and the runtime refuses any other. |
+| 29 Aug | #247 | #246 | The Linux Clang leg runs on every pull request, and caught two defects three green legs had missed. |
+| 29 Aug | #250 | #249 | A lint that fails a document naming a CI mechanism no workflow runs. |
+| 1 Sep | #270 | #219 | `ClockFormat` and `SystemEvent` become closed sets, so a `Clock` can be measured rather than looked up. |
+| 1 Sep | #271 | #18 | `mdux.ml` emits `constexpr` model packages, the treatment shaders and screens already had. |
+| 2 Sep | #272 | #251 | ADR-014 fixes what rendered-truth verification checks, and what it cannot. |
+| 2 Sep | #273 | #252 | `mdux.verify` — four governed checks over a CPU framebuffer. |
+| 2 Sep | #277 | #253 | `mdux-verify-ui`, across every approved locale, refusing a narrower set. |
+| 2 Sep | #278 | #254 | `verification.json` as the screen bundle's fourth byte-compared file. |
+| 3 Sep | #279 | #255 | The CI gate on three render legs, the failure diff image, and ADR-014 decision 5. |
+
+The first four are #17's content arriving ahead of its epic, and they are what made #16 buildable:
+without a baked text package and a drawn `Label`, the two mandatory text obligations would have had
+no ink to check. The last five are #16 itself, in order, each blocked on its predecessor.
+
+> **#255 had to settle a question #16 left to #17.** The committed screen's two golden nodes were
+> deferred by the runtime, so the gate the epic exists to add would have been red on the day it
+> landed. ADR-014 decision 5 is the answer — a `NumericDisplay` and a `SignalTrace` paint the field
+> they reserve, read off the golden sidecar rather than invented — and the three cheaper answers
+> (delete the goldens, weaken their checks, verify a different screen) are the three the issue
+> forbids by name. Recorded here because the same shape will recur: an epic's last child is where
+> its unstated assumptions become someone's problem.
+
+> **#244 merged with review findings addressed rather than deferred.** All eight raised against the
+> first revision landed as fixes in the squashed commit, two of them solved better than proposed: the
+> device path dropped JSON re-serialization entirely instead of hashing fields, and noncanonical
+> package bytes became a *compile* error instead of a test for the divergence they caused.
+
 ## The backlog
 
 ### Thirteen epics
 
-Child issues exist for the six actionable epics. The rest keep their breakdown as a
-checklist in the epic body, promoted when unblocked.
+Child issues exist for every actionable epic, and as of 28 August 2026 that is every open epic.
+#16's and #17's children were promoted when #15's closure unblocked them, and #19's remaining
+S4–S6 with them: those had followed #15 and #18, both long closed, so they were actionable under
+this convention and had simply not been promoted. The convention is that a *blocked* epic keeps its
+breakdown as a checklist in its own body until its dependencies close.
 
 ---
 
@@ -314,32 +382,65 @@ happened to read.
 - #200 S11 `mdux-medui-check` · _closed (PR #233)_
 - #201 S12 First end-to-end screen · _closed (PR #234)_
 
+**One follow-up outlives the epic.** #219 — *Close `ClockFormat` and `SystemEvent` across the
+compiler and the schema* — is labelled `Part of #15` and is **open**. It is not a thirteenth child:
+#218 tried closing the two sets in the schema alone and withdrew, because the schema is imported by
+the compiler and closing it there alone leaves the canonical type unable to represent a screen the
+implemented pipeline accepts. It stays open against a closed epic on purpose, and it is a parity
+row: TrustSC closes both sets in its governed crate and leaves the third, `charset`, an open name —
+which is where MduX already agrees. Until it lands, #195's clock branch needs a product-supplied
+table for a format that could have been measured.
+
 _Blocks #16, #17_
 
-#### #16 — Rendered-truth verification · **Blocked #13, #15**
+#### #16 — Rendered-truth verification · **Done v0.7.0**
 
 Render offscreen, then check that critical content appears where the compiled screen says
 it will, in the declared tint, in every approved locale — and emit that as evidence. Bounds
 and colour checks are exercisable before a single glyph exists.
 
-- S1 ADR: automated UI verification
-- S2 Bounds, ink containment, colour hash
-- S3 The verify driver
-- S4 Evidence report emission
-- S5 CI across all locales
+- #251 S1 ADR: automated UI verification · _closed_
+- #252 S2 Bounds, ink containment, colour hash · _closed_
+- #253 S3 The verify driver · _closed_
+- #254 S4 Evidence report emission · _closed_
+- #255 S5 CI across all locales · _closed_
 
-#### #17 — Content components · **Blocked #15**
+**#255 closed the epic at 5/5, and it ships in v0.7.0.** It also had to settle something #16 left to #17: the committed
+screen's two golden nodes were deferred by the runtime, so the gate this child exists to add would
+have been red on the day it was added. ADR-014 decision 5 is the answer - a `NumericDisplay` and a
+`SignalTrace` paint the field they reserve, in the token their own golden entry names, while the
+reading inside it still waits on #257 and #258. The three cheaper answers (delete the goldens, weaken
+their checks, verify a different screen) are the three #255 forbids by name.
+
+Sequential: each child is blocked by its predecessor. Two things landed after the epic was written
+that make it cheaper than it reads — #242 draws a `Label`, so ink containment has real ink to check
+rather than waiting on #17, and #244 makes "every approved locale" a property of the screen's own
+manifest rather than a caller-supplied list. **#252's bounds and colour-hash checks wait on no
+further content** — the epic's own note calls them fully exercisable at the solid-rect slice, which
+shipped in v0.6.0 — but they still follow #251, which fixes the derive-don't-trust rule they
+implement. Content is not the constraint; the governing decision is.
+
+#### #17 — Content components · **Open, unblocked**
 
 The rest of the component dictionary. Two deliberate scope cuts: QOI rather than PNG in v1,
 and no IME — input-method editing is a platform concern that does not belong inside a
 governed renderer.
 
-- S1 Image baker and the `Image` component
-- S2 `SignalTrace` — shares the demonstrator's sample ring
-- S3 `NumericDisplay` and `Clock`
-- S4 `StatusIndicator` — has a waiting consumer in the ECG demonstrator
-- S5 `TextInput` (display and caret only)
-- S6 Buttons with requirement binding
+- #256 S1 Image baker and the `Image` component
+- #257 S2 `SignalTrace` — shares the demonstrator's sample ring
+- #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
+- #259 S4 `StatusIndicator` — has a waiting consumer in the ECG demonstrator
+- #260 S5 `TextInput` (display and caret only)
+- #261 S6 Buttons with requirement binding — touches #219
+
+Largely independent of one another, unlike #16's. **#256 is the one to start**, depending on nothing
+else here.
+
+**#219 orders two of them, and is a prerequisite rather than a nicety.** It closes `ClockFormat` and
+`SystemEvent`. An open format name cannot be *measured*, only looked up, so #258's `Clock` would be
+built against the product-supplied table #195 needs today and then have it removed; and a screen
+that can name any system event can name one nothing implements, which is worst discovered on the
+press of the critical button #261 builds.
 
 ---
 
@@ -360,9 +461,12 @@ application source change. Runs in parallel with all of Track C.
 - #62 `Classifier1D`, fail-closed
 - #63 No heap in `predict`, verified three ways
 - #64 ECG demonstrator and weight-swap test
-- #153 Follow-up: `constexpr` package emitter
+- #153 Follow-up: `constexpr` package emitter · **open**
 
-_All nine closed · 360/360 on `develop`_
+_The nine children closed · 360/360 on `develop`. #153 is a follow-up rather than a tenth child, and
+it is still open: the ML package is the one committed artifact a device build still parses at
+startup, which is the same property #197 gave the compiled screen and #244 has now extended to the
+text it binds. It does not reopen #18 and it does not block a wave._
 
 #### #19 — Agent & LLM tooling parity · **Partly done**
 
@@ -377,11 +481,13 @@ machine-readable contract side, which follows the surfaces it describes.
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
 - #118 Stable JSON diagnostic envelope across all tools · _closed_
-- S4 Machine-readable `.medui` grammar
-- S5 Recipe schemas
-- S6 IR dump and tool manifest
+- #263 S4 Machine-readable `.medui` grammar and `--explain`
+- #264 S5 JSON Schemas for every recipe kind
+- #265 S6 `--dump-ir` JSON and a generated tool manifest
 
-_S1–S3 closed; S4–S6 follow #15 and #18_
+_S1–S3 closed. S4–S6 followed #15 and #18 — closed on 23 August and 3 August — so they are
+actionable and were promoted on 28 August 2026. They are independent of one another; #264 needs no
+compiler work and is the cheapest of the three._
 
 ---
 
@@ -398,9 +504,30 @@ clone-time exposure that a HEAD-only deletion leaves behind.
 
 #### Two claims C++ makes better
 
-Running the evidence tests on MSVC and GCC in the same pull request proves byte-identity
-across two independent toolchains, standard libraries and floating-point code generators.
-TrustSC gets its determinism from a single `rustc`.
+Running the evidence tests on MSVC, GCC 16 and Clang 21 with libc++ — the last on both Apple
+Silicon (#222) and Linux (#246) — in the same pull request proves byte-identity across three
+independent toolchains, standard libraries and floating-point code generators, on three operating
+systems. TrustSC gets its determinism from a single `rustc`.
+
+The third leg arrived by a route this document did not predict, and finding that out corrected a
+false claim. ADR-007 decision 6 read "and Clang, now that issue #48 re-enabled that leg" — #48 did
+not: `clang-build.yml` has never carried a `push` or `pull_request` trigger. The claim was true in
+substance and wrong about its own evidence, which is the defect class #116 found in ADR-005.
+
+#246 then ran the Linux leg, and it is now a fourth lane on every push. `import std` was never the
+blocker there — libc++-21 ships its manifest and resolves fine. Two real defects were, and neither
+was reachable on any other leg: `ShaderPackage::toJson()` exceeded the 4096-byte
+`-Wframe-larger-than` guard #63 set so that "no heap" could not quietly become "enormous stack"
+(4120 bytes, on x86-64, where the macOS lane is arm64 and Clang reuses sibling-scope slots less than
+GCC), and `InstallTreeConsumer` never forwarded compiler flags to its nested configure, so the
+consumer built against the compiler's default standard library rather than the one MduX was built
+with — invisible on macOS, where libc++ *is* that default. The function was split into per-section
+helpers and the forwarding completed; the guard was left where it was.
+
+The fourth lane is not a fourth toolchain, and ADR-007 decision 6 now says what it does buy: the
+same compiler and standard library as the macOS lane, on the same OS as the GCC lane. That separates
+"a different toolchain produced identical bytes" from "a different *platform* produced identical
+bytes" — two claims the doctrine had been making as one.
 
 And "the host baker uses the same ML kernels as the device runtime" stops being a
 discipline: it is one governed module imported by both. If they ever disagree, it is the
@@ -418,6 +545,7 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status verified at the v0.6.0 baseline, `develop` @ `acbe102` · 23 August 2026_
-_13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
+_Epic status re-verified against `develop` @ `51eb779` · 3 September 2026_
+_13 epics · 11 delivered · Waves 1–5 shipped · Wave 6 half-shipped in v0.7.0 (#16 done, #17 open) · no enforcement gaps outstanding_
+_3 standalone open issues: #280, #281, #282 (all from #255) · 9 open epic children (#256–#261, #263–#265)_
 _All epics on GitHub_

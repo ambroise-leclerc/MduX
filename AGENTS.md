@@ -75,9 +75,9 @@ and text pipeline (`#14`), closed by `#162`. Wave 5 is the `.medui` compiler (`#
 twelve of its children have landed: a screen goes from source to a bounded, budgeted,
 golden-annotated set of rectangles, to a committed byte-compared artifact, to `constexpr` C++, to
 draw commands recorded without allocating, to a pixel compared under lavapipe. What the wave leaves
-behind is content rather than path — no text package is baked (`#235`), so a screen carrying
-`t("STR-KEY")` cannot be compiled, and the runtime draws a `Panel` while counting every other
-component as deferred (`#17`).
+behind is component content rather than path: a baked text package now lets the governed runtime
+draw a `Label`, while live-data and composite components such as `NumericDisplay` and `SignalTrace`
+remain deferred (`#17`).
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -97,6 +97,7 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.verify` (governed) | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 | `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |
 | `mdux.vulkansc.objects` (imports `mdux.vulkansc.memory`) | `include/mdux/vulkansc/DeviceObjectManager.cppm` | `src/vulkansc/DeviceObjectManager.cpp` |
@@ -163,38 +164,36 @@ in `include/` or `src/`.
   superseded by the clause corpus above or by an ADR. Read that file before concluding content was
   lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
 - `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
+  `macos-arm64-build.yml`,
   `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
   `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
   gets built/tested in CI.
-- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug` and
-  `ninja-clang` (issue #45).
+- `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug`,
+  `ninja-clang`, `ninja-macos-clang` and `ninja-macos-clang-debug`.
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
 
 ## 5. Supported environment and common commands
 
-**Platforms**: Windows 10+ and Linux only are supported and intended — but this is not, as earlier
-text here claimed, enforced by a fatal CMake check. The guard in `CMakeLists.txt` is
-`if(NOT WIN32 AND NOT UNIX)`, and CMake sets `UNIX` on macOS too, so that check does not actually
-block macOS. In practice macOS is excluded by the compiler-version gate instead: `AppleClang` is not
-one of the recognized `CMAKE_CXX_COMPILER_ID` branches (MSVC/GNU/Clang), so it falls through to a
-non-fatal `message(WARNING ...)` rather than a `FATAL_ERROR` — and even past that warning, C++23
-modules scanning is not functional under AppleClang, so a macOS configure fails later for unrelated
-reasons rather than being rejected up front. Treat "Windows/Linux only" as the intended, tested
-scope, not a mechanically enforced restriction.
+**Platforms**: Windows 10+, Linux, and Apple Silicon macOS are supported and tested. macOS has one
+verified tuple: upstream LLVM/Clang 21.1.8 with libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK
+1.4.309.0/MoltenVK. `cmake --preset ninja-macos-clang` selects the repository toolchain file, which
+also supplies `llvm-ar`, `llvm-ranlib`, the libc++ modules manifest and the active macOS SDK.
+AppleClang, GCC on macOS, Intel Macs, and version drift are rejected deliberately. Do not generalise
+a result from that tuple into support for an untested macOS configuration.
 
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ — note that `.github/workflows/clang-build.yml` carries only a `workflow_dispatch`
-  trigger. It is a live workflow that can be started from the Actions tab, but no push or pull
-  request runs it, so Clang is unverified by automatic CI even though the version floor is
-  enforced at configure time. Treat a Clang result as unverified unless you can point at a
-  specific manual run of that workflow.
-- CMake 4.0+
+- Clang 20+ on Linux remains manual-CI only. macOS requires upstream Clang 21.1.8 exactly and is
+  automatic CI; that does not verify Linux Clang.
+- CMake 4.0-4.3. This is a window, not a floor: the root `CMakeLists.txt` rejects 4.4+ with a
+  fatal error until that series' experimental `import std` gate has been reviewed, because the
+  gate UUID is version-specific and an unreviewed value silently disables `import std` rather
+  than failing. Raise the ceiling deliberately when qualifying a new series.
 - Vulkan SDK 1.3+, discoverable by CMake's `find_package(Vulkan REQUIRED)`
 
 **Configuring**: this is an out-of-source-build project (`cmake/PreventInSourceBuilds.cmake`
-enforces this). Plain CMake, identical on Linux and Windows:
+enforces this). Plain CMake on Linux and Windows:
 
 ```bash
 mkdir build && cd build
@@ -207,7 +206,17 @@ Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. 
 takes the platform default and stops with a message naming the generator it found.
 `export CMAKE_GENERATOR=Ninja` removes the need for the flag.
 
-`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang` and `-debug` variants.
+On Apple Silicon macOS use the verified preset instead:
+
+```bash
+export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+cmake --preset ninja-macos-clang
+cmake --build --preset ninja-macos-clang
+ctest --preset ninja-macos-clang --output-on-failure
+```
+
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-clang`,
+`ninja-macos-clang` and `-debug` variants.
 Those exist so each CI workflow invokes a configuration this repository owns instead of a
 look-alike command line; they are not needed to build by hand, and each uses its own binary dir.
 
@@ -221,20 +230,27 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Libraries: `MduXCore` (alias `MduX::Core`, governed) and `MduX` (alias `MduX::MduX`, adapter;
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
-  `MduX::MlBakeLib`; `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`. Not exported.
+  `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
+  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
+  `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, `mdux-verify-ui`, and `mdux-verify-bake`.
+  Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
-  links `MduX::MlBakeLib`, needs no Vulkan and no window, and embeds its model with
-  `mdux_embed_blob()`)
-- Tests: sixteen executables. Nine on the in-repository MduXTest framework (`core_tests`,
+  links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
+  embeds only its weight blob with `mdux_embed_blob()`)
+- Tests: twenty-five executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seven on SpecLab
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fifteen on SpecLab
   (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
-  `ml_noheap_spec`) — see ADR-009. `mdux_discover_tests()` registers one CTest entry per case, so
+  `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
+  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`) — see ADR-009 — plus the
+  dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest entry per case, so
   `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
-  `pixel`, `regulatory`.
+  `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
+  screen by `mdux_compile_screen()`; asserted on the three render legs, and distinct from `evidence`
+  because it compares a frame to a screen rather than bytes to bytes).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

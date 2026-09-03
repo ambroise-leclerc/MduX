@@ -112,6 +112,7 @@ add_executable(shader_spec
     shader/SpirvTests.cpp
     shader/ShaderBakeTests.cpp
     shader/UiPackageTests.cpp
+    shader/CommittedPackageTests.cpp
     shader/EmitTests.cpp
     shader/GeneratedTests.cpp
     shader/GeneratedModuleConsumer.cpp
@@ -486,6 +487,11 @@ CPMAddPackage(
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
     # SpecLab v0.1.0
     GIT_TAG 37b51fcec
+    PATCH_COMMAND
+        ${CMAKE_COMMAND}
+            -D "SOURCE_DIR=<SOURCE_DIR>"
+            -D "PATCH_FILE=${CMAKE_SOURCE_DIR}/cmake/patches/speclab-cmake-4.3.patch"
+            -P "${CMAKE_SOURCE_DIR}/cmake/patches/ApplySpecLabPatch.cmake"
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"
@@ -557,10 +563,28 @@ add_executable(ml_spec
     ml/KernelTests.cpp
     ml/DeterminismTests.cpp
     ml/RuntimeTests.cpp
+    ml/GeneratedModelTests.cpp
+    ml/GeneratedModelModuleConsumer.cpp
+    ml/GeneratedModelHeaderConsumer.cpp
 )
 
+# Both generated forms are compiled into this one binary. The module joins a build-tree file set;
+# the header is reached through the generated include directory. The target still links Core only,
+# so package consumption cannot acquire the host-tools parser transitively.
+target_sources(ml_spec
+    PRIVATE
+        FILE_SET generated_model_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_MODEL_DIR}
+            FILES ${MDUX_ECG_MODEL_MODULE}
+)
+add_dependencies(ml_spec emit-model-ecg-demo)
+
 target_link_libraries(ml_spec PRIVATE MduX::Core speclab::speclab)
-target_include_directories(ml_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(ml_spec PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MDUX_GENERATED_MODEL_DIR}
+)
 
 set_target_properties(ml_spec
     PROPERTIES
@@ -771,6 +795,89 @@ endif()
 
 mdux_discover_tests(medui_spec)
 
+# Rendered-truth verification checks (issue #252)
+#
+# Links MduX::Core only, and no Vulkan target of any kind. That is the standing evidence for
+# ADR-014 decision 1's first consequence: a framebuffer is an array, so the four checks are pure
+# functions a scenario can exercise on an image it painted, and they can be built and proved before
+# #253's driver exists to render one. A scenario here that needed a GPU would mean they had stopped
+# being pure functions over pixels.
+#
+# GoldenCheckTests covers both `CvCheck`s on synthetic images and, separately,
+# `GoldenExpectation::create()` - the dangling golden id and each duplicated field disagreeing with
+# its named package node, which ADR-014's ownership table assigns to the verifier rather than to the
+# baker's re-derivation. TextCheckTests covers the two mandatory text checks over a node that has no
+# golden entry and declared no `position:`, which is the criterion easiest to satisfy by accident.
+add_executable(verify_spec
+    verify/VerifySpecMain.cpp
+    verify/FramebufferTests.cpp
+    verify/GoldenCheckTests.cpp
+    verify/TextCheckTests.cpp
+)
+
+target_link_libraries(verify_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(verify_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(verify_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(verify_spec)
+
+# Host-only verification driver (issue #253). Pure planning/CLI policy stays in a normal SpecLab
+# executable and calls MduXVerifyUiLib directly. The end-to-end case is separate because it creates
+# the production driver's own Vulkan device; 77 means the run could not be made, never that it
+# passed. Automatic Linux and macOS legs provide lavapipe and MoltenVK respectively.
+add_executable(verify_ui_spec
+    verify_ui/VerifyUiSpecMain.cpp
+    verify_ui/DriverTests.cpp
+    verify_ui/ArtifactTests.cpp
+    verify_ui/DiffTests.cpp
+)
+target_link_libraries(verify_ui_spec PRIVATE MduX::VerifyUiLib speclab::speclab)
+target_include_directories(verify_ui_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(verify_ui_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(verify_ui_spec PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_ui_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_ui_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(verify_ui_spec)
+
+add_executable(verify_ui_pixel_test verify_ui/PixelTestMain.cpp)
+target_link_libraries(verify_ui_pixel_test PRIVATE MduX::VerifyUiLib)
+target_compile_definitions(verify_ui_pixel_test PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(verify_ui_pixel_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_ui_pixel_test PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_ui_pixel_test PRIVATE /experimental:module /std:c++latest)
+endif()
+add_test(NAME verify_ui_pixel_test COMMAND verify_ui_pixel_test)
+set_tests_properties(verify_ui_pixel_test PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
+
 # .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -
@@ -927,6 +1034,7 @@ add_executable(ml_tools_spec
     ml/MlToolsSpecMain.cpp
     ml/SafetensorsTests.cpp
     ml/WeightSwapTests.cpp
+    ml/EmitTests.cpp
 )
 
 target_link_libraries(ml_tools_spec PRIVATE MduX::MlBakeLib speclab::speclab)
@@ -936,6 +1044,22 @@ target_include_directories(ml_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # source tree rather than anything the build produces. It reads only, so CI's
 # source-tree-cleanliness gate stays satisfied - the same arrangement shader_spec uses.
 target_compile_definitions(ml_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+# Execute both halves of the generated-name rule over the same ids. A C++-only assertion cannot
+# observe the CMake regex, which is the exact drift the shader emitter once shipped with.
+set(mdux_model_identifier_parity_ids
+    "ecg-demo" "a.b-c" "plain" "2d" "class" "already_fine" "a b" "model.v2")
+set(mdux_model_identifier_parity_lines "")
+foreach(mdux_model_identifier_parity_id IN LISTS mdux_model_identifier_parity_ids)
+    mdux_model_identifier(mdux_model_identifier_parity_value
+                          "${mdux_model_identifier_parity_id}")
+    string(APPEND mdux_model_identifier_parity_lines
+           "${mdux_model_identifier_parity_id}\t${mdux_model_identifier_parity_value}\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/model_identifier_parity.tsv"
+     "${mdux_model_identifier_parity_lines}")
+target_compile_definitions(ml_tools_spec PRIVATE
+    MDUX_MODEL_IDENTIFIER_PARITY_FILE="${CMAKE_CURRENT_BINARY_DIR}/model_identifier_parity.tsv")
 
 set_target_properties(ml_tools_spec
     PROPERTIES
@@ -1061,6 +1185,22 @@ else()
     set(mdux_symbol_tool_kind "nm")
 endif()
 
+# Whether the standard library leaves its own throw sites indistinguishable from a source `throw`
+# in the object. That is a property of the *standard library*, not of the platform: libc++ routes
+# its string/vector failure paths straight through `__cxa_throw`, which is the same symbol a
+# hand-written throw emits, while libstdc++ uses out-of-line helpers that the scan can tell apart.
+# Keying this on APPLE happened to be right for the one macOS leg and wrong in principle - a Linux
+# Clang build with -stdlib=libc++ would gate on libc++'s own throws and fail for a reason that is
+# not a defect. Ask the compiler instead. See cmake/MduXNoHeapScan.cmake's header.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#include <version>
+#ifndef _LIBCPP_VERSION
+#error not libc++
+#endif
+int main() { return 0; }
+" MDUX_STDLIB_IS_LIBCXX)
+
 if(MDUX_SYMBOL_TOOL)
     add_test(NAME screen.noheap.symbolScan
         COMMAND ${CMAKE_COMMAND}
@@ -1090,6 +1230,7 @@ if(MDUX_SYMBOL_TOOL)
             -DMDUX_NOHEAP_OBJECT_LIST=${mdux_governed_object_list}
             -DMDUX_NOHEAP_TOOL=${mdux_symbol_tool_kind}
             -DMDUX_NOHEAP_COMMAND=${MDUX_SYMBOL_TOOL}
+            -DMDUX_THROW_SYMBOLS_AMBIGUOUS=${MDUX_STDLIB_IS_LIBCXX}
             -P ${CMAKE_SOURCE_DIR}/cmake/MduXNoHeapScan.cmake
     )
     set_tests_properties(governed.noThrow.symbolScan PROPERTIES LABELS "governed")
@@ -1097,21 +1238,18 @@ if(MDUX_SYMBOL_TOOL)
     # The negative fixture. See tests/governed/ThrowFixture.cpp for why a scan that only ever runs
     # against conforming code is not yet evidence of anything.
     #
-    # MSVC is excluded, and the reason is the same one that makes the positive scan
-    # report-only there: the MSVC STL inlines its own throw sites, so `_CxxThrowException` cannot
-    # distinguish a governed `throw` from an ordinary `std::string` growth path. The
-    # `governed-throw` profile therefore forbids nothing under dumpbin, and a negative test needs
-    # something to be forbidden before it can prove the rejection works. Registering it anyway
-    # would produce a test that fails on Windows for a reason unrelated to any defect - the kind of
-    # noise that trains a reader to ignore a red check.
+    # MSVC and macOS/libc++ are excluded because their standard-library throw sites use the same
+    # object symbol as a hand-written throw (`_CxxThrowException` or `__cxa_throw`). The profile
+    # therefore forbids nothing there, and a negative test needs something to be forbidden before
+    # it can prove rejection works. mdux-governed-lint is the source-level gate on those legs.
     #
     # CXX_SCAN_FOR_MODULES OFF keeps this object out of the module dependency graph: it declares no
     # module and imports none, and a fixture whose job is to be non-conforming has no business in
     # anyone's dyndep.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR MDUX_STDLIB_IS_LIBCXX)
         message(STATUS
-            "governed.noThrow.symbolScan.negative not registered on MSVC - the governed-throw "
-            "profile forbids no symbol under dumpbin, so there is nothing for a negative test to "
+            "governed.noThrow.symbolScan.negative not registered on this standard library - the "
+            "governed-throw profile cannot distinguish library and source throws, so there is nothing for a negative test to "
             "prove. mdux-governed-lint covers the rule on this toolchain.")
     else()
         add_library(mdux_throw_fixture OBJECT governed/ThrowFixture.cpp)

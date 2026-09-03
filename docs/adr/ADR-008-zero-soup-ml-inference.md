@@ -93,6 +93,13 @@ is why `TensorRef` holds a byte offset rather than a pointer: an offset lets `Mo
 non-`constexpr` and force multi-megabyte weights into generated source, which MSVC in particular
 does not survive in reasonable time.
 
+`mdux-mlemit` renders the committed `package.json` into a build-tree module interface and header.
+Both forms hold the package id and schema version, weight digest and byte length, layer descriptors,
+input/output/scratch dimensions, and golden bit patterns. Both carry a `static_assert` over
+`ModelPackage::validate()`. A device target therefore links `MduX::Core`,
+parses nothing at startup, and still receives weights separately. The host-tools `PackageLoad`
+module remains available for tooling and tests that intentionally load packages dynamically.
+
 Swapping demonstrator weights for clinically-qualified weights is therefore a re-bake with
 **zero application source change**.
 
@@ -253,6 +260,8 @@ array instead, which compiles in reasonable time precisely because it is not `co
   property the cross-toolchain test exists to demonstrate.
 - Host-tool diagnostics use the shared diagnostic envelope (issue #19), so `--format=json` gives an
   agent a machine-readable failure.
+- `mdux-mlemit` produces a module interface plus a header fallback from one in-memory rendering.
+  The files remain in the build tree; the committed JSON is the reviewed evidence artifact.
 - x87 excess precision only bites 32-bit x86, where the FPU computes at 80 bits and rounds
   unpredictably on spill. Windows is 64-bit-only here; any 32-bit Linux target must require SSE2
   math or refuse to build.

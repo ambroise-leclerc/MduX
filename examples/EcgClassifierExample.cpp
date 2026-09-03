@@ -12,17 +12,17 @@
  *
  * ## What is actually being shown
  *
- * 1. **No filesystem.** Both `weights.bin` and `package.json` are linked in as byte arrays by
- *    `mdux_embed_blob()`. This program opens no files, which is what a device with no filesystem
- *    needs and what ADR-008 decision 2's "mmap, ROM, flash, or a linked blob" is about.
+ * 1. **No filesystem and no parser.** The package is generated `constexpr` data and `weights.bin`
+ *    is linked as a byte array by `mdux_embed_blob()`. This program opens no files and links no
+ *    host-tools module.
  * 2. **Fail-closed startup.** `Classifier1D::create()` verifies the weight digest and re-runs every
  *    golden vector through the real kernels before returning. If any of that diverges, this program
  *    prints why and exits non-zero rather than classifying anything.
  * 3. **No allocation per prediction.** The scratch buffer is a fixed array sized from the package,
  *    and `predict()` runs entirely within it - verified independently by issue #63.
- * 4. **Weights are data.** Swapping in `ecg-demo-alt` is a change of two `mdux_embed_blob()` lines
- *    in `examples/CMakeLists.txt` and nothing at all in this file. The weight-swap test
- *    (tests/ml/WeightSwapTests.cpp) is what proves that claim mechanically.
+ * 4. **Weights are data.** The package metadata and corresponding weight path share one configured
+ *    model id. The weight-swap test (tests/ml/WeightSwapTests.cpp) exercises the two committed
+ *    packages dynamically without changing this device example.
  *
  * ## Two things it deliberately does not do yet
  *
@@ -33,20 +33,16 @@
  * the eventual demonstration that the trace and the classifier are provably looking at identical
  * data is a matter of giving them the same buffer.
  *
- * It also parses the embedded `package.json` at startup, through the host-tools-zone loader. A
- * `constexpr` emitter - the equivalent of the shader pipeline's issue #121 - would turn the package
- * into generated source and remove even that parse, leaving nothing but the weight blob. That is
- * the natural follow-up; the governed runtime already takes a `ModelPackage` and has never had a
- * parser in it, so nothing about this file's structure would change.
+ * The package emitter is the equivalent of the shader pipeline's issue #121: the committed JSON is
+ * mechanically rendered into build-tree source and validated by `static_assert`. Only the weight
+ * blob remains runtime data.
  */
 
 import std;
-import mdux.core.result;
 import mdux.ml.schema;
 import mdux.ml.runtime;
-import mdux.tools.ml.packageload;
+import mdux.ml.generated.model_ecg_demo;
 
-#include "ecgModelPackage.hpp"
 #include "ecgModelWeights.hpp"
 
 namespace {
@@ -66,15 +62,19 @@ constexpr std::size_t sampleRateHz = 180;
 template <std::size_t Capacity>
 class SampleRing {
 public:
+    /// @brief Adds one sample, overwriting the oldest sample after the ring fills.
     void push(float sample) noexcept {
         samples_[head_] = sample;
-        head_ = (head_ + 1) % Capacity;
+        head_           = (head_ + 1) % Capacity;
         if (filled_ < Capacity) {
             ++filled_;
         }
     }
 
-    [[nodiscard]] bool full() const noexcept { return filled_ == Capacity; }
+    /// @brief Reports whether the ring contains one complete classifier window.
+    [[nodiscard]] bool full() const noexcept {
+        return filled_ == Capacity;
+    }
 
     /// Copies the ring into `window` oldest-first. The classifier needs a contiguous, ordered
     /// window and the ring is neither, so the copy is where those two facts are reconciled.
@@ -86,8 +86,8 @@ public:
 
 private:
     std::array<float, Capacity> samples_{};
-    std::size_t head_{0};
-    std::size_t filled_{0};
+    std::size_t                 head_{0};
+    std::size_t                 filled_{0};
 };
 
 /// A crude synthetic beat: a baseline with a periodic spike. Not an ECG, and not pretending to be -
@@ -105,25 +105,18 @@ private:
 
 }  // namespace
 
+/// @brief Runs the synthetic ECG classifier demonstrator.
 int main() {
     std::println("MduX ECG classifier demonstrator");
     std::println("  NOTE: synthetic weights, no training, no clinical validity. See ADR-008.");
     std::println("");
 
-    // 1. The package, from a linked byte array rather than a file.
-    const std::span<const std::byte> packageBytes = ecgModelPackage();
-    const std::string_view packageText{reinterpret_cast<const char*>(packageBytes.data()),
-                                       packageBytes.size()};
-    auto loaded = mdux::tools::ml::loadPackage(packageText, "ecgModelPackage");
-    if (!loaded.has_value()) {
-        std::println(std::cerr, "package failed to load: {}", loaded.error().message);
-        return 1;
-    }
-    const ml::ModelPackage package = (*loaded)->view();
+    // 1. The package was validated at compile time by its generated module.
+    constexpr ml::ModelPackage package = mdux::ml::generated::model_ecg_demo::package();
 
     // 2. Fail-closed construction: digest check, then every golden re-run through the real kernels.
     std::vector<float> scratch(package.maxScratchFloats, 0.0f);
-    auto classifier = ml::Classifier1D::create(package, ecgModelWeights(), scratch);
+    auto               classifier = ml::Classifier1D::create(package, ecgModelWeights(), scratch);
     if (!classifier.has_value()) {
         const ml::MlError error = classifier.error();
         std::println(std::cerr, "classifier refused to start: {}", ml::describe(error.code));
@@ -132,7 +125,9 @@ int main() {
             // and the two bit patterns that disagreed.
             std::println(std::cerr,
                          "  golden {} element {}: expected 0x{:08X}, got 0x{:08X}",
-                         error.goldenIndex, error.elementIndex, error.expectedBits,
+                         error.goldenIndex,
+                         error.elementIndex,
+                         error.expectedBits,
                          error.actualBits);
         }
         return 1;
@@ -146,7 +141,7 @@ int main() {
     std::println("");
 
     // 3. Classify a few windows off the ring. No allocation happens past this point.
-    SampleRing<180> ring;
+    SampleRing<180>    ring;
     std::vector<float> window(package.inputLength, 0.0f);
     std::vector<float> output(package.outputLength, 0.0f);
 
@@ -159,8 +154,7 @@ int main() {
         ring.readWindow(window);
 
         if (auto predicted = classifier->predict(window, output); !predicted.has_value()) {
-            std::println(std::cerr, "prediction failed: {}",
-                         ml::describe(predicted.error().code));
+            std::println(std::cerr, "prediction failed: {}", ml::describe(predicted.error().code));
             return 1;
         }
 
@@ -180,7 +174,7 @@ int main() {
     }
 
     std::println("");
-    std::println("Swapping these weights for a manufacturer's own is a re-bake of the recipe and");
-    std::println("two mdux_embed_blob() lines - not one character of this file. See #64's test.");
+    std::println("Swapping these weights is a re-bake of the recipe and a change to the configured");
+    std::println("model package - not this source file. See #64's test.");
     return 0;
 }

@@ -9,6 +9,7 @@ module mdux.tools.medui.package;
 
 import std;
 import mdux.draw;
+import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.medui.schema;
@@ -122,6 +123,15 @@ constexpr std::string_view schemaRefused = "SCP005";
     const auto       name   = [&](std::string_view field) {
         return document.intern(textOf(source, field));
     };
+    // Semantic analysis has already refused any spelling outside the set with MEDUI-E034, so a
+    // failure here would mean the two disagree. `Unspecified` then reaches `validate()`, which
+    // refuses it - a loud stop rather than a screen carrying a member it was not given.
+    const auto clockFormat = [&](std::string_view field) {
+        return ms::clockFormatFromWire(textOf(source, field)).value_or(ms::ClockFormat::Unspecified);
+    };
+    const auto systemEvent = [&](std::string_view field) {
+        return ms::systemEventFromWire(textOf(source, field)).value_or(ms::SystemEvent::Unspecified);
+    };
 
     // The only synthetic node the solver produces, and the only way a Panel is ever compiled: an
     // author cannot write one, because `Panel` is not in the component dictionary.
@@ -132,7 +142,7 @@ constexpr std::string_view schemaRefused = "SCP005";
         return ms::LabelSpec{.textKey = name("text"), .colorToken = name("color")};
     }
     if (resolved.component == "Clock") {
-        return ms::ClockSpec{.format = name("format")};
+        return ms::ClockSpec{.format = clockFormat("format")};
     }
     if (resolved.component == "Image") {
         return ms::ImageSpec{.source = name("source")};
@@ -147,7 +157,10 @@ constexpr std::string_view schemaRefused = "SCP005";
         return ms::ButtonSpec{.labelKey = name("label"), .colorToken = name("color"), .source = name("source"), .requirement = name("requirement")};
     }
     if (resolved.component == "CriticalButton") {
-        return ms::CriticalButtonSpec{.requirement = name("requirement"), .labelKey = name("label"), .colorToken = name("color"), .onPress = name("on_press")};
+        return ms::CriticalButtonSpec{.requirement = name("requirement"),
+                                      .labelKey    = name("label"),
+                                      .colorToken  = name("color"),
+                                      .onPress     = systemEvent("on_press")};
     }
     if (resolved.component == "NumericDisplay") {
         return ms::NumericDisplaySpec{.requirement = name("requirement"),
@@ -230,6 +243,24 @@ template <typename Rect>
     return json::Value::array(std::move(elements));
 }
 
+[[nodiscard]] std::string hexOf(const mdux::evidence::Digest& digest) {
+    const std::array<char, 64> hex = mdux::evidence::toHex(digest);
+    return {hex.data(), hex.size()};
+}
+
+[[nodiscard]] json::Value writeApprovals(std::span<const ms::TextPackageApproval> approvals) {
+    std::vector<json::Value> entries;
+    entries.reserve(approvals.size());
+    for (const ms::TextPackageApproval& approval : approvals) {
+        json::Value entry = json::Value::emptyObject();
+        put(entry, "locale", json::Value::string(std::string{approval.locale}));
+        put(entry, "packageId", json::Value::string(std::string{approval.packageId}));
+        put(entry, "packageSha256", json::Value::string(hexOf(approval.packageSha256)));
+        entries.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(entries));
+}
+
 /// The `spec` object for one payload: the component's own fields, and nothing shared.
 [[nodiscard]] json::Value writeSpec(const ms::NodePayload& payload) {
     json::Value spec = json::Value::emptyObject();
@@ -240,7 +271,7 @@ template <typename Rect>
         putName(spec, "colorToken", label->colorToken);
         putName(spec, "textKey", label->textKey);
     } else if (const auto* clock = std::get_if<ms::ClockSpec>(&payload)) {
-        putName(spec, "format", clock->format);
+        putName(spec, "format", ms::toWire(clock->format));
     } else if (const auto* image = std::get_if<ms::ImageSpec>(&payload)) {
         putName(spec, "source", image->source);
     } else if (const auto* viewport = std::get_if<ms::VulkanViewportSpec>(&payload)) {
@@ -256,7 +287,7 @@ template <typename Rect>
     } else if (const auto* critical = std::get_if<ms::CriticalButtonSpec>(&payload)) {
         putName(spec, "colorToken", critical->colorToken);
         putName(spec, "labelKey", critical->labelKey);
-        putName(spec, "onPress", critical->onPress);
+        putName(spec, "onPress", ms::toWire(critical->onPress));
         putName(spec, "requirement", critical->requirement);
     } else if (const auto* numeric = std::get_if<ms::NumericDisplaySpec>(&payload)) {
         putName(spec, "colorToken", numeric->colorToken);
@@ -306,11 +337,24 @@ std::span<const std::string_view> ScreenDocument::internList(std::span<const std
     return views;
 }
 
-void ScreenDocument::setHeader(std::string_view id, std::int32_t surfaceWidth, std::int32_t surfaceHeight, mdux::draw::DrawBudget budget) {
+void ScreenDocument::setHeader(std::string_view                         id,
+                               std::int32_t                             surfaceWidth,
+                               std::int32_t                             surfaceHeight,
+                               mdux::draw::DrawBudget                   budget,
+                               std::span<const ms::TextPackageApproval> approvedTextPackages) {
     id_            = intern(id);
     surfaceWidth_  = surfaceWidth;
     surfaceHeight_ = surfaceHeight;
     budget_        = budget;
+    // Build before replacing: `approvedTextPackages` may be a span returned by this document's own
+    // `package()`, so clearing first would invalidate the input we are still reading.
+    std::vector<ms::TextPackageApproval> replacements;
+    replacements.reserve(approvedTextPackages.size());
+    for (const ms::TextPackageApproval& approval : approvedTextPackages) {
+        replacements.push_back(
+            ms::TextPackageApproval{.locale = intern(approval.locale), .packageId = intern(approval.packageId), .packageSha256 = approval.packageSha256});
+    }
+    approvedTextPackages_ = std::move(replacements);
 }
 
 void ScreenDocument::addNode(ms::CompiledNode node) {
@@ -318,12 +362,13 @@ void ScreenDocument::addNode(ms::CompiledNode node) {
 }
 
 ms::ScreenPackage ScreenDocument::package() const noexcept {
-    return ms::ScreenPackage{.id            = id_,
-                             .schemaVersion = mdux::evidence::kSchemaVersion,
-                             .surfaceWidth  = surfaceWidth_,
-                             .surfaceHeight = surfaceHeight_,
-                             .nodes         = nodes_,
-                             .budget        = budget_};
+    return ms::ScreenPackage{.id                   = id_,
+                             .schemaVersion        = mdux::evidence::kSchemaVersion,
+                             .surfaceWidth         = surfaceWidth_,
+                             .surfaceHeight        = surfaceHeight_,
+                             .approvedTextPackages = approvedTextPackages_,
+                             .nodes                = nodes_,
+                             .budget               = budget_};
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +381,11 @@ ScreenDocument buildPackage(const LayoutResult& layout, PackageInputs inputs) {
     }
 
     ScreenDocument document;
-    document.setHeader(inputs.id, narrow(layout.surfaceWidth, "surface width"), narrow(layout.surfaceHeight, "surface height"), inputs.budget);
+    document.setHeader(inputs.id,
+                       narrow(layout.surfaceWidth, "surface width"),
+                       narrow(layout.surfaceHeight, "surface height"),
+                       inputs.budget,
+                       inputs.approvedTextPackages);
 
     for (const ResolvedNode& resolved : layout.nodes) {
         document.addNode(ms::CompiledNode{
@@ -381,6 +430,7 @@ std::string writePackage(const ms::ScreenPackage& package) {
     put(budget, "maxVertices", json::Value::unsignedInteger(package.budget.maxVertices));
 
     json::Value root = json::Value::emptyObject();
+    put(root, "approvedTextPackages", writeApprovals(package.approvedTextPackages));
     put(root, "budget", std::move(budget));
     put(root, "id", json::Value::string(std::string{package.id}));
     put(root, "kind", json::Value::string(std::string{ms::packageKind}));
@@ -487,6 +537,25 @@ private:
         return std::nullopt;
     }
     return std::string{*text};
+}
+
+[[nodiscard]] std::optional<mdux::evidence::Digest> readDigest(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
+    const json::Value* member = object.find(key);
+    if (member == nullptr) {
+        sink.fail(memberWrong, std::format("{} is missing the member '{}'", what, key));
+        return std::nullopt;
+    }
+    const auto text = member->asString();
+    if (!text.has_value()) {
+        sink.fail(memberWrong, std::format("{} member '{}' is not a string", what, key));
+        return std::nullopt;
+    }
+    auto digest = mdux::evidence::digestFromHex(*text);
+    if (!digest.has_value()) {
+        sink.fail(memberWrong, std::format("{} member '{}' is not 64 lowercase hexadecimal digits", what, key));
+        return std::nullopt;
+    }
+    return *digest;
 }
 
 [[nodiscard]] std::optional<std::int64_t> readInteger(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
@@ -642,7 +711,14 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         if (!format.has_value()) {
             return false;
         }
-        payload = ms::ClockSpec{.format = *format};
+        // A spelling outside the set fails the read rather than becoming `Unspecified`. The two are
+        // different faults - a package written by another tool versus one this reader mangled - and
+        // only refusing here keeps them apart.
+        const auto clockFormat = ms::clockFormatFromWire(*format);
+        if (!clockFormat.has_value()) {
+            return sink.fail(memberWrong, std::format("{} member 'format' names unknown ClockFormat '{}'", where, *format));
+        }
+        payload = ms::ClockSpec{.format = *clockFormat};
         return true;
     }
     if (kind == "Image") {
@@ -704,7 +780,11 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         if (!requirement.has_value() || !labelKey.has_value() || !colorToken.has_value() || !onPress.has_value()) {
             return false;
         }
-        payload = ms::CriticalButtonSpec{.requirement = *requirement, .labelKey = *labelKey, .colorToken = *colorToken, .onPress = *onPress};
+        const auto event = ms::systemEventFromWire(*onPress);
+        if (!event.has_value()) {
+            return sink.fail(memberWrong, std::format("{} member 'onPress' names unknown SystemEvent '{}'", where, *onPress));
+        }
+        payload = ms::CriticalButtonSpec{.requirement = *requirement, .labelKey = *labelKey, .colorToken = *colorToken, .onPress = *event};
         return true;
     }
     if (kind == "NumericDisplay") {
@@ -772,9 +852,11 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         return result;
     }
 
-    static constexpr std::array<std::string_view, 7> rootMembers{"budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
+    static constexpr std::array<std::string_view, 8>
+        rootMembers{"approvedTextPackages", "budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
     static constexpr std::array<std::string_view, 3> budgetMembers{"maxCommands", "maxIndices", "maxVertices"};
     static constexpr std::array<std::string_view, 4> nodeMembers{"bounds", "id", "kind", "spec"};
+    static constexpr std::array<std::string_view, 3> approvalMembers{"locale", "packageId", "packageSha256"};
 
     const json::Value& root = *parsed;
     if (!expectObject(root, "the package", rootMembers, sink)) {
@@ -814,11 +896,40 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         return result;
     }
 
+    const json::Value* approvalsValue = root.find("approvedTextPackages");
+    if (approvalsValue == nullptr || approvalsValue->kind() != json::Value::Kind::Array) {
+        sink.fail(memberWrong, "the package member 'approvedTextPackages' is missing or is not an array");
+        return result;
+    }
+    std::vector<ms::TextPackageApproval> approvals;
+    std::vector<std::string>             approvalLocales;
+    std::vector<std::string>             approvalPackageIds;
+    approvals.reserve(approvalsValue->elements().size());
+    approvalLocales.reserve(approvalsValue->elements().size());
+    approvalPackageIds.reserve(approvalsValue->elements().size());
+    for (std::size_t index = 0; index < approvalsValue->elements().size(); ++index) {
+        const json::Value& entry = approvalsValue->elements()[index];
+        const std::string  what  = std::format("approved text package {}", index);
+        if (!expectObject(entry, what, approvalMembers, sink)) {
+            return result;
+        }
+        const auto locale        = readName(entry, "locale", what, sink);
+        const auto packageId     = readName(entry, "packageId", what, sink);
+        const auto packageSha256 = readDigest(entry, "packageSha256", what, sink);
+        if (!locale.has_value() || !packageId.has_value() || !packageSha256.has_value()) {
+            return result;
+        }
+        approvalLocales.push_back(*locale);
+        approvalPackageIds.push_back(*packageId);
+        approvals.push_back(ms::TextPackageApproval{.locale = approvalLocales.back(), .packageId = approvalPackageIds.back(), .packageSha256 = *packageSha256});
+    }
+
     ScreenDocument document;
     document.setHeader(*id,
                        *surfaceWidth,
                        *surfaceHeight,
-                       mdux::draw::DrawBudget{.maxVertices = *maxVertices, .maxIndices = *maxIndices, .maxCommands = *maxCommands});
+                       mdux::draw::DrawBudget{.maxVertices = *maxVertices, .maxIndices = *maxIndices, .maxCommands = *maxCommands},
+                       approvals);
 
     const json::Value* nodes = root.find("nodes");
     if (nodes == nullptr || nodes->kind() != json::Value::Kind::Array) {

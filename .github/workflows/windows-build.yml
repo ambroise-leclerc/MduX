@@ -84,6 +84,60 @@ jobs:
           & "$env:VULKAN_SDK\bin\vulkaninfoSDK.exe" --summary
         }
 
+    # Lavapipe, so this leg can execute the rendered-truth producer (#254).
+    #
+    # The component list above installs a loader without a driver, and `windows-latest` has no GPU,
+    # so this runner enumerated zero physical devices until now. That was invisible while nothing
+    # here rendered. It stopped being invisible when `verification.json` joined the screen bundle:
+    # the file is re-derived by `mdux-verify-bake` during the ordinary build, so a leg with no ICD
+    # does not produce a smaller artifact - it fails to build. ADR-007 decision 6 asks all four legs
+    # to re-derive every committed artifact, and #254 forbids reading a missing device as a skip, so
+    # the software rasterizer is what keeps this leg in the claim rather than an exception to it.
+    #
+    # Mesa's own Windows build, pinned by release tag and verified against the SHA-256 GitHub
+    # records for that exact asset. An unpinned "latest" would let a third-party binary change what
+    # this leg renders with between two runs of the same commit, under a byte-identity claim.
+    - name: Install lavapipe (Mesa software Vulkan)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $version  = '26.2.0'
+        $expected = 'dcb2719ef346dab5b609fcb193a5f13cfc4b0502e3f4de1ad43d349477402f47'
+        $archive  = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+        $target   = Join-Path $env:RUNNER_TEMP 'mesa'
+        $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$version/mesa3d-$version-release-msvc.7z"
+        Invoke-WebRequest -Uri $url -OutFile $archive
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLower()
+        if ($actual -ne $expected) {
+          throw "mesa3d $version is $actual, not the pinned $expected"
+        }
+        & 7z x $archive "-o$target" -y | Out-Null
+        # Located rather than hardcoded: the archive's internal layout is Mesa's business, and a
+        # moved file should fail here by name instead of as a device that silently never appears.
+        # The manifest's library_path is relative, so the DLL has to stay beside it.
+        $icd = Get-ChildItem -Path $target -Recurse -Filter 'lvp_icd*64*.json' | Select-Object -First 1
+        if (-not $icd) {
+          throw "mesa3d $version carries no 64-bit lavapipe ICD manifest"
+        }
+        # Registered in the registry rather than pointed at with VK_DRIVER_FILES, and the loader
+        # is emphatic about why. This runner is elevated, and an elevated loader ignores every
+        # driver-path environment variable as a hardening measure - it will not let a planted ICD
+        # into an administrator process. With the variable set correctly it says, in as many words:
+        #
+        #   INFO: Loader is running with elevated permissions.
+        #         Environment variable VK_DRIVER_FILES will be ignored
+        #
+        # and then fails vkCreateInstance with "no usable ICD". The loader it says that with is
+        # C:\Windows\SYSTEM32\vulkan-1.dll version 1.3.301 - the system loader, not the SDK's - so
+        # the variable is new enough to be understood and is discarded anyway. HKLM\...\Khronos\
+        # Vulkan\Drivers is the documented way to install an ICD system-wide, it is what an elevated
+        # loader still reads, and writing it is exactly what being elevated makes possible.
+        $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
+        New-Item -Path $key -Force | Out-Null
+        # A driver entry is a REG_DWORD whose *name* is the manifest path; 0 means enabled.
+        New-ItemProperty -Path $key -Name $icd.FullName -PropertyType DWord -Value 0 -Force | Out-Null
+        Write-Host "registered lavapipe ICD: $($icd.FullName)"
+
     - name: Install Ninja
       run: |
         $NINJA_URL = "https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip"
@@ -126,6 +180,19 @@ jobs:
     - name: Verify evidence artifacts (MSVC)
       run: ctest --preset ninja-msvc -L evidence
       shell: cmd
+
+    # A skip here would mean the evidence step above compared a verification.json this leg did not
+    # really re-derive, which #254 forbids. The same guard the GCC, Clang and macOS legs carry.
+    - name: Verify rendered tests ran on lavapipe
+      shell: bash
+      run: |
+        set -euo pipefail
+        pixel_log="$RUNNER_TEMP/msvc-pixel.log"
+        ctest --preset ninja-msvc -L pixel -V --no-tests=error 2>&1 | tee "$pixel_log"
+        if grep -q 'Skipped' "$pixel_log"; then
+          echo '::error::Pixel tests were skipped - no Vulkan device. They must run on this leg.'
+          exit 1
+        fi
 
     # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
     # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a

@@ -120,12 +120,14 @@ target_sources(MduXMlBakeLib
             ml/GoldenGen.cppm
             ml/MlBake.cppm
             ml/PackageLoad.cppm
+            ml/Emit.cppm
     PRIVATE
         ml/Safetensors.cpp
         ml/ArchValidate.cpp
         ml/GoldenGen.cpp
         ml/MlBake.cpp
         ml/PackageLoad.cpp
+        ml/Emit.cpp
 )
 
 target_compile_features(MduXMlBakeLib PUBLIC cxx_std_23)
@@ -163,6 +165,24 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-mlbake PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-mlemit ml/MlEmitMain.cpp)
+target_link_libraries(mdux-mlemit PRIVATE MduX::MlBakeLib MduX_warnings)
+
+set_target_properties(mdux-mlemit
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-mlemit PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-mlemit PRIVATE /experimental:module /std:c++latest)
 endif()
 
 add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)
@@ -416,4 +436,88 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-textbake PRIVATE /experimental:module /std:c++latest)
+endif()
+
+# ---------------------------------------------------------------------------
+# mdux-verify-ui (issue #253) - rendered-truth verification driver
+# ---------------------------------------------------------------------------
+#
+# Host-only by construction: this target owns artifact I/O and creates a headless Vulkan device,
+# while the predicates it calls remain in governed `mdux.verify`. It is an internal build tool,
+# never installed or exported, and no example links it. The library/executable split keeps artifact
+# planning and execution directly testable; the executable is only argument and exit-status policy.
+add_library(MduXVerifyUiLib)
+add_library(MduX::VerifyUiLib ALIAS MduXVerifyUiLib)
+
+target_sources(MduXVerifyUiLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            verify/Driver.cppm
+            verify/Artifact.cppm
+            verify/Diff.cppm
+    PRIVATE
+        verify/Driver.cpp
+        verify/Artifact.cpp
+        verify/Diff.cpp
+)
+
+target_compile_features(MduXVerifyUiLib PUBLIC cxx_std_23)
+target_link_libraries(MduXVerifyUiLib PUBLIC MduX::MeduiLib MduX::ToolsCommon)
+target_link_libraries(MduXVerifyUiLib PRIVATE MduX::MduX Vulkan::Vulkan MduX_warnings)
+
+set_target_properties(MduXVerifyUiLib PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXVerifyUiLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXVerifyUiLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-verify-ui verify/VerifyUiMain.cpp)
+target_link_libraries(mdux-verify-ui PRIVATE MduX::VerifyUiLib MduX_warnings)
+
+set_target_properties(mdux-verify-ui PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-verify-ui PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-verify-ui PRIVATE /experimental:module /std:c++latest)
+endif()
+
+# mdux-verify-bake (issue #254) - the artifact half of the same library.
+#
+# A separate executable from mdux-verify-ui rather than a subcommand on it: one is the driver a
+# person or a CI leg runs over a committed bundle, the other is a build step that writes into the
+# build tree. Sharing MduXVerifyUiLib is what matters - both reach verification through the one
+# obligation enumeration, so the committed artifact and the CI run cannot disagree about what was
+# checked. Never installed or exported, and no example links it.
+add_executable(mdux-verify-bake verify/VerifyBakeMain.cpp)
+target_link_libraries(mdux-verify-bake PRIVATE MduX::VerifyUiLib MduX_warnings)
+
+set_target_properties(mdux-verify-bake PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-verify-bake PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-verify-bake PRIVATE /experimental:module /std:c++latest)
 endif()

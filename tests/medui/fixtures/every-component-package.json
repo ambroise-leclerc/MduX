@@ -1,4 +1,11 @@
 {
+  "approvedTextPackages": [
+    {
+      "locale": "en-US",
+      "packageId": "every-component-en-us",
+      "packageSha256": "0100000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
   "budget": {
     "maxCommands": 256,
     "maxIndices": 6144,

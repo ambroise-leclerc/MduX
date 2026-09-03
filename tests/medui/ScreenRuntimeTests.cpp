@@ -16,10 +16,13 @@
 import std;
 import speclab;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.draw;
+import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
+import mdux.text.schema;
 
 #include "../framework/SpecLabBridge.hpp"
 
@@ -57,12 +60,17 @@ constexpr std::array<ms::CompiledNode, 3> mixedNodes{
     ms::CompiledNode{.id = "footer", .bounds = {0, 260, 400, 40}, .payload = footer}
 };
 
-constexpr ms::ScreenPackage mixedScreen{.id            = "mixed",
-                                        .schemaVersion = mdux::evidence::kSchemaVersion,
-                                        .surfaceWidth  = 400,
-                                        .surfaceHeight = 300,
-                                        .nodes         = mixedNodes,
-                                        .budget        = testBudget};
+constexpr std::array defaultApprovals{
+    ms::TextPackageApproval{.locale = "en-US", .packageId = "runtime-text", .packageSha256 = {1}}
+};
+
+constexpr ms::ScreenPackage mixedScreen{.id                   = "mixed",
+                                        .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                        .surfaceWidth         = 400,
+                                        .surfaceHeight        = 300,
+                                        .approvedTextPackages = defaultApprovals,
+                                        .nodes                = mixedNodes,
+                                        .budget               = testBudget};
 
 /// The same screen with twice the nodes, for the scaling half of the bounded-work acceptance.
 constexpr std::array<ms::CompiledNode, 6> doubledNodes{
@@ -74,12 +82,13 @@ constexpr std::array<ms::CompiledNode, 6> doubledNodes{
     ms::CompiledNode{.id = "footer2", .bounds = {0, 200, 400, 40}, .payload = footer}
 };
 
-constexpr ms::ScreenPackage doubledScreen{.id            = "doubled",
-                                          .schemaVersion = mdux::evidence::kSchemaVersion,
-                                          .surfaceWidth  = 400,
-                                          .surfaceHeight = 300,
-                                          .nodes         = doubledNodes,
-                                          .budget        = testBudget};
+constexpr ms::ScreenPackage doubledScreen{.id                   = "doubled",
+                                          .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                          .surfaceWidth         = 400,
+                                          .surfaceHeight        = 300,
+                                          .approvedTextPackages = defaultApprovals,
+                                          .nodes                = doubledNodes,
+                                          .budget               = testBudget};
 
 static_assert(mixedScreen.validate().has_value(), "the reference screen must be one a device could hold");
 static_assert(doubledScreen.validate().has_value(), "and so must the doubled one");
@@ -218,12 +227,13 @@ const mdux::spec::Register aRefusedFrameLeavesNothingBehind{
                           ms::CompiledNode{ .id = "good",  .bounds = {0, 0, 400, 40},  .payload = topbar},
                           ms::CompiledNode{.id = "wrong", .bounds = {0, 60, 400, 40}, .payload = unknown}
                       };
-                      const ms::ScreenPackage screen{.id            = "unknown-token",
-                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                     .surfaceWidth  = 400,
-                                                     .surfaceHeight = 300,
-                                                     .nodes         = nodes,
-                                                     .budget        = testBudget};
+                      const ms::ScreenPackage screen{.id                   = "unknown-token",
+                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth         = 400,
+                                                     .surfaceHeight        = 300,
+                                                     .approvedTextPackages = {},
+                                                     .nodes                = nodes,
+                                                     .budget               = testBudget};
 
                       const auto frame = ms::render(screen, list);
                       checks.expect(!frame.has_value(), "a screen naming an unknown colour is refused");
@@ -239,12 +249,13 @@ const mdux::spec::Register aRefusedFrameLeavesNothingBehind{
                       constexpr std::array<ms::CompiledNode, 1> malformedNodes{
                           ms::CompiledNode{.id = "bad", .bounds = {0, 0, 40, 40}, .payload = malformed}
                       };
-                      const ms::ScreenPackage malformedScreen{.id            = "malformed-token",
-                                                              .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                              .surfaceWidth  = 400,
-                                                              .surfaceHeight = 300,
-                                                              .nodes         = malformedNodes,
-                                                              .budget        = testBudget};
+                      const ms::ScreenPackage malformedScreen{.id                   = "malformed-token",
+                                                              .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                              .surfaceWidth         = 400,
+                                                              .surfaceHeight        = 300,
+                                                              .approvedTextPackages = {},
+                                                              .nodes                = malformedNodes,
+                                                              .budget               = testBudget};
                       const auto              malformedFrame = ms::render(malformedScreen, list);
                       checks.expect(!malformedFrame.has_value(), "a malformed colour is refused too");
                       if (!malformedFrame.has_value()) {
@@ -279,12 +290,13 @@ const mdux::spec::Register aBudgetTooSmallIsRefusedNotTruncated{
                           ms::CompiledNode{.id = "one",  .bounds = {0, 0, 400, 40}, .payload = topbar},
                           ms::CompiledNode{.id = "two", .bounds = {0, 60, 400, 40}, .payload = footer}
                       };
-                      const ms::ScreenPackage screen{.id            = "too-tight",
-                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                     .surfaceWidth  = 400,
-                                                     .surfaceHeight = 300,
-                                                     .nodes         = nodes,
-                                                     .budget        = tight};
+                      const ms::ScreenPackage screen{.id                   = "too-tight",
+                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth         = 400,
+                                                     .surfaceHeight        = 300,
+                                                     .approvedTextPackages = {},
+                                                     .nodes                = nodes,
+                                                     .budget               = tight};
 
                       const auto frame = ms::render(screen, list);
                       checks.expect(!frame.has_value(), "the frame is refused");
@@ -328,18 +340,20 @@ const mdux::spec::Register theWorkDoesNotVaryWithTheData{
                           ms::CompiledNode{.id = "c",  .bounds = {0, 250, 400, 50}, .payload = alert}
                       };
 
-                      const ms::ScreenPackage tiny{.id            = "tiny",
-                                                   .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                   .surfaceWidth  = 400,
-                                                   .surfaceHeight = 300,
-                                                   .nodes         = tinyNodes,
-                                                   .budget        = testBudget};
-                      const ms::ScreenPackage huge{.id            = "huge",
-                                                   .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                   .surfaceWidth  = 400,
-                                                   .surfaceHeight = 300,
-                                                   .nodes         = hugeNodes,
-                                                   .budget        = testBudget};
+                      const ms::ScreenPackage tiny{.id                   = "tiny",
+                                                   .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                   .surfaceWidth         = 400,
+                                                   .surfaceHeight        = 300,
+                                                   .approvedTextPackages = {},
+                                                   .nodes                = tinyNodes,
+                                                   .budget               = testBudget};
+                      const ms::ScreenPackage huge{.id                   = "huge",
+                                                   .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                   .surfaceWidth         = 400,
+                                                   .surfaceHeight        = 300,
+                                                   .approvedTextPackages = {},
+                                                   .nodes                = hugeNodes,
+                                                   .budget               = testBudget};
 
                       Scratch small;
                       Scratch large;
@@ -380,12 +394,13 @@ const mdux::spec::Register theEmittedBytesArePinned{
                       constexpr std::array<ms::CompiledNode, 1> pinned{
                           ms::CompiledNode{.id = "topbar", .bounds = {0, 0, 400, 40}, .payload = topbar}
                       };
-                      const ms::ScreenPackage screen{.id            = "pinned",
-                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                     .surfaceWidth  = 400,
-                                                     .surfaceHeight = 300,
-                                                     .nodes         = pinned,
-                                                     .budget        = testBudget};
+                      const ms::ScreenPackage screen{.id                   = "pinned",
+                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth         = 400,
+                                                     .surfaceHeight        = 300,
+                                                     .approvedTextPackages = {},
+                                                     .nodes                = pinned,
+                                                     .budget               = testBudget};
 
                       const auto frame = ms::render(screen, list);
                       if (!frame.has_value()) {
@@ -456,12 +471,13 @@ const mdux::spec::Register theScreensOwnBudgetBoundsTheFrame{
                           ms::CompiledNode{.id = "one",  .bounds = {0, 0, 400, 40}, .payload = topbar},
                           ms::CompiledNode{.id = "two", .bounds = {0, 60, 400, 40}, .payload = footer}
                       };
-                      const ms::ScreenPackage screen{.id            = "declares-one-rect",
-                                                     .schemaVersion = mdux::evidence::kSchemaVersion,
-                                                     .surfaceWidth  = 400,
-                                                     .surfaceHeight = 300,
-                                                     .nodes         = nodes,
-                                                     .budget        = oneRect};
+                      const ms::ScreenPackage screen{.id                   = "declares-one-rect",
+                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth         = 400,
+                                                     .surfaceHeight        = 300,
+                                                     .approvedTextPackages = {},
+                                                     .nodes                = nodes,
+                                                     .budget               = oneRect};
 
                       const auto frame = ms::render(screen, list);
                       checks.expect(!frame.has_value(), "the screen's own budget refuses the second rectangle");
@@ -474,3 +490,474 @@ const mdux::spec::Register theScreensOwnBudgetBoundsTheFrame{
                   })
             .Execute();
     }};
+
+// ---------------------------------------------------------------------------
+// Drawing a Label: the join, its refusals, and the cap (#242)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A one-glyph font whose only character is a 4x6 block with its origin six pixels above the
+/// baseline, so an ink box computed from it is checkable by hand.
+[[nodiscard]] mdux::font::FontPackage textFixtureFont() {
+    mdux::font::FontPackage font;
+    font.id                     = "runtime-ui";
+    font.unitsPerEm             = 1000;
+    font.pixelSize              = 10;
+    font.locales                = {"en-US"};
+    font.atlas.path             = "atlas.bin";
+    font.atlas.width            = 8;
+    font.atlas.height           = 8;
+    font.atlas.byteLength       = 64;
+    font.atlas.sha256           = std::string(64, 'a');
+    font.atlas.occupancyPercent = 25;
+    font.glyphs                 = {
+        // A blank, so a run made only of these can be measured as painting nothing.
+        {.codePoint       = U' ',
+         .glyphIndex      = 3,
+         .advanceWidth    = 250,
+         .leftSideBearing = 0,
+         .x               = 0,
+         .y               = 0,
+         .width           = 0,
+         .height          = 0,
+         .bitmapOriginX   = 0,
+         .bitmapOriginY   = 0},
+        {.codePoint       = U'A',
+         .glyphIndex      = 4,
+         .advanceWidth    = 700,
+         .leftSideBearing = 0,
+         .x               = 0,
+         .y               = 0,
+         .width           = 4,
+         .height          = 6,
+         .bitmapOriginX   = 0,
+         .bitmapOriginY   = 6},
+    };
+    font.restrictedCharset = {
+        {.first = U' ', .last = U' '},
+        {.first = U'A', .last = U'A'}
+    };
+    return font;
+}
+
+/// One v1 record, little-endian, as `mdux::text::draw::decodeRecord()` reads it.
+void appendRecord(std::vector<std::byte>& out, std::uint16_t index, std::int16_t x, std::int16_t y) {
+    const auto emit = [&out](std::uint16_t value) {
+        out.push_back(static_cast<std::byte>(value & 0xFFu));
+        out.push_back(static_cast<std::byte>((value >> 8) & 0xFFu));
+    };
+    emit(index);
+    emit(std::bit_cast<std::uint16_t>(x));
+    emit(std::bit_cast<std::uint16_t>(y));
+}
+
+/// A text package naming one run over the whole of `records`, with the digests `create()` checks.
+///
+/// The digests are computed from the bytes rather than written out: a fixture carrying a stale one
+/// would exercise the rejection path while claiming to be the accepted case, which is the way a
+/// suite quietly stops testing what it says it does.
+[[nodiscard]] mdux::text::TextPackage textFixturePackage(std::string_view key, std::span<const std::byte> records) {
+    mdux::text::TextPackage package;
+    package.header.id         = "runtime-text";
+    package.header.kind       = std::string{mdux::text::packageKind};
+    package.atlasId           = "runtime-ui";
+    package.locale            = "en-US";
+    package.sidecarPath       = "runs.bin";
+    package.sidecarByteLength = records.size();
+    package.sidecarSha256     = mdux::evidence::sha256(records);
+    package.runs.push_back(
+        mdux::text::TextRun{.id = std::string{key}, .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
+    return package;
+}
+
+constexpr ms::LabelSpec                   fixtureLabel{.textKey = "STR-A", .colorToken = "Theme.Colors.Title"};
+constexpr std::array<ms::CompiledNode, 1> labelOnly{
+    ms::CompiledNode{.id = "title", .bounds = {20, 30, 100, 40}, .payload = fixtureLabel}
+};
+constexpr ms::ScreenPackage labelScreen{.id                   = "label",
+                                        .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                        .surfaceWidth         = 200,
+                                        .surfaceHeight        = 100,
+                                        .approvedTextPackages = {},
+                                        .nodes                = labelOnly,
+                                        .budget               = testBudget};
+
+[[nodiscard]] ms::TextPackageApproval approvalFor(const mdux::text::TextPackage& text) {
+    const auto canonical = text.write();
+    if (!canonical.has_value()) {
+        throw speclab::core::AssertionFailure("the fixture text package did not serialize", std::source_location::current());
+    }
+    return ms::TextPackageApproval{.locale        = text.locale,
+                                   .packageId     = text.header.id,
+                                   .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))};
+}
+
+[[nodiscard]] std::string packageJsonFor(const mdux::text::TextPackage& text) {
+    const auto canonical = text.write();
+    if (!canonical.has_value()) {
+        throw speclab::core::AssertionFailure("the fixture text package did not serialize", std::source_location::current());
+    }
+    return *canonical;
+}
+
+[[nodiscard]] std::span<const std::byte> bytesOf(std::string_view text) noexcept {
+    return std::as_bytes(std::span{text.data(), text.size()});
+}
+
+[[nodiscard]] ms::ScreenPackage screenWith(std::span<const ms::TextPackageApproval> approvals) noexcept {
+    ms::ScreenPackage screen    = labelScreen;
+    screen.approvedTextPackages = approvals;
+    return screen;
+}
+
+/// A binding built from a fixture, or a scenario failure naming what `create()` refused.
+[[nodiscard]] ms::TextBinding
+bindOrThrow(const ms::ScreenPackage& screen, const mdux::font::FontPackage& font, const mdux::text::TextPackage& text, std::span<const std::byte> records) {
+    const std::string packageJson = packageJsonFor(text);
+    auto              made        = ms::TextBinding::create(screen, font, text, bytesOf(packageJson), records);
+    if (!made.has_value()) {
+        throw speclab::core::AssertionFailure(std::format("the fixture binding was refused: {}", ms::describe(made.error())), std::source_location::current());
+    }
+    return *made;
+}
+
+}  // namespace
+
+const mdux::spec::Register labelInkLandsOnTheNodeCorner{
+    "A label's ink box is placed at the node's corner, which is what #195 measured",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-label-placement")
+            .Given("a run whose single glyph sits six pixels above its baseline", [] {})
+            .When("the screen is rendered with the run bound", [] {})
+            .Then("the glyph's rectangle starts exactly at the node's origin",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const mdux::font::FontPackage font = textFixtureFont();
+                      std::vector<std::byte>        records;
+                      appendRecord(records, 1, 0, 0);  // the 'A', at the run's own origin
+                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records);
+                      const std::array              approvals{approvalFor(text)};
+                      const ms::ScreenPackage       screen = screenWith(approvals);
+
+                      Scratch              scratch;
+                      mdux::draw::DrawList list  = scratch.list(testBudget);
+                      const auto           frame = ms::render(screen, list, bindOrThrow(screen, font, text, records));
+
+                      checks.expect(frame.has_value(), "the frame was recorded");
+                      if (!frame.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      checks.expect(frame->rects == 1, std::format("one rectangle, got {}", frame->rects));
+                      checks.expect(frame->deferred == 0, std::format("nothing deferred, got {}", frame->deferred));
+
+                      // The ink box in run coordinates is (0, -6): x from the pen, y six pixels above
+                      // the baseline. Placing it at the node's corner therefore means the rectangle
+                      // lands at the node's own (20, 30) - not at (20, 24), which is where a baseline
+                      // placed on the node's top edge would have put it.
+                      const std::span<const mdux::draw::UiVertex> vertices = list.vertices();
+                      checks.expect(vertices.size() == 4, std::format("four vertices, got {}", vertices.size()));
+                      if (vertices.size() == 4) {
+                          checks.expect(vertices[0].x == 20.0F, std::format("left edge at 20, got {}", vertices[0].x));
+                          checks.expect(vertices[0].y == 30.0F, std::format("top edge at 30, got {}", vertices[0].y));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register bindingRefusals{
+    "Three artifacts that do not describe each other are refused once, not per frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-binding-refusals")
+            .Given("bindings that are wrong in one way each", [] {})
+            .When("each is offered to create()", [] {})
+            .Then("each reports its own error",
+                  [] {
+                      mdux::spec::Checks            checks;
+                      const mdux::font::FontPackage font = textFixtureFont();
+
+                      std::vector<std::byte> records;
+                      appendRecord(records, 1, 0, 0);
+                      const mdux::text::TextPackage approvedText = textFixturePackage("STR-A", records);
+                      const std::array              approvals{approvalFor(approvedText)};
+                      const ms::ScreenPackage       screen       = screenWith(approvals);
+                      const std::string             approvedJson = packageJsonFor(approvedText);
+
+                      const auto errorOf = [&](const mdux::text::TextPackage& text, std::span<const std::byte> runs) {
+                          auto made = ms::TextBinding::create(screen, font, text, bytesOf(approvedJson), runs);
+                          return made.has_value() ? std::optional<ms::ScreenError>{} : std::optional{made.error()};
+                      };
+
+                      // A package baked against another font. Every glyph index would still be in
+                      // range here, so nothing downstream could detect it - the frame would draw a
+                      // plausible sentence made of the wrong letters.
+                      mdux::text::TextPackage otherAtlas = textFixturePackage("STR-A", records);
+                      otherAtlas.atlasId                 = "some-other-font";
+                      checks.expect(errorOf(otherAtlas, records) == ms::ScreenError::AtlasMismatch, "another font is AtlasMismatch");
+
+                      // The right length, the wrong bytes. This is the case a structural check
+                      // cannot reach and the digest exists for: it renders different words.
+                      std::vector<std::byte> impostor;
+                      appendRecord(impostor, 0, 0, 0);
+                      checks.expect(errorOf(textFixturePackage("STR-A", records), impostor) == ms::ScreenError::SidecarMismatch,
+                                    "a same-length wrong sidecar is SidecarMismatch");
+
+                      // A sidecar of the wrong length, which the cheap check catches first.
+                      checks.expect(errorOf(textFixturePackage("STR-A", records), std::span{records}.first(0)) == ms::ScreenError::SidecarMismatch,
+                                    "a short sidecar is SidecarMismatch");
+
+                      // The wraparound. `byteOffset + byteLength` sums to zero for these, so an
+                      // addition-form range check would accept them and hand `subspan()` an offset
+                      // past its size. Six bytes is one record, so the cap does not catch it either.
+                      mdux::text::TextPackage wrapped = textFixturePackage("STR-A", records);
+                      wrapped.runs[0].byteOffset      = std::numeric_limits<std::uint64_t>::max() - 5;
+                      wrapped.runs[0].byteLength      = 6;
+                      checks.expect(errorOf(wrapped, records) == ms::ScreenError::MalformedTextRun, "a range that wraps is MalformedTextRun");
+
+                      // Past the cap. Built rather than described, so the constant and the refusal
+                      // cannot drift apart: one record more than the runtime will draw.
+                      std::vector<std::byte> tooMany;
+                      for (std::size_t i = 0; i <= ms::maxGlyphsPerRun; ++i) {
+                          appendRecord(tooMany, 1, static_cast<std::int16_t>(i), 0);
+                      }
+                      checks.expect(errorOf(textFixturePackage("STR-A", tooMany), tooMany) == ms::ScreenError::RunTooLong,
+                                    std::format("{} records is RunTooLong", ms::maxGlyphsPerRun + 1));
+
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register unapprovedPackageIsRefused{
+    "A valid text package the screen was not compiled against is refused by identity",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-package-not-approved")
+            .Given("a screen approving one fitting package, and two other valid packages for the same locale, font and key", [] {})
+            .When("each other package is offered to create()", [] {})
+            .Then("both are PackageNotApproved, including the package that reuses the approved id",
+                  [] {
+                      mdux::spec::Checks            checks;
+                      const mdux::font::FontPackage font = textFixtureFont();
+
+                      std::vector<std::byte> approvedRuns;
+                      appendRecord(approvedRuns, 1, 0, 0);
+                      const mdux::text::TextPackage approvedText = textFixturePackage("STR-A", approvedRuns);
+                      const std::array              approvals{approvalFor(approvedText)};
+                      const ms::ScreenPackage       screen = screenWith(approvals);
+
+                      mdux::text::TextPackage otherId = approvedText;
+                      otherId.header.id               = "other-runtime-text";
+                      const std::string otherIdJson   = packageJsonFor(otherId);
+                      const auto        idResult      = ms::TextBinding::create(screen, font, otherId, bytesOf(otherIdJson), approvedRuns);
+                      checks.expect(!idResult.has_value() && idResult.error() == ms::ScreenError::PackageNotApproved,
+                                    "a different package id is PackageNotApproved");
+
+                      // A blank glyph is still a fitting run, and the package keeps the approved id.
+                      // Only its canonical package digest distinguishes it from what the compiler
+                      // measured, so this assertion proves the digest participates in identity.
+                      std::vector<std::byte> changedRuns;
+                      appendRecord(changedRuns, 0, 0, 0);
+                      const mdux::text::TextPackage changedText  = textFixturePackage("STR-A", changedRuns);
+                      const std::string             changedJson  = packageJsonFor(changedText);
+                      const auto                    digestResult = ms::TextBinding::create(screen, font, changedText, bytesOf(changedJson), changedRuns);
+                      checks.expect(!digestResult.has_value() && digestResult.error() == ms::ScreenError::PackageNotApproved,
+                                    "same id and locale with different reviewed bytes is PackageNotApproved");
+
+                      // The approved bytes and parsed package are one authenticated input. Supplying
+                      // A's approved JSON alongside B's internally valid text and sidecar must not
+                      // let B's unreviewed wording through merely because its id and locale match.
+                      const std::string approvedJson = packageJsonFor(approvedText);
+                      const auto        splitResult  = ms::TextBinding::create(screen, font, changedText, bytesOf(approvedJson), changedRuns);
+                      checks.expect(!splitResult.has_value() && splitResult.error() == ms::ScreenError::PackageNotApproved,
+                                    "approved JSON paired with different parsed text is PackageNotApproved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register bindingCannotCrossScreens{"A binding approved for one screen cannot render another screen", "evidence-unit", [] {
+                                                         return speclab::Test("medui-screen-binding-target")
+                                                             .Given("two screens approving different fitting packages with the same font and key", [] {})
+                                                             .When("the first screen's binding is offered to the second screen", [] {})
+                                                             .Then("the frame is PackageNotApproved and records nothing",
+                                                                   [] {
+                                                                       mdux::spec::Checks            checks;
+                                                                       const mdux::font::FontPackage font = textFixtureFont();
+
+                                                                       std::vector<std::byte> firstRuns;
+                                                                       appendRecord(firstRuns, 1, 0, 0);
+                                                                       const mdux::text::TextPackage firstText = textFixturePackage("STR-A", firstRuns);
+                                                                       const std::array              firstApprovals{approvalFor(firstText)};
+                                                                       const ms::ScreenPackage       firstScreen = screenWith(firstApprovals);
+                                                                       const ms::TextBinding binding = bindOrThrow(firstScreen, font, firstText, firstRuns);
+
+                                                                       std::vector<std::byte> secondRuns;
+                                                                       appendRecord(secondRuns, 0, 0, 0);
+                                                                       const mdux::text::TextPackage secondText = textFixturePackage("STR-A", secondRuns);
+                                                                       const std::array              secondApprovals{approvalFor(secondText)};
+                                                                       const ms::ScreenPackage       secondScreen = screenWith(secondApprovals);
+
+                                                                       Scratch              scratch;
+                                                                       mdux::draw::DrawList list  = scratch.list(testBudget);
+                                                                       const auto           frame = ms::render(secondScreen, list, binding);
+                                                                       checks.expect(!frame.has_value() && frame.error() == ms::ScreenError::PackageNotApproved,
+                                                                                     "the second screen refuses the first screen's binding by identity");
+                                                                       checks.expect(list.vertices().empty() && list.indices().empty()
+                                                                                         && list.commands().empty(),
+                                                                                     "the refused frame records nothing");
+                                                                       checks.raise();
+                                                                   })
+                                                             .Execute();
+                                                     }};
+
+const mdux::spec::Register frameRefusals{"A valid binding that does not serve this screen is refused, and the list is left as found", "evidence-unit", [] {
+                                             return speclab::Test("medui-screen-frame-refusals")
+                                                 .Given("bindings create() accepts but this screen cannot use", [] {})
+                                                 .When("the screen is rendered with each", [] {})
+                                                 .Then("each reports its own error and records nothing",
+                                                       [] {
+                                                           mdux::spec::Checks            checks;
+                                                           const mdux::font::FontPackage font = textFixtureFont();
+
+                                                           std::vector<std::byte> records;
+                                                           appendRecord(records, 1, 0, 0);
+
+                                                           const auto renderWith = [&](const mdux::text::TextPackage& text, std::span<const std::byte> runs) {
+                                                               const std::array        approvals{approvalFor(text)};
+                                                               const ms::ScreenPackage screen  = screenWith(approvals);
+                                                               const ms::TextBinding   binding = bindOrThrow(screen, font, text, runs);
+                                                               Scratch                 scratch;
+                                                               mdux::draw::DrawList    list  = scratch.list(testBudget);
+                                                               const auto              frame = ms::render(screen, list, binding);
+                                                               return std::pair{frame.has_value() ? std::optional<ms::ScreenError>{}
+                                                                                                  : std::optional{frame.error()},
+                                                                                list.vertices().size()};
+                                                           };
+
+                                                           // A package for another screen: it is internally consistent, it passes
+                                                           // `create()`, and it does not carry this node's key.
+                                                           const auto wrongKey = renderWith(textFixturePackage("STR-SOMETHING-ELSE", records), records);
+                                                           checks.expect(wrongKey.first == ms::ScreenError::UnknownTextKey, "an absent key is UnknownTextKey");
+                                                           checks.expect(wrongKey.second == 0, "and records nothing");
+
+                                                           // The finding this check exists for: a second valid package, same font, same
+                                                           // key, wider text. Nothing in the artifacts says which package the compiler
+                                                           // measured, so the runtime measures the one it was given - and refuses it
+                                                           // rather than drawing over the node's neighbours. The node is 100 wide; this
+                                                           // run is fifty glyphs at ten pixels of advance.
+                                                           std::vector<std::byte> wide;
+                                                           for (std::int16_t i = 0; i < 50; ++i) {
+                                                               appendRecord(wide, 1, static_cast<std::int16_t>(i * 10), 0);
+                                                           }
+                                                           const auto overflowing = renderWith(textFixturePackage("STR-A", wide), wide);
+                                                           checks.expect(overflowing.first == ms::ScreenError::TextOverflowsNode,
+                                                                         "text wider than its node is TextOverflowsNode");
+                                                           checks.expect(overflowing.second == 0, "and the list is left as it was found");
+
+                                                           checks.raise();
+                                                       })
+                                                 .Execute();
+                                         }};
+
+const mdux::spec::Register aRunOfBlanksDrawsNothing{"A run that paints nothing is drawn, not deferred", "evidence-unit", [] {
+                                                        return speclab::Test("medui-screen-label-blank-run")
+                                                            .Given("a run made only of blank glyphs", [] {})
+                                                            .When("the screen is rendered with it bound", [] {})
+                                                            .Then("no rectangle is recorded and the node is not counted as deferred",
+                                                                  [] {
+                                                                      mdux::spec::Checks checks;
+
+                                                                      const mdux::font::FontPackage font = textFixtureFont();
+                                                                      std::vector<std::byte>        records;
+                                                                      appendRecord(records, 0, 0, 0);  // the space
+                                                                      const mdux::text::TextPackage text = textFixturePackage("STR-A", records);
+                                                                      const std::array              approvals{approvalFor(text)};
+                                                                      const ms::ScreenPackage       screen = screenWith(approvals);
+
+                                                                      Scratch              scratch;
+                                                                      mdux::draw::DrawList list = scratch.list(testBudget);
+                                                                      const auto frame = ms::render(screen, list, bindOrThrow(screen, font, text, records));
+
+                                                                      checks.expect(frame.has_value(), "the frame was recorded");
+                                                                      if (frame.has_value()) {
+                                                                          checks.expect(frame->rects == 0, std::format("no rectangle, got {}", frame->rects));
+                                                                          // The distinction the module documents: joined and found to paint nothing
+                                                                          // is a different fact from having no package to join to.
+                                                                          checks.expect(frame->deferred == 0,
+                                                                                        std::format("nothing deferred, got {}", frame->deferred));
+                                                                      }
+                                                                      checks.raise();
+                                                                  })
+                                                            .Execute();
+                                                    }};
+
+const mdux::spec::Register aBlankFieldTokenIsRefusedNotDeferred{
+    "A field component with a blank colour token is refused, not quietly deferred", "evidence-unit", [] {
+        return speclab::Test("screen-blank-field-token")
+            .Given("a NumericDisplay and a SignalTrace whose colour token is empty", [] {})
+            .When("a frame is recorded", [] {})
+            .Then("each is reported as a malformed token rather than counted as deferred",
+                  [] {
+                      mdux::spec::Checks checks;
+                      // The distinction `fieldColorToken()` returns an optional for. A component
+                      // that paints no field is deferred; a component that paints one and names no
+                      // colour is a defect in whatever emitted the screen - `validatePayload()`
+                      // refuses it at compile time, and a screen built by hand at run time never met
+                      // that `static_assert`. Collapsing the two would turn the second into a frame
+                      // that silently omits a safety-critical node.
+                      constexpr ms::NumericDisplaySpec blankNumeric{
+                          .requirement = "REQ-1", .templateId = "TPL-1", .source = "SRC", .colorToken = ""};
+                      constexpr ms::SignalTraceSpec blankTrace{.streamSource = "SRC", .colorToken = ""};
+
+                      for (const auto& payload : std::array<ms::NodePayload, 2>{blankNumeric, blankTrace}) {
+                          std::array<ms::CompiledNode, 1> nodes{
+                              ms::CompiledNode{.id = "field", .bounds = {0, 0, 40, 40}, .payload = payload}
+                          };
+                          const ms::ScreenPackage screen{.id                   = "blank-field",
+                                                         .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                         .surfaceWidth         = 400,
+                                                         .surfaceHeight        = 300,
+                                                         .approvedTextPackages = {},
+                                                         .nodes                = nodes,
+                                                         .budget               = testBudget};
+                          Scratch                 scratch;
+                          auto                    list  = scratch.list(testBudget);
+                          const auto              frame = ms::render(screen, list);
+                          checks.expect(!frame.has_value(), "a field with no colour is refused");
+                          if (!frame.has_value()) {
+                              checks.expect(frame.error() == ms::ScreenError::MalformedColorToken,
+                                            std::format("reported as MalformedColorToken, got '{}'", ms::describe(frame.error())));
+                          }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register anUnboundLabelIsDeferred{"Without a binding a label is deferred exactly as it was before #242", "evidence-unit", [] {
+                                                        return speclab::Test("medui-screen-label-unbound")
+                                                            .Given("no text binding", [] {})
+                                                            .When("the screen is rendered", [] {})
+                                                            .Then("the label is deferred and the frame succeeds",
+                                                                  [] {
+                                                                      mdux::spec::Checks   checks;
+                                                                      Scratch              scratch;
+                                                                      mdux::draw::DrawList list  = scratch.list(testBudget);
+                                                                      const auto           frame = ms::render(labelScreen, list);
+
+                                                                      checks.expect(frame.has_value(), "the frame was recorded");
+                                                                      if (frame.has_value()) {
+                                                                          checks.expect(frame->deferred == 1,
+                                                                                        std::format("one deferred node, got {}", frame->deferred));
+                                                                          checks.expect(frame->rects == 0, std::format("no rectangle, got {}", frame->rects));
+                                                                      }
+                                                                      checks.raise();
+                                                                  })
+                                                            .Execute();
+                                                    }};

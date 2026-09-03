@@ -313,8 +313,9 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     }
 
     // The governed dynamic-text table. Optional as a table for the same reason [text] is: a screen
-    // with no `format:` and no `charset:` has no name to resolve, and the budget stage refuses an
-    // unknown name rather than accepting one, so an absent table is fail-closed.
+    // with no `charset:` has no open name to resolve, and the budget stage refuses an unknown name
+    // rather than accepting one, so an absent table is fail-closed. A Clock's closed `format:` is
+    // measured directly and never resolves through this table.
     if (const toml::Table* dynamicTable = document.table("dynamicText"); dynamicTable != nullptr) {
         std::vector<std::string>  names;
         std::vector<std::int64_t> firstPoints;
@@ -399,6 +400,7 @@ namespace {
 struct LoadedLocale {
     mdux::text::TextPackage package;
     std::vector<std::byte>  sidecar;
+    evidence::Digest        packageSha256{};
 };
 
 /// Reads the font package the recipe names, or reports why it could not.
@@ -433,7 +435,8 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
         if (!bytes.has_value()) {
             return std::nullopt;
         }
-        inputs.push_back(fileRecord(relative, *bytes));
+        const evidence::FileRecord packageRecord = fileRecord(relative, *bytes);
+        inputs.push_back(packageRecord);
 
         auto package = mdux::text::TextPackage::parse(textOf(*bytes));
         if (!package.has_value()) {
@@ -442,6 +445,21 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
                    relative,
                    0,
                    std::format("the text package is not valid: {}", mdux::text::describe(package.error())));
+            return std::nullopt;
+        }
+
+        // The device hashes these bytes directly. Accepting a parseable but noncanonical file here
+        // would record one digest while the in-memory package denotes the canonical form of another,
+        // leaving a package that compiles successfully and can never bind. Diagnose that authoring
+        // error on the host, where rebaking it is actionable.
+        const auto canonical = package->write();
+        if (!canonical.has_value() || *canonical != textOf(*bytes)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   "the text package is valid but its package.json is not canonical",
+                   "re-bake the text package instead of editing package.json by hand");
             return std::nullopt;
         }
 
@@ -454,7 +472,7 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
         }
         inputs.push_back(fileRecord(sidecarRelative.generic_string(), *sidecar));
 
-        locales.push_back(LoadedLocale{.package = std::move(*package), .sidecar = *sidecar});
+        locales.push_back(LoadedLocale{.package = std::move(*package), .sidecar = *sidecar, .packageSha256 = packageRecord.sha256});
     }
     return locales;
 }
@@ -589,6 +607,15 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
                "a screen that draws text and declares no approved locale would be certified against a set nobody approved");
         return std::nullopt;
     }
+    if (!measurable && (!recipe.fontPackage.empty() || !recipe.textPackages.empty())) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "this screen carries no measurable text, so its recipe must not declare a [text] table",
+               "remove the unused font and locale packages; otherwise the report would name inputs the compiler never authenticated");
+        return std::nullopt;
+    }
 
     std::optional<mdux::font::FontPackage> font;
     std::vector<LoadedLocale>              locales;
@@ -616,6 +643,13 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     textPackages.reserve(locales.size());
     for (const LoadedLocale& locale : locales) {
         textPackages.push_back(locale.package);
+    }
+
+    std::vector<ms::TextPackageApproval> approvals;
+    approvals.reserve(locales.size());
+    for (const LoadedLocale& locale : locales) {
+        approvals.push_back(
+            ms::TextPackageApproval{.locale = locale.package.locale, .packageId = locale.package.header.id, .packageSha256 = locale.packageSha256});
     }
 
     // 2. Semantic analysis. The theme tokens are the governed table the schema publishes, not a
@@ -691,7 +725,7 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     const std::vector<GoldenReference> goldens = collectGoldens(layout);
 
     // 7. The compiled screen and its bytes.
-    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget});
+    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals});
     const ms::ScreenPackage package  = document.package();
 
     CompileOutputs outputs;

@@ -26,12 +26,10 @@ produces a committed artifact and gets a byte-comparison test; an emission produ
 and gets none, "because the bytes it renders are already byte-compared as `package.json` and
 `shaders.spv`." Registering an emission as a bake "would claim a second, redundant piece of
 evidence." All three existing packages follow the bake half — `generated/<kind>/<id>/` holds
-`package.json`, `report.json` and a payload. Only shaders follow the emit half:
-`mdux_emit_shader_package()` is the tree's one emitter, and the `.cppm`/`.hpp` rendering it
-produces lands in the build tree only. Model and font have no generated-source rendering yet — the
-ML example still links a host-tools module to parse `package.json` at startup, which is the
-arrangement #153 is open to undo. Screens take the shader shape from the start rather than
-arriving at it.
+`package.json`, `report.json` and a payload. At the time of this decision only shaders followed the
+emit half. Screens adopted the same shape, and issue #153 subsequently added
+`mdux_emit_model_package()`: the ML example now consumes a compile-time-validated package while its
+weights remain a separate blob. Font packages still have no generated-source rendering.
 
 **The two-form emitter is settled.** `<binary>/mdux_generated/<kind>/<identifier>.cppm` plus a
 `.hpp` carrying the same data, for consumers that cannot import a named module.
@@ -71,7 +69,7 @@ safety-critical nodes live.
 
 | File | Committed | Contents |
 |---|---|---|
-| `package.json` | yes | the compiled screen: compiled nodes, absolute rectangles, `DrawBudget`, requirement ids, and the validated `Theme.Colors.<Token>` and `t("STR-KEY")` names each node draws with. **No locale field, no glyph runs, no RGBA8** |
+| `package.json` | yes | the compiled screen: compiled nodes, absolute rectangles, `DrawBudget`, requirement ids, validated token/key names, and `approvedTextPackages` entries carrying each locale's package id and canonical-package digest. **No selected locale, no glyph runs, no RGBA8** |
 | `goldens.json` | yes | one golden reference per node matching ADR-011's predicate: `@safety_critical`, or an explicit `position:`, or both merged into one entry (#196). Always written, as `[]` when a screen matches no node |
 | `report.json` | yes | the ADR-007 bake report: inputs, digests, tool version |
 
@@ -80,6 +78,15 @@ The compiler proves every token exists and every key is present in every approve
 device performs the substitution by a bounded lookup in a governed table. Carrying names rather than
 values is also what makes the package readable in a diff: a reviewer sees
 `Theme.Colors.ScoreDigits`, not `[33, 184, 107, 255]`.
+
+**Two fields are members rather than names**, since #219: a `Clock`'s `format` and a
+`CriticalButton`'s `on_press` are enumerations, because the shared contract closes those sets
+(MEDUI-DEC-006) and a name outside one is `MEDUI-E034`. The distinction matters here rather than
+being a typing detail. A validated *name* is proved to resolve against a table a build supplies, so
+what it means is configuration; a *member* means one thing everywhere, which is what lets the
+compiler measure a clock's rendering against its bounds instead of looking it up. `charset` stays a
+name, because the character sets it resolves against are baked per build and the contract does not
+enumerate them.
 
 **All three files spell their members in camelCase**, as the committed font, shader and model
 packages do (`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
@@ -101,17 +108,19 @@ that way, both binding on #198:
   slug from the screen name rather than using it, and the mapping has to be injective and recorded
   in the recipe, since two screens differing only in case would otherwise collide.
 
-**Locales do not multiply this layout.** One screen, one directory, whatever the approved locale
-count — because ADR-011 keeps the package locale-free and leaves the per-locale glyph runs in the
-text package. `mdux.text.schema`'s `TextPackage` already carries a single `locale` field and "the
-runtime reads no others" (`include/mdux/text/Schema.cppm:145`), so a device pairs one screen package
-with the text package for the locale it is running.
+**Locales do not multiply this layout.** One screen and one directory serve every approved locale,
+because per-locale glyph runs remain in text packages. The screen does carry a compact approval
+manifest, however: `TextPackageApproval { locale, packageId, packageSha256 }` for every package the
+compiler measured. The compiler first proves the input file is the canonical serialization, then
+`TextBinding::create()` hashes those already-loaded bytes and the supplied parsed package's canonical
+form without allocation, requires both digests to agree, and then requires an exact manifest match.
+The binding retains that identity, and `render()` refuses it against a screen whose manifest does not
+contain the same record.
 
-This question was recorded as open in an earlier revision, on the assumption that the screen carried
-baked glyph runs. It closes with that assumption. The reason to prefer it, stated as a consequence
-rather than a preference: **adding an approved locale rewrites no screen artifact**, so a translation
-update cannot change the digest of a screen whose layout nobody touched. In a byte-compared evidence
-pipeline that is the difference between re-verifying one artifact and re-verifying all of them.
+This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
+artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is
+still not duplicated and no glyph bytes move into the screen; the changed digest records that the
+reviewed words available to that screen changed.
 
 ### 2. The payload is **layout, not geometry**
 
@@ -133,8 +142,9 @@ a governed, allocation-free runtime can do.
 behind a `std::variant`, not a single record with every field on it. The flat form was tried first
 and was lossy: it had nowhere to put a `Clock`'s format, a `NumericDisplay`'s template and source, a
 `StatusIndicator`'s state keys and per-state tints, a `CriticalButton`'s `on_press`, or a
-`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Every
-field remains a validated *name* rather than a resolved value, which keeps the boundary ADR-011 fixes.
+`VulkanViewport`'s stream, so a device could not have rendered four of the eleven components. Open
+fields remain validated *names* rather than resolved values; the closed `Clock.format` and
+`CriticalButton.on_press` fields are typed members. Both keep the boundary ADR-011 fixes.
 
 ### 3. Generated C++ is emitted, never committed
 
@@ -237,12 +247,18 @@ human should read.
 - A device build links no host-tools module and parses nothing at startup, because the generated
   C++ is `constexpr` and lands in `.rodata`.
 - `static_assert` moves malformed-screen detection from startup to compile.
+- A valid but unreviewed text package cannot be substituted for one the compiler measured; package
+  id and canonical digest are authenticated when the binding is created and the retained identity
+  is checked against each render target.
 
 ### Negative
 - **A fourth artifact kind to maintain**, with its own recipe schema, baker and update target.
 - **Layout diffs are verbose.** Moving a container by eight pixels rewrites every descendant's
   absolute rectangle in `package.json`. The alternative — storing relative offsets and resolving on
   device — is the layout solving ADR-011 forbids, so this is accepted rather than solved.
+- **Translation changes rewrite the screen package digest.** The layout may be unchanged, but its
+  approval manifest is not. This is accepted because the digest now answers which exact wording was
+  approved for the screen; the glyph runs themselves remain in their per-locale packages.
 - **Two files must stay consistent.** A node in `goldens.json` names a node in `package.json`;
   nothing in the format prevents them diverging. The check cannot live in the governed
   `validate()`: decision 4 puts the goldens outside the schema precisely because the runtime never

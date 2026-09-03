@@ -30,8 +30,9 @@
 # checks it in the emitted objects, which is the stronger of the two - it sees through a std
 # facility that throws on a path the source never spells out.
 #
-# **This profile is only a gate on GCC/Clang, and reports rather than fails on MSVC.** The reason
-# is a genuine difference in how the two standard libraries generate code, not a gap in effort.
+# **This profile gates where library and source throws remain distinguishable (GCC/libstdc++), and
+# reports on MSVC and macOS/libc++.** The reason is a genuine difference in standard-library code
+# generation, not a gap in effort.
 #
 # On libstdc++, a `throw` expression emits `__cxa_throw`, while the library's own throw sites go
 # through out-of-line helpers. The two are therefore distinguishable in the object, and this
@@ -56,6 +57,10 @@
 # there, so forbidding it would fail the build on correct code, and tolerating it would forbid
 # nothing at all. It is reported instead, and the source lint - which is toolchain-independent - is
 # what enforces the rule on Windows.
+#
+# libc++ on macOS similarly leaves direct `__cxa_throw` references in governed objects for its own
+# string/vector failure paths. That is also the symbol a source `throw` emits, so the same
+# informational treatment applies and mdux-governed-lint remains the gate.
 #
 # Forbidding the helpers on GCC would mean banning `std::string`, `std::vector` and `substr` from
 # the governed zone outright. That may be the right end state for a Class C build, but it is a much
@@ -119,7 +124,7 @@ if(MDUX_SCAN_PROFILE STREQUAL "ml-noheap")
 elseif(MDUX_SCAN_PROFILE STREQUAL "governed-throw")
     # Toolchain-dependent, because the distinction this profile rests on is a property of the
     # standard library's code generation rather than of the source. See the header comment.
-    if(MDUX_NOHEAP_TOOL STREQUAL "dumpbin")
+    if(MDUX_NOHEAP_TOOL STREQUAL "dumpbin" OR MDUX_THROW_SYMBOLS_AMBIGUOUS)
         set(forbidden_symbols "")
         set(reported_symbols
             "_CxxThrowException"
@@ -127,12 +132,13 @@ elseif(MDUX_SCAN_PROFILE STREQUAL "governed-throw")
             "_Xout_of_range"
             "_Xbad_alloc"
             "_Xinvalid_argument"
+            "__cxa_throw"
         )
         string(CONCAT reported_explanation
-            "tolerated throw reference(s). The MSVC STL inlines its own throw sites, so "
-            "_CxxThrowException in a governed object is indistinguishable from a hand-written "
-            "throw - see this file's header. mdux-governed-lint is what enforces the no-throw rule "
-            "on this toolchain; this scan is informational here")
+            "tolerated throw reference(s). This standard library emits its own throw sites in "
+            "governed objects, where they are indistinguishable from a hand-written throw - see "
+            "this file's header. mdux-governed-lint is what enforces the no-throw rule on this "
+            "toolchain; this scan is informational here")
     else()
         set(forbidden_symbols
             "__cxa_throw"

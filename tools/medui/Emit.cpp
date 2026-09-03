@@ -120,6 +120,20 @@ void appendName(std::string& out, bool& first, std::string_view member, std::str
     first = false;
 }
 
+/// A closed-set member, emitted as the enumerator rather than as its wire spelling: generated code
+/// that named a string would reintroduce the parse this whole path exists to remove. `Unspecified`
+/// is never written, because `validate()` has already refused it - so an omitted member here is a
+/// screen that would not have compiled.
+template <typename Member>
+void appendMember(std::string& out, bool& first, std::string_view member, std::string_view type, Member value) {
+    const std::string_view spelling = ms::toWire(value);
+    if (spelling.empty()) {
+        return;
+    }
+    out  += std::format("{}.{} = mdux::medui::{}::{}", first ? "" : ", ", member, type, spelling);
+    first = false;
+}
+
 void appendSpan(std::string& out, bool& first, std::string_view member, std::string_view arrayName) {
     out  += std::format("{}.{} = {}", first ? "" : ", ", member, arrayName);
     first = false;
@@ -160,6 +174,28 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     return out;
 }
 
+[[nodiscard]] std::string renderApprovals(const ms::ScreenPackage& package) {
+    if (package.approvedTextPackages.empty()) {
+        return "/// This screen was compiled without text packages.\n"
+               "inline constexpr std::span<const mdux::medui::TextPackageApproval> approvedTextPackages{};\n\n";
+    }
+
+    std::string out = "/// The exact per-locale text packages measured when this screen was compiled.\n"
+                      "inline constexpr mdux::medui::TextPackageApproval approvedTextPackages[] = {\n";
+    for (const ms::TextPackageApproval& approval : package.approvedTextPackages) {
+        out += std::format("    {{.locale = {}, .packageId = {}, .packageSha256 = {{", quoted(approval.locale), quoted(approval.packageId));
+        for (std::size_t index = 0; index < approval.packageSha256.size(); ++index) {
+            if (index != 0) {
+                out += ", ";
+            }
+            out += std::to_string(approval.packageSha256[index]);
+        }
+        out += "}},\n";
+    }
+    out += "};\n\n";
+    return out;
+}
+
 /**
  * @brief One node's payload as a spec initialiser.
  *
@@ -180,7 +216,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
         appendName(out, first, "colorToken", label->colorToken);
     } else if (const auto* clock = std::get_if<ms::ClockSpec>(&node.payload)) {
         out = "mdux::medui::ClockSpec{";
-        appendName(out, first, "format", clock->format);
+        appendMember(out, first, "format", "ClockFormat", clock->format);
     } else if (const auto* image = std::get_if<ms::ImageSpec>(&node.payload)) {
         out = "mdux::medui::ImageSpec{";
         appendName(out, first, "source", image->source);
@@ -202,7 +238,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
         appendName(out, first, "requirement", critical->requirement);
         appendName(out, first, "labelKey", critical->labelKey);
         appendName(out, first, "colorToken", critical->colorToken);
-        appendName(out, first, "onPress", critical->onPress);
+        appendMember(out, first, "onPress", "SystemEvent", critical->onPress);
     } else if (const auto* numeric = std::get_if<ms::NumericDisplaySpec>(&node.payload)) {
         out = "mdux::medui::NumericDisplaySpec{";
         appendName(out, first, "requirement", numeric->requirement);
@@ -244,6 +280,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     out += std::format("    .schemaVersion = {},\n", package.schemaVersion);
     out += std::format("    .surfaceWidth = {},\n", package.surfaceWidth);
     out += std::format("    .surfaceHeight = {},\n", package.surfaceHeight);
+    out += "    .approvedTextPackages = approvedTextPackages,\n";
     out += "    .nodes = nodes,\n";
     out += std::format("    .budget = {{.maxVertices = {}, .maxIndices = {}, .maxCommands = {}}},\n",
                        package.budget.maxVertices,
@@ -274,6 +311,7 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     out += "/// The package id this screen was generated from.\n";
     out += std::format("inline constexpr std::string_view id = {};\n\n", quoted(package.id));
 
+    out += renderApprovals(package);
     out += renderStateArrays(package);
 
     // A screen with nothing to draw is valid - `ScreenPackage::validate()` permits it, with an empty

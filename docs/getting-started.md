@@ -24,6 +24,10 @@ this high.
 | **Ninja** | any recent | fatal check in `CMakeLists.txt` |
 | **Vulkan SDK** | 1.3+ | `find_package(Vulkan REQUIRED)` |
 
+On macOS the supported tuple is exact rather than a minimum: Apple Silicon, upstream LLVM/Clang
+21.1.8, libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK 1.4.309.0 with MoltenVK. AppleClang,
+Homebrew GCC, Intel Macs, and other macOS toolchain versions are intentionally unsupported.
+
 A version below the floor fails at configure with a message naming the version it found.
 
 **Ninja is not optional.** CMake implements C++ modules for the Ninja, Ninja Multi-Config and
@@ -38,7 +42,7 @@ builds the tree cleanly. If you hit that ICE, check `g++ --version` for `experim
 
 ## Build and test
 
-Ordinary out-of-source CMake, on either platform:
+Ordinary out-of-source CMake, on Windows or Linux:
 
 ```bash
 mkdir build && cd build
@@ -50,6 +54,22 @@ ctest --output-on-failure
 That is the whole thing. `MDUX_BUILD_EXAMPLES` and `MDUX_BUILD_TESTS` default to `ON`, so the
 default configure already builds everything the test suite needs.
 
+On Apple Silicon macOS, install CMake 4.3.1, Ninja, GLFW, upstream LLVM 21.1.8 and LunarG's Vulkan
+SDK, source the SDK's `setup-env.sh`, then use the guarded preset:
+
+```bash
+export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+cmake --preset ninja-macos-clang
+cmake --build --preset ninja-macos-clang
+ctest --preset ninja-macos-clang --output-on-failure
+```
+
+The toolchain file discovers Homebrew's `llvm` installation when `MDUX_LLVM_ROOT` is unset, but
+still rejects any version other than 21.1.8. MoltenVK is a Vulkan portability implementation over
+Metal: application instances must enable portability enumeration and devices must enable
+`VK_KHR_portability_subset` when exposed. MduX's headless harness and triangle example do this;
+host applications remain responsible for the same setup.
+
 If your default compiler is not the one you want — Ubuntu's `g++` may be an older release, or a
 GCC 16 pre-release snapshot — select it with the standard variables:
 
@@ -60,7 +80,7 @@ CC=gcc-16 CXX=g++-16 cmake .. -G Ninja
 ### Presets
 
 `CMakePresets.json` defines `ninja-gcc`, `ninja-gcc-debug`, `ninja-msvc`, `ninja-msvc-debug` and
-`ninja-clang`. They exist for CI, not for you: each workflow invokes a named configuration this
+`ninja-clang`, `ninja-macos-clang` and `ninja-macos-clang-debug`. They exist for CI, not for you: each workflow invokes a named configuration this
 repository owns, so a reviewer can read what CI built instead of trusting that a hand-written
 command line in a YAML file still matches the one in this document. Building by hand needs none
 of them.
@@ -99,6 +119,42 @@ ctest --test-dir build -L regulatory    # corpus indexes and schemas are current
 
 `ctest -R <name>` selects an individual scenario by name.
 
+### Verifying a compiled screen
+
+`mdux-verify-ui` is a host-only build tool. It reads the committed bundle and every artifact that
+bundle identifies, renders once for every approved locale (or once in the explicit locale-free
+scope for a textless screen), then runs the complete obligation set:
+
+```bash
+./build/tools/mdux-verify-ui \
+  --screen=generated/screen/endoscope-monitor \
+  --locales=all
+```
+
+Locale subsets are deliberately rejected. Exit status `0` means every obligation held, `1` means
+verification failed (a check failed or the plan contained zero obligations), `2` is command-line
+misuse, and `3` means the run could not be made (for example a missing Vulkan implementation or
+inconsistent artifact).
+
+Add `--diff-image-dir=<dir>` to get a picture of a failure. Each render scope that fails writes
+`<screen>.<scope>.png` there: the frame it rendered, dimmed, with every failed obligation's expected
+rectangle outlined in magenta and whatever was actually found outlined in cyan. The scope is
+percent-encoded, so an ordinary locale gives `endoscope-monitor.en-US.png` while a textless screen's
+locale-free scope gives `<screen>.%28locale-free%29.png` — encoded rather than filtered so that two
+scopes of one screen can never overwrite each other's image. It is written only on
+a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
+check. CI passes the same flag and uploads the directory when the step fails.
+
+You do not have to run it by hand to get it run. `mdux_compile_screen()` registers the same
+invocation as the ctest `verify.screen.<id>`, so:
+
+```bash
+ctest --preset <preset> -L verify -V --no-tests=error
+```
+
+verifies every committed screen. `--no-tests=error` matters: without it, a label that matched no
+screen would pass the step over nothing.
+
 ## Examples
 
 Built when `MDUX_BUILD_EXAMPLES=ON`.
@@ -109,8 +165,9 @@ Built when `MDUX_BUILD_EXAMPLES=ON`.
 | `EcgClassifierExample` | embedded ML: fail-closed startup, golden self-test, classification | no |
 | `VulkanSCTriangleExample` | a real Vulkan device rendering from the baked shader package | yes (or lavapipe) |
 
-`EcgClassifierExample` opens no files at all — both its weights and its model package are linked in
-as byte arrays. Running it prints the golden-vector count it verified before classifying:
+`EcgClassifierExample` opens no files at all: its model package is generated `constexpr` data and
+its weights are a separately linked byte array. It links no host-tools parser. Running it prints the
+golden-vector count it verified before classifying:
 
 ```
 $ ./build/examples/EcgClassifierExample
@@ -142,9 +199,13 @@ cmake_minimum_required(VERSION 4.0.0)
 # "requires that the __CMAKE::CXX23 target exist, but it was not provided by
 # the toolchain" - which does not obviously point back at this line.
 #
-# The UUID changes between CMake releases. This one is CMake 4.0-4.1; if yours
-# rejects it, take the value from MduX's own top-level CMakeLists.txt.
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+# The UUID changed in CMake 4.3. MduX rejects 4.4+ until its next value and
+# behavior have been reviewed.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+else()
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -157,7 +218,7 @@ find_package(MduX REQUIRED)
 add_executable(myapp main.cpp)
 target_link_libraries(myapp PRIVATE MduX::MduX)
 
-if(TARGET __CMAKE::CXX23)
+if(23 IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
     set_target_properties(myapp PROPERTIES CXX_MODULE_STD ON)
 endif()
 ```
@@ -195,26 +256,28 @@ Link `MduX::Core` if you want the governed pieces without a Vulkan dependency. T
 convenience — `mdux_verify_trust_zones()` mechanically enforces that `MduXCore`'s link graph never
 reaches Vulkan.
 
-Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-shaderemit`) are **not** exported. They are
-build-time only.
+Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-meduic`,
+`mdux-medui-check`, the emitters and `mdux-verify-ui`) are **not** exported. They are build-time
+only.
 
 ## Limitations
 
 Worth knowing before you build on this.
 
-**Platforms.** Windows 10+ and Linux are the intended and tested scope. macOS is not supported:
-AppleClang is not a recognised compiler branch, and C++23 module scanning does not work under it, so
-a macOS configure fails for unrelated-looking reasons rather than being rejected cleanly.
+**Platforms.** Windows 10+, Linux, and Apple Silicon macOS are tested. macOS support means only the
+exact upstream-Clang/libc++/MoltenVK tuple above; AppleClang, GCC, Intel hardware and unpinned SDK
+combinations fail at configure time. MoltenVK translates Vulkan to Metal and does not imply native
+Vulkan feature or performance parity.
 
-**Clang is unverified.** The floor is enforced and `ninja-clang` exists, but the Clang CI job is
-commented out ([#48](https://github.com/ambroise-leclerc/MduX/issues/48)). Treat Clang as
-best-effort. Cross-toolchain evidence claims cover MSVC and GCC only.
+**Linux Clang is unverified.** The general floor is enforced and `ninja-clang` exists, but its CI
+job is manual-only ([#48](https://github.com/ambroise-leclerc/MduX/issues/48)). The automatic macOS
+Clang job covers only the exact Apple Silicon tuple above. Cross-toolchain evidence claims remain
+anchored by MSVC and GCC; the macOS run is an additional check, not a certification claim.
 
 **Rendering is a vertical slice, not a UI toolkit.** `mdux.draw` records solid and textured rects
-into a fixed budget, and `mdux.render.vulkan` draws them. There is **no text, no layout, and no
-widgets** — those are [#14](https://github.com/ambroise-leclerc/MduX/issues/14),
-[#15](https://github.com/ambroise-leclerc/MduX/issues/15) and
-[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+into a fixed budget, `mdux.render.vulkan` draws them, and the `.medui` path supplies bounded layout
+plus baked `Label` text. The remaining component appearances and live-data geometry are still
+[#17](https://github.com/ambroise-leclerc/MduX/issues/17); they are not a general widget toolkit.
 
 **The HTML/CSS path is gone.** If you find documentation elsewhere describing `MedicalUiRenderer`,
 `UiFileWatcher` or loading `.html` files, it is stale — that path was deleted by

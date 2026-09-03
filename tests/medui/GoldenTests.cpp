@@ -404,7 +404,7 @@ const mdux::spec::Register colorHashNeedsATintToCompare{
                       checks.expect(refused != nullptr && refused->message.find("ColorHash") != std::string::npos, "the diagnostic names the check it refuses");
 
                       const md::ast::Screen clock = parseOrFail(screenWith("    @safety_critical(cv_check: [ColorHash])\n"
-                                                                           "    Clock { id: now; width: 100px; height: 40px; format: HH_MM; }\n"));
+                                                                           "    Clock { id: now; width: 100px; height: 40px; format: TimeSeconds; }\n"));
                       checks.expect(find(md::validateSafetyAnnotations(clock, "goldens.medui"), md::Code::UnknownCvCheck) != nullptr,
                                     "a component with no colour field cannot be tint-checked either");
 

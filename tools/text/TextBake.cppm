@@ -31,22 +31,70 @@
  * for this explicitly, and the reason is worth restating: if verify were a second implementation,
  * a CI check comparing a baker against a different baker would prove nothing about either.
  *
- * ## A recipe
+ * ## A text recipe
  *
  * ```toml
  * [package]
  * id      = "label-welcome"
- * atlas   = "roboto-ui"     # references a font package id produced by S4 (#160)
+ * atlas   = "roboto-ui"     # the font package id these runs are positioned against
  * locale  = "en-US"
+ * font    = "generated/font/roboto-ui/package.json"
  * sidecar = "runs.bin"
+ *
+ * [strings]
+ * keys   = ["STR-TITLE", "STR-SUBTITLE"]
+ * values = ["Welcome",   "Select a patient"]
  * ```
  *
- * No `[runs]` table at S1: positioned glyph runs are produced by the `.medui` compiler (#15),
- * not by this baker. S4 (#160) extends the recipe with the font pipeline's inputs; S5 (#161)
- * adds the restricted-charset validation that turns "no shaping on device" into a build-time
- * error. Two parallel arrays rather than `[[runs]]` array-of-tables TOML would normally use:
+ * Two parallel arrays rather than the `[[strings]]` array-of-tables TOML would normally use:
  * `mdux.tools.toml` implements a deliberate subset with no arrays of tables - see
  * `tools/common/Toml.cppm:13`, where it is listed as unsupported on purpose.
+ *
+ * A key becomes a run id, which is what `t("STR-TITLE")` resolves against in a `.medui` source.
+ * The value is the translation for this package's one locale; a second locale is a second recipe
+ * and a second package, because a text package is one locale's worth of runs (`mdux.text.schema`).
+ *
+ * S1 (#157) landed the recipe and the surrounding machinery with the run list empty, because
+ * nothing could position a run until a font package existed to position it against. #235 fills
+ * it in: `font` names that package, and the baker walks each value's code points through its
+ * glyph table.
+ *
+ * ## Positioning, and why it is arithmetic rather than shaping
+ *
+ * ADR-010 puts shaping on the host, and this is the host side of it - but "shaping" is more than
+ * this baker does and more than the format can carry. A v1 record is a glyph and a position, so
+ * what happens here is a pen walk: look each code point up in the font package, emit a record at
+ * the pen, advance the pen by the glyph's advance width plus whatever kerning the package baked
+ * for the pair. No reordering, no substitution, no ligatures, no mark attachment, no bidirectional
+ * resolution.
+ *
+ * The limit is enforced, not merely documented, and it is enforced against a **declared
+ * repertoire** rather than against the font's charset. The distinction is the whole point: a font
+ * package is free to bake Arabic, or a combining acute, and for both of those the glyph lookup
+ * succeeds while the pen walk is wrong - isolated unjoined letters running the wrong way, an
+ * accent parked after the base rather than over it. Either would produce a package that validates,
+ * byte-compares across both toolchains, and renders incorrectly on a device, which is precisely
+ * the outcome ADR-010 exists to prevent. So a code point outside the repertoire is refused
+ * *before* the font is consulted.
+ *
+ * The repertoire is ADR-010's v1 scope and nothing else - Latin, Greek and Cyrillic, left to
+ * right, with those blocks' combining marks carved out. It is not this file's to widen or narrow:
+ * a baker enforcing less than the ADR ships a rendering nobody reviewed, and one enforcing more
+ * refuses text the accepted architecture promises. Both are the same defect in opposite
+ * directions, so a change to the repertoire is a change to ADR-010 first.
+ *
+ * The pen accumulates in **font units** and converts to pixels per glyph, rather than converting
+ * each advance and accumulating pixels. Both are defensible; only the first keeps a rounding error
+ * from compounding along a line, so a long string does not drift by a pixel per word. The
+ * conversion is integer throughout - `(pen * pixelSize + unitsPerEm / 2) / unitsPerEm`, in
+ * `std::int64_t` - because the sidecar is committed bytes compared across toolchains, and a float
+ * would make the artifact depend on the host's rounding mode.
+ *
+ * A record is emitted for every code point, including the blanks. Neither consumer draws them -
+ * `mdux::text::draw::recordRun()` skips a glyph with no coverage, and #195's budget measurement
+ * skips exactly the same ones - so the six bytes buy nothing at run time. They buy something at
+ * review time: a run's record count is its character count, so a sidecar that lost a character is
+ * visible in `package.json` as a byte length that no longer matches the string.
  */
 module;
 
@@ -97,6 +145,16 @@ struct FontSpec {
     [[nodiscard]] std::uint32_t codePointCount() const noexcept;
 };
 
+/// One entry of a text recipe's `[strings]` table: the key a `.medui` source names with
+/// `t("...")`, and the translation for this package's locale.
+///
+/// The key becomes the run id in `package.json`, so it inherits the schema's rules for one:
+/// non-empty, and unique within the package.
+struct TextString {
+    std::string key;
+    std::string text;
+};
+
 /// A parsed and resolved recipe. Every default is expanded here rather than at the point of use,
 /// so `report.json`'s `options` records what the bake actually did - ADR-007's rule that a
 /// silently changed default must not leave every report looking unchanged.
@@ -105,6 +163,14 @@ struct Recipe {
     std::string atlas;
     std::string locale;
     std::string sidecar{"runs.bin"};
+
+    /// Repository-relative path to the committed font package these runs are positioned against.
+    /// Empty for a font recipe, and for a text recipe carrying no strings.
+    std::string fontPackage;
+
+    /// The strings to position, in recipe order - which is the order their runs appear in the
+    /// sidecar, so the file reads in the order the recipe was written.
+    std::vector<TextString> strings;
 
     /// Set when this recipe carries a `[charset]` table, which is what makes it a font recipe.
     /// `run()` dispatches on it.
@@ -152,20 +218,24 @@ struct BakeOutputs {
  * @brief Produces every output byte for `recipe`.
  *
  * Dispatches on `Recipe::font`. A font recipe rasterises its charset, packs the glyphs and fills
- * the sidecar with the atlas sheet; a text recipe produces a run package, which at S1 is still a
- * no-run one whose sidecar is zero bytes until the run pipeline lands.
+ * the sidecar with the atlas sheet; a text recipe reads the font package its recipe names and
+ * positions one run per string, filling the sidecar with v1 records. A text recipe with no
+ * `[strings]` table still produces a valid package, with no runs and an empty sidecar.
  *
  * @param recipe      the resolved recipe
  * @param recipePath  repository-relative, for `report.json`'s recipe record and for diagnostics
  * @param recipeBytes the recipe's own bytes, for its digest
- * @param root        the directory a font recipe's `source` resolves against - the repository
- *                    root. The path is confined to it: absolute paths and `..` escapes are
- *                    refused rather than followed.
+ * @param root        the directory a recipe's file references resolve against - the repository
+ *                    root, for a font recipe's `source` and a text recipe's `font` alike. Both
+ *                    are confined to it: absolute paths and `..` escapes are refused rather than
+ *                    followed.
  * @param diagnostics appended to on any problem
  *
  * Returns nullopt when the recipe fails to build a valid package - which for a font recipe
  * includes a character the font cannot draw, an outline it refuses, or a glyph set the atlas
- * budget cannot hold. Every such refusal appends its own `TXT` diagnostic.
+ * budget cannot hold, and for a text recipe includes a font package it cannot read, a locale that
+ * package does not approve, and a string reaching a code point nobody baked. Every such refusal
+ * appends its own `TXT` diagnostic.
  */
 [[nodiscard]] std::optional<BakeOutputs> run(const Recipe& recipe, std::string_view recipePath,
                                               std::span<const std::byte> recipeBytes,

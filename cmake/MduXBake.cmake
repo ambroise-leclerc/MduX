@@ -45,10 +45,46 @@
 # this file. It mirrors Cargo's OUT_DIR discipline, which MduX otherwise loses by having no
 # build.rs equivalent.
 #
+# ## Artifacts that consume other artifacts
+#
+# A bake may list a committed artifact under SOURCES - the screen bake reads the font package, a
+# text package and its sidecar. That edge is real for the *bake*: ninja re-runs the screen's bake
+# when the committed text package changes on disk.
+#
+# What it is **not** is an ordering between artifacts inside one `mdux-bake-update`. Each
+# `<kind>-<id>-update` target depends only on its own baked outputs, and `mdux-bake-update` depends
+# on all of them independently, so ninja is free to bake the screen before the text update has
+# copied the new text package into `generated/`. Registration order in CMakeLists.txt does not
+# change that, and a comment claiming it does is worse than none.
+#
+# So a single update pass over an upstream change can stage a downstream artifact that attests the
+# *previous* upstream digest. Two things follow, and both matter:
+#
+# 1. **Run the update to a fixpoint.** Stage, reconfigure, build, and run `ctest -L evidence`. A
+#    downstream artifact left behind fails its own comparison; re-run the update and repeat until
+#    the tests pass and a pass stages nothing. Introducing a *new* consumed artifact needs this
+#    even to configure: the consumer's dependency on a file that does not exist yet is a ninja
+#    graph error, not a build that does what it can.
+#
+# 2. **Nothing escapes to a reviewer.** CI builds from an empty tree, so every bake reads the
+#    committed inputs; a screen staged against a superseded text package cannot match the bake that
+#    reads the current one, because `report.json` records every input's digest. The failure is
+#    `evidence.<kind>.<id>` on both toolchain legs. The fixpoint rule above is about not spending a
+#    CI round trip to learn it.
+#
 # ## Host-tool resolution
 #
 # TOOL is always a `MduX::<tool>` target. A cross-compiling build substitutes an imported
 # executable for the same name without any call site changing.
+#
+# ## A bake that takes more than one tool
+#
+# THEN_TOOLS names further tools run over the same output directory, in order, after TOOL. The
+# screen bundle is the case that needed it (#254): compiling a screen and rendering it are different
+# jobs with different dependencies - one reads a `.medui` file, the other needs a Vulkan device - and
+# fusing them would make a GPU a prerequisite of every compile. What they are not is two artifacts.
+# They produce one bundle, under one registration, compared by one `evidence.<kind>.<id>` test, which
+# is what keeps a later stage from acquiring weaker evidence than the stage before it.
 
 set(_MDUX_COMPARE_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/MduXCompareArtifacts.cmake")
 set(_MDUX_UPDATE_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/MduXUpdateArtifacts.cmake")
@@ -70,7 +106,7 @@ endfunction()
 function(mdux_bake_artifact)
     set(options "")
     set(single KIND ID TOOL RECIPE)
-    set(multi SOURCES OUTPUTS)
+    set(multi SOURCES OUTPUTS THEN_TOOLS)
     cmake_parse_arguments(ARG "${options}" "${single}" "${multi}" ${ARGN})
 
     foreach(required KIND ID TOOL RECIPE OUTPUTS)
@@ -85,12 +121,14 @@ function(mdux_bake_artifact)
         message(FATAL_ERROR
             "mdux_bake_artifact: call mdux_declare_bake_targets() before registering artifacts")
     endif()
-    if(NOT TARGET ${ARG_TOOL})
-        message(FATAL_ERROR
-            "mdux_bake_artifact: TOOL '${ARG_TOOL}' is not a target. Host tools are resolved "
-            "through a MduX::<tool> target so a cross-compiling build can substitute an "
-            "imported executable; declare it before registering this artifact.")
-    endif()
+    foreach(tool ${ARG_TOOL} ${ARG_THEN_TOOLS})
+        if(NOT TARGET ${tool})
+            message(FATAL_ERROR
+                "mdux_bake_artifact: TOOL '${tool}' is not a target. Host tools are resolved "
+                "through a MduX::<tool> target so a cross-compiling build can substitute an "
+                "imported executable; declare it before registering this artifact.")
+        endif()
+    endforeach()
 
     foreach(component KIND ID)
         if(NOT ARG_${component} MATCHES "^[a-z0-9][a-z0-9-]*$")
@@ -139,11 +177,19 @@ function(mdux_bake_artifact)
     # The baker runs with the source directory as its working directory, so every path it reads
     # from the recipe and every path it records in report.json is repository-relative. That is
     # what keeps a report free of absolute paths, which BakeReport::validate() rejects.
+    # THEN_TOOLS extends this one command into a sequence, each stage invoked the same way. It is
+    # not a second registration: one custom command, one OUTPUT set, one evidence test. A stage that
+    # exits non-zero fails the build, so a bundle is never half-produced.
+    set(bake_commands COMMAND ${ARG_TOOL} bake "${ARG_RECIPE}" "${baked_dir}")
+    foreach(tool ${ARG_THEN_TOOLS})
+        list(APPEND bake_commands COMMAND ${tool} bake "${ARG_RECIPE}" "${baked_dir}")
+    endforeach()
+
     add_custom_command(
         OUTPUT ${baked_outputs}
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${baked_dir}"
-        COMMAND ${ARG_TOOL} bake "${ARG_RECIPE}" "${baked_dir}"
-        DEPENDS ${ARG_TOOL} "${recipe_path}" ${source_paths}
+        ${bake_commands}
+        DEPENDS ${ARG_TOOL} ${ARG_THEN_TOOLS} "${recipe_path}" ${source_paths}
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Baking ${label}"
         VERBATIM

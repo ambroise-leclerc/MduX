@@ -1,0 +1,201 @@
+name: macOS Apple Silicon Build
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    name: macOS 15 arm64 (Clang 21, MoltenVK)
+    # Explicitly the arm64 image; do not replace this with macos-latest, whose architecture and
+    # installed toolchain can move independently of this verified target.
+    runs-on: macos-15
+    env:
+      MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Resolve the pinned MedUI contract commit
+      id: medui-contract
+      shell: bash
+      run: |
+        set -euo pipefail
+        commit="$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' medui-conformance.toml)"
+        test -n "$commit"
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout pinned MedUI conformance contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: Compliatory/MedUI
+        ref: ${{ steps.medui-contract.outputs.commit }}
+        path: .medui-conformance
+        persist-credentials: false
+
+    - name: Setup pinned CMake
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
+      with:
+        cmake-version: '4.3.1'
+
+    - name: Install pinned upstream LLVM and host tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        brew install llvm@21 ninja glfw
+        llvm_root="$(brew --prefix llvm@21)"
+        test "$("$llvm_root/bin/clang++" --version | sed -n 's/.*clang version \([0-9.]*\).*/\1/p' | head -1)" = "21.1.8"
+        echo "MDUX_LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
+        echo "$llvm_root/bin" >> "$GITHUB_PATH"
+
+    - name: Install pinned LunarG SDK with MoltenVK
+      uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+      with:
+        version: 1.4.309.0
+        cache: true
+
+    - name: Select and verify MoltenVK
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(uname -m)" = "arm64"
+        test "$VULKAN_SDK_VERSION" = "1.4.309.0"
+        icd="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json"
+        test -f "$icd"
+        export DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}"
+        export VK_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d"
+        export VK_DRIVER_FILES="$icd"
+        {
+          echo "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
+          echo "VK_LAYER_PATH=$VK_LAYER_PATH"
+          echo "VK_DRIVER_FILES=$icd"
+        } >> "$GITHUB_ENV"
+        set -o pipefail
+        vulkaninfo --summary 2>&1 | tee "$RUNNER_TEMP/vulkaninfo.log"
+        grep -Eiq 'MoltenVK|Apple M[0-9]' "$RUNNER_TEMP/vulkaninfo.log"
+
+    - name: Configure
+      run: cmake --preset ninja-macos-clang
+
+    - name: Build
+      run: cmake --build --preset ninja-macos-clang --parallel 4
+
+    - name: Run full test suite
+      run: ctest --preset ninja-macos-clang --output-on-failure
+
+    - name: Verify evidence, determinism, no-heap, and regulatory labels
+      run: |
+        ctest --preset ninja-macos-clang -L evidence --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L determinism --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L noheap --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L regulatory --output-on-failure --no-tests=error
+        ctest --preset ninja-macos-clang -L governed -V --no-tests=error
+
+    - name: Verify rendered output ran on MoltenVK
+      shell: bash
+      run: |
+        set -euo pipefail
+        pixel_log="$RUNNER_TEMP/macos-pixel.log"
+        ctest --preset ninja-macos-clang -L pixel -V --no-tests=error 2>&1 | tee "$pixel_log"
+        if grep -q 'Skipped' "$pixel_log"; then
+          echo '::error::Pixel tests skipped; the macOS target must execute them through MoltenVK.'
+          exit 1
+        fi
+
+    # The gate epic #16 opens with: `mdux-verify-ui --screen=generated/screen/<id> --locales=all`,
+    # over every committed screen, on this leg's MoltenVK. `mdux_compile_screen()` registers one
+    # `verify.screen.<id>` per screen, so a second committed screen is covered here without this file
+    # changing - and `--no-tests=error` is what makes that automatic rather than silent: a label that
+    # matched nothing would otherwise pass this step over zero screens.
+    #
+    # No skip guard here, unlike the pixel step above, because there is no skip to guard against:
+    # `mdux-verify-ui` has no 77 status - an absent device exits 3 - and cmake/MduXCompileScreen.cmake
+    # therefore sets no SKIP_RETURN_CODE. A device that vanished between the bake and the tests fails
+    # this step as itself. Verified with the ICD unset: CTest reports Failed, not Skipped.
+    - name: Verify committed screens against their goldens (MoltenVK)
+      shell: bash
+      run: ctest --preset ninja-macos-clang -L verify -V --no-tests=error
+
+
+    - name: Smoke-test Vulkan presentation
+      run: ./build-macos-clang/examples/VulkanSCTriangleExample --smoke-test
+
+    - name: Configure ASan and UBSan
+      run: |
+        cmake --preset ninja-macos-clang-debug \
+          -DMDUX_BUILD_EXAMPLES=OFF \
+          -DENABLE_SANITIZER_ADDRESS=ON \
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
+
+    - name: Build ASan and UBSan
+      run: cmake --build --preset ninja-macos-clang-debug --parallel 4
+
+    - name: Run non-render tests under ASan and UBSan
+      env:
+        # macOS libobjc/libxpc process initialization retains three allocations that LeakSanitizer
+        # reports for every test executable before MduX code runs. Keep ASan's memory-error checks
+        # here; the Linux sanitizer job remains the leak-detection authority for non-render tests.
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      # The symbol scans establish properties of the Release object files above. Debug and
+      # sanitizer instrumentation deliberately change those objects; rerunning the static scan
+      # here can reject instrumentation/runtime references instead of MduX behavior. The runtime
+      # no-heap cases remain in this sanitized invocation.
+      run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|.*\.symbolScan' --output-on-failure --no-tests=error
+
+    - name: Run rendered tests under ASan and UBSan
+      env:
+        ASAN_OPTIONS: detect_leaks=0
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      shell: bash
+      run: |
+        set -euo pipefail
+        render_log="$RUNNER_TEMP/macos-asan-pixel.log"
+        ctest --preset ninja-macos-clang-debug -R 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' -V --no-tests=error 2>&1 | tee "$render_log"
+        if grep -q 'Skipped' "$render_log"; then
+          echo '::error::Sanitized rendered-truth tests skipped.'
+          exit 1
+        fi
+
+    - name: Verify no source-tree writes
+      shell: bash
+      run: |
+        set -euo pipefail
+        status="$(git status --porcelain)"
+        if [ -n "$status" ]; then
+          echo "Build wrote into the source tree:"
+          echo "$status"
+          exit 1
+        fi
+
+    # Last in the job, and that position is load-bearing rather than tidy. `if: failure()` is
+    # evaluated where the step sits: a failing step skips every later step that is not conditioned on
+    # failure, but a step placed *before* the failure has already been passed over. This upload used
+    # to sit above the sanitizer steps, where it could never have captured a sanitized failure - the
+    # very thing the second path below exists for. At the end it captures both.
+    #
+    # Only on failure. The image is a measurement of the frame rather than a property of the screen,
+    # so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an attachment instead -
+    # which is worth nothing unless it is actually attached. `if-no-files-found` is `ignore` because
+    # a failure that is not a rendered one (an unreadable artifact, a digest drift) legitimately
+    # produces no image, and a red step should not gain a second red mark saying so.
+    - name: Upload the rendered-truth diff images
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-diff-macos
+        # Both build trees: the release one is the gate, and the sanitized rerun renders the same
+        # screens again, so a failure that only appears under ASan/UBSan has its picture too.
+        path: |
+          build-macos-clang/verify-diff/
+          build-macos-clang-debug/verify-diff/
+        if-no-files-found: ignore

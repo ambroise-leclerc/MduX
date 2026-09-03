@@ -188,6 +188,21 @@ jobs:
           exit 1
         fi
 
+    # The gate epic #16 opens with: `mdux-verify-ui --screen=generated/screen/<id> --locales=all`,
+    # over every committed screen, on this leg's lavapipe. `mdux_compile_screen()` registers one
+    # `verify.screen.<id>` per screen, so a second committed screen is covered here without this file
+    # changing - and `--no-tests=error` is what makes that automatic rather than silent: a label that
+    # matched nothing would otherwise pass this step over zero screens.
+    #
+    # No skip guard here, unlike the pixel step above, because there is no skip to guard against:
+    # `mdux-verify-ui` has no 77 status - an absent device exits 3 - and cmake/MduXCompileScreen.cmake
+    # therefore sets no SKIP_RETURN_CODE. A device that vanished between the bake and the tests fails
+    # this step as itself. Verified with the ICD unset: CTest reports Failed, not Skipped.
+    - name: Verify committed screens against their goldens (lavapipe)
+      shell: bash
+      run: ctest --preset ninja-gcc -L verify -V --no-tests=error
+
+
     - name: Verify no source-tree writes
       run: |
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -197,3 +212,19 @@ jobs:
           echo "$status"
           exit 1
         fi
+
+    # Last in the job. `if: failure()` is evaluated where the step sits, so an upload placed above a
+    # step that can fail is skipped before that failure happens - see the same step in
+    # macos-arm64-build.yml, where it was doing exactly that. Only on failure. The image is a measurement of the frame rather than a property
+    # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an
+    # attachment instead - which is worth nothing unless it is actually attached. `if-no-files-found`
+    # is `ignore` because a failure that is not a rendered one (an unreadable artifact, a digest
+    # drift) legitimately produces no image, and a red step should not gain a second red mark saying
+    # so.
+    - name: Upload the rendered-truth diff images
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-diff-gcc16
+        path: build-gcc/verify-diff/
+        if-no-files-found: ignore

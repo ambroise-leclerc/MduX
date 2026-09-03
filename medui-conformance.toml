@@ -1,6 +1,6 @@
 repository = "https://github.com/Compliatory/MedUI"
 version = "0.1.0"
-commit = "d5136a8518bd499760ecff2aad215d3721329f20"
+commit = "265df1925a672bd556f69123e287215b45cfd210"
 capabilities = ["syntax", "semantics", "layout", "safety"]
 # Diagnostic position precision, per `spec/diagnostics.md`. The lexer carries exact 1-based UTF-8
 # byte columns, so every pinned position is matched in full.

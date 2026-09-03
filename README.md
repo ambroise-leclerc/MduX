@@ -16,6 +16,7 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![Version](https://img.shields.io/github/v/tag/ambroise-leclerc/MduX?label=version)](https://github.com/ambroise-leclerc/MduX/tags)
 [![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
 [![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
+[![macOS Apple Silicon CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml)
 [![Docs Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml)
 [![Evidence Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml)
 [![Compliance Docs](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml)
@@ -38,7 +39,10 @@ A library with three zones, checked at configure time rather than by review
 `mdux_verify_trust_zones()` walks the full link graph and fails the configure step if a governed
 target ever reaches Vulkan or a windowing library.
 
-**What it is not:** a UI toolkit. There is no text, no layout, and no widgets yet — see
+**What it is not:** a UI toolkit. The component dictionary is closed and compiled — a `Label`, a
+`Button`, a `NumericDisplay` and the rest are validated, laid out and budget-checked at build time —
+but the runtime draws only a `Panel` and a `Label`, so most of the dictionary has no appearance
+yet. See
 [Implementation status](#implementation-status). It is also not a quality-management system, a risk
 engine, or a lifecycle framework; there is no `mdux::risk`, `mdux::qms` or `mdux::lifecycle`
 namespace, and no code here generates a Design History File, a Risk Management File, or an audit
@@ -112,6 +116,10 @@ ctest --output-on-failure
 Requires **GCC 16+**, **MSVC 17.14+** or **Clang 20+**, **CMake 4.0+**, **Ninja**, and the
 **Vulkan SDK 1.3+**.
 
+The verified macOS configuration is narrower: Apple Silicon, upstream Clang 21.1.8 with libc++,
+CMake 4.3.1, Ninja, and the LunarG Vulkan SDK/MoltenVK. Reproduce it with
+`cmake --preset ninja-macos-clang`; AppleClang, GCC on macOS, and Intel Macs are rejected.
+
 `-G Ninja` is the one flag you cannot drop. CMake implements C++ modules for the Ninja and
 Visual Studio generators only, and Visual Studio cannot do `import std` — so Ninja is the entire
 supported set, and configuring without it stops with a message saying exactly that. To stop
@@ -120,7 +128,7 @@ typing it, `export CMAKE_GENERATOR=Ninja` once and plain `cmake ..` works from t
 If your default `g++` is older than 16, point at a newer one with the standard variables:
 `CXX=g++-16 CC=gcc-16 cmake .. -G Ninja`.
 
-`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc` and friends. Those exist so each CI
+`CMakePresets.json` also defines `ninja-gcc`, `ninja-msvc`, `ninja-macos-clang` and friends. Those exist so each CI
 leg can invoke a named configuration this repository owns rather than a command line that merely
 resembles one. They are not needed to build by hand, and nothing above uses them.
 
@@ -143,15 +151,17 @@ Derived from the targets and tests that build on `develop`.
 | `mdux.vulkansc.*` | Partial | memory-pool and device-object patterns; **not** true Vulkan SC |
 | **Host tools** (never linked into a device target) | | |
 | `mdux-shaderbake`, `mdux-shaderemit` | Implemented | SPIR-V reflection, byte-verified packages, generated C++ |
-| `mdux-mlbake` | Implemented | safetensors import, golden generation, byte-verified model packages |
+| `mdux-mlbake`, `mdux-mlemit` | Implemented | safetensors import, golden generation, byte-verified model packages, generated `constexpr` metadata |
 | `MduXMeduiLib` | Implemented | The `.medui` compiler end to end: parsing, semantic validation, integer-only bounded layout, per-locale text budgets, golden references, the canonical package, two C++ emitters, and the `mdux-meduic` / `mdux-medui-check` tools ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
+| `MduXVerifyUiLib`, `mdux-verify-ui` | Implemented | host-only rendered-truth driver: artifact-derived obligations across every approved locale, offscreen Vulkan execution, and distinct failed-check / impossible-run outcomes ([#253](https://github.com/ambroise-leclerc/MduX/issues/253)). Gated in CI as `verify.screen.<id>` on the three render legs, with a PNG diff image uploaded on failure ([#255](https://github.com/ambroise-leclerc/MduX/issues/255)) |
+| Text and glyph rendering | Implemented | host-side shaping into baked runs, an R8 coverage atlas, and a governed draw path; a compiled screen's `Label` is joined to a text package at run time and drawn ([#14](https://github.com/ambroise-leclerc/MduX/issues/14), [#242](https://github.com/ambroise-leclerc/MduX/issues/242)). A `Button`'s text is not drawn, because a button is more than its text ([#17](https://github.com/ambroise-leclerc/MduX/issues/17)) |
+| Live-data components | Partial | a `NumericDisplay` and a `SignalTrace` paint the field they reserve, which is what their golden entry pins ([#255](https://github.com/ambroise-leclerc/MduX/issues/255)); the reading inside it — expanded digits, an expanded waveform — is still deferred ([#257](https://github.com/ambroise-leclerc/MduX/issues/257), [#258](https://github.com/ambroise-leclerc/MduX/issues/258)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
 | Software Development File | Documentation only | templates and records under `software_development_file/` |
 | Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
 | **Not started** | | |
-| Text and glyph rendering | Planned | [#14](https://github.com/ambroise-leclerc/MduX/issues/14) |
 | Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
 
 `.medui` reaches pixels today, and the path is built rather than planned. An authored screen is
@@ -161,14 +171,16 @@ carrying `static_assert(screen.validate().has_value())`, a governed runtime turn
 commands without allocating, and `mdux.render.vulkan` draws them. `ScreenPixelTests` walks the whole
 chain and compares the result pixel by pixel under lavapipe in CI.
 
-Two limits are worth stating beside that. A **font** package is baked and committed
-(`generated/font/dejavu-ui/`), but no **text** package is — the per-locale glyph runs a screen's
-`t("STR-KEY")` resolves against, which would live under `generated/text/`. `mdux-textbake` can
-produce one and no recipe registers one, so a screen carrying a text key cannot be compiled end to
-end ([#235](https://github.com/ambroise-leclerc/MduX/issues/235)); and the runtime draws a `Panel` while
-counting every other component as deferred, because text needs that package and live-data components
-have no geometry until a frame exists. The committed screen therefore renders one bar — from a file
-an author wrote, through every stage, with nothing hand-carried between them.
+A **font** package and a **text** package are both baked and committed
+(`generated/font/dejavu-ui/`, `generated/text/endoscope-monitor-en-us/`), so the committed screen
+carries a `t("STR-KEY")` and its box is measured, at build time, against the widest translation every
+approved locale holds, and its label reaches the display: the governed runtime joins the compiled
+screen to the text package for the locale it is running and records the baked glyph runs
+([#242](https://github.com/ambroise-leclerc/MduX/issues/242)). One limit is worth stating beside
+that: the remaining components are still counted as deferred, because a `Button` is more than its
+text and live-data components have no geometry until a frame exists
+([#17](https://github.com/ambroise-leclerc/MduX/issues/17)). The committed screen renders a bar and
+a title — from files an author wrote, through every stage, with nothing hand-carried between them.
 
 The HTML/CSS path that earlier revisions described was **deleted** by
 [#127](https://github.com/ambroise-leclerc/MduX/issues/127) — `MedicalUiRenderer::render()` recorded

@@ -17,3 +17,11 @@ generated/** -text
 # compiler produces in memory, so a checkout that added carriage returns would fail on the MSVC leg
 # alone - which is exactly how this was found.
 tests/medui/fixtures/** -text
+
+# Rendered-truth fixtures are also parsed and byte-compared as canonical JSON. Keep their bytes
+# identical when Windows checks them out, including fixtures that deliberately contain no golden.
+tests/verify_ui/fixtures/** -text
+
+# Unified-diff context lines that represent blank source lines contain the mandatory context
+# prefix, which is trailing whitespace from the outer repository's perspective.
+*.patch -whitespace
