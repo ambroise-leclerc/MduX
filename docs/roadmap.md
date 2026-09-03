@@ -1,21 +1,21 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 29 August 2026
-> Epic status re-verified against `develop` @ `bdf539c` · 29 August 2026. All thirteen epics were
-> queried on GitHub: ten closed, three open (`#16`, `#17`, `#19`). **No epic has changed state since
-> the v0.6.0 baseline** — what moved is post-tag content work, one new platform and one new CI lane,
-> recorded under [Since the tag](#since-the-tag).
-> Sixteen non-epic issues are open: fourteen are epic children, promoted on 28 August and listed in
-> their epic's section below, and two are standalone — `#219` under #15 and `#153` under #18.
+> Backlog · ambroise-leclerc/MduX · updated 3 September 2026
+> Epic status re-verified against `develop` @ `51eb779` · 3 September 2026. All thirteen epics were
+> queried on GitHub: eleven closed, two open (`#17`, `#19`). **#16 closed at 5/5 and ships in
+> v0.7.0**, which half-opens Wave 6 — its other epic, #17, remains.
+> Twelve non-epic issues are open: nine are epic children listed in their epic's section below, and
+> three are standalone follow-ups from #255 — `#280`, `#281` and `#282`.
 > The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
 > 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. Five waves have shipped — the renderer draws its first
-pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
-what the build actually produces, #14 closed Wave 4 with the font and text pipeline, and
-v0.6.0 closes Wave 5 with #15, the compiler that generates the screens it draws.
+backlog that closes the gap. Five waves have shipped and a sixth is half-shipped — the renderer
+draws its first pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
+what the build actually produces, #14 closed Wave 4 with the font and text pipeline, v0.6.0 closes
+Wave 5 with #15, the compiler that generates the screens it draws, and v0.7.0 adds #16, which checks
+that what the compiler produced is what reaches the screen.
 All twelve of its children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
@@ -41,11 +41,11 @@ ADR-012 describes.
 | Metric | Count |
 |---|---|
 | Epics | 13 |
-| Delivered | 10 |
-| Remaining | 3 |
-| Waves shipped | 5 |
-| Standalone open issues | 2 (#153, #219) |
-| Open epic children | 14 (#251–#265) |
+| Delivered | 11 |
+| Remaining | 2 |
+| Waves shipped | 5, plus half of Wave 6 (#16 in v0.7.0; #17 open) |
+| Standalone open issues | 3 (#280, #281, #282) |
+| Open epic children | 9 (#256–#261, #263–#265) |
 
 ## The thesis
 
@@ -85,8 +85,9 @@ the whole of Track C.
 
 An epic opens when every epic it depends on has closed. Five waves have shipped
 (v0.2.0, v0.3.0, v0.4.0, v0.5.0, v0.6.0), one epic per wave closing the dependency it held.
-Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is open: #16 and
-#17 were blocked on it and are not any more. #19 spans waves by design; its S3–S6 follow #15.
+Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is half done: #16
+closed at 5/5 and shipped in v0.7.0, and #17 remains. #19 spans waves by design; its S3–S6 follow
+#15.
 
 ```text
 Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
@@ -94,7 +95,7 @@ Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
 Wave 5 · shipped v0.6.0     #15 (done)
-Wave 6                      #16  #17
+Wave 6 · half-shipped v0.7.0  #16 (done)  #17
 ```
 
 #### When v0.6.0 gets cut
@@ -136,13 +137,11 @@ Two things worth settling before the tag rather than during it:
   non-linear boundary exists — `v0.2.0` is not an ancestor of `v0.3.0` — and it has a documented
   cause: #23 purged normative text from git history.
 
-#### Since the tag
+#### What v0.7.0 ships
 
-Seven commits separate `develop` from `acbe102`, this document's previous baseline, and **none of
-them closed an epic**. They are recorded here so that the gap between the tag and the tree is
-readable rather than inferred. Two are not product changes and so have no row below: the back-merge
-of the `v0.6.0` tag from `master`, and #238, which recorded what cutting that release taught the
-procedure. The remaining five are these.
+Twenty commits separate this tag from `v0.6.0`'s back-merge, and unlike the previous inter-tag
+window, **one of them closed an epic**. Two are not product changes and have no row below: the
+back-merge itself, and #238, which recorded what cutting v0.6.0 taught the procedure.
 
 | Merged | PR | Issue | What it changed |
 |---|---|---|---|
@@ -150,10 +149,27 @@ procedure. The remaining five are these.
 | 24 Aug | #241 | #222 | macOS Apple Silicon becomes a continuously verified target: Clang 21, libc++, MoltenVK, on every push. |
 | 25 Aug | #243 | #242 | The governed runtime draws a `Label` — compiled screen plus text package reaches pixels. |
 | 25 Aug | #245 | #244 | The screen records the digests of the text packages it was compiled against, and the runtime refuses any other. |
+| 29 Aug | #247 | #246 | The Linux Clang leg runs on every pull request, and caught two defects three green legs had missed. |
+| 29 Aug | #250 | #249 | A lint that fails a document naming a CI mechanism no workflow runs. |
+| 1 Sep | #270 | #219 | `ClockFormat` and `SystemEvent` become closed sets, so a `Clock` can be measured rather than looked up. |
+| 1 Sep | #271 | #18 | `mdux.ml` emits `constexpr` model packages, the treatment shaders and screens already had. |
+| 2 Sep | #272 | #251 | ADR-014 fixes what rendered-truth verification checks, and what it cannot. |
+| 2 Sep | #273 | #252 | `mdux.verify` — four governed checks over a CPU framebuffer. |
+| 2 Sep | #277 | #253 | `mdux-verify-ui`, across every approved locale, refusing a narrower set. |
+| 2 Sep | #278 | #254 | `verification.json` as the screen bundle's fourth byte-compared file. |
+| 3 Sep | #279 | #255 | The CI gate on three render legs, the failure diff image, and ADR-014 decision 5. |
 
-The first, third and fourth are #17's content arriving ahead of its epic; the second is a platform
-lane that strengthens the byte-identity claim rather than moving any epic. Nothing here changes the
-10/13 count, and nothing here is a v0.7.0 on its own — the next tag still waits on #16 or #17.
+The first four are #17's content arriving ahead of its epic, and they are what made #16 buildable:
+without a baked text package and a drawn `Label`, the two mandatory text obligations would have had
+no ink to check. The last five are #16 itself, in order, each blocked on its predecessor.
+
+> **#255 had to settle a question #16 left to #17.** The committed screen's two golden nodes were
+> deferred by the runtime, so the gate the epic exists to add would have been red on the day it
+> landed. ADR-014 decision 5 is the answer — a `NumericDisplay` and a `SignalTrace` paint the field
+> they reserve, read off the golden sidecar rather than invented — and the three cheaper answers
+> (delete the goldens, weaken their checks, verify a different screen) are the three the issue
+> forbids by name. Recorded here because the same shape will recur: an epic's last child is where
+> its unstated assumptions become someone's problem.
 
 > **#244 merged with review findings addressed rather than deferred.** All eight raised against the
 > first revision landed as fixes in the squashed commit, two of them solved better than proposed: the
@@ -377,7 +393,7 @@ table for a format that could have been measured.
 
 _Blocks #16, #17_
 
-#### #16 — Rendered-truth verification · **Open, unblocked**
+#### #16 — Rendered-truth verification · **Done v0.7.0**
 
 Render offscreen, then check that critical content appears where the compiled screen says
 it will, in the declared tint, in every approved locale — and emit that as evidence. Bounds
@@ -387,9 +403,9 @@ and colour checks are exercisable before a single glyph exists.
 - #252 S2 Bounds, ink containment, colour hash · _closed_
 - #253 S3 The verify driver · _closed_
 - #254 S4 Evidence report emission · _closed_
-- #255 S5 CI across all locales · _implemented by this change_
+- #255 S5 CI across all locales · _closed_
 
-**#255 closes the epic at 5/5.** It also had to settle something #16 left to #17: the committed
+**#255 closed the epic at 5/5, and it ships in v0.7.0.** It also had to settle something #16 left to #17: the committed
 screen's two golden nodes were deferred by the runtime, so the gate this child exists to add would
 have been red on the day it was added. ADR-014 decision 5 is the answer - a `NumericDisplay` and a
 `SignalTrace` paint the field they reserve, in the token their own golden entry names, while the
@@ -529,7 +545,7 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status re-verified against `develop` @ `bdf539c` · 29 August 2026_
-_13 epics · 10 delivered · Waves 1–5 shipped · Wave 6 open (#16, #17) · no enforcement gaps outstanding_
-_2 standalone open issues: #219 (under #15), #153 (under #18) · 14 open epic children (#251–#265)_
+_Epic status re-verified against `develop` @ `51eb779` · 3 September 2026_
+_13 epics · 11 delivered · Waves 1–5 shipped · Wave 6 half-shipped in v0.7.0 (#16 done, #17 open) · no enforcement gaps outstanding_
+_3 standalone open issues: #280, #281, #282 (all from #255) · 9 open epic children (#256–#261, #263–#265)_
 _All epics on GitHub_
