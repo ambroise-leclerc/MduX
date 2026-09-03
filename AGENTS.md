@@ -302,10 +302,10 @@ reject. `pull_request_target` is evaluated from the repository's **default branc
 here — and not from the pull request's base, so a release PR to `master` and a stacked PR to an
 issue branch are both checked by `develop`'s copy rather than by a branch their author controls.
 Two things follow. **An edit to that file is checked by `develop`'s version, not yours**, and takes
-effect only once merged — which is why the trigger is being introduced in two stages, `pull_request`
-retained alongside it until the trusted definition is on `develop`. And the job must never check out
-or execute a pull request's code, since a privileged trigger is only as safe as that restraint: do
-not add a `ref:` to its checkout.
+effect only once merged — which is why the trigger arrived in two stages, `pull_request` retained
+alongside it until the trusted definition was on `develop` and could check its own removal. And the
+job must never check out or execute a pull request's code, since a privileged trigger is only as
+safe as that restraint: do not add a `ref:` to its checkout.
 
 `push:` triggers stay limited to `master` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
