@@ -190,7 +190,10 @@ when it cannot construct a merge commit, so an unmergeable release PR can displa
 bot while every build, test and lint check is absent. Do not merge or tag from that state. Every
 status check required by `master` must be present and successful before you merge. Branch
 protection keeps an absent required check pending and blocks the merge. Resolve the conflict and
-wait for every required check to report success.
+wait for every required check to report success. That protection is also `strict`, so a release
+branch behind `master` must absorb it before the merge button unblocks — normally moot, because a
+release branch descends from `develop` and `develop` back-merged `master` at step 9, but not on a
+hotfix or a second release opened while one is still in flight.
 
 Four things this spells out because cutting v0.6.0 found each of them the hard way.
 
