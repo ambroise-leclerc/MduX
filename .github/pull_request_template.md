@@ -19,7 +19,7 @@ Invitation / CLA issue: #
 
 ## Dependency
 
-- **Base branch:** <!-- `develop`, or the predecessor branch this is stacked on -->
+- **Base branch:** <!-- `develop`, the predecessor branch this is stacked on, or `master` only for a same-repository `release/vX.Y.Z` branch -->
 - **Predecessor PR:** <!-- #NNN, or "not stacked" -->
 - **Merge order:** <!-- "mergeable now", or "must not merge until #NNN has merged" -->
 

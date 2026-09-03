@@ -282,17 +282,25 @@ listed pattern reports no checks at all — not failures, *nothing* — which is
 easiest to miss on review. So:
 
 - Create branches from the issue, with that button or by writing the same name by hand.
+- Target `develop`, or the predecessor branch for a stack. The only branches that target `master`
+  are same-repository `release/vX.Y.Z` branches; the `Branch Topology` check rejects every other
+  source.
 - A stacked PR (one targeting its predecessor rather than `develop`, so a reviewer sees one
   issue's diff instead of the cumulative one) is covered automatically, because its base is
   itself an issue branch.
-- `main`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
+- `master`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
   convention and is kept only for branches already in flight.
 - A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
   it**. If you need one, add its pattern to the `branches:` list of every workflow under
   `.github/workflows/` that has a `pull_request:` trigger.
 
-`push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
+`push:` triggers stay limited to `master` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
+
+**An unmergeable PR does not run GitHub's `pull_request` workflows.** It can therefore show a green
+review-bot check while every build, test and lint check is absent. Treat missing required checks as
+missing evidence, never as a pass. On `master`, branch protection keeps those checks required, so
+they remain pending and block the merge even when GitHub cannot construct the test merge commit.
 
 ### Stacked delivery
 

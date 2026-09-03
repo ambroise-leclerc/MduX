@@ -1,0 +1,62 @@
+name: Branch Topology
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    # Keep the topology check attached to ordinary and stacked PRs too. On a PR to master the
+    # same job also enforces the release-branch-only rule below. `edited` covers base retargeting.
+    branches: [ master, develop, '[0-9]+-*', 'feat/**' ]
+    types: [ opened, synchronize, reopened, edited ]
+  schedule:
+    # A push to master can create drift without moving develop, so retain an independent backstop.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branch-topology:
+    name: Branch Topology
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository history
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Fetch the authoritative branch tips
+      run: |
+        git fetch --no-tags origin \
+          +refs/heads/master:refs/remotes/origin/master \
+          +refs/heads/develop:refs/remotes/origin/develop
+
+    - name: Enforce the release topology
+      env:
+        BASE_REF: ${{ github.base_ref }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_REF: ${{ github.head_ref }}
+        HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        failed=0
+        read -r master_only develop_only <<< \
+          "$(git rev-list --left-right --count origin/master...origin/develop)"
+
+        echo "master-only commits: ${master_only}; develop-only commits: ${develop_only}"
+        if (( master_only != 0 )); then
+          echo "::error::master carries ${master_only} commit(s) develop lacks; back-merge master as described in docs/release-process.md step 9"
+          failed=1
+        fi
+
+        if [[ "${EVENT_NAME}" == "pull_request" && "${BASE_REF}" == "master" ]]; then
+          if [[ "${HEAD_REPOSITORY}" != "${GITHUB_REPOSITORY}" || \
+                ! "${HEAD_REF}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::master accepts only same-repository release/vX.Y.Z pull requests; target develop for ordinary work"
+            failed=1
+          fi
+        fi
+
+        exit "${failed}"
