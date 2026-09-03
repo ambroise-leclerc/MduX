@@ -299,10 +299,9 @@ own branch, and adding work branches there would run every workflow twice per co
 
 **An unmergeable PR does not run GitHub's `pull_request` workflows.** It can therefore show a green
 review-bot check while every build, test and lint check is absent. Treat missing checks as missing
-evidence, never as a pass. Branch protection on `master` requires `Branch Topology` and the
-repository's build, test, lint, documentation, compliance and security gates, so an absent check
-remains pending and blocks the merge. Resolve the conflict and wait for every required workflow to
-report success.
+evidence, never as a pass. Branch protection on `master` requires status checks, so an absent
+required check remains pending and blocks the merge. Resolve the conflict and wait for every
+required check to report success.
 
 ### Stacked delivery
 
