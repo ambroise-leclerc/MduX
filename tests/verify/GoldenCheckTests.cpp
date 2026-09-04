@@ -30,6 +30,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.medui.schema;
+import mdux.medui.screen;
 import mdux.verify;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -326,6 +327,60 @@ const mdux::spec::Register everyChannelMustAgreeOnOneCoverage{
                       honest.fill({4, 4, 8, 6}, tint);
                       honest.set(6, 6, mv::blend(ground, tint, 128));
                       checks.expect(mv::colorHash(honest.view(), expectation).held(), "a genuine half-coverage pixel is still a blend");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aDimmedFieldUnderAFullTintStrokeIsAdmitted{
+    "A field at reduced coverage under a full-tint stroke discharges both checks",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-golden-two-coverage-composition")
+            .Given("the composition a bound SignalTrace paints (#257)", [] {})
+            .When("Bounds and ColorHash are run over it", [] {})
+            .Then("both hold, which is what makes that composition available at all",
+                  [] {
+                      // The check behind an argument `mdux.medui.screen` makes rather than proves in
+                      // its own suite. A `SignalTraceSpec` carries one colour token, an additive draw
+                      // list cannot knock a stroke back to the ground, and a third colour fails
+                      // ColorHash - so the only composition left is one tint at two coverages, and
+                      // whether that is admissible is this module's answer to give, not that one's.
+                      //
+                      // The dimmed field is what keeps Bounds true: a stroke alone paints a
+                      // data-dependent box, and `goldenBounds()` asks for the node's whole rectangle
+                      // edge for edge. The full-tint stroke is what keeps ColorHash from reporting
+                      // TintAbsent, which a dimmed field alone would earn.
+                      mdux::spec::Checks checks;
+
+                      const mv::GoldenExpectation expectation = expect(readoutGolden, textlessScreen, mv::RenderScope::localeFree());
+                      const ColorRgba8            tint        = tintOf(readoutToken);
+
+                      // `mdux::medui::boundTraceFieldCoverage` as the runtime quantises it. Written
+                      // as the same arithmetic rather than as 64, so a change to the constant moves
+                      // this scenario with it instead of leaving it testing a number nothing paints.
+                      const auto dimmed = static_cast<std::uint8_t>((255.0F * mdux::medui::boundTraceFieldCoverage) + 0.5F);
+
+                      Canvas canvas{16, 20, ground};
+                      canvas.fill({4, 4, 8, 6}, mv::blend(ground, tint, dimmed));
+                      // A stroke through the field: full tint, and nowhere near filling the box.
+                      for (mdux::core::Px x = 4; x < 12; ++x) {
+                          canvas.set(x, 6 + (x % 3), tint);
+                      }
+
+                      const mv::CheckOutcome bounds = mv::goldenBounds(canvas.view(), expectation);
+                      checks.expect(bounds.held(), std::format("the dimmed field keeps the node's whole rectangle painted: {}", mv::describe(bounds.finding)));
+
+                      const mv::CheckOutcome colour = mv::colorHash(canvas.view(), expectation);
+                      checks.expect(colour.held(), std::format("both coverages are blends of one tint: {}", mv::describe(colour.finding)));
+
+                      // And the half that keeps this from being a scenario that cannot fail: the
+                      // same field with no stroke over it reaches full coverage nowhere, which is
+                      // exactly the TintAbsent the stroke is there to answer.
+                      Canvas fieldOnly{16, 20, ground};
+                      fieldOnly.fill({4, 4, 8, 6}, mv::blend(ground, tint, dimmed));
+                      checks.expect(mv::colorHash(fieldOnly.view(), expectation).finding == mv::Finding::TintAbsent,
+                                    "a dimmed field on its own does not carry its tint");
                       checks.raise();
                   })
             .Execute();

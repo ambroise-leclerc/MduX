@@ -80,6 +80,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
+| `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
 | `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 
 `mdux.core.result` is a naming alias over `std::expected`, not a reimplementation
@@ -181,6 +182,22 @@ Two of those four have one part that *is* in the artifact, and since #255 the ru
 exactly the pair their golden entry pins. ADR-014 decision 5 is why that is read off the golden
 sidecar rather than invented in the renderer, and why a `Clock` (no token) and a `StatusIndicator`
 (one per state) are not in it.
+
+One of the two now draws the live part as well. `mdux.medui.trace` expands a **caller-owned ring
+buffer** into stroke quads — segments as quads with square joint caps rather than mitred joins, which
+have no unbounded spike as an angle closes — and `SignalBinding` is what joins a stream name the
+screen carries to the samples and the scale only the host knows. The samples never enter the
+artifact and never could: what a sample of `ECG_LEAD_II` means in millivolts is a property of the
+amplifier, not of the layout.
+
+Three properties are worth naming because they are what makes that safe rather than merely working.
+The expansion writes into the vertex budget the screen already declares, sized once and never grown.
+A ring past `maxSamplesPerTrace` is **refused**, not truncated — a waveform silently showing a
+different window is indistinguishable on a monitor from a correct reading of different data. And a
+bound trace paints its field at reduced coverage under a full-tint stroke, which is the one
+composition an additive draw list and a `ColorHash` golden both admit; an *unbound* trace is
+unchanged, which is why the committed screen's pixel and `verify` legs are unchanged too — both
+render it without signals.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -330,7 +347,7 @@ tracking issue; the issue is authoritative for what remains.
 |---|---|---|
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255), and a baked QOI-derived Image (#256); live and interactive component content remains under #17 |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Image`, `StatusIndicator`, `TextInput`, `Button` and the rest. `SignalTrace` has shipped (#257): it draws a live waveform from a caller-owned ring, and the `EcgClassifierExample` binds the same ring its classifier reads |
 
 ### The HTML/CSS path is gone, not planned
 

@@ -15,6 +15,7 @@ import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
 import mdux.medui.schema;
+import mdux.medui.trace;
 import mdux.text.draw;
 import mdux.text.schema;
 
@@ -197,6 +198,47 @@ mdux::core::Result<ImageBinding, ScreenError> ImageBinding::create(const ScreenP
     return ImageBinding{packageSha256, image.width, image.height};
 }
 
+mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const ScreenPackage& screen, std::span<const SignalSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const SignalSlot& slot = slots[index];
+
+        if (slot.ring == nullptr) {
+            // A slot with no ring is a trace that would draw a dimmed field and nothing in it -
+            // indistinguishable, on a monitor, from a flat line. Refused here rather than deferred
+            // per frame, because it is a defect in how the caller assembled its slots.
+            return mdux::core::err(ScreenError::MalformedTraceStyle);
+        }
+        if (slot.style.strokeWidth < 1 || slot.style.strokeWidth > maxStrokeWidth) {
+            return mdux::core::err(ScreenError::MalformedTraceStyle);
+        }
+        if (!std::isfinite(slot.style.minimum) || !std::isfinite(slot.style.maximum) || !(slot.style.maximum > slot.style.minimum)) {
+            return mdux::core::err(ScreenError::MalformedTraceStyle);
+        }
+
+        // Quadratic in the slot count, which is a handful: a screen holds tens of nodes and rather
+        // fewer traces, and a set would allocate. `ScreenPackage::find()` makes the same trade.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].streamSource == slot.streamSource) {
+                return mdux::core::err(ScreenError::DuplicateStream);
+            }
+        }
+
+        const bool named = std::ranges::any_of(screen.nodes, [&](const CompiledNode& node) {
+            const NodePayload payload = node.payload;
+            const auto*       trace   = std::get_if<SignalTraceSpec>(&payload);
+            return trace != nullptr && trace->streamSource == slot.streamSource;
+        });
+        if (!named) {
+            // The check that earns this type. A mistyped stream name would otherwise leave the trace
+            // drawing its reserved field forever, and the caller with no way to tell that from a
+            // stream that has simply not started.
+            return mdux::core::err(ScreenError::UnknownStreamSource);
+        }
+    }
+
+    return SignalBinding{screen.id, slots};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -223,14 +265,64 @@ std::string_view describe(ScreenError error) noexcept {
             return "the RGBA sidecar is not the one the image package describes";
         case ScreenError::ImageNotApproved:
             return "the screen was not compiled against this image package";
+        case ScreenError::UnknownStreamSource:
+            return "a signal slot names a stream no SignalTrace on this screen carries";
+        case ScreenError::DuplicateStream:
+            return "two signal slots name the same stream";
+        case ScreenError::MalformedTraceStyle:
+            return "a signal slot's sample range is empty or not finite, or its stroke width is out of range";
+        case ScreenError::MalformedSampleRing:
+            return "a bound ring's oldest index or live count is not a position in its storage";
+        case ScreenError::NonFiniteSample:
+            return "a live sample is not a finite number";
+        case ScreenError::TraceTooLong:
+            return "a bound ring holds more samples than this runtime will expand in one trace";
+        case ScreenError::TraceBandTooSmall:
+            return "a bound trace's node is too small to hold its stroke";
+        case ScreenError::ScreenNotApproved:
+            return "the signal binding was built for a different screen";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
     return "unknown screen error";
 }
 
+namespace {
+
+/// A `TraceError` as the screen runtime's caller sees it.
+///
+/// One-for-one rather than collapsed to a single "the trace was refused", for the reason the two
+/// colour-token failures are kept apart: a malformed ring is the producer's defect, a too-long one is
+/// a caller asking for more than the cap admits, and a non-finite sample is a driver fault. Sending
+/// all three to the same integrator would send two of them to the wrong person.
+[[nodiscard]] ScreenError asScreenError(mdux::medui::TraceError error) noexcept {
+    switch (error) {
+        case TraceError::MalformedRing:
+            return ScreenError::MalformedSampleRing;
+        case TraceError::TooManySamples:
+            return ScreenError::TraceTooLong;
+        case TraceError::NonFiniteSample:
+            return ScreenError::NonFiniteSample;
+        case TraceError::MalformedStyle:
+            return ScreenError::MalformedTraceStyle;
+        case TraceError::BandTooSmall:
+            return ScreenError::TraceBandTooSmall;
+        case TraceError::ListRejected:
+            return ScreenError::BudgetExhausted;
+    }
+    // Named rather than defaulted, so a new TraceError is a warning here rather than a frame refused
+    // with a reason that names the wrong thing.
+    return ScreenError::BudgetExhausted;
+}
+
+}  // namespace
+
 mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text, const ImageBinding& image) noexcept {
+render(const ScreenPackage& screen,
+       mdux::draw::DrawList&  list,
+       const TextBinding&     text,
+       const ImageBinding&    image,
+       const SignalBinding&   signals) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -251,6 +343,13 @@ render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBindin
     }
     if (!image.approvedBy(screen)) {
         return refuse(ScreenError::ImageNotApproved);
+    }
+
+    // The same closure for signals, and the same reason: slots validated against screen A's traces
+    // say nothing about screen B's. Weaker than the text binding's check by exactly as much as the
+    // available evidence is weaker - an id rather than a digest - which `approvedBy()` says.
+    if (!signals.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
     }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
@@ -365,6 +464,49 @@ render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBindin
             // arithmetic `DrawList` owns. Blank glyphs record nothing, so this counts the inked ones.
             stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
             continue;
+        }
+
+        // A `SignalTrace` the caller has samples for. Everything else about the node - where it is,
+        // which token it draws with - is still the artifact's; what the binding adds is the samples
+        // and the scale, which no compiled screen can carry (see `SignalSlot`).
+        if (const auto* trace = std::get_if<SignalTraceSpec>(&node.payload); trace != nullptr) {
+            if (const SignalSlot* slot = signals.find(trace->streamSource); slot != nullptr) {
+                const auto colour = resolveColorToken(trace->colorToken);
+                if (!colour.has_value()) {
+                    return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+                }
+
+                // The field at reduced coverage, then the stroke at full tint. See Screen.cppm,
+                // `boundTraceFieldCoverage`, for why one tint at two coverages is the only
+                // composition a `ColorHash` golden and an additive draw list both admit.
+                mdux::core::ColorRgba8 fieldColour = quantise(*colour);
+                fieldColour.a                      = quantise((*colour)[3] * boundTraceFieldCoverage);
+                if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+                ++stats.rects;
+
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = mdux::medui::recordTrace(list, toRect(node.bounds), *slot->ring, slot->style, quantise(*colour));
+                    !recorded.has_value()) {
+                    // `recordTrace()` rolls its own trace back and this rolls the whole frame back.
+                    // Its error *is* forwarded, unlike the label path's: every way it fails is a
+                    // distinct thing the caller can act on, and none of them was already refused here.
+                    return refuse(asScreenError(recorded.error()));
+                }
+                if (!withinScreenBudget()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+
+                // Payload-proportional work, bounded by `maxSamplesPerTrace` exactly as a label's is
+                // by `maxGlyphsPerRun`. Counted here so the bounded-work tests keep reporting a
+                // number that is still a function of what this frame actually did.
+                stats.steps += static_cast<std::uint32_t>(slot->ring->count);
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+                ++stats.traces;
+                ++stats.steps;
+                continue;
+            }
         }
 
         const std::optional<std::string_view> field = fieldColorToken(node.payload);

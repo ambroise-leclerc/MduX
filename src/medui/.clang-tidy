@@ -1,0 +1,30 @@
+# Layer 3 of issue #63, applied to the screen-runtime implementation sources (issue #257).
+#
+# #199 gave the screen runtime layers 1 and 2 - the interposition binary `medui_noheap_spec` and the
+# `screen.noheap.symbolScan` object scan, which reuses the `ml-noheap` profile over every MduXCore
+# object under /medui/. This file is the third, and it was the one missing: layers 1 and 2 catch an
+# allocation that is *reachable* and one that is *linked*, and this catches the source construct with
+# a message pointing at the line, which is the fastest of the three to act on.
+#
+# The file is a copy of src/ml/.clang-tidy rather than a shared one, because the two zones are
+# configured independently and a single file would have to live somewhere neither owns. The checks
+# are the same because the property is the same, and the reason it belongs here rather than at the
+# root is unchanged: the root configuration governs style for the whole tree, and mdux.evidence.json
+# and mdux.governance allocate by design, so a check that is an error here would fail on correct code
+# there.
+#
+# -Wframe-larger-than=4096 belongs with these and lives in cmake/MduXDeterminism.cmake, applied to
+# MduXCore as a whole - so it already covers these sources: "no heap" must not quietly become
+# "enormous stack", which on a device is the same bug wearing a different hat.
+
+InheritParentConfig: true
+
+Checks: >
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-pro-type-vararg,
+  cppcoreguidelines-prefer-member-initializer
+
+WarningsAsErrors: >
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory

@@ -268,6 +268,7 @@ target_sources(MduXCore
             include/mdux/text/Schema.cppm
             include/mdux/medui/Schema.cppm
             include/mdux/medui/Screen.cppm
+            include/mdux/medui/Trace.cppm
             include/mdux/verify/Verify.cppm
     PRIVATE
         src/evidence/Digest.cpp
@@ -282,6 +283,7 @@ target_sources(MduXCore
         src/text/Draw.cpp
         src/text/Schema.cpp
         src/medui/Screen.cpp
+        src/medui/Trace.cpp
         src/verify/Verify.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp

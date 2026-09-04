@@ -155,14 +155,14 @@ Derived from the targets and tests that build on `develop`.
 | `MduXMeduiLib` | Implemented | The `.medui` compiler end to end: parsing, semantic validation, integer-only bounded layout, per-locale text budgets, golden references, the canonical package, two C++ emitters, and the `mdux-meduic` / `mdux-medui-check` tools ([#15](https://github.com/ambroise-leclerc/MduX/issues/15)) |
 | `MduXVerifyUiLib`, `mdux-verify-ui` | Implemented | host-only rendered-truth driver: artifact-derived obligations across every approved locale, offscreen Vulkan execution, and distinct failed-check / impossible-run outcomes ([#253](https://github.com/ambroise-leclerc/MduX/issues/253)). Gated in CI as `verify.screen.<id>` on the three render legs, with a PNG diff image uploaded on failure ([#255](https://github.com/ambroise-leclerc/MduX/issues/255)) |
 | Text and glyph rendering | Implemented | host-side shaping into baked runs, an R8 coverage atlas, and a governed draw path; a compiled screen's `Label` is joined to a text package at run time and drawn ([#14](https://github.com/ambroise-leclerc/MduX/issues/14), [#242](https://github.com/ambroise-leclerc/MduX/issues/242)). A `Button`'s text is not drawn, because a button is more than its text ([#17](https://github.com/ambroise-leclerc/MduX/issues/17)) |
-| Live-data components | Partial | a `NumericDisplay` and a `SignalTrace` paint the field they reserve, which is what their golden entry pins ([#255](https://github.com/ambroise-leclerc/MduX/issues/255)); the reading inside it — expanded digits, an expanded waveform — is still deferred ([#257](https://github.com/ambroise-leclerc/MduX/issues/257), [#258](https://github.com/ambroise-leclerc/MduX/issues/258)) |
+| Live-data components | Partial | a `NumericDisplay` and a `SignalTrace` paint the field they reserve, which is what their golden entry pins ([#255](https://github.com/ambroise-leclerc/MduX/issues/255)). A `SignalTrace` also draws the **waveform** inside it, expanded on the CPU from a caller-owned ring buffer into the screen's pre-sized vertex budget, refused rather than truncated past its cap ([#257](https://github.com/ambroise-leclerc/MduX/issues/257)); a `NumericDisplay`'s expanded digits are still deferred ([#258](https://github.com/ambroise-leclerc/MduX/issues/258)) |
 | `mdux-docs-lint`, `mdux-evidence-lint` | Implemented | run in CI |
 | **Regulatory material** | | |
 | Standards corpus under `docs/` | Documentation only | five clause-structured references with generated indexes and schemas |
 | Software Development File | Documentation only | templates and records under `software_development_file/` |
 | Risk management, QMS, lifecycle *code* | **Not started** | no `mdux::risk`, `mdux::qms` or `mdux::lifecycle` exists |
 | **Not started** | | |
-| Content components (`SignalTrace`, `StatusIndicator`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) |
+| Content components (`Image`, `StatusIndicator`, `TextInput`, …) | Planned | [#17](https://github.com/ambroise-leclerc/MduX/issues/17). `SignalTrace` has landed ([#257](https://github.com/ambroise-leclerc/MduX/issues/257)) and is in the Partial row above |
 
 `.medui` reaches pixels today, and the path is built rather than planned. An authored screen is
 compiled by `mdux-meduic` into `generated/screen/<id>/` — a package, a golden sidecar and a bake

@@ -25,9 +25,14 @@
  *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
  *   locale the device is running. Without a binding there is nothing to join to and the node is
  *   deferred exactly as before, which is also what a screen with no text costs: nothing.
- * - `NumericDisplay` and `SignalTrace` draw their field, and the **reading inside it** is still
- *   deferred: the digits a template expands to and the excursion a waveform makes are functions of a
- *   sample this module is not given, and they arrive with #258 and #257.
+ * - `NumericDisplay` draws its field, and the **reading inside it** is still deferred: the digits a
+ *   template expands to are a function of a sample this module is not given, and they arrive with
+ *   #258.
+ * - `SignalTrace` draws its field, and since #257 the **waveform inside it** as well, when the
+ *   caller supplies a `SignalBinding` naming that node's stream. Without one the node is exactly
+ *   what it was after #255: the opaque field it reserves. The expansion itself is
+ *   `mdux.medui.trace`'s, split out for the reason `mdux.text.draw` is - geometry that can be tested
+ *   against numbers rather than only against a rendered frame.
  * - `Button`, `CriticalButton`, `TextInput` carry text keys or live sources as well, and are still
  *   deferred whole. Their text is not the whole of their appearance - a button has a face, a text
  *   input has a caret and a selection - and this module will not invent those. They arrive with #17.
@@ -68,6 +73,22 @@
  * colour fails the golden its own screen was compiled with. A component whose field a golden pins
  * with `ColorHash` therefore has two ways to show a reading and no others: in the field's own tint,
  * or knocked out of it back to the ground.
+ *
+ * #257 met that constraint head on and neither option was available as written. An additive draw
+ * list cannot knock a stroke back to the ground - there is no erase - and a stroke in the field's
+ * own tint over an opaque field of that tint is invisible. What was available is the *third* reading
+ * of the same rule, which the sentence above did not have to spell out because nothing had needed it
+ * yet: one tint at **two coverages**. A bound trace paints its field at `boundTraceFieldCoverage`
+ * and its stroke at full tint, so every pixel is still a blend of ground and tint at one coverage -
+ * what `ColorHash` asks - the stroke supplies the fully covered pixels `ColorHash` additionally
+ * requires, and the field keeps `goldenBounds()` seeing the node's whole rectangle as painted, which
+ * a stroke alone would not. An unbound trace is unchanged, which is why the committed screen's
+ * pixels and its `verify` leg are unchanged too: both render it without signals.
+ *
+ * That paragraph is an argument, and arguments about what a check admits belong to the check. So it
+ * is also a scenario: `verify-golden-two-coverage-composition` in `tests/verify/GoldenCheckTests.cpp`
+ * paints exactly this composition and asserts that `goldenBounds()` and `colorHash()` both hold -
+ * and that the field alone, without the stroke, is the `TintAbsent` the stroke exists to answer.
  *
  * ## Where a label's glyphs go, and why that is not an invention
  *
@@ -147,6 +168,7 @@ import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
 import mdux.medui.schema;
+import mdux.medui.trace;
 import mdux.text.draw;
 import mdux.text.schema;
 
@@ -200,6 +222,14 @@ enum class ScreenError : std::uint8_t {
     TextOverflowsNode,     ///< a run's ink is wider or taller than the node that names it
     ImageSidecarMismatch,  ///< RGBA bytes differ from the baked image package
     ImageNotApproved,      ///< the screen did not approve this image id/digest/extent
+    UnknownStreamSource,   ///< a signal slot names a stream no `SignalTrace` on this screen carries
+    DuplicateStream,       ///< two signal slots name the same stream
+    MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
+    MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
+    NonFiniteSample,       ///< a live sample is a NaN or an infinity
+    TraceTooLong,          ///< a bound ring holds more than `maxSamplesPerTrace` samples
+    TraceBandTooSmall,     ///< a bound trace's node is too small to hold its stroke
+    ScreenNotApproved,     ///< a signal binding built for one screen was offered to another
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a
@@ -385,6 +415,127 @@ private:
 static_assert(!std::is_aggregate_v<ImageBinding>, "an ImageBinding must only be obtainable through create()");
 
 /**
+ * @brief The coverage a `SignalTrace`'s field is painted at once its samples are on screen.
+ *
+ * The field is opaque while a trace is unbound - that is #255's rule and nothing here changes it -
+ * and drops to this coverage of the same tint the moment a waveform is drawn over it. The reason is
+ * arithmetic rather than taste: a `SignalTraceSpec` carries **one** colour token, so a stroke drawn
+ * over an opaque field of that token is the field, pixel for pixel, and the component would have
+ * gained a feature nobody could see.
+ *
+ * The module comment above states the constraint this has to live inside: a reading drawn in a third
+ * colour fails a `ColorHash` golden, so the only tints available are the node's own and the ground
+ * it sits on, and an additive draw list cannot knock a stroke back to the ground. What is left is
+ * one tint at two coverages - which is exactly what `ColorHash` admits, since it asks that every
+ * pixel be a blend of ground and tint at *some* single coverage, and that a fully covered pixel be
+ * the tint exactly. The stroke supplies the second; the field supplies the first and keeps
+ * `goldenBounds()` seeing the node's whole rectangle as painted, which a stroke alone would not.
+ *
+ * A quarter, then, and not a value chosen by eye: low enough that a 1px stroke at full tint is
+ * unambiguous against it, and high enough to stay clear of the ground at every quantisation. The
+ * number itself is this module's; nothing in the artifacts or the shared contract fixes it, and it is
+ * recorded here rather than inlined so a screen's appearance has one place to be argued about.
+ */
+inline constexpr float boundTraceFieldCoverage = 0.25F;
+
+/**
+ * @brief One live waveform the caller offers this screen: which stream, whose samples, at what scale.
+ *
+ * `streamSource` is matched against the name a `SignalTrace` node carries - `stream_source:` in the
+ * source, `streamSource` in the compiled artifact - so the screen decides *where* the waveform goes
+ * and the caller supplies only *what* it is.
+ *
+ * `ring` is a pointer rather than a value because the producer writes into it between frames: the
+ * binding is made once and reads the ring's current `oldest` and `count` on every frame. Nothing is
+ * owned; the ring and its storage outlive the frame, exactly as the text packages do.
+ */
+struct SignalSlot {
+    std::string_view  streamSource{};  ///< the stream name the compiled node carries
+    const SampleRing* ring{nullptr};   ///< the caller's ring, read afresh each frame
+    TraceStyle        style{};         ///< the range those samples are read against, and the stroke
+};
+
+/**
+ * @brief The live waveforms a screen's `SignalTrace` nodes are joined to, once the join is proved.
+ *
+ * `TextBinding`'s counterpart for signals, and deliberately a much cheaper object: what it proves is
+ * that the caller and the screen agree about *names*, not that four artifacts hash to each other.
+ * There is nothing to hash - samples are produced at run time and no committed artifact describes
+ * them - so the checks are the ones that are actually available:
+ *
+ * - every slot names a stream some `SignalTrace` on this screen carries, because a typo in a stream
+ *   name is otherwise a trace that silently stays empty, and an empty waveform on a monitor is a
+ *   flat line rather than a missing feature;
+ * - no two slots name the same stream, because which of them would win is arbitrary and the wrong
+ *   answer is undetectable from the frame;
+ * - every slot has a ring and a style the expansion can use, checked once here rather than
+ *   rediscovered on the first frame of a device's life.
+ *
+ * A screen need **not** have a slot for every trace. A stream that has not started yet is a normal
+ * state, not a broken one, and its node draws the opaque field it reserved - which is exactly what
+ * this runtime did for every trace before #257.
+ *
+ * A default-constructed binding is *unbound* and means "this caller has no live signals": every
+ * trace draws its field, which is the behaviour every existing caller already has. That is what
+ * keeps `render(screen, list)` and `render(screen, list, text)` meaning what they meant.
+ *
+ * Nothing here is owned, and the slot span is the caller's storage, so `render()` allocates nothing
+ * by construction rather than by discipline.
+ */
+class SignalBinding {
+public:
+    /// An unbound binding: no live signals, every trace drawing the field it reserves.
+    constexpr SignalBinding() noexcept = default;
+
+    /// Proves every slot names a distinct `SignalTrace` on `screen` and carries a usable ring.
+    [[nodiscard]] static mdux::core::Result<SignalBinding, ScreenError> create(const ScreenPackage& screen, std::span<const SignalSlot> slots) noexcept;
+
+    /// Whether this binding carries slots. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return !slots_.empty();
+    }
+
+    [[nodiscard]] constexpr std::span<const SignalSlot> slots() const noexcept {
+        return slots_;
+    }
+
+    /// The slot for `streamSource`, or nullptr when this caller offers none.
+    ///
+    /// Linear, for `ScreenPackage::find()`'s reason: a screen holds a handful of traces, and a map
+    /// would cost more to build than every lookup it could serve.
+    [[nodiscard]] constexpr const SignalSlot* find(std::string_view streamSource) const noexcept {
+        for (const SignalSlot& slot : slots_) {
+            if (slot.streamSource == streamSource) {
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Whether this binding was built for `screen`.
+    ///
+    /// The identity is the screen's id, which is what an artifact is addressed by: it names a
+    /// directory under `generated/`, a CTest entry and a generated C++ identifier, so two screens in
+    /// one build cannot share it. Retaining it closes the substitution path `TextBinding::approvedBy()`
+    /// closes with a digest - weaker, because there is no digest to hold, and worth having anyway: a
+    /// binding whose slots were validated against screen A says nothing about screen B's traces.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        return !bound() || screen.id == screenId_;
+    }
+
+private:
+    constexpr SignalBinding(std::string_view screenId, std::span<const SignalSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+
+    std::span<const SignalSlot> slots_{};
+    std::string_view            screenId_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline -
+// `TextBinding`'s static_assert, for its reason. A class with private data members is not an
+// aggregate, so `SignalBinding{...}` cannot brace-elide its way past the checks.
+static_assert(!std::is_aggregate_v<SignalBinding>, "a SignalBinding must only be obtainable through create()");
+
+/**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
@@ -403,6 +554,7 @@ struct FrameStats {
     std::uint32_t rects{0};     ///< rectangles recorded
     std::uint32_t deferred{0};  ///< nodes visited and left undrawn
     std::uint32_t steps{0};     ///< units of per-node work, for the bounded-work tests
+    std::uint32_t traces{0};    ///< `SignalTrace` nodes whose samples were expanded
 
     [[nodiscard]] constexpr bool operator==(const FrameStats&) const noexcept = default;
 };
@@ -410,10 +562,14 @@ struct FrameStats {
 /**
  * @brief Records one frame of `screen` into `list`.
  *
- * @param screen a compiled screen, normally the `constexpr` one a generated translation unit holds
- * @param list   a draw list the caller created over storage sized from `screen.budget`
- * @param text   the packages this screen's text keys resolve against; default means "no text", and
- *               every text node is then deferred rather than refused
+ * @param screen  a compiled screen, normally the `constexpr` one a generated translation unit holds
+ * @param list    a draw list the caller created over storage sized from `screen.budget`
+ * @param text    the packages this screen's text keys resolve against; default means "no text", and
+ *                every text node is then deferred rather than refused
+ * @param image   the authenticated baked image this screen's `Image` nodes resolve against;
+ *                default means "no image", and every `Image` node is then deferred
+ * @param signals the live rings this screen's stream sources resolve against; default means "no
+ *                signals", and every trace then draws the opaque field it reserves
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -425,6 +581,10 @@ struct FrameStats {
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
 [[nodiscard]] mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text = {}, const ImageBinding& image = {}) noexcept;
+render(const ScreenPackage& screen,
+       mdux::draw::DrawList&  list,
+       const TextBinding&     text    = {},
+       const ImageBinding&    image   = {},
+       const SignalBinding&   signals = {}) noexcept;
 
 }  // namespace mdux::medui
