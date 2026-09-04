@@ -7,6 +7,37 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# Issue #280: Ccache does not model C++20 named-module dependencies. The classifier test is always
+# present and pins the fail-closed response-file parser. The integration test needs real ccache and
+# Clang's explicit BMI paths; the Linux Clang workflow installs ccache so this negative layout-change
+# case is continuously exercised rather than left as a local-only reproduction.
+add_test(NAME build.cache.classifier
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheClassifierTest.cmake)
+set_tests_properties(build.cache.classifier PROPERTIES LABELS "build")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+   MDUX_CACHE_KIND STREQUAL "ccache" AND
+   MDUX_CACHE_CAN_HASH_BMIS)
+    add_test(NAME build.cache.namedModuleIntegrity
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DGENERATOR=${CMAKE_GENERATOR}
+            -DCACHE_BINARY=${MDUX_CACHE_BINARY}
+            "-DCXX_FLAGS=${CMAKE_CXX_FLAGS}"
+            "-DEXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheIntegrityTest.cmake)
+    set_tests_properties(build.cache.namedModuleIntegrity PROPERTIES LABELS "build" TIMEOUT 120)
+else()
+    message(STATUS
+        "build.cache.namedModuleIntegrity not registered: it requires Clang and ccache 4.8+; "
+        "build.cache.classifier still verifies fail-closed module-map handling")
+endif()
+
 # Governed-zone module tests. Deliberately links MduX::Core only, not MduX::MduX -
 # this is itself a check that the governed modules are usable without pulling in
 # Vulkan (see ADR-004).
