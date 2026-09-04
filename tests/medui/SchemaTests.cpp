@@ -357,6 +357,82 @@ const mdux::spec::Register imagePackageApprovalsAreIdentified{
             .Execute();
     }};
 
+// `isLocaleTag()` is `constexpr`, and a generated screen's `static_assert(validate())` is where a
+// malformed tag now becomes a compile error rather than a run-time refusal. These pin the grammar
+// where the device build reads it - the scenario below covers what `validate()` does with it.
+static_assert(ms::isLocaleTag("en"), "a bare two-letter language is a tag");
+static_assert(ms::isLocaleTag("fra"), "and so is a three-letter one");
+static_assert(ms::isLocaleTag("en-US"), "language-region, the form every baked package uses");
+static_assert(ms::isLocaleTag("zh-Hans-CN"), "language-script-region");
+static_assert(ms::isLocaleTag("de-DE-1996"), "a numeric variant subtag");
+static_assert(ms::isLocaleTag("en-us"), "case is not constrained: RFC 5646 tags are case-insensitive");
+static_assert(!ms::isLocaleTag(""), "an empty tag names nothing");
+static_assert(!ms::isLocaleTag("e"), "a one-letter primary subtag is below the grammar");
+static_assert(!ms::isLocaleTag("engl"), "and a four-letter one is above it");
+static_assert(!ms::isLocaleTag("en/US"), "the separator that collided with a filename is not a separator here");
+static_assert(!ms::isLocaleTag("(locale-free)"), "nor is the sentinel a scope may carry outside the manifest");
+static_assert(!ms::isLocaleTag("../etc"), "nor a path");
+static_assert(!ms::isLocaleTag("en\nUS"), "nor a tag carrying a newline");
+static_assert(!ms::isLocaleTag("en-"), "a trailing separator introduces an empty subtag");
+static_assert(!ms::isLocaleTag("en--US"), "and so does a doubled one");
+static_assert(!ms::isLocaleTag("en-U"), "a one-character subtag is below the grammar");
+static_assert(!ms::isLocaleTag("en-ABCDEFGHI"), "and a nine-character one is above it");
+static_assert(!ms::isLocaleTag(std::string_view{"en-US-aaaaaaaa-bbbbbbbb-cccccccc-dddddddd"}), "a tag past maxLocaleTagLength is a payload, not a name");
+static_assert(std::string_view{"en-US-aaaaaaaa-bbbbbbbb-cccccccc-dddddddd"}.size() > ms::maxLocaleTagLength,
+              "and that rejection is the length bound rather than the subtag grammar");
+
+const mdux::spec::Register approvedLocalesHaveAGrammar{
+    "An approved locale is a language tag, not an arbitrary string",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-approved-locale-grammar")
+            .Given("the reference screen, whose one approval names en-US", [] {})
+            .When("that tag is replaced by strings the schema previously admitted", [] {})
+            .Then("each is refused as malformed, while a well-formed tag still validates",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The four from #281, which `validate()` accepted before this rule: a tag whose
+                      // separator is a path separator, the locale-free sentinel a diff-image scope
+                      // carries, a relative path, and a tag with a newline in it. Every one of them
+                      // reached a consumer that derives a filename from it.
+                      for (const std::string_view malformed : {"en/US", "(locale-free)", "../etc", "en\nUS", "e", "engl", "en-", "en--US"}) {
+                          Fixture bad;
+                          bad.approvedTextPackages[0].locale = malformed;
+                          checks.expect(errorOf(bad) == ms::SchemaError::MalformedApprovedLocale,
+                                        std::format("'{}' is refused as malformed, got {}", malformed, describe(errorOf(bad))));
+                      }
+
+                      // A kilobyte of letters satisfies the primary-subtag rule for its first three
+                      // characters and nothing else; the length bound is what refuses it, and it is
+                      // checked here rather than only at compile time because the run-time path is
+                      // the one a parsed artifact takes.
+                      const std::string oversized(1024, 'a');
+
+                      Fixture huge;
+                      huge.approvedTextPackages[0].locale = oversized;
+                      checks.expect(errorOf(huge) == ms::SchemaError::MalformedApprovedLocale,
+                                    std::format("a 1 KB tag is refused, got {}", describe(errorOf(huge))));
+
+                      // Empty stays its own diagnosis. `isLocaleTag()` would refuse it too, so this
+                      // pins the order of the two checks rather than restating the first one.
+                      Fixture empty;
+                      empty.approvedTextPackages[0].locale = {};
+                      checks.expect(errorOf(empty) == ms::SchemaError::EmptyApprovedLocale,
+                                    std::format("an unfilled field is still EmptyApprovedLocale, got {}", describe(errorOf(empty))));
+
+                      // The cost check #281 asked for: every locale the text pipeline bakes today
+                      // still validates. These are the three the fixtures and recipes carry.
+                      for (const std::string_view accepted : {"en-US", "de-DE", "fr-FR"}) {
+                          Fixture good;
+                          good.approvedTextPackages[0].locale = accepted;
+                          checks.expect(!errorOf(good).has_value(), std::format("'{}' still validates", accepted));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register nodesAreAddressable{"Every node must be addressable, and addressable by exactly one id", "evidence-unit", [] {
                                                    return speclab::Test("medui-schema-node-ids")
                                                        .Given("the reference screen", [] {})
