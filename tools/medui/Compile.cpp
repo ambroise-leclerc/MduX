@@ -13,6 +13,7 @@ import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
@@ -148,6 +149,11 @@ evidence::json::Value Recipe::toOptions() const {
     for (const std::string& package : textPackages) {
         packages.push_back(Value::string(package));
     }
+    std::vector<Value> images;
+    images.reserve(imagePackages.size());
+    for (const std::string& package : imagePackages) {
+        images.push_back(Value::string(package));
+    }
 
     // The table as resolved, so a report shows what a compile was actually checked against rather
     // than the name of a table whose contents nobody can see.
@@ -176,6 +182,7 @@ evidence::json::Value Recipe::toOptions() const {
     // without saying which screen it produced.
     put(options, "id", Value::string(id));
     put(options, "fontPackage", Value::string(fontPackage));
+    put(options, "imagePackages", Value::array(std::move(images)));
     put(options, "source", Value::string(source));
     put(options, "surfaceHeight", Value::integer(surfaceHeight));
     put(options, "surfaceWidth", Value::integer(surfaceWidth));
@@ -312,6 +319,20 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
         }
     }
 
+    if (const toml::Table* imageTable = document.table("images"); imageTable != nullptr) {
+        try {
+            recipe.imagePackages = imageTable->require("packages").asStringArray();
+        } catch (const toml::TomlError& error) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   error.line(),
+                   error.what(),
+                   "[images] needs a 'packages' array of committed image package.json files");
+            return std::nullopt;
+        }
+    }
+
     // The governed dynamic-text table. Optional as a table for the same reason [text] is: a screen
     // with no `charset:` has no open name to resolve, and the budget stage refuses an unknown name
     // rather than accepting one, so an absent table is fail-closed. A Clock's closed `format:` is
@@ -402,6 +423,60 @@ struct LoadedLocale {
     std::vector<std::byte>  sidecar;
     evidence::Digest        packageSha256{};
 };
+
+struct LoadedImage {
+    mdux::image::ImagePackage package;
+    evidence::Digest          packageSha256{};
+};
+
+[[nodiscard]] std::optional<std::vector<LoadedImage>>
+loadImages(const Recipe& recipe, const std::filesystem::path& root, std::vector<evidence::FileRecord>& inputs, std::vector<cli::Diagnostic>& diagnostics) {
+    std::vector<LoadedImage> images;
+    images.reserve(recipe.imagePackages.size());
+    for (const std::string& relative : recipe.imagePackages) {
+        const auto bytes = readInput(root, relative, diagnostics);
+        if (!bytes.has_value()) {
+            return std::nullopt;
+        }
+        const evidence::FileRecord packageRecord = fileRecord(relative, *bytes);
+        inputs.push_back(packageRecord);
+        auto package = mdux::image::ImagePackage::parse(textOf(*bytes));
+        if (!package.has_value()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   std::format("the image package is not valid: {}", mdux::image::describe(package.error())));
+            return std::nullopt;
+        }
+        const auto canonical = package->write();
+        if (!canonical.has_value() || *canonical != textOf(*bytes)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   "the image package is valid but its package.json is not canonical",
+                   "re-bake the image package instead of editing package.json by hand");
+            return std::nullopt;
+        }
+        const std::filesystem::path sidecarRelative = std::filesystem::path{relative}.parent_path() / package->sidecarPath;
+        const auto                  sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics);
+        if (!sidecar.has_value()) {
+            return std::nullopt;
+        }
+        inputs.push_back(fileRecord(sidecarRelative.generic_string(), *sidecar));
+        if (sidecar->size() != package->sidecarByteLength || evidence::sha256(*sidecar) != package->sidecarSha256) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   sidecarRelative.generic_string(),
+                   0,
+                   "the image sidecar does not match its package length and digest");
+            return std::nullopt;
+        }
+        images.push_back(LoadedImage{.package = std::move(*package), .packageSha256 = packageRecord.sha256});
+    }
+    return images;
+}
 
 /// Reads the font package the recipe names, or reports why it could not.
 [[nodiscard]] std::optional<mdux::font::FontPackage>
@@ -652,6 +727,40 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             ms::TextPackageApproval{.locale = locale.package.locale, .packageId = locale.package.header.id, .packageSha256 = locale.packageSha256});
     }
 
+    const auto loadedImages = loadImages(recipe, root, inputs, diagnostics);
+    if (!loadedImages.has_value()) {
+        return std::nullopt;
+    }
+    if (loadedImages->size() > 1) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "S1 supports one RGBA image package per screen",
+               "compose artwork into one QOI atlas, or wait for the multi-image atlas follow-up");
+        return std::nullopt;
+    }
+    std::vector<ms::ImagePackageApproval> imageApprovals;
+    imageApprovals.reserve(loadedImages->size());
+    for (const LoadedImage& image : *loadedImages) {
+        if (std::ranges::find_if(imageApprovals,
+                                 [&](const ms::ImagePackageApproval& approval) {
+                                     return approval.packageId == image.package.header.id;
+                                 })
+            != imageApprovals.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("the image package '{}' is listed twice", image.package.header.id));
+            return std::nullopt;
+        }
+        imageApprovals.push_back(ms::ImagePackageApproval{.packageId     = image.package.header.id,
+                                                          .packageSha256 = image.packageSha256,
+                                                          .width         = image.package.width,
+                                                          .height        = image.package.height});
+    }
+
     // 2. Semantic analysis. The theme tokens are the governed table the schema publishes, not a
     //    second list: `resolveColorToken()` on a device and this check on the host then agree by
     //    construction rather than by review.
@@ -681,6 +790,57 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     const LayoutResult layout = resolveLayout(screen, recipe.source, {.surfaceWidth = recipe.surfaceWidth, .surfaceHeight = recipe.surfaceHeight});
     if (!layout.ok()) {
         diagnostics.insert(diagnostics.end(), layout.diagnostics.begin(), layout.diagnostics.end());
+        return std::nullopt;
+    }
+
+    for (const ResolvedNode& node : layout.nodes) {
+        if (node.component != "Image") {
+            continue;
+        }
+        const auto sourceField = std::ranges::find_if(node.source.fields, [](const ast::Field& field) {
+            return field.name == "source";
+        });
+        if (sourceField == node.source.fields.end() || sourceField->value == nullptr) {
+            report(diagnostics, Code::RecipeMissingMember, std::string{recipePath}, 0, std::format("Image '{}' reached layout without a source", node.id));
+            return std::nullopt;
+        }
+        const std::string_view source   = sourceField->value->text;
+        const auto             approval = std::ranges::find_if(imageApprovals, [&](const ms::ImagePackageApproval& candidate) {
+            return candidate.packageId == source;
+        });
+        if (approval == imageApprovals.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("Image '{}' names '{}', which [images] does not approve", node.id, source));
+            return std::nullopt;
+        }
+        if (node.bounds.width != static_cast<std::int64_t>(approval->width) || node.bounds.height != static_cast<std::int64_t>(approval->height)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("Image '{}' resolves to {}x{}, but package '{}' is intrinsically {}x{}",
+                               node.id,
+                               node.bounds.width,
+                               node.bounds.height,
+                               source,
+                               approval->width,
+                               approval->height),
+                   "export the QOI at the exact component size; S1 performs no runtime scaling");
+            return std::nullopt;
+        }
+    }
+    const bool hasImage = std::ranges::any_of(layout.nodes, [](const ResolvedNode& node) {
+        return node.component == "Image";
+    });
+    if (!hasImage && !imageApprovals.empty()) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "this screen carries no Image, so its recipe must not declare an [images] table");
         return std::nullopt;
     }
 
@@ -725,8 +885,10 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     const std::vector<GoldenReference> goldens = collectGoldens(layout);
 
     // 7. The compiled screen and its bytes.
-    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals});
-    const ms::ScreenPackage package  = document.package();
+    const ScreenDocument document = buildPackage(
+        layout,
+        {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals, .approvedImagePackages = imageApprovals});
+    const ms::ScreenPackage package = document.package();
 
     CompileOutputs outputs;
     outputs.packageJson = writePackage(package);

@@ -70,6 +70,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.governance` | `include/mdux/governance/Governance.cppm` | `src/governance/{Governance,Justification,Program}.cpp` |
 | `mdux.governance.compliance` | `include/mdux/governance/Compliance.cppm` | `src/governance/Compliance.cpp` |
 | `mdux.shader.schema` | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.image.schema` | `include/mdux/image/Schema.cppm` | `src/image/Schema.cpp` |
 | `mdux.text.schema` | `include/mdux/text/Schema.cppm` | `src/text/Schema.cpp` |
 | `mdux.font.schema` | `include/mdux/font/Schema.cppm` | `src/font/Schema.cpp` |
 | `mdux.text.draw` | `include/mdux/text/Draw.cppm` | `src/text/Draw.cpp` |
@@ -110,6 +111,7 @@ performs no checking and confers no compliance.
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
+| `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197) and the compiler driver behind `mdux-meduic` (#198) |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
@@ -148,7 +150,7 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
-Seven artifacts are committed today:
+Eight artifacts are committed today:
 
 | Artifact | Baker | Payload |
 |---|---|---|
@@ -158,6 +160,7 @@ Seven artifacts are committed today:
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
 | `generated/text/endoscope-monitor-en-us/` | `mdux-textbake` | `runs.bin` |
+| `generated/image/brand-mark/` | `mdux-imagebake` | `pixels.rgba` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
@@ -165,6 +168,13 @@ cannot bake vertices, because four of the eleven components in the dictionary �
 `SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does
 not exist until the frame does. What `package.json` carries instead is layout: where each node is,
 how much it may draw, and which validated token and key it draws with.
+
+An `Image` joins that screen to one approved `mdux.image.schema` package by id, canonical-package
+digest and intrinsic extent. The QOI decoder runs only in `mdux-imagebake`; neither compressed bytes
+nor decoder code enter `MduXCore` or `MduX`. At startup the runtime authenticates the committed RGBA8
+sidecar, and each frame records one full-sheet `SampledRgba` rectangle. The UI shader keeps coverage
+and RGBA textures on distinct fixed descriptor bindings, so a frame can render text and an image
+without changing its descriptor shape or allocating.
 
 Two of those four have one part that *is* in the artifact, and since #255 the runtime paints it: a
 `NumericDisplay` and a `SignalTrace` carry a single colour token over a single rectangle, which is
@@ -254,7 +264,7 @@ from anywhere — including through a dependency's interface options.
 ## Tests
 
 Two frameworks, one discovery contract ([ADR-009](adr/ADR-009-in-repository-test-framework.md)):
-the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across fifteen.
+the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across seventeen.
 One additional dedicated executable runs the production verification driver against Vulkan and can
 report CTest skip status when no implementation is present.
 `mdux_discover_tests()` registers one CTest entry per case, so a failure names the scenario rather
@@ -318,7 +328,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying a text key measured against a committed text package (#235) and drawn from it by the governed runtime (#242); what remains is the other components' own geometry (#17) |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255), and a baked QOI-derived Image (#256); live and interactive component content remains under #17 |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
 

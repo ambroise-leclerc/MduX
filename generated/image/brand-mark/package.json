@@ -1,0 +1,13 @@
+{
+  "height": 72,
+  "id": "brand-mark",
+  "kind": "image",
+  "pixelFormat": "rgba8-srgb-straight",
+  "schemaVersion": 1,
+  "sidecar": {
+    "byteLength": 69120,
+    "path": "pixels.rgba",
+    "sha256": "f94113d65f2c6ee6e4c101b025ce60b69db3553152f1ca34048f85c25c8bdb9e"
+  },
+  "width": 240
+}

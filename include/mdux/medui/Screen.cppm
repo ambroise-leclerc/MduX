@@ -34,7 +34,8 @@
  * - `Clock` carries no colour token at all, and a `StatusIndicator` carries one per state, so
  *   neither has a single tint a field could be painted in - which is the same reason
  *   `collectGoldens()` refuses `ColorHash` for such a node. They stay deferred until #258 and #259.
- * - `Image` draws a **baked image package**, which this repository does not yet produce.
+ * - `Image` draws when the caller supplies the exact baked package the screen approved (#256).
+ *   Without an `ImageBinding` it is deferred, just as a Label is without text.
  *
  * ## Why the field is read off the artifact rather than invented here
  *
@@ -144,6 +145,7 @@ import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.text.draw;
 import mdux.text.schema;
@@ -186,16 +188,18 @@ export namespace mdux::medui {
 
 /// Why a frame was refused. Every one leaves the draw list exactly as it was found.
 enum class ScreenError : std::uint8_t {
-    MalformedColorToken,  ///< a node's colour is not of the form `Theme.Colors.<Token>`
-    UnknownColorToken,    ///< well-formed, and the governed table does not define it
-    BudgetExhausted,      ///< a write would exceed a `DrawBudget` this frame is held to
-    UnknownTextKey,       ///< a bound text package carries no run for a node's `textKey`
-    MalformedTextRun,     ///< a run's range leaves the sidecar, or its bytes are not whole records
-    RunTooLong,           ///< a run holds more than `maxGlyphsPerRun` records
-    AtlasMismatch,        ///< the text package was baked against a different font package
-    SidecarMismatch,      ///< the sidecar is not the one the text package describes
-    PackageNotApproved,   ///< the screen was not compiled against this locale/package/digest
-    TextOverflowsNode,    ///< a run's ink is wider or taller than the node that names it
+    MalformedColorToken,   ///< a node's colour is not of the form `Theme.Colors.<Token>`
+    UnknownColorToken,     ///< well-formed, and the governed table does not define it
+    BudgetExhausted,       ///< a write would exceed a `DrawBudget` this frame is held to
+    UnknownTextKey,        ///< a bound text package carries no run for a node's `textKey`
+    MalformedTextRun,      ///< a run's range leaves the sidecar, or its bytes are not whole records
+    RunTooLong,            ///< a run holds more than `maxGlyphsPerRun` records
+    AtlasMismatch,         ///< the text package was baked against a different font package
+    SidecarMismatch,       ///< the sidecar is not the one the text package describes
+    PackageNotApproved,    ///< the screen was not compiled against this locale/package/digest
+    TextOverflowsNode,     ///< a run's ink is wider or taller than the node that names it
+    ImageSidecarMismatch,  ///< RGBA bytes differ from the baked image package
+    ImageNotApproved,      ///< the screen did not approve this image id/digest/extent
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a
@@ -332,6 +336,55 @@ private:
 static_assert(!std::is_aggregate_v<TextBinding>, "a TextBinding must only be obtainable through create()");
 
 /**
+ * @brief One authenticated baked image joined to a compiled screen.
+ *
+ * Creation hashes the canonical package and its RGBA8 sidecar once at start-up. Rendering then
+ * compares the retained package digest and intrinsic extent with the approval named by each Image
+ * node before recording one full-sheet sampled rectangle. The binding retains values only: it has
+ * no pointer or view into the caller's `ImagePackage`, package JSON or pixels, so those inputs may
+ * be moved or released after `create()` returns. Recording the governed DrawList does not read the
+ * pixels; the Vulkan renderer separately copies its atlas input into an immutable image allocation
+ * during renderer creation.
+ */
+class ImageBinding {
+public:
+    constexpr ImageBinding() noexcept = default;
+
+    [[nodiscard]] static mdux::core::Result<ImageBinding, ScreenError> create(const ScreenPackage&             screen,
+                                                                              const mdux::image::ImagePackage& image,
+                                                                              std::span<const std::byte>       packageJson,
+                                                                              std::span<const std::byte>       pixels) noexcept;
+
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return isBound;
+    }
+
+    /// Whether one screen approval is the immutable identity retained by this binding.
+    [[nodiscard]] constexpr bool matches(const ImagePackageApproval& candidate) const noexcept {
+        return isBound && candidate.packageSha256 == packageSha256 && candidate.width == width && candidate.height == height;
+    }
+
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        if (!bound())
+            return true;
+        return std::ranges::any_of(screen.approvedImagePackages, [this](const ImagePackageApproval& candidate) {
+            return matches(candidate);
+        });
+    }
+
+private:
+    constexpr ImageBinding(mdux::evidence::Digest packageDigest, std::uint32_t imageWidth, std::uint32_t imageHeight) noexcept
+        : isBound{true}, packageSha256{packageDigest}, width{imageWidth}, height{imageHeight} {}
+
+    bool                   isBound{false};
+    mdux::evidence::Digest packageSha256{};
+    std::uint32_t          width{0};
+    std::uint32_t          height{0};
+};
+
+static_assert(!std::is_aggregate_v<ImageBinding>, "an ImageBinding must only be obtainable through create()");
+
+/**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
@@ -372,6 +425,6 @@ struct FrameStats {
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
 [[nodiscard]] mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text = {}) noexcept;
+render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text = {}, const ImageBinding& image = {}) noexcept;
 
 }  // namespace mdux::medui

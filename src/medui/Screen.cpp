@@ -13,6 +13,7 @@ import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.text.draw;
 import mdux.text.schema;
@@ -174,6 +175,28 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPac
     return TextBinding{&font, &text, runs, packageSha256};
 }
 
+mdux::core::Result<ImageBinding, ScreenError> ImageBinding::create(const ScreenPackage&             screen,
+                                                                   const mdux::image::ImagePackage& image,
+                                                                   std::span<const std::byte>       packageJson,
+                                                                   std::span<const std::byte>       pixels) noexcept {
+    if (pixels.size() != image.sidecarByteLength || mdux::evidence::sha256(pixels) != image.sidecarSha256) {
+        return mdux::core::err(ScreenError::ImageSidecarMismatch);
+    }
+    const mdux::evidence::Digest packageSha256   = mdux::evidence::sha256(packageJson);
+    const auto                   canonicalSha256 = image.canonicalSha256();
+    if (!canonicalSha256.has_value() || *canonicalSha256 != packageSha256) {
+        return mdux::core::err(ScreenError::ImageNotApproved);
+    }
+    const auto approved = std::ranges::find_if(screen.approvedImagePackages, [&](const ImagePackageApproval& candidate) {
+        return candidate.packageId == image.header.id && candidate.packageSha256 == packageSha256 && candidate.width == image.width
+               && candidate.height == image.height;
+    });
+    if (approved == screen.approvedImagePackages.end()) {
+        return mdux::core::err(ScreenError::ImageNotApproved);
+    }
+    return ImageBinding{packageSha256, image.width, image.height};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -196,13 +219,18 @@ std::string_view describe(ScreenError error) noexcept {
             return "the screen was not compiled against this text package";
         case ScreenError::TextOverflowsNode:
             return "a run's ink is larger than the node that names it";
+        case ScreenError::ImageSidecarMismatch:
+            return "the RGBA sidecar is not the one the image package describes";
+        case ScreenError::ImageNotApproved:
+            return "the screen was not compiled against this image package";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
     return "unknown screen error";
 }
 
-mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text) noexcept {
+mdux::core::Result<FrameStats, ScreenError>
+render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text, const ImageBinding& image) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -220,6 +248,9 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
     // screen closes the cross-screen substitution path without rehashing or allocating.
     if (!text.approvedBy(screen)) {
         return refuse(ScreenError::PackageNotApproved);
+    }
+    if (!image.approvedBy(screen)) {
+        return refuse(ScreenError::ImageNotApproved);
     }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
@@ -241,6 +272,33 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
     for (const CompiledNode& node : screen.nodes) {
         ++stats.nodes;
         ++stats.steps;
+
+        if (const auto* imageSpec = std::get_if<ImageSpec>(&node.payload); imageSpec != nullptr) {
+            if (!image.bound()) {
+                ++stats.deferred;
+                continue;
+            }
+            const auto approval = std::ranges::find_if(screen.approvedImagePackages, [imageSpec](const ImagePackageApproval& candidate) {
+                return candidate.packageId == imageSpec->source;
+            });
+            if (approval == screen.approvedImagePackages.end() || !image.matches(*approval) || approval->width != static_cast<std::uint32_t>(node.bounds.width)
+                || approval->height != static_cast<std::uint32_t>(node.bounds.height)) {
+                return refuse(ScreenError::ImageNotApproved);
+            }
+            if (const auto recorded = list.addRect(toRect(node.bounds),
+                                                   mdux::core::ColorRgba8{255, 255, 255, 255},
+                                                   mdux::draw::DrawMode::SampledRgba,
+                                                   mdux::draw::UvRect{.u0 = 0.0F, .v0 = 0.0F, .u1 = 1.0F, .v1 = 1.0F});
+                !recorded.has_value()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+            ++stats.rects;
+            ++stats.steps;
+            continue;
+        }
 
         if (const auto* label = std::get_if<LabelSpec>(&node.payload); label != nullptr) {
             if (!text.bound()) {

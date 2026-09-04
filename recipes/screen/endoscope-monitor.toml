@@ -50,3 +50,8 @@ maxCommands = 64
 [text]
 fontPackage = "generated/font/dejavu-ui/package.json"
 packages    = ["generated/text/endoscope-monitor-en-us/package.json"]
+
+# QOI is decoded only by the host baker. The screen approves the canonical package identity and
+# intrinsic extent; the device receives only committed RGBA8 bytes.
+[images]
+packages = ["generated/image/brand-mark/package.json"]

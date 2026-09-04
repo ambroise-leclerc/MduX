@@ -54,6 +54,7 @@ import std;
 import mdux.draw;
 import mdux.evidence.json;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.tools.cli;
 
 export namespace mdux::tools::medui {
@@ -99,9 +100,10 @@ struct Recipe {
     std::int64_t             surfaceWidth{0};
     std::int64_t             surfaceHeight{0};
     mdux::draw::DrawBudget   budget{};
-    std::string              fontPackage;   ///< committed font package.json, or empty
-    std::vector<std::string> textPackages;  ///< committed text package.json, one per approved locale
-    std::vector<DynamicText> dynamicText;   ///< the product's governed dynamic-text table
+    std::string              fontPackage;    ///< committed font package.json, or empty
+    std::vector<std::string> textPackages;   ///< committed text package.json, one per approved locale
+    std::vector<std::string> imagePackages;  ///< committed image package.json files
+    std::vector<DynamicText> dynamicText;    ///< the product's governed dynamic-text table
 
     /// The fully resolved options, as `report.json` records them.
     [[nodiscard]] evidence::json::Value toOptions() const;

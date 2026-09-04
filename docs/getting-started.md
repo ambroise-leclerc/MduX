@@ -178,6 +178,25 @@ ctest --preset <preset> -L verify -V --no-tests=error
 verifies every committed screen. `--no-tests=error` matters: without it, a label that matched no
 screen would pass the step over nothing.
 
+### Baking an Image
+
+Export lossless artwork as QOI with sRGB colour channels (QOI colorspace `0`) at the exact component
+size; S1 intentionally accepts neither PNG nor runtime scaling. Add a recipe such as:
+
+```toml
+[package]
+id      = "brand-mark"
+source  = "recipes/image/brand-mark/brand-mark.qoi"
+sidecar = "pixels.rgba"
+```
+
+Register it with `mdux_bake_artifact(KIND image ...)`, then list its committed `package.json` under
+the screen recipe's `[images].packages`. `mdux-imagebake` decodes QOI on the host and commits only
+canonical metadata plus straight-alpha RGBA8 pixels. It refuses images larger than 4096 x 4096
+pixels before allocating their decoded buffer, bounding that buffer at 64 MiB. `img("brand-mark")`
+must resolve to a rectangle whose width and height equal the package's intrinsic extent; the
+compiler refuses a mismatch.
+
 ## Examples
 
 Built when `MDUX_BUILD_EXAMPLES=ON`.
@@ -279,7 +298,7 @@ Link `MduX::Core` if you want the governed pieces without a Vulkan dependency. T
 convenience — `mdux_verify_trust_zones()` mechanically enforces that `MduXCore`'s link graph never
 reaches Vulkan.
 
-Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-meduic`,
+Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-imagebake`, `mdux-meduic`,
 `mdux-medui-check`, the emitters and `mdux-verify-ui`) are **not** exported. They are build-time
 only.
 

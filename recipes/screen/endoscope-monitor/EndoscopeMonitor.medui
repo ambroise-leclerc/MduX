@@ -22,7 +22,7 @@ Screen EndoscopeMonitor {
             id: brand-mark;
             width: 240px;
             height: 72px;
-            source: img("IMG-BRAND-MARK");
+            source: img("brand-mark");
         }
 
         // The screen's one piece of text, and the reason it is here rather than anywhere more

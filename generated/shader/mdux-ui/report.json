@@ -6,7 +6,7 @@
     },
     {
       "path": "recipes/shader/mdux-ui/ui.frag.spv",
-      "sha256": "29f386f9815cf1ee2d41382c1a6a4f212a8c26acf7e56920ef8fa32c92823fcb"
+      "sha256": "b4779d610db79960f286c0e9db544ef903d4ebc92d9b9cc8ac6fde2ba5cd91bb"
     }
   ],
   "options": {
@@ -24,11 +24,11 @@
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "d3a6531a26084f559fe514b190ce3b06bdfb7452be90a45a1b5b7fd35464c105"
+      "sha256": "5389d2cdffeff9f971b925607a9be82d18cec559336fd420d8a440bd993cfb71"
     },
     {
       "path": "shaders.spv",
-      "sha256": "4e22a2a65402e2facea95332b24773c52b72b20ec3bf7a800af3b1752dccb3b8"
+      "sha256": "70a7b88ac12cb4126f67d3c31082fea13caffa0c393da352c532ad527434f1a5"
     }
   ],
   "recipe": {

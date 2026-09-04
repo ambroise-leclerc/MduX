@@ -262,6 +262,7 @@ target_sources(MduXCore
             include/mdux/ml/Kernels.cppm
             include/mdux/ml/Runtime.cppm
             include/mdux/draw/Draw.cppm
+            include/mdux/image/Schema.cppm
             include/mdux/font/Schema.cppm
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
@@ -276,6 +277,7 @@ target_sources(MduXCore
         src/ml/Kernels.cpp
         src/ml/Runtime.cpp
         src/draw/Draw.cpp
+        src/image/Schema.cpp
         src/font/Schema.cpp
         src/text/Draw.cpp
         src/text/Schema.cpp
@@ -503,6 +505,23 @@ mdux_bake_artifact(
         atlas.bin
 )
 
+# The first governed raster image (#256). QOI decoding exists only in MduXImageBakeLib; the
+# device-facing libraries consume this committed package and raw RGBA8 sidecar and never link the
+# decoder. The small source generator beside the asset makes the demonstrator reproducible, while
+# the QOI file remains the baker's reviewed input.
+mdux_bake_artifact(
+    KIND image
+    ID brand-mark
+    TOOL mdux-imagebake
+    RECIPE recipes/image/brand-mark.toml
+    SOURCES
+        recipes/image/brand-mark/brand-mark.qoi
+    OUTPUTS
+        package.json
+        report.json
+        pixels.rgba
+)
+
 # The first committed text package (#235), and the artifact that lets a screen carry text at all.
 #
 # `SOURCES` names a file under generated/ deliberately. The input is the *committed* font package,
@@ -566,6 +585,8 @@ mdux_compile_screen(
         # but every file a custom command reads is a dependency in its own right; otherwise an
         # independently changed or damaged sidecar would not even ask the screen bake to validate it.
         generated/text/endoscope-monitor-en-us/runs.bin
+        generated/image/brand-mark/package.json
+        generated/image/brand-mark/pixels.rgba
         # The atlas, for the same reason applied to the second stage (#254): `loadLocale()` reads
         # the file the font package names and checks its digest, so the glyphs the verification
         # renders come from these bytes. Without the edge, an atlas changed on its own leaves all

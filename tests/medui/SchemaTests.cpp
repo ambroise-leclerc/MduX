@@ -50,6 +50,9 @@ constexpr std::array<ms::CompiledNode, 3> constNodes{
 constexpr std::array<ms::TextPackageApproval, 1> constApprovals{
     ms::TextPackageApproval{.locale = "en-US", .packageId = "neurosense-en-us", .packageSha256 = {1}}
 };
+constexpr std::array<ms::ImagePackageApproval, 1> constImageApprovals{
+    ms::ImagePackageApproval{.packageId = "brand-mark", .packageSha256 = {2}, .width = 40, .height = 20}
+};
 
 constexpr ms::ScreenPackage constPackage{
     .id                   = "neurosense",
@@ -95,18 +98,20 @@ static_assert(ms::requirementOf(constNodes[1]).empty(), "and an untraced one yie
  */
 namespace mdux::test::medui::inlinescreen {
 
-inline constexpr std::array<ms::CompiledNode, 1> inlineNodes{
-    ms::CompiledNode{.id = "title", .bounds = {0, 0, 200, 40}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}}
+inline constexpr std::array<ms::CompiledNode, 2> inlineNodes{
+    ms::CompiledNode{.id = "title", .bounds = {0, 0, 200, 40}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}},
+    ms::CompiledNode{.id = "image", .bounds = {0, 40, 40, 20},                                     .payload = ms::ImageSpec{.source = "brand-mark"}}
 };
 
 inline constexpr ms::ScreenPackage inlinePackage{
-    .id                   = "inline-screen",
-    .schemaVersion        = mdux::evidence::kSchemaVersion,
-    .surfaceWidth         = 200,
-    .surfaceHeight        = 100,
-    .approvedTextPackages = constApprovals,
-    .nodes                = inlineNodes,
-    .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+    .id                    = "inline-screen",
+    .schemaVersion         = mdux::evidence::kSchemaVersion,
+    .surfaceWidth          = 200,
+    .surfaceHeight         = 100,
+    .approvedTextPackages  = constApprovals,
+    .approvedImagePackages = constImageApprovals,
+    .nodes                 = inlineNodes,
+    .budget                = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
 };
 
 static_assert(inlinePackage.validate().has_value(), "an inline constexpr screen validates at compile time, as generated code is");
@@ -296,6 +301,59 @@ const mdux::spec::Register textPackageApprovalsAreIdentified{
                                     std::format("a text-bearing screen without approvals is refused, got {}", describe(errorOf(textBearing))));
                       checks.raise();
                   })
+            .Execute();
+    }};
+
+const mdux::spec::Register imagePackageApprovalsAreIdentified{
+    "Image approval identity and intrinsic extent failures have image-specific diagnostics",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-image-approvals")
+            .Given("one Image node and the package approval it names", [] {})
+            .When("the approval loses an identity field or its intrinsic extent disagrees", [] {})
+            .Then(
+                "each condition is refused with its own image-specific schema error",
+                [] {
+                    const auto errorFor = [](ms::ImagePackageApproval approval, ms::NodeRect bounds) -> std::optional<ms::SchemaError> {
+                        const std::array approvals{approval};
+                        const std::array nodes{
+                            ms::CompiledNode{.id = "image", .bounds = bounds, .payload = ms::ImageSpec{.source = "brand-mark"}}
+                        };
+                        const ms::ScreenPackage package{
+                            .id                    = "image-screen",
+                            .schemaVersion         = mdux::evidence::kSchemaVersion,
+                            .surfaceWidth          = 100,
+                            .surfaceHeight         = 100,
+                            .approvedTextPackages  = {},
+                            .approvedImagePackages = approvals,
+                            .nodes                 = nodes,
+                            .budget                = {.maxVertices = 4, .maxIndices = 6, .maxCommands = 1}
+                        };
+                        const auto result = package.validate();
+                        return result.has_value() ? std::nullopt : std::optional{result.error()};
+                    };
+
+                    constexpr ms::ImagePackageApproval valid{.packageId = "brand-mark", .packageSha256 = {2}, .width = 40, .height = 20};
+                    mdux::spec::Checks                 checks;
+                    checks.expect(
+                        errorFor(ms::ImagePackageApproval{.packageId = {}, .packageSha256 = valid.packageSha256, .width = valid.width, .height = valid.height},
+                                 {0, 0, 40, 20})
+                            == ms::SchemaError::EmptyApprovedImageId,
+                        "an empty image package id is identified");
+                    checks.expect(
+                        errorFor(ms::ImagePackageApproval{.packageId = valid.packageId, .packageSha256 = {}, .width = valid.width, .height = valid.height},
+                                 {0, 0, 40, 20})
+                            == ms::SchemaError::EmptyApprovedImageDigest,
+                        "an empty image package digest is identified");
+                    checks.expect(
+                        errorFor(
+                            ms::ImagePackageApproval{.packageId = valid.packageId, .packageSha256 = valid.packageSha256, .width = 0, .height = valid.height},
+                            {0, 0, 40, 20})
+                            == ms::SchemaError::NonPositiveImageExtent,
+                        "an empty intrinsic image extent is identified");
+                    checks.expect(errorFor(valid, {0, 0, 39, 20}) == ms::SchemaError::ImageExtentMismatch, "a node that would scale the image is identified");
+                    checks.raise();
+                })
             .Execute();
     }};
 

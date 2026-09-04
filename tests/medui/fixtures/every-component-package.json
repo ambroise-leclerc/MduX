@@ -1,4 +1,12 @@
 {
+  "approvedImagePackages": [
+    {
+      "height": 60,
+      "packageId": "IMG-LOGO",
+      "packageSha256": "0200000000000000000000000000000000000000000000000000000000000000",
+      "width": 120
+    }
+  ],
   "approvedTextPackages": [
     {
       "locale": "en-US",

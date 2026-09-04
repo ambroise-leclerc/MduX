@@ -261,6 +261,20 @@ template <typename Rect>
     return json::Value::array(std::move(entries));
 }
 
+[[nodiscard]] json::Value writeImageApprovals(std::span<const ms::ImagePackageApproval> approvals) {
+    std::vector<json::Value> entries;
+    entries.reserve(approvals.size());
+    for (const ms::ImagePackageApproval& approval : approvals) {
+        json::Value entry = json::Value::emptyObject();
+        put(entry, "height", json::Value::unsignedInteger(approval.height));
+        put(entry, "packageId", json::Value::string(std::string{approval.packageId}));
+        put(entry, "packageSha256", json::Value::string(hexOf(approval.packageSha256)));
+        put(entry, "width", json::Value::unsignedInteger(approval.width));
+        entries.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(entries));
+}
+
 /// The `spec` object for one payload: the component's own fields, and nothing shared.
 [[nodiscard]] json::Value writeSpec(const ms::NodePayload& payload) {
     json::Value spec = json::Value::emptyObject();
@@ -337,11 +351,12 @@ std::span<const std::string_view> ScreenDocument::internList(std::span<const std
     return views;
 }
 
-void ScreenDocument::setHeader(std::string_view                         id,
-                               std::int32_t                             surfaceWidth,
-                               std::int32_t                             surfaceHeight,
-                               mdux::draw::DrawBudget                   budget,
-                               std::span<const ms::TextPackageApproval> approvedTextPackages) {
+void ScreenDocument::setHeader(std::string_view                          id,
+                               std::int32_t                              surfaceWidth,
+                               std::int32_t                              surfaceHeight,
+                               mdux::draw::DrawBudget                    budget,
+                               std::span<const ms::TextPackageApproval>  approvedTextPackages,
+                               std::span<const ms::ImagePackageApproval> approvedImagePackages) {
     id_            = intern(id);
     surfaceWidth_  = surfaceWidth;
     surfaceHeight_ = surfaceHeight;
@@ -355,6 +370,15 @@ void ScreenDocument::setHeader(std::string_view                         id,
             ms::TextPackageApproval{.locale = intern(approval.locale), .packageId = intern(approval.packageId), .packageSha256 = approval.packageSha256});
     }
     approvedTextPackages_ = std::move(replacements);
+    std::vector<ms::ImagePackageApproval> imageReplacements;
+    imageReplacements.reserve(approvedImagePackages.size());
+    for (const ms::ImagePackageApproval& approval : approvedImagePackages) {
+        imageReplacements.push_back(ms::ImagePackageApproval{.packageId     = intern(approval.packageId),
+                                                             .packageSha256 = approval.packageSha256,
+                                                             .width         = approval.width,
+                                                             .height        = approval.height});
+    }
+    storedImagePackages = std::move(imageReplacements);
 }
 
 void ScreenDocument::addNode(ms::CompiledNode node) {
@@ -362,13 +386,14 @@ void ScreenDocument::addNode(ms::CompiledNode node) {
 }
 
 ms::ScreenPackage ScreenDocument::package() const noexcept {
-    return ms::ScreenPackage{.id                   = id_,
-                             .schemaVersion        = mdux::evidence::kSchemaVersion,
-                             .surfaceWidth         = surfaceWidth_,
-                             .surfaceHeight        = surfaceHeight_,
-                             .approvedTextPackages = approvedTextPackages_,
-                             .nodes                = nodes_,
-                             .budget               = budget_};
+    return ms::ScreenPackage{.id                    = id_,
+                             .schemaVersion         = mdux::evidence::kSchemaVersion,
+                             .surfaceWidth          = surfaceWidth_,
+                             .surfaceHeight         = surfaceHeight_,
+                             .approvedTextPackages  = approvedTextPackages_,
+                             .approvedImagePackages = storedImagePackages,
+                             .nodes                 = nodes_,
+                             .budget                = budget_};
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +410,8 @@ ScreenDocument buildPackage(const LayoutResult& layout, PackageInputs inputs) {
                        narrow(layout.surfaceWidth, "surface width"),
                        narrow(layout.surfaceHeight, "surface height"),
                        inputs.budget,
-                       inputs.approvedTextPackages);
+                       inputs.approvedTextPackages,
+                       inputs.approvedImagePackages);
 
     for (const ResolvedNode& resolved : layout.nodes) {
         document.addNode(ms::CompiledNode{
@@ -431,6 +457,7 @@ std::string writePackage(const ms::ScreenPackage& package) {
 
     json::Value root = json::Value::emptyObject();
     put(root, "approvedTextPackages", writeApprovals(package.approvedTextPackages));
+    put(root, "approvedImagePackages", writeImageApprovals(package.approvedImagePackages));
     put(root, "budget", std::move(budget));
     put(root, "id", json::Value::string(std::string{package.id}));
     put(root, "kind", json::Value::string(std::string{ms::packageKind}));
@@ -852,11 +879,12 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         return result;
     }
 
-    static constexpr std::array<std::string_view, 8>
-        rootMembers{"approvedTextPackages", "budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
+    static constexpr std::array<std::string_view, 9>
+        rootMembers{"approvedImagePackages", "approvedTextPackages", "budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
     static constexpr std::array<std::string_view, 3> budgetMembers{"maxCommands", "maxIndices", "maxVertices"};
     static constexpr std::array<std::string_view, 4> nodeMembers{"bounds", "id", "kind", "spec"};
     static constexpr std::array<std::string_view, 3> approvalMembers{"locale", "packageId", "packageSha256"};
+    static constexpr std::array<std::string_view, 4> imageApprovalMembers{"height", "packageId", "packageSha256", "width"};
 
     const json::Value& root = *parsed;
     if (!expectObject(root, "the package", rootMembers, sink)) {
@@ -924,12 +952,42 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         approvals.push_back(ms::TextPackageApproval{.locale = approvalLocales.back(), .packageId = approvalPackageIds.back(), .packageSha256 = *packageSha256});
     }
 
+    const json::Value* imageApprovalsValue = root.find("approvedImagePackages");
+    if (imageApprovalsValue != nullptr && imageApprovalsValue->kind() != json::Value::Kind::Array) {
+        sink.fail(memberWrong, "the package member 'approvedImagePackages' is not an array");
+        return result;
+    }
+    std::vector<ms::ImagePackageApproval> imageApprovals;
+    std::vector<std::string>              imageApprovalPackageIds;
+    const std::span<const json::Value>    imageApprovalElements = imageApprovalsValue == nullptr ? std::span<const json::Value>{}
+                                                                                                 : imageApprovalsValue->elements();
+    imageApprovals.reserve(imageApprovalElements.size());
+    imageApprovalPackageIds.reserve(imageApprovalElements.size());
+    for (std::size_t index = 0; index < imageApprovalElements.size(); ++index) {
+        const json::Value& entry = imageApprovalElements[index];
+        const std::string  what  = std::format("approved image package {}", index);
+        if (!expectObject(entry, what, imageApprovalMembers, sink)) {
+            return result;
+        }
+        const auto packageId     = readName(entry, "packageId", what, sink);
+        const auto packageSha256 = readDigest(entry, "packageSha256", what, sink);
+        const auto width         = readUInt32(entry, "width", what, sink);
+        const auto height        = readUInt32(entry, "height", what, sink);
+        if (!packageId.has_value() || !packageSha256.has_value() || !width.has_value() || !height.has_value()) {
+            return result;
+        }
+        imageApprovalPackageIds.push_back(*packageId);
+        imageApprovals.push_back(
+            ms::ImagePackageApproval{.packageId = imageApprovalPackageIds.back(), .packageSha256 = *packageSha256, .width = *width, .height = *height});
+    }
+
     ScreenDocument document;
     document.setHeader(*id,
                        *surfaceWidth,
                        *surfaceHeight,
                        mdux::draw::DrawBudget{.maxVertices = *maxVertices, .maxIndices = *maxIndices, .maxCommands = *maxCommands},
-                       approvals);
+                       approvals,
+                       imageApprovals);
 
     const json::Value* nodes = root.find("nodes");
     if (nodes == nullptr || nodes->kind() != json::Value::Kind::Array) {

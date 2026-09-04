@@ -201,7 +201,8 @@ const mdux::spec::Register aCompileProducesThreeArtifacts{
                           // Two outputs, not three: a file cannot carry its own digest, which is the
                           // same reason ADR-007 gives for there being no commit SHA in a report.
                           checks.expect(report->outputs.size() == 2, std::format("package.json and goldens.json are recorded, got {}", report->outputs.size()));
-                          checks.expect(report->inputs.size() == 1, std::format("the .medui source is the only input, got {}", report->inputs.size()));
+                          checks.expect(report->inputs.size() == 3,
+                                        std::format("the .medui source plus image package and sidecar are recorded, got {}", report->inputs.size()));
                           checks.expect(report->validate().has_value(), "the report satisfies its own schema");
                       }
                       checks.raise();

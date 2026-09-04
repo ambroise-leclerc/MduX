@@ -61,12 +61,17 @@ constexpr std::array<shader::ModuleView, 2> bothStages{
     shader::ModuleView{.id = "ui.frag", .stage = shader::Stage::Fragment, .entryPoint = "main",
                        .byteOffset = 0, .byteLength = 4}};
 
-/// The descriptor and push-constant contract `create()` requires: one non-array combined image
-/// sampler in set 0, and one vertex-visible range the size of UiPushConstants. Declared once so
+/// The descriptor and push-constant contract `create()` requires: coverage and RGBA combined image
+/// samplers in set 0, and one vertex-visible range the size of UiPushConstants. Declared once so
 /// the tests below vary the thing they are about and nothing else.
-constexpr std::array<shader::DescriptorBinding, 1> conformingDescriptors{
+constexpr std::array<shader::DescriptorBinding, 2> conformingDescriptors{
     shader::DescriptorBinding{.set = 0,
                               .binding = 0,
+                              .kind = shader::DescriptorKind::CombinedImageSampler,
+                              .count = 1,
+                              .stages = shader::fragmentBit},
+    shader::DescriptorBinding{.set = 0,
+                              .binding = 1,
                               .kind = shader::DescriptorKind::CombinedImageSampler,
                               .count = 1,
                               .stages = shader::fragmentBit}};
@@ -256,7 +261,7 @@ TEST_CASE("UiPushConstants matches the block the shader package declares", "evid
 }
 
 TEST_CASE("Every RenderError has its own description", "evidence-unit") {
-    constexpr std::array<RenderError, 27> all{
+    constexpr std::array<RenderError, 29> all{
         RenderError::NullDevice,
         RenderError::NullPhysicalDevice,
         RenderError::NullRenderPass,
@@ -282,6 +287,8 @@ TEST_CASE("Every RenderError has its own description", "evidence-unit") {
         RenderError::CommandPoolCreationFailed,
         RenderError::CommandBufferAllocationFailed,
         RenderError::AtlasUploadFailed,
+        RenderError::AtlasExtentMismatch,
+        RenderError::SampledRgbaWithCoverageAtlas,
         RenderError::NullCommandBuffer,
         RenderError::FrameExceedsBudget,
     };
@@ -376,6 +383,16 @@ TEST_CASE("A descriptor contract the atlas write cannot satisfy is refused", "ev
     shader::PackageView mistyped = packageWith(bothStages);
     mistyped.descriptors = wrongKind;
     CHECK(creationError(plausibleContext(), mistyped, workableBudget) ==
+          RenderError::UnsupportedDescriptorContract);
+
+    // Both descriptors are fragment-only in the shader contract. Merely containing the fragment
+    // bit is insufficient: an extra vertex-stage visibility changes the declared interface and can
+    // trigger validation feedback without serving any renderer operation.
+    auto extraStageDescriptors = conformingDescriptors;
+    extraStageDescriptors[0].stages = shader::fragmentBit | shader::vertexBit;
+    shader::PackageView extraStage = packageWith(bothStages);
+    extraStage.descriptors = extraStageDescriptors;
+    CHECK(creationError(plausibleContext(), extraStage, workableBudget) ==
           RenderError::UnsupportedDescriptorContract);
 }
 

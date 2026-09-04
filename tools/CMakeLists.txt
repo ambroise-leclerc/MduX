@@ -222,6 +222,56 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 # ---------------------------------------------------------------------------
+# mdux-imagebake (issue #256) - dependency-free QOI intake
+# ---------------------------------------------------------------------------
+#
+# Both the decoder and recipe parser stay in the host-tools zone. Only the validated
+# mdux.image.schema package and its raw RGBA8 sidecar cross into the governed runtime.
+add_library(MduXImageBakeLib)
+add_library(MduX::ImageBakeLib ALIAS MduXImageBakeLib)
+
+target_sources(MduXImageBakeLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            image/Qoi.cppm
+            image/ImageBake.cppm
+    PRIVATE
+        image/Qoi.cpp
+        image/ImageBake.cpp
+)
+
+target_compile_features(MduXImageBakeLib PUBLIC cxx_std_23)
+target_link_libraries(MduXImageBakeLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXImageBakeLib PRIVATE MduX_warnings)
+set_target_properties(MduXImageBakeLib PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXImageBakeLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXImageBakeLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-imagebake image/ImageBakeMain.cpp)
+target_link_libraries(mdux-imagebake PRIVATE MduX::ImageBakeLib MduX_warnings)
+set_target_properties(mdux-imagebake PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-imagebake PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-imagebake PRIVATE /experimental:module /std:c++latest)
+endif()
+
+# ---------------------------------------------------------------------------
 # mdux-textbake (issue #157) - the text pipeline's baker
 # ---------------------------------------------------------------------------
 #

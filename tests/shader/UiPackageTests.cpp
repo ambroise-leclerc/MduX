@@ -155,43 +155,50 @@ const mdux::spec::Register vertexAndFragmentOnly{
             .Execute();
     }};
 
-const mdux::spec::Register oneCombinedImageSampler{
-    "The UI pipeline binds one combined image sampler at set 0 binding 0", "evidence-unit", [] {
+const mdux::spec::Register twoCombinedImageSamplers{
+    "The UI pipeline binds fixed coverage and RGBA samplers", "evidence-unit", [] {
         struct State {
             std::optional<shader::ShaderPackage> package;
         };
         auto state = std::make_shared<State>();
 
-        return speclab::Test("shader-ui-one-combined-image-sampler")
+        return speclab::Test("shader-ui-two-combined-image-samplers")
             .Given("the committed UI package",
                    [state] { state->package = requirePackage(committedPackage(), "the package"); })
             .When("its descriptors are inspected", [state] {
-                if (state->package->descriptors.size() != 1) {
+                if (state->package->descriptors.size() != 2) {
                     throw speclab::core::AssertionFailure(
-                        std::format("expected 1 descriptor, got {}",
+                        std::format("expected 2 descriptors, got {}",
                                     state->package->descriptors.size()),
                         std::source_location::current());
                 }
             })
-            .Then("the atlas binding has the fixed set, binding, kind, count and stage",
+            .Then("the atlas bindings have fixed sets, bindings, kinds, counts and stages",
                   [state] {
                       // The atlas is bound for every draw, including one that is entirely solid: a
                       // descriptor set whose shape depended on the content would put a conditional
                       // in the renderer's hot path and in its budget, which is the opposite of
                       // fixed.
-                      const shader::DescriptorBinding& atlas = state->package->descriptors.front();
+                      const shader::DescriptorBinding& coverage = state->package->descriptors[0];
+                      const shader::DescriptorBinding& rgba = state->package->descriptors[1];
                       mdux::spec::Checks checks;
-                      checks.expect(atlas.set == 0, "the set is 0");
-                      checks.expect(atlas.binding == 0, "the binding is 0");
-                      checks.expect(atlas.kind == shader::DescriptorKind::CombinedImageSampler,
-                                    "the kind is CombinedImageSampler");
-                      checks.expect(atlas.count == 1, "the count is 1");
+                      checks.expect(coverage.set == 0 && rgba.set == 0, "both sets are 0");
+                      checks.expect(coverage.binding == 0 && rgba.binding == 1,
+                                    "coverage is binding 0 and RGBA is binding 1");
+                      checks.expect(
+                          coverage.kind == shader::DescriptorKind::CombinedImageSampler &&
+                              rgba.kind == shader::DescriptorKind::CombinedImageSampler,
+                          "both kinds are CombinedImageSampler");
+                      checks.expect(coverage.count == 1 && rgba.count == 1,
+                                    "both counts are 1");
                       // The fragment stage alone samples it. A vertex bit here would mean the
                       // pipeline layout requested access no shader uses, which the validation
                       // layers report as a warning and which costs a descriptor slot on a device
                       // that has few.
-                      checks.expect(atlas.stages == shader::fragmentBit,
-                                    "the stage is fragment only");
+                      checks.expect(
+                          coverage.stages == shader::fragmentBit &&
+                              rgba.stages == shader::fragmentBit,
+                          "both stages are fragment only");
                       checks.raise();
                   })
             .Execute();
