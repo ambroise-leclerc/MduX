@@ -339,9 +339,12 @@ show a reading and no others: in the field's own tint, or knocked out of it back
 
 `mdux_compile_screen()` registers `verify.screen.<id>` beside the `evidence.screen.<id>` it already
 registers, running `mdux-verify-ui --screen=generated/screen/<id> --locales=all` over the
-**committed** bundle. Three legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on
-macOS — with `--no-tests=error`, so a label that matched no screen fails rather than passing over
-nothing.
+**committed** bundle. All four legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK
+on macOS, and Mesa's Windows lavapipe build on Windows/MSVC — with `--no-tests=error`, so a label
+that matched no screen fails rather than passing over nothing. #255 asserted it on the first three
+and left Windows running the test inside its full suite without a step of its own; #282 added that
+step, and ADR-007 decision 6 records what it costs — Mesa's Windows redistribution becomes a
+gate-critical dependency rather than a build-critical one.
 
 It carries **no** skip status, unlike every neighbouring rendered test, and that is the point rather
 than an omission. `mdux-verify-ui` maps an absent device to `RunState::NoRenderDevice` and exits 3
@@ -504,5 +507,7 @@ the frame.
   textless fixture; again the same day when #254 committed the first `verification.json` - which
   recorded three `NothingPainted` findings, exactly the consequence this record predicted for the
   current screen; and again when #255 added decisions 5 and 6, which turned those three findings into
-  `Held` and put the gate on three CI legs. Review again when #257 and #258 draw a reading inside a
-  field, since decision 5's `ColorHash` consequence constrains how they may.
+  `Held` and put the gate on three CI legs; and again when #282 made that four by asserting the gate
+  on Windows/MSVC too, which ADR-007 decision 6 records as the promotion of Mesa's Windows build to a
+  gate-critical dependency. Review again when #257 and #258 draw a reading inside a field, since
+  decision 5's `ColorHash` consequence constrains how they may.

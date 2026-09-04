@@ -249,8 +249,8 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
   `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
-  screen by `mdux_compile_screen()`; asserted on the three render legs, and distinct from `evidence`
-  because it compares a frame to a screen rather than bytes to bytes).
+  screen by `mdux_compile_screen()`; asserted as a named step on all four CI legs since `#282`, and
+  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:
