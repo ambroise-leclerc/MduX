@@ -467,6 +467,31 @@ private:
             return;
         }
 
+        // Structure before geometry, and through the runtime's own counter rather than a second
+        // copy of it. `measurePattern()` answers "does the widest reading fit this box", which a
+        // template with no digit slots at all passes trivially - `mmHg` measures fine and can never
+        // show a number. `digitsOf()` refuses zero slots and more than `maxDigitsPerField`, so a
+        // template outside that range is one the device must refuse on every frame, rolling back the
+        // whole screen. Refusing it here makes a compiled template structurally drawable, which is
+        // what the compiler's signature on it is supposed to mean.
+        const std::size_t slots = mdux::medui::countSlots(rule->rendering, mdux::medui::PatternKind::Numeric);
+        if (slots == 0) {
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("template '{}' renders '{}', which has no digit slots, so no reading could ever be drawn in it", value.text, rule->rendering));
+            return;
+        }
+        if (slots > mdux::medui::maxDigitsPerField) {
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("template '{}' renders '{}', which has {} digit slots; the runtime draws at most {}",
+                               value.text,
+                               rule->rendering,
+                               slots,
+                               mdux::medui::maxDigitsPerField));
+            return;
+        }
+
         measureAgainstNode(node, value, rule->rendering, mdux::medui::PatternKind::Numeric, std::format("template '{}'", value.text));
         static_cast<void>(field);
     }
@@ -619,9 +644,15 @@ bool needsTextBudget(const ast::Screen& screen) {
                     }
                 }
             }
-            // Asked through the same predicate the measuring pass uses, so a third dynamic-text
-            // field reaches this question without anyone having to remember it.
-            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)) {
+            // Asked through the same predicates the measuring pass uses, so a third dynamic-text
+            // field reaches this question without anyone having to remember it. The numeric template
+            // belongs here for the same reason and was missing until #258 was reviewed: a screen
+            // whose only text-bearing component is a `NumericDisplay` was classified as carrying no
+            // measurable text, and `Compile.cpp` then refused its `[text]` table before the template
+            // could be measured at all - so a numeric display could not be compiled without a Label
+            // or a Clock beside it to answer this question for it.
+            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)
+                || namesNumericTemplate(node.component, field.name)) {
                 return true;
             }
         }

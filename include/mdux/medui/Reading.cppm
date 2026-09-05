@@ -184,6 +184,17 @@ struct PatternExtent {
 };
 
 /**
+ * @brief How many digit slots `pattern` has, in `kind`'s alphabet.
+ *
+ * Exported so the compiler and the device count slots with the *same* walk (#258). `digitsOf()`
+ * refuses a pattern with no slots and one with more than `maxDigitsPerField`, and a template that
+ * cannot satisfy those has no drawable reading - so a compiler that measured only geometry could
+ * sign a template the runtime must refuse on every frame. One implementation is what keeps the
+ * compiler's answer and the device's answer the same answer.
+ */
+[[nodiscard]] std::size_t countSlots(std::string_view pattern, PatternKind kind) noexcept;
+
+/**
  * @brief The envelope of every reading `pattern` can ever produce, in pixels.
  *
  * The build-time half of ADR-010 decision 4's amendment, and the function that makes the runtime

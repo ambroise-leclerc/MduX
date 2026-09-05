@@ -334,6 +334,83 @@ const mdux::spec::Register unusedTextRecipeIsRefused{
             .Execute();
     }};
 
+const mdux::spec::Register aNumericTemplateMustBeStructurallyDrawable{
+    "A numeric template that could never show a reading is refused at compile time",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-numeric-template-slots")
+            .Given("the committed recipe, with its template's rendering replaced", [] {})
+            .When("the rendering has no digit slots, and then too many", [] {})
+            .Then("each is refused, so a compiled template is one the device can draw",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // `measurePattern()` answers "does the widest reading fit the box", which a
+                      // rendering with no slots passes trivially - `mmHg` measures fine and can never
+                      // show a number. The runtime is stricter: `digitsOf()` refuses zero slots and
+                      // more than `maxDigitsPerField`, so a template outside that range is one the
+                      // device must refuse on every frame, rolling back the whole screen. Both ends
+                      // are now checked here, through the runtime's own `countSlots()`.
+                      const std::string committed     = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto        withRendering = [&committed](std::string_view replacement) {
+                          std::string text = committed;
+                          const auto  at   = text.find(R"(renderings = ["##.# mmHg"])");
+                          text.replace(at, std::string_view{R"(renderings = ["##.# mmHg"])"}.size(), replacement);
+                          return text;
+                      };
+
+                      for (const auto& [rendering, what] : std::vector<std::pair<std::string, std::string>>{
+                               {       R"(renderings = ["mmHg"])",     "a rendering with no digit slots"},
+                               {R"(renderings = ["###########"])", "a rendering with eleven digit slots"}
+                      }) {
+                          std::vector<cli::Diagnostic> diagnostics;
+                          const std::string            recipeText = withRendering(rendering);
+                          const auto                   recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                          checks.expect(recipe.has_value(), std::format("{} still parses as a recipe", what));
+                          if (!recipe.has_value()) {
+                              continue;
+                          }
+                          const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                          checks.expect(!outputs.has_value(), std::format("{} is refused", what));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aTemplateNameIsDeclaredOnce{
+    "A numeric-template name declared twice is refused rather than resolved to the first",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-numeric-template-duplicate")
+            .Given("a recipe declaring one template name twice, with different renderings", [] {})
+            .When("the recipe is parsed", [] {})
+            .Then("it is refused, because a name is a lookup key",
+                  [] {
+                      // The budget stage resolves a template name with a find-first, so a duplicate
+                      // is ambiguous in the quietest way available: the second rendering is never
+                      // measured, and an author who edited the wrong entry would see a template that
+                      // compiles and draws the other one's shape. Refused rather than de-duplicated,
+                      // because which entry was meant is not knowable from the recipe.
+                      mdux::spec::Checks checks;
+                      std::string        text = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto         at   = text.find(R"(names      = ["TPL-PRESSURE-MMHG"])");
+                      text.replace(at,
+                                   std::string_view{R"(names      = ["TPL-PRESSURE-MMHG"])"}.size(),
+                                   R"(names      = ["TPL-PRESSURE-MMHG", "TPL-PRESSURE-MMHG"])");
+                      const auto renderingAt = text.find(R"(renderings = ["##.# mmHg"])");
+                      text.replace(renderingAt, std::string_view{R"(renderings = ["##.# mmHg"])"}.size(), R"(renderings = ["##.# mmHg", "###.# mmHg"])");
+
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   recipe = md::parseRecipe(text, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      checks.expect(!recipe.has_value(), "a duplicated template name is refused");
+                      checks.expect(!diagnostics.empty() && diagnostics.front().message.find("twice") != std::string::npos,
+                                    "the diagnostic says the name was declared twice");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aScreenThatDrawsTextNeedsItsLocales{
     "A screen that draws text is refused when the recipe declares no locales",
     "evidence-unit",
@@ -366,6 +443,17 @@ const mdux::spec::Register aScreenThatDrawsTextNeedsItsLocales{
                       md::ParseResult drawsNone = md::parse(fixture("accepted-textless.medui"), "textless.medui");
                       checks.expect(drawsText.screen.has_value() && md::needsTextBudget(*drawsText.screen), "a screen with keys needs the budget stage");
                       checks.expect(drawsNone.screen.has_value() && !md::needsTextBudget(*drawsNone.screen), "a screen without them does not");
+
+                      // And a numeric template counts, which it did not until #258 was reviewed. Its
+                      // rendering is measured against the font exactly as a clock's pattern is, so a
+                      // screen carrying only a NumericDisplay needs the budget stage - and while this
+                      // answered false, the driver refused that screen's [text] table before the
+                      // template could be measured, so it could not be compiled without a Label or a
+                      // Clock beside it. Asked through the predicate rather than through a bake,
+                      // because the predicate is what the driver consults.
+                      md::ParseResult drawsNumeric = md::parse(fixture("accepted-numeric-only.medui"), "numeric.medui");
+                      checks.expect(drawsNumeric.screen.has_value() && md::needsTextBudget(*drawsNumeric.screen),
+                                    "a screen whose only text is a numeric template needs the budget stage");
                       checks.raise();
                   })
             .Execute();

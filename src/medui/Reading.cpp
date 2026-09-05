@@ -57,13 +57,6 @@ struct RenderedPattern {
     return digits;
 }
 
-/// The number of digit slots in `pattern`.
-[[nodiscard]] std::size_t countSlots(std::string_view pattern, PatternKind kind) noexcept {
-    return static_cast<std::size_t>(std::ranges::count_if(pattern, [kind](char character) {
-        return isDigitSlot(character, kind);
-    }));
-}
-
 /// A pattern's own structural limits, checked once before either caller walks it.
 [[nodiscard]] mdux::core::ResultVoid<ReadingError> checkPattern(std::string_view pattern) noexcept {
     if (pattern.empty()) {
@@ -250,6 +243,12 @@ std::string_view describe(ReadingError error) noexcept {
     return "unknown reading error";
 }
 
+std::size_t countSlots(std::string_view pattern, PatternKind kind) noexcept {
+    return static_cast<std::size_t>(std::ranges::count_if(pattern, [kind](char character) {
+        return isDigitSlot(character, kind);
+    }));
+}
+
 mdux::core::Result<PatternExtent, ReadingError> measurePattern(const mdux::font::FontPackage& font, std::string_view pattern, PatternKind kind) noexcept {
     if (const auto checked = checkPattern(pattern); !checked.has_value()) {
         return mdux::core::err(checked.error());
@@ -364,6 +363,33 @@ mdux::core::ResultVoid<ReadingError> recordClock(mdux::draw::DrawList&          
     std::array<std::uint8_t, maxPatternLength> digits{};
     std::size_t                                count = 0;
 
+    // Whether `value` is drawable in exactly `width` slots. Checked before anything is pushed,
+    // because `push()` below takes the low `width` digits and cannot tell a value that fits from one
+    // that was truncated to fit. The field types do not do this for us: month, day, hour, minute and
+    // second are `std::uint8_t`, which holds 0-255, so an hour of 123 has always been representable
+    // and used to draw as `23` - a plausible different time, which is the one output this module
+    // exists to refuse.
+    const auto fits = [](std::int64_t value, std::size_t width) noexcept {
+        if (value < 0) {
+            return false;
+        }
+        std::int64_t limit = 1;
+        for (std::size_t decade = 0; decade < width; ++decade) {
+            limit *= 10;
+        }
+        return value < limit;
+    };
+
+    // Only the fields this format actually renders. A `TimeSeconds` clock draws no year, so a host
+    // that leaves `year` at some out-of-range value must still get its clock - which is why this is
+    // per-format rather than one check over the whole struct.
+    const bool drawable = format == ClockFormat::TimeSeconds
+                              ? fits(now.hour, 2) && fits(now.minute, 2) && fits(now.second, 2)
+                              : fits(now.year, 4) && fits(now.month, 2) && fits(now.day, 2) && fits(now.hour, 2) && fits(now.minute, 2) && fits(now.second, 2);
+    if (format != ClockFormat::Unspecified && !drawable) {
+        return mdux::core::err(ReadingError::ValueTooLarge);
+    }
+
     const auto push = [&digits, &count](std::int64_t value, std::size_t width) noexcept {
         for (std::size_t position = width; position > 0; --position) {
             std::int64_t scaled = value;
@@ -395,14 +421,6 @@ mdux::core::ResultVoid<ReadingError> recordClock(mdux::draw::DrawList&          
             // pattern check above has already refused; this case exists so that adding an
             // enumerator is a warning here rather than a clock that draws a previous format's shape.
             return mdux::core::err(ReadingError::PatternEmpty);
-    }
-
-    // Every field is bounded by its own width above, so a host reporting an hour of 99 draws `99`
-    // rather than overflowing the slot run. What it cannot do is exceed the *pattern*, and a year
-    // past four digits is the one field where that is reachable - so it is checked rather than
-    // assumed, in the same direction as `digitsOf()`.
-    if (now.year < 0 || now.year > 9999) {
-        return mdux::core::err(ReadingError::ValueTooLarge);
     }
 
     const RenderedPattern rendered = render(pattern, PatternKind::Clock, std::span{digits}.first(count));

@@ -478,6 +478,21 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        "the cap is mdux::medui::maxPatternLength, which bounds per-node work on a device");
                 return std::nullopt;
             }
+            // A name is a lookup key, and the budget stage resolves it with a find-first. Two
+            // entries sharing one name therefore make the mapping ambiguous in the quietest way
+            // available: the second rendering is simply never measured, so an author who edited the
+            // wrong duplicate would see a template that compiles and draws the other one's shape.
+            // Refused rather than de-duplicated, because which entry was meant is not knowable here.
+            const auto duplicate = std::ranges::find(recipe.numericTemplates, names[index], &NumericTemplate::name);
+            if (duplicate != recipe.numericTemplates.end()) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] declares '{}' twice, rendering '{}' and '{}'", names[index], duplicate->rendering, renderings[index]),
+                       "a template name is a lookup key, so only the first entry would ever be measured");
+                return std::nullopt;
+            }
             recipe.numericTemplates.push_back(NumericTemplate{.name = names[index], .rendering = renderings[index]});
         }
     }

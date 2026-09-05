@@ -416,6 +416,93 @@ const mdux::spec::Register aClockRendersItsFields{
             .Execute();
     }};
 
+const mdux::spec::Register aClockFieldPastItsSlotsIsRefused{
+    "A clock field with more digits than its slots is refused, not truncated",
+    "evidence-unit",
+    [] {
+        struct State {
+            Scratch                                      scratch;
+            std::vector<std::optional<ms::ReadingError>> errors;
+            std::size_t                                  verticesAfter{0};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("reading-clock-field-overflow")
+            .Given("times whose month, day, hour, minute or second needs three digits",
+                   [state] {
+                       // The field types do not bound these: month, day, hour, minute and second are
+                       // `std::uint8_t`, so 100-255 is representable and `push()` took the low two
+                       // digits of it. An hour of 123 drew `23` - a plausible different time, which
+                       // is the single output this module is written to refuse.
+                       constexpr std::array<ms::CivilTime, 5> overflowing{
+                           ms::CivilTime{.year = 2026,   .month = 1,   .day = 1, .hour = 123,   .minute = 0,   .second = 0},
+                           ms::CivilTime{.year = 2026,   .month = 1,   .day = 1,   .hour = 0, .minute = 199,   .second = 0},
+                           ms::CivilTime{.year = 2026,   .month = 1,   .day = 1,   .hour = 0,   .minute = 0, .second = 100},
+                           ms::CivilTime{.year = 2026, .month = 200,   .day = 1,   .hour = 0,   .minute = 0,   .second = 0},
+                           ms::CivilTime{.year = 2026,   .month = 1, .day = 255,   .hour = 0,   .minute = 0,   .second = 0}
+                       };
+                       // The first three are drawn by both formats; the last two only by the date
+                       // one, so each is offered to a format that actually renders it.
+                       constexpr std::array<ms::ClockFormat, 5> formats{ms::ClockFormat::TimeSeconds,
+                                                                        ms::ClockFormat::TimeSeconds,
+                                                                        ms::ClockFormat::TimeSeconds,
+                                                                        ms::ClockFormat::DateTimeSeconds,
+                                                                        ms::ClockFormat::DateTimeSeconds};
+                       draw::DrawList                           list = state->scratch.list();
+                       for (std::size_t index = 0; index < overflowing.size(); ++index) {
+                           const auto result = ms::recordClock(list, theFont(), node, formats[index], overflowing[index], digits);
+                           state->errors.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                       }
+                       state->verticesAfter = list.vertices().size();
+                   })
+            .When("each is offered to a format that draws that field", [] {})
+            .Then("every one is ValueTooLarge and nothing was recorded",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      for (std::size_t index = 0; index < state->errors.size(); ++index) {
+                          checks.expect(state->errors[index] == ms::ReadingError::ValueTooLarge,
+                                        std::format("overflowing field {} is refused as ValueTooLarge", index));
+                      }
+                      checks.expect(state->verticesAfter == 0, std::format("a refused clock draws nothing, got {} vertices", state->verticesAfter));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aTimeOnlyClockIgnoresTheYear{
+    "A time-only clock is drawn whatever the year field holds",
+    "evidence-unit",
+    [] {
+        struct State {
+            Scratch                         scratch;
+            std::optional<ms::ReadingError> error;
+            std::size_t                     vertices{0};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("reading-clock-time-only-ignores-year")
+            .Given("a TimeSeconds clock whose year is outside four digits",
+                   [state] {
+                       // `HH:MM:SS` renders no year, so a host that never fills one in - or fills it
+                       // with a sentinel - must still get its clock. The year bound used to be
+                       // checked for both formats, which refused a perfectly drawable time.
+                       constexpr ms::CivilTime now{.year = 70000, .month = 1, .day = 1, .hour = 12, .minute = 34, .second = 56};
+                       draw::DrawList          list   = state->scratch.list();
+                       const auto              result = ms::recordClock(list, theFont(), node, ms::ClockFormat::TimeSeconds, now, digits);
+                       state->error                   = result.has_value() ? std::nullopt : std::optional{result.error()};
+                       state->vertices                = list.vertices().size();
+                   })
+            .When("the frame is inspected", [] {})
+            .Then("it is drawn, because the year is not one of its fields",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(!state->error.has_value(), "a time-only clock is not refused for its year");
+                      checks.expect(state->vertices > 0, "the time was drawn");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aClockDistinguishesMonthFromMinute{
     "A DateTimeSeconds clock puts the month in the date and the minute in the time",
     "evidence-unit",
