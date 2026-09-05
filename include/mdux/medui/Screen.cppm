@@ -224,6 +224,7 @@ enum class ScreenError : std::uint8_t {
     ImageNotApproved,      ///< the screen did not approve this image id/digest/extent
     UnknownStreamSource,   ///< a signal slot names a stream no `SignalTrace` on this screen carries
     DuplicateStream,       ///< two signal slots name the same stream
+    MissingSampleRing,     ///< a signal slot carries no ring, so its trace could never draw a sample
     MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
     MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
     NonFiniteSample,       ///< a live sample is a NaN or an infinity
@@ -580,11 +581,10 @@ struct FrameStats {
  * list can carry several screens; without the second check the screen's declared budget would be
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
-[[nodiscard]] mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen,
-       mdux::draw::DrawList&  list,
-       const TextBinding&     text    = {},
-       const ImageBinding&    image   = {},
-       const SignalBinding&   signals = {}) noexcept;
+[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
+                                                                 mdux::draw::DrawList& list,
+                                                                 const TextBinding&    text    = {},
+                                                                 const ImageBinding&   image   = {},
+                                                                 const SignalBinding&  signals = {}) noexcept;
 
 }  // namespace mdux::medui

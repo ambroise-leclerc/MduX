@@ -235,7 +235,7 @@ int main() {
     std::println("");
     std::println("Frame from the committed screen '{}' ({}x{}):", endoscopeMonitor.id, endoscopeMonitor.surfaceWidth, endoscopeMonitor.surfaceHeight);
 
-    const medui::SampleRing view = ring.view();
+    const medui::SampleRing                view = ring.view();
     const std::array<medui::SignalSlot, 1> slots{
         medui::SignalSlot{.streamSource = "ECG_LEAD_II", .ring = &view, .style = ecgTrace}
     };

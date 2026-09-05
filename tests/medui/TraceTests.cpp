@@ -825,7 +825,7 @@ const mdux::spec::Register bindingRefusesWhatItCanCheck{
                       // with nothing to distinguish it from a stream that has not started.
                       constexpr std::array<ms::ScreenError, 4> expected{ms::ScreenError::UnknownStreamSource,
                                                                         ms::ScreenError::DuplicateStream,
-                                                                        ms::ScreenError::MalformedTraceStyle,
+                                                                        ms::ScreenError::MissingSampleRing,
                                                                         ms::ScreenError::MalformedTraceStyle};
                       mdux::spec::Checks                       checks;
                       for (std::size_t index = 0; index < expected.size(); ++index) {

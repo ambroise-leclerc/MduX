@@ -206,7 +206,12 @@ mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const Scree
             // A slot with no ring is a trace that would draw a dimmed field and nothing in it -
             // indistinguishable, on a monitor, from a flat line. Refused here rather than deferred
             // per frame, because it is a defect in how the caller assembled its slots.
-            return mdux::core::err(ScreenError::MalformedTraceStyle);
+            //
+            // Its own error rather than `MalformedTraceStyle`, for the reason stated where the two
+            // colour-token failures are kept apart: an absent ring is a slot the caller never
+            // finished filling in, while a malformed style is a slot filled in wrongly. They send an
+            // integrator to different places.
+            return mdux::core::err(ScreenError::MissingSampleRing);
         }
         if (slot.style.strokeWidth < 1 || slot.style.strokeWidth > maxStrokeWidth) {
             return mdux::core::err(ScreenError::MalformedTraceStyle);
@@ -269,6 +274,8 @@ std::string_view describe(ScreenError error) noexcept {
             return "a signal slot names a stream no SignalTrace on this screen carries";
         case ScreenError::DuplicateStream:
             return "two signal slots name the same stream";
+        case ScreenError::MissingSampleRing:
+            return "a signal slot names a stream but carries no ring to read samples from";
         case ScreenError::MalformedTraceStyle:
             return "a signal slot's sample range is empty or not finite, or its stroke width is out of range";
         case ScreenError::MalformedSampleRing:
@@ -318,11 +325,7 @@ namespace {
 }  // namespace
 
 mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen,
-       mdux::draw::DrawList&  list,
-       const TextBinding&     text,
-       const ImageBinding&    image,
-       const SignalBinding&   signals) noexcept {
+render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text, const ImageBinding& image, const SignalBinding& signals) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
