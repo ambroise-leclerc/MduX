@@ -86,9 +86,15 @@ before you write one:
 - **`max_length` is measured against your box**, since this issue: `max_length` cells of the font's
   widest glyph plus the caret's column must fit, or the screen fails to compile with `MEDUI-E050`.
   A `max_length` past `maxFieldCells` (64) is `MEDUI-E053` instead, because no box makes it drawable.
-- **Your `charset:` narrows what may appear, not what the box must hold.** The measurement uses the
-  font package's whole charset, which is conservative in the only safe direction; a narrower set
-  would mean shipping a product's charset table beside the artifact.
+- **Your `charset:` is a compile-time claim about the *source*, not a runtime filter.** It says which
+  code points this field's data can produce, and the compiler checks that the font package can draw
+  all of them (`MEDUI-E053`). It does not reach the device: a compiled node carries the charset's
+  *name*, not its set, so what the runtime refuses is a character the **font package's** charset does
+  not admit — which is wider than yours whenever you narrowed it. A host that sends a letter to a
+  digits-only field gets a letter on screen. The box is measured against the font's charset too, for
+  the same reason, which is conservative in the only safe direction. Narrowing enforcement to the
+  node's own set needs the compiled screen to carry resolved ranges, which is
+  [#297](https://github.com/ambroise-leclerc/MduX/issues/297).
 - **Display and caret only.** No composition, no candidate window, no key handling. The host edits
   the value; the screen shows it. A value longer than the field, or a character the font package's
   restricted charset does not admit, refuses the frame rather than truncating or substituting — the

@@ -81,6 +81,20 @@
  * There is no fallback and no substitute: ADR-010 leaves the runtime none, and a `?` in a patient
  * identifier is a different identifier. The compile-time counterpart is the charset check the budget
  * stage already performs, which is what makes this refusal the second line rather than the first.
+ *
+ * ## The limit that leaves, stated rather than left to be found
+ *
+ * A `TextInput`'s own `charset:` is **not** enforced here, and cannot be: a compiled node carries
+ * the charset's *name* and not its set (ADR-011), so this module has nothing to compare a character
+ * against but the font package. A field declared `charset: DIGITS` against a font that also admits
+ * letters will therefore display a letter the host sends it.
+ *
+ * That is a narrower guarantee than an author might read into the field, so it is written down. The
+ * compiler does check the declared set - every code point it can produce must be one the font can
+ * draw - which is what the narrowing is *for*: proving a source cannot escape the package. Enforcing
+ * it on device needs the compiled screen to carry the resolved ranges, which is a schema change and
+ * therefore a change to the shared contract's compiled-screen semantics; #297 is where that is
+ * argued, not here.
  */
 module;
 

@@ -267,6 +267,121 @@ const mdux::spec::Register compileCarriesApprovedPackageIdentity{
             .Execute();
     }};
 
+const mdux::spec::Register aTextInputOnlyScreenCompiles{
+    "A screen whose only text-bearing component is a TextInput compiles end to end",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-textinput-only-screen")
+            .Given("a screen carrying one TextInput and no Label, Clock or NumericDisplay", [] {})
+            .When("it is compiled with the committed font and locale packages", [] {})
+            .Then("the compile succeeds and the field was measured against its box",
+                  [] {
+                      // The regression this exists for, and it is the second time this exact hole
+                      // has been dug: `needsTextBudget()` decides whether a recipe may declare a
+                      // `[text]` table, and it asks the same predicates the measuring pass asks. A
+                      // component added to the second and not the first is a component that cannot
+                      // be compiled alone - #258 hit it with `NumericDisplay` and #260 hit it again
+                      // with `TextInput`.
+                      //
+                      // Both ways out were closed, which is what made it a trap rather than a
+                      // diagnostic: with a `[text]` table the screen was `MEDUI-E002` "carries no
+                      // measurable text", and without one it was `MEDUI-E000`, an *internal* error,
+                      // because `needsTextPackageApproval()` puts `TextInput` among the components
+                      // whose screen must approve a text package. The two predicates disagreed and
+                      // the author was told to report a compiler defect either way.
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-textinput-only"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/entry-only/EntryOnly.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen EntryOnly {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: patient-id;\n"
+                                 "        width: 240px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"PATIENT_ID\";\n"
+                                 "        max_length: 8;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      const std::string recipeText =
+                          "[package]\n"
+                          "id            = \"entry-only\"\n"
+                          "source        = \"recipes/screen/entry-only/EntryOnly.medui\"\n"
+                          "surfaceWidth  = 400\n"
+                          "surfaceHeight = 200\n"
+                          "\n"
+                          "[budget]\n"
+                          "maxVertices = 1024\n"
+                          "maxIndices  = 1536\n"
+                          "maxCommands = 16\n"
+                          "\n"
+                          "[text]\n"
+                          "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                          "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+
+                      const auto recipe = md::parseRecipe(recipeText, "recipes/screen/entry-only.toml", diagnostics);
+                      checks.expect(recipe.has_value(), "the recipe parses");
+                      if (!recipe.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/entry-only.toml", asBytes(recipeText), root.path(), diagnostics);
+                      checks.expect(outputs.has_value(),
+                                    std::format("the screen compiles, got '{}'", diagnostics.empty() ? "" : diagnostics.front().message));
+                      if (!outputs.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      // And the box really was measured rather than skipped: eight cells of the
+                      // committed font's widest permitted glyph plus the caret is 129px, which fits
+                      // 240px - so the same screen with a narrower box must be refused, and it is
+                      // that refusal which proves the measurement ran at all.
+                      std::vector<cli::Diagnostic> narrowDiagnostics;
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen EntryOnly {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: patient-id;\n"
+                                 "        width: 60px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"PATIENT_ID\";\n"
+                                 "        max_length: 8;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+                      const auto narrow = md::run(*recipe, "recipes/screen/entry-only.toml", asBytes(recipeText), root.path(), narrowDiagnostics);
+                      checks.expect(!narrow.has_value(), "a box too narrow for the field is refused");
+                      checks.expect(firstCode(narrowDiagnostics) == "MEDUI-E050",
+                                    std::format("reported as MEDUI-E050, got '{}'", firstCode(narrowDiagnostics)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register noncanonicalTextPackageIsRefused{
     "A valid but noncanonical text package is refused where an author can rebake it",
     "evidence-unit",

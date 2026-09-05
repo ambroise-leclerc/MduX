@@ -721,15 +721,28 @@ bool needsTextBudget(const ast::Screen& screen) {
                     }
                 }
             }
-            // Asked through the same predicates the measuring pass uses, so a third dynamic-text
-            // field reaches this question without anyone having to remember it. The numeric template
-            // belongs here for the same reason and was missing until #258 was reviewed: a screen
-            // whose only text-bearing component is a `NumericDisplay` was classified as carrying no
-            // measurable text, and `Compile.cpp` then refused its `[text]` table before the template
-            // could be measured at all - so a numeric display could not be compiled without a Label
-            // or a Clock beside it to answer this question for it.
+            // Asked through the same predicates the measuring pass uses, so a field added to that
+            // pass reaches this question without anyone having to remember it. That is the intent;
+            // the list below is the part that still has to be extended by hand, and it has been
+            // forgotten twice.
+            //
+            // The numeric template was missing until #258 was reviewed: a screen whose only
+            // text-bearing component is a `NumericDisplay` was classified as carrying no measurable
+            // text, and `Compile.cpp` then refused its `[text]` table before the template could be
+            // measured at all. `max_length` was missing until #260 was reviewed, with a worse
+            // symptom - a `TextInput`-only screen had no way to compile at all. With a `[text]`
+            // table it was `MEDUI-E002`, "carries no measurable text"; without one it was
+            // `MEDUI-E000`, an internal error, because `needsTextPackageApproval()` puts `TextInput`
+            // among the components whose screen *must* approve a text package. Two predicates
+            // disagreeing about the same component told the author to report a compiler defect
+            // whichever way they turned, which is what `medui-compile-textinput-only-screen` pins.
+            //
+            // The rule for the next component: if the measuring pass consults a field, this must
+            // count it, and `needsTextPackageApproval()` in `mdux.medui.schema` must agree about the
+            // component. All three are one decision - "this screen needs a font" - asked in three
+            // places.
             if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)
-                || namesNumericTemplate(node.component, field.name)) {
+                || namesNumericTemplate(node.component, field.name) || namesFieldLength(node.component, field.name)) {
                 return true;
             }
         }
