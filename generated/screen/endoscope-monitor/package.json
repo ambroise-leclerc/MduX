@@ -1,4 +1,12 @@
 {
+  "approvedImagePackages": [
+    {
+      "height": 72,
+      "packageId": "brand-mark",
+      "packageSha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22",
+      "width": 240
+    }
+  ],
   "approvedTextPackages": [
     {
       "locale": "en-US",
@@ -37,7 +45,7 @@
       "id": "brand-mark",
       "kind": "Image",
       "spec": {
-        "source": "IMG-BRAND-MARK"
+        "source": "brand-mark"
       }
     },
     {

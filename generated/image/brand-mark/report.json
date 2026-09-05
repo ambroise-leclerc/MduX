@@ -1,0 +1,31 @@
+{
+  "inputs": [
+    {
+      "path": "recipes/image/brand-mark/brand-mark.qoi",
+      "sha256": "9e6db23196e6dfe04551ab0d87647a6011bb44b3e3396c7481e0bcc982028975"
+    }
+  ],
+  "options": {
+    "id": "brand-mark",
+    "pixelFormat": "rgba8-srgb-straight",
+    "sidecar": "pixels.rgba",
+    "source": "recipes/image/brand-mark/brand-mark.qoi"
+  },
+  "outputs": [
+    {
+      "path": "package.json",
+      "sha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22"
+    },
+    {
+      "path": "pixels.rgba",
+      "sha256": "f94113d65f2c6ee6e4c101b025ce60b69db3553152f1ca34048f85c25c8bdb9e"
+    }
+  ],
+  "recipe": {
+    "path": "recipes/image/brand-mark.toml",
+    "sha256": "8ff03a49c0f96448acd4fc78827ef69e0a42933f81bdc13ace150c77ee587797"
+  },
+  "schemaVersion": 1,
+  "tool": "mdux-imagebake",
+  "toolVersion": "0.7.0"
+}

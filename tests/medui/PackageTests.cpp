@@ -40,6 +40,9 @@ constexpr mdux::draw::DrawBudget testBudget{.maxVertices = 4096, .maxIndices = 6
 constexpr std::array fixtureApprovals{
     ms::TextPackageApproval{.locale = "en-US", .packageId = "every-component-en-us", .packageSha256 = {1}}
 };
+constexpr std::array fixtureImageApprovals{
+    ms::ImagePackageApproval{.packageId = "IMG-LOGO", .packageSha256 = {2}, .width = 120, .height = 60}
+};
 
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
@@ -68,8 +71,9 @@ constexpr std::array fixtureApprovals{
 
 /// The screen carrying all eleven payloads, compiled.
 [[nodiscard]] md::ScreenDocument everyComponent() {
-    return md::buildPackage(layoutOf(fixture("accepted-every-component.medui"), 800, 700),
-                            {.id = "every-component", .budget = testBudget, .approvedTextPackages = fixtureApprovals});
+    return md::buildPackage(
+        layoutOf(fixture("accepted-every-component.medui"), 800, 700),
+        {.id = "every-component", .budget = testBudget, .approvedTextPackages = fixtureApprovals, .approvedImagePackages = fixtureImageApprovals});
 }
 
 /// One Label on a small surface: the screen the byte-exact scenario spells out.
@@ -328,6 +332,7 @@ const mdux::spec::Register theBytesAreExactlyDetermined{
                       const std::string  written = md::writePackage(tinyDocument().package());
 
                       const std::string expected = R"({
+  "approvedImagePackages": [],
   "approvedTextPackages": [
     {
       "locale": "en-US",
@@ -392,6 +397,32 @@ const mdux::spec::Register anUndefinedMemberIsRefused{"A member the format does 
                                                                     })
                                                               .Execute();
                                                       }};
+
+const mdux::spec::Register versionOneImageApprovalsAreOptional{
+    "Version-one screen packages remain readable when image approvals are absent",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-package-v1-optional-image-approvals")
+            .Given("a version-one package produced before approvedImagePackages existed", [] {})
+            .When("the optional member is absent or has the wrong type", [] {})
+            .Then("absence means no approved images, while a present non-array is refused",
+                  [] {
+                      const std::string           written  = md::writePackage(tinyDocument().package());
+                      const std::string           legacy   = editing(written, "  \"approvedImagePackages\": [],\n", "");
+                      const md::PackageReadResult accepted = md::readPackage(legacy, "legacy-package.json");
+                      const md::PackageReadResult refused  = md::readPackage(editing(written, "\"approvedImagePackages\": []", "\"approvedImagePackages\": {}"),
+                                                                            "invalid-package.json");
+
+                      mdux::spec::Checks checks;
+                      checks.expect(accepted.ok(), std::format("the legacy v1 package reads, got '{}'", firstCode(accepted)));
+                      if (accepted.ok()) {
+                          checks.expect(accepted.document.package().approvedImagePackages.empty(), "the omitted member becomes an empty manifest");
+                      }
+                      checks.expect(!refused.ok() && firstCode(refused) == "SCP002", std::format("a present object is SCP002, got '{}'", firstCode(refused)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register unknownClosedMembersAreReported{
     "Unknown closed-set package spellings fail with an actionable diagnostic",

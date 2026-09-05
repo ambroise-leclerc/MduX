@@ -20,6 +20,7 @@ import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.draw;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.text.schema;
@@ -961,3 +962,88 @@ const mdux::spec::Register anUnboundLabelIsDeferred{"Without a binding a label i
                                                                   })
                                                             .Execute();
                                                     }};
+
+const mdux::spec::Register imageBindingIsAuthenticated{
+    "An image is recorded only through the package and sidecar identity approved by its screen",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-screen-image-binding")
+            .Given("a two-pixel image package approved at its intrinsic extent", [] {})
+            .When("valid and substituted bindings are created", [] {})
+            .Then("only the authenticated bytes produce a full-sheet sampled rectangle",
+                  [] {
+                      constexpr std::array<std::byte, 8>
+                          pixels{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{255}, std::byte{4}, std::byte{5}, std::byte{6}, std::byte{128}};
+                      mdux::image::ImagePackage image;
+                      image.header.id         = "runtime-image";
+                      image.width             = 2;
+                      image.height            = 1;
+                      image.sidecarByteLength = pixels.size();
+                      image.sidecarSha256     = mdux::evidence::sha256(pixels);
+                      const auto packageJson  = image.write();
+                      if (!packageJson.has_value()) {
+                          throw speclab::core::AssertionFailure("the fixture image package did not serialize", std::source_location::current());
+                      }
+
+                      const std::array approvals{
+                          ms::ImagePackageApproval{.packageId     = "runtime-image",
+                                                   .packageSha256 = mdux::evidence::sha256(bytesOf(*packageJson)),
+                                                   .width         = image.width,
+                                                   .height        = image.height}
+                      };
+                      constexpr ms::ImageSpec imageSpec{.source = "runtime-image"};
+                      constexpr std::array    nodes{
+                          ms::CompiledNode{.id = "image", .bounds = {4, 5, 2, 1}, .payload = imageSpec}
+                      };
+                      const ms::ScreenPackage screen{.id                    = "image-screen",
+                                                     .schemaVersion         = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth          = 20,
+                                                     .surfaceHeight         = 10,
+                                                     .approvedTextPackages  = {},
+                                                     .approvedImagePackages = approvals,
+                                                     .nodes                 = nodes,
+                                                     .budget                = testBudget};
+
+                      mdux::spec::Checks checks;
+                      auto               binding = ms::ImageBinding::create(screen, image, bytesOf(*packageJson), pixels);
+                      checks.expect(binding.has_value(), "the approved package and sidecar bind");
+                      // A binding retains values, not pointers into the package. Moving the caller's
+                      // owning package must not invalidate the authenticated identity used below.
+                      mdux::image::ImagePackage relocatedImage = std::move(image);
+                      if (binding.has_value()) {
+                          Scratch    scratch;
+                          auto       list  = scratch.list(testBudget);
+                          const auto frame = ms::render(screen, list, {}, *binding);
+                          checks.expect(frame.has_value(), "the image frame records");
+                          checks.expect(list.commands().size() == 1, "one sampled rectangle is emitted");
+                          checks.expect(list.vertices().size() == 4, "the rectangle has four vertices");
+                          if (list.vertices().size() == 4) {
+                              checks.expect(list.vertices()[0].mode == static_cast<std::uint32_t>(mdux::draw::DrawMode::SampledRgba),
+                                            "the rectangle selects sampledRgba");
+                              checks.expect(list.vertices()[0].u == 0.0F && list.vertices()[0].v == 0.0F && list.vertices()[2].u == 1.0F
+                                                && list.vertices()[2].v == 1.0F,
+                                            "the rectangle addresses the complete image");
+                          }
+                      }
+
+                      auto changedPixels         = pixels;
+                      changedPixels[0]           = std::byte{9};
+                      const auto sidecarMismatch = ms::ImageBinding::create(screen, relocatedImage, bytesOf(*packageJson), changedPixels);
+                      checks.expect(!sidecarMismatch.has_value() && sidecarMismatch.error() == ms::ScreenError::ImageSidecarMismatch,
+                                    "same-length substituted pixels are refused by digest");
+                      const auto packageMismatch = ms::ImageBinding::create(screen, relocatedImage, bytesOf("{}\n"), pixels);
+                      checks.expect(!packageMismatch.has_value() && packageMismatch.error() == ms::ScreenError::ImageNotApproved,
+                                    "package bytes that do not represent the parsed package are refused");
+
+                      const std::array secondApproval{
+                          approvals[0],
+                          ms::ImagePackageApproval{.packageId = "other-image", .packageSha256 = {2}, .width = 2, .height = 1}
+                      };
+                      ms::ScreenPackage ambiguous     = screen;
+                      ambiguous.approvedImagePackages = secondApproval;
+                      checks.expect(!ambiguous.validate().has_value() && ambiguous.validate().error() == ms::SchemaError::TooManyApprovedImages,
+                                    "the schema refuses more image packages than the fixed descriptor can hold");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

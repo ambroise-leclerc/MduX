@@ -1,0 +1,10 @@
+# Demonstrator brand mark for the committed EndoscopeMonitor screen.
+#
+# Designers export lossless artwork as QOI before baking. PNG is intentionally unsupported:
+# decoding it would add a DEFLATE implementation or a third-party authoring dependency, while QOI
+# is decoded by the small host-only module in tools/image/Qoi.cpp.
+
+[package]
+id      = "brand-mark"
+source  = "recipes/image/brand-mark/brand-mark.qoi"
+sidecar = "pixels.rgba"

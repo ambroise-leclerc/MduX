@@ -13,19 +13,19 @@
  *
  * ## What is on screen
  *
- * The runtime draws a `Panel`, a `Label`, and the two fields #255 added. `EndoscopeMonitor`'s Row
+ * The runtime draws a `Panel`, an authenticated `Image`, a `Label`, and the two fields #255 added. `EndoscopeMonitor`'s Row
  * declares a background, so the solver synthesised one, and that is what appears first: a 1280x72
  * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
  * text package (#242). Below it the `NumericDisplay` and the `SignalTrace` paint the rectangles they
- * reserve, in the tokens their author gave them. Its image and its video surface are still visited,
- * counted as deferred, and left undrawn, because they need a package this repository does not yet
- * bake and a stream no test supplies.
+ * reserve, in the tokens their author gave them. Its video surface is still visited, counted as
+ * deferred, and left undrawn because no test supplies a stream.
  *
- * Two scenarios below, deliberately not one. The first renders without a binding and is the older
+ * Two authored-screen scenarios below, deliberately not one. The first renders without bindings and is the older
  * claim unchanged - the panel and the fields land where the compiler put them, every text node
  * deferred. The second binds the committed font and text packages and checks the glyphs. Keeping
  * them apart is what makes the unbound path a tested contract rather than a code path nobody
- * exercises once a binding exists.
+ * exercises once bindings exist. The bound scenario also compares every rendered image pixel to
+ * its committed RGBA sidecar, so a colour-space mismatch cannot be accepted as a new expectation.
  *
  * What this test proves is not that MduX can draw a clinical screen; it is that a bar, a title and
  * two reserved fields on this display came from files an author wrote, through every stage, with
@@ -70,6 +70,7 @@ import mdux.medui.screen;
 import mdux.render.offscreen;
 import mdux.render.vulkan;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.shader.schema;
 import mdux.text.draw;
 import mdux.text.schema;
@@ -112,6 +113,8 @@ static_assert(compiled.validate().has_value(), "the committed screen's generated
 static_assert(compiled.approvedTextPackages.size() == 1, "the committed screen approves one locale package");
 static_assert(compiled.approvedTextPackages[0].locale == "en-US", "the emitted approval keeps its locale");
 static_assert(compiled.approvedTextPackages[0].packageId == "endoscope-monitor-en-us", "the emitted approval keeps its package id");
+static_assert(compiled.approvedImagePackages.size() == 1, "the committed screen approves one image package");
+static_assert(compiled.approvedImagePackages[0].packageId == "brand-mark", "the emitted image approval keeps its package id");
 
 /// Storage sized once from the screen's own budget, as a device would size it - and sized *by* it,
 /// so the two cannot drift. Hard-coding the three numbers would have left this test claiming a
@@ -190,6 +193,32 @@ struct BoundText {
     }
     bound.font = std::move(*font);
     bound.text = std::move(*text);
+    return bound;
+}
+
+struct BoundImage {
+    std::vector<std::byte>    imageJson;
+    std::vector<std::byte>    pixels;
+    mdux::image::ImagePackage image;
+
+    [[nodiscard]] medui::ImageBinding binding(const medui::ScreenPackage& screen) const {
+        auto made = medui::ImageBinding::create(screen, image, imageJson, pixels);
+        if (!made.has_value()) {
+            throw std::runtime_error(std::format("the committed image was refused: {}", medui::describe(made.error())));
+        }
+        return *made;
+    }
+};
+
+[[nodiscard]] BoundImage loadCommittedImage() {
+    BoundImage bound;
+    bound.imageJson = committed("image", "brand-mark", "package.json");
+    bound.pixels    = committed("image", "brand-mark", "pixels.rgba");
+    auto image      = mdux::image::ImagePackage::parse(asText(bound.imageJson));
+    if (!image.has_value()) {
+        throw std::runtime_error("the committed image package did not parse");
+    }
+    bound.image = std::move(*image);
     return bound;
 }
 
@@ -363,9 +392,10 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     // own node names.
     ExpectedImage expected{surface, background};
     for (const auto& [id, tint] : std::initializer_list<std::pair<std::string_view, core::ColorRgba8>>{
-             {"topbar-background", core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255}},
-             {"insufflation-pressure", core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
-             {"ecg-lead-ii", core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}}}) {
+             {    "topbar-background", core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255}},
+             {"insufflation-pressure",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
+             {          "ecg-lead-ii",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}}
+    }) {
         const medui::CompiledNode* node = package.find(id);
         REQUIRE(node != nullptr);
         expected.paint(core::Rect{.x = node->bounds.x, .y = node->bounds.y, .width = node->bounds.width, .height = node->bounds.height}, tint);
@@ -516,9 +546,9 @@ TEST_CASE("Every golden region is painted where and in the tint the sidecar pins
             REQUIRE(unsignedValue.has_value());
             return static_cast<std::int64_t>(*unsignedValue);
         };
-        const std::int64_t left = member("x");
-        const std::int64_t top = member("y");
-        const std::int64_t width = member("width");
+        const std::int64_t left   = member("x");
+        const std::int64_t top    = member("y");
+        const std::int64_t width  = member("width");
         const std::int64_t height = member("height");
 
         const auto tokenValue = entry.require("colorToken");
@@ -546,13 +576,14 @@ TEST_CASE("Every golden region is painted where and in the tint the sidecar pins
     }
 }
 
-TEST_CASE("An authored screen's label reaches pixels where the compiler measured it", "pixel") {
+TEST_CASE("An authored screen's label and image reach the pixels the compiler approved", "pixel") {
     // The last link the chain was missing. The screen, the font package and the text package are all
     // committed artifacts; the runtime joins them; the glyphs land on the display. Nothing in this
     // scenario is hand-carried - the bytes are the ones `ctest -L evidence` byte-compares.
     const medui::ScreenPackage package = screen();
     const core::Extent2D       surface = surfaceOf(package);
     const BoundText            bound   = loadCommittedText();
+    const BoundImage           image   = loadCommittedImage();
 
     const medui::CompiledNode* label = package.find("screen-title");
     REQUIRE(label != nullptr);
@@ -572,28 +603,31 @@ TEST_CASE("An authored screen's label reaches pixels where the compiler measured
     // The coverage overload, with the committed atlas. A default renderer would sample a white
     // 1x1 default and every glyph would come out a filled rectangle - which would still "draw
     // text" in the loosest sense and would prove nothing about the atlas.
-    auto renderer = UiRenderer::createWithCoverageAtlas(context,
-                                                        mdux::shader::generated::mdux_ui::package(),
-                                                        package.budget,
-                                                        bound.atlas,
-                                                        bound.font.atlas.width,
-                                                        bound.font.atlas.height);
+    auto renderer = UiRenderer::createWithAtlases(context,
+                                                  mdux::shader::generated::mdux_ui::package(),
+                                                  package.budget,
+                                                  bound.atlas,
+                                                  bound.font.atlas.width,
+                                                  bound.font.atlas.height,
+                                                  image.pixels,
+                                                  image.image.width,
+                                                  image.image.height);
     REQUIRE(renderer.has_value());
 
     Frame frame;
     auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
     REQUIRE(list.has_value());
 
-    const auto recorded = medui::render(package, *list, bound.binding(package));
+    const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package));
     REQUIRE(recorded.has_value());
 
     // One fewer deferred node than the unbound frame, and the difference is the label. Asserted as
     // the count rather than as "the label was drawn" so that a future component learning to draw
     // cannot make this scenario pass for a reason it does not name.
-    CHECK(recorded->deferred == 2);
+    CHECK(recorded->deferred == 1);
     // The panel and the two fields, plus one rectangle per inked glyph. "Endoscope Monitor" is 17
     // characters of which the space paints nothing, so 16 glyphs and three filled rectangles.
-    CHECK(recorded->rects == 19);
+    CHECK(recorded->rects == 20);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -622,4 +656,24 @@ TEST_CASE("An authored screen's label reaches pixels where the compiler measured
     // The build-time promise, now observable: the text fits the box it was measured against.
     CHECK(painted.right <= label->bounds.x + label->bounds.width);
     CHECK(painted.bottom <= label->bounds.y + label->bounds.height);
+
+    const medui::CompiledNode* imageNode = package.find("brand-mark");
+    REQUIRE(imageNode != nullptr);
+    std::size_t mismatchedImagePixels = 0;
+    for (std::int32_t y = 0; y < imageNode->bounds.height; ++y) {
+        for (std::int32_t x = 0; x < imageNode->bounds.width; ++x) {
+            const std::size_t source =
+                (static_cast<std::size_t>(y) * image.image.width + static_cast<std::size_t>(x)) * 4;
+            const core::ColorRgba8 expected{std::to_integer<std::uint8_t>(image.pixels[source]),
+                                            std::to_integer<std::uint8_t>(image.pixels[source + 1]),
+                                            std::to_integer<std::uint8_t>(image.pixels[source + 2]),
+                                            std::to_integer<std::uint8_t>(image.pixels[source + 3])};
+            const std::size_t      targetIndex = static_cast<std::size_t>(imageNode->bounds.y + y) * static_cast<std::size_t>(surface.width)
+                                            + static_cast<std::size_t>(imageNode->bounds.x + x);
+            const core::ColorRgba8 actual = (*pixels)[targetIndex];
+            mismatchedImagePixels += static_cast<std::size_t>(actual != expected);
+        }
+    }
+    CHECK_MESSAGE(mismatchedImagePixels == 0,
+                  std::format("{} baked image pixels differ from the committed RGBA sidecar", mismatchedImagePixels));
 }

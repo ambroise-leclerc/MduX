@@ -99,29 +99,36 @@ inline constexpr std::string_view packageKind = "screen";
 inline constexpr std::string_view colorTokenPrefix = "Theme.Colors.";
 
 enum class SchemaError : std::uint8_t {
-    UnsupportedSchemaVersion,    ///< the package declares a version this module does not read
-    EmptyId,                     ///< the screen has no id, so no directory and no evidence entry
-    NonPositiveSurface,          ///< a surface with no extent cannot contain a rectangle
-    EmptyNodeId,                 ///< a node with no id cannot be named by a golden or a requirement
-    DuplicateNodeId,             ///< two nodes share an id, so a golden could name either
-    DegenerateBounds,            ///< a rectangle with no extent, which `DrawList` refuses to record
-    BoundsOutsideSurface,        ///< a rectangle the declared surface does not contain
-    MalformedColorToken,         ///< a colour that is not a `Theme.Colors.<Token>` name
-    UnknownColorToken,           ///< a well-formed name the governed table does not define
-    UnknownPayload,              ///< a payload this module cannot name, or one left valueless
-    EmptyRequiredName,           ///< a spec field the component dictionary requires is empty
-    NoStates,                    ///< a status indicator that can show nothing
-    StateColorCountMismatch,     ///< per-state tints that do not pair one-to-one with the states
-    NonPositiveMaxLength,        ///< a text input that can hold no character
-    EmptyBudget,                 ///< a screen with nodes whose budget can hold no primitive
-    BudgetExceedsIndexWidth,     ///< more vertices than a 16-bit index can address
-    EmptyApprovedLocale,         ///< a text-package approval does not name its locale
-    EmptyApprovedPackageId,      ///< a text-package approval does not name its package
-    EmptyApprovedPackageDigest,  ///< a text-package approval carries no package identity
-    DuplicateApprovedLocale,     ///< two text-package approvals claim the same locale
-    MissingTextPackageApproval,  ///< a text-bearing screen approves no text package
-    UnspecifiedNamedValue,       ///< a closed-set field left at its `Unspecified` sentinel
-    NamedValueOutOfRange,        ///< a closed-set field holding no enumerator of its type
+    UnsupportedSchemaVersion,     ///< the package declares a version this module does not read
+    EmptyId,                      ///< the screen has no id, so no directory and no evidence entry
+    NonPositiveSurface,           ///< a surface with no extent cannot contain a rectangle
+    EmptyNodeId,                  ///< a node with no id cannot be named by a golden or a requirement
+    DuplicateNodeId,              ///< two nodes share an id, so a golden could name either
+    DegenerateBounds,             ///< a rectangle with no extent, which `DrawList` refuses to record
+    BoundsOutsideSurface,         ///< a rectangle the declared surface does not contain
+    MalformedColorToken,          ///< a colour that is not a `Theme.Colors.<Token>` name
+    UnknownColorToken,            ///< a well-formed name the governed table does not define
+    UnknownPayload,               ///< a payload this module cannot name, or one left valueless
+    EmptyRequiredName,            ///< a spec field the component dictionary requires is empty
+    NoStates,                     ///< a status indicator that can show nothing
+    StateColorCountMismatch,      ///< per-state tints that do not pair one-to-one with the states
+    NonPositiveMaxLength,         ///< a text input that can hold no character
+    EmptyBudget,                  ///< a screen with nodes whose budget can hold no primitive
+    BudgetExceedsIndexWidth,      ///< more vertices than a 16-bit index can address
+    EmptyApprovedLocale,          ///< a text-package approval does not name its locale
+    EmptyApprovedPackageId,       ///< a text-package approval does not name its package
+    EmptyApprovedPackageDigest,   ///< a text-package approval carries no package identity
+    DuplicateApprovedLocale,      ///< two text-package approvals claim the same locale
+    MissingTextPackageApproval,   ///< a text-bearing screen approves no text package
+    EmptyApprovedImageId,         ///< an image-package approval does not name its package
+    EmptyApprovedImageDigest,     ///< an image-package approval carries no package identity
+    NonPositiveImageExtent,       ///< an image-package approval has no intrinsic extent
+    ImageExtentMismatch,          ///< an Image node differs from its package's intrinsic extent
+    TooManyApprovedImages,        ///< S1 has one immutable RGBA descriptor per screen
+    DuplicateApprovedImage,       ///< two image approvals claim the same package id
+    MissingImagePackageApproval,  ///< an Image names no approved image package
+    UnspecifiedNamedValue,        ///< a closed-set field left at its `Unspecified` sentinel
+    NamedValueOutOfRange,         ///< a closed-set field holding no enumerator of its type
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
@@ -172,6 +179,20 @@ enum class SchemaError : std::uint8_t {
             return "two approved text packages claim the same locale";
         case SchemaError::MissingTextPackageApproval:
             return "a text-bearing screen approves no text package";
+        case SchemaError::EmptyApprovedImageId:
+            return "an approved image package does not name its package id";
+        case SchemaError::EmptyApprovedImageDigest:
+            return "an approved image package does not carry its package digest";
+        case SchemaError::NonPositiveImageExtent:
+            return "an approved image package has no intrinsic extent";
+        case SchemaError::ImageExtentMismatch:
+            return "an Image node differs from its approved package's intrinsic extent";
+        case SchemaError::TooManyApprovedImages:
+            return "S1 supports at most one approved image package per screen";
+        case SchemaError::DuplicateApprovedImage:
+            return "two approved image packages claim the same package id";
+        case SchemaError::MissingImagePackageApproval:
+            return "an Image names no approved image package";
     }
     return "unknown schema error";
 }
@@ -721,6 +742,16 @@ struct TextPackageApproval {
     [[nodiscard]] constexpr bool operator==(const TextPackageApproval&) const noexcept = default;
 };
 
+/** @brief One baked image package this screen was compiled and reviewed against. */
+struct ImagePackageApproval {
+    std::string_view packageId;        ///< the image package header id and Image source
+    evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
+    std::uint32_t    width{0};         ///< intrinsic width checked against the node
+    std::uint32_t    height{0};        ///< intrinsic height checked against the node
+
+    [[nodiscard]] constexpr bool operator==(const ImagePackageApproval&) const noexcept = default;
+};
+
 /**
  * @brief A whole compiled screen as generated code exposes it and the runtime consumes it.
  *
@@ -728,13 +759,14 @@ struct TextPackageApproval {
  * in read-only memory and `static_assert` that it validates.
  */
 struct ScreenPackage {
-    std::string_view                     id;
-    std::uint64_t                        schemaVersion{evidence::kSchemaVersion};
-    std::int32_t                         surfaceWidth{0};
-    std::int32_t                         surfaceHeight{0};
-    std::span<const TextPackageApproval> approvedTextPackages;
-    std::span<const CompiledNode>        nodes;
-    mdux::draw::DrawBudget               budget{};
+    std::string_view                      id;
+    std::uint64_t                         schemaVersion{evidence::kSchemaVersion};
+    std::int32_t                          surfaceWidth{0};
+    std::int32_t                          surfaceHeight{0};
+    std::span<const TextPackageApproval>  approvedTextPackages;
+    std::span<const ImagePackageApproval> approvedImagePackages{};
+    std::span<const CompiledNode>         nodes;
+    mdux::draw::DrawBudget                budget{};
 
     /// Checks every invariant a consumer is entitled to assume. See the module comment for the one
     /// invariant it deliberately leaves to the compiler: whether the budget is *large enough*.
@@ -992,10 +1024,35 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         }
     }
 
+    if (approvedImagePackages.size() > 1) {
+        return err(SchemaError::TooManyApprovedImages);
+    }
+    for (std::size_t index = 0; index < approvedImagePackages.size(); ++index) {
+        const ImagePackageApproval& approval = approvedImagePackages[index];
+        if (approval.packageId.empty()) {
+            return err(SchemaError::EmptyApprovedImageId);
+        }
+        if (approval.packageSha256 == evidence::Digest{}) {
+            return err(SchemaError::EmptyApprovedImageDigest);
+        }
+        if (approval.width == 0 || approval.height == 0) {
+            return err(SchemaError::NonPositiveImageExtent);
+        }
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (approvedImagePackages[earlier].packageId == approval.packageId) {
+                return err(SchemaError::DuplicateApprovedImage);
+            }
+        }
+    }
+
     for (std::size_t index = 0; index < nodes.size(); ++index) {
         const CompiledNode& node = nodes[index];
+        // See validatePayload()'s rationale: GCC 16.1 under UBSan rejects std::get_if over a
+        // subobject of an external inline variable during constant evaluation. Generated screens
+        // have exactly that storage shape, so inspect an automatic copy throughout this iteration.
+        const NodePayload payload = node.payload;
 
-        if (approvedTextPackages.empty() && needsTextPackageApproval(node.payload)) {
+        if (approvedTextPackages.empty() && needsTextPackageApproval(payload)) {
             return err(SchemaError::MissingTextPackageApproval);
         }
 
@@ -1015,8 +1072,19 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        if (const auto payload = validatePayload(node.payload); !payload.has_value()) {
-            return payload;
+        if (const auto validPayload = validatePayload(payload); !validPayload.has_value()) {
+            return validPayload;
+        }
+        if (const auto* image = std::get_if<ImageSpec>(&payload); image != nullptr) {
+            const auto approval = std::ranges::find_if(approvedImagePackages, [image](const ImagePackageApproval& candidate) {
+                return candidate.packageId == image->source;
+            });
+            if (approval == approvedImagePackages.end()) {
+                return err(SchemaError::MissingImagePackageApproval);
+            }
+            if (approval->width != static_cast<std::uint32_t>(node.bounds.width) || approval->height != static_cast<std::uint32_t>(node.bounds.height)) {
+                return err(SchemaError::ImageExtentMismatch);
+            }
         }
     }
 

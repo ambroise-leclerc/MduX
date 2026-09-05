@@ -27,3 +27,6 @@ surfaceHeight = 300
 maxVertices = 4096
 maxIndices  = 6144
 maxCommands = 256
+
+[images]
+packages = ["generated/image/brand-mark/package.json"]

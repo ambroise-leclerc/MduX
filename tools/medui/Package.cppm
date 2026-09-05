@@ -116,9 +116,10 @@ export namespace mdux::tools::medui {
  * nodes, and `DrawList` fails closed against it at run time.
  */
 struct PackageInputs {
-    std::string_view                                  id;
-    mdux::draw::DrawBudget                            budget{};
-    std::span<const mdux::medui::TextPackageApproval> approvedTextPackages;
+    std::string_view                                   id;
+    mdux::draw::DrawBudget                             budget{};
+    std::span<const mdux::medui::TextPackageApproval>  approvedTextPackages;
+    std::span<const mdux::medui::ImagePackageApproval> approvedImagePackages{};
 };
 
 /**
@@ -144,11 +145,12 @@ public:
     [[nodiscard]] mdux::medui::ScreenPackage package() const noexcept;
 
     /// Records the header. Interns `id`, so the caller's storage need not outlive the call.
-    void setHeader(std::string_view                                  id,
-                   std::int32_t                                      surfaceWidth,
-                   std::int32_t                                      surfaceHeight,
-                   mdux::draw::DrawBudget                            budget,
-                   std::span<const mdux::medui::TextPackageApproval> approvedTextPackages);
+    void setHeader(std::string_view                                   id,
+                   std::int32_t                                       surfaceWidth,
+                   std::int32_t                                       surfaceHeight,
+                   mdux::draw::DrawBudget                             budget,
+                   std::span<const mdux::medui::TextPackageApproval>  approvedTextPackages,
+                   std::span<const mdux::medui::ImagePackageApproval> approvedImagePackages = {});
 
     /// Appends a node. Its views must already point into this document - `intern()` produces them.
     ///
@@ -167,14 +169,15 @@ public:
     [[nodiscard]] std::span<const std::string_view> internList(std::span<const std::string> items);
 
 private:
-    std::deque<std::string>                       text_;
-    std::deque<std::vector<std::string_view>>     lists_;
-    std::vector<mdux::medui::TextPackageApproval> approvedTextPackages_;
-    std::vector<mdux::medui::CompiledNode>        nodes_;
-    std::string_view                              id_;
-    std::int32_t                                  surfaceWidth_{0};
-    std::int32_t                                  surfaceHeight_{0};
-    mdux::draw::DrawBudget                        budget_{};
+    std::deque<std::string>                        text_;
+    std::deque<std::vector<std::string_view>>      lists_;
+    std::vector<mdux::medui::TextPackageApproval>  approvedTextPackages_;
+    std::vector<mdux::medui::ImagePackageApproval> storedImagePackages;
+    std::vector<mdux::medui::CompiledNode>         nodes_;
+    std::string_view                               id_;
+    std::int32_t                                   surfaceWidth_{0};
+    std::int32_t                                   surfaceHeight_{0};
+    mdux::draw::DrawBudget                         budget_{};
 };
 
 /**

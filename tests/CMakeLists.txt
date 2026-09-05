@@ -743,6 +743,33 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
+# Governed image schema and host-only QOI baker stay in separate executables so the Core-only link
+# remains standing evidence that the decoder never enters the device runtime.
+add_executable(image_spec image/ImageSpecMain.cpp image/SchemaTests.cpp)
+target_link_libraries(image_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(image_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(image_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(image_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(image_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(image_spec)
+
+add_executable(image_tools_spec image/ImageToolsSpecMain.cpp image/QoiTests.cpp image/ImageBakeTests.cpp)
+target_link_libraries(image_tools_spec PRIVATE MduX::ImageBakeLib speclab::speclab)
+target_include_directories(image_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(image_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(image_tools_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(image_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(image_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(image_tools_spec)
+
 # Governed compiled-screen schema (issue #197)
 #
 # Links MduX::Core only, and deliberately not MduX::MeduiLib. `mdux.medui.schema` is the one type a

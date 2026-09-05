@@ -14,6 +14,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.render.offscreen;
@@ -279,11 +280,8 @@ void writeDiffImage(RunResult&                              result,
         if (outcome.held()) {
             continue;
         }
-        marks.push_back(DiffMark{.nodeId     = outcome.nodeId,
-                                 .check      = outcome.check,
-                                 .expected   = outcome.expected,
-                                 .found      = outcome.found,
-                                 .foundValid = outcome.foundValid});
+        marks.push_back(
+            DiffMark{.nodeId = outcome.nodeId, .check = outcome.check, .expected = outcome.expected, .found = outcome.found, .foundValid = outcome.foundValid});
     }
     if (marks.empty()) {
         return;
@@ -402,6 +400,40 @@ struct LocaleAssets {
     mdux::font::FontPackage font;
     std::vector<std::byte>  atlas;
 };
+
+struct ImageAssets {
+    std::string               imageJson;
+    mdux::image::ImagePackage image;
+    std::vector<std::byte>    pixels;
+};
+
+[[nodiscard]] std::optional<ImageAssets>
+loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
+    const auto packagePath = artifactRoot / "image" / approval.packageId / "package.json";
+    auto       imageJson   = readText(packagePath);
+    if (!imageJson) {
+        report(diagnostics, packagePath, "VUI006", "cannot read approved image package");
+        return std::nullopt;
+    }
+    auto image = mdux::image::ImagePackage::parse(*imageJson);
+    if (!image.has_value()) {
+        report(diagnostics, packagePath, "VUI006", "invalid approved image package: " + std::string{mdux::image::describe(image.error())});
+        return std::nullopt;
+    }
+    const auto canonical = image->write();
+    if (!canonical.has_value() || *canonical != *imageJson || image->header.id != approval.packageId || image->width != approval.width
+        || image->height != approval.height || mdux::evidence::sha256(std::as_bytes(std::span{*imageJson})) != approval.packageSha256) {
+        report(diagnostics, packagePath, "VUI006", "approved image identity, extent, digest, or canonical bytes disagree with the screen manifest");
+        return std::nullopt;
+    }
+    const auto pixelsPath = packagePath.parent_path() / image->sidecarPath;
+    auto       pixels     = readBytes(pixelsPath);
+    if (!pixels || pixels->size() != image->sidecarByteLength || mdux::evidence::sha256(*pixels) != image->sidecarSha256) {
+        report(diagnostics, pixelsPath, "VUI006", "image sidecar does not match its package");
+        return std::nullopt;
+    }
+    return ImageAssets{.imageJson = std::move(*imageJson), .image = std::move(*image), .pixels = std::move(*pixels)};
+}
 
 [[nodiscard]] std::optional<LocaleAssets>
 loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
@@ -721,10 +753,10 @@ PlanResult enumerate(const mdux::medui::ScreenPackage& screen, std::span<const m
 
 RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOptions& options) {
     const std::filesystem::path& artifactRoot = options.artifactRoot;
-    RunResult                   result;
-    const std::filesystem::path screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
-    const auto                  packagePath     = screenDirectory / "package.json";
-    const auto                  packageText     = readText(packagePath);
+    RunResult                    result;
+    const std::filesystem::path  screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
+    const auto                   packagePath     = screenDirectory / "package.json";
+    const auto                   packageText     = readText(packagePath);
     if (!packageText) {
         report(result.diagnostics, packagePath, "VUI001", "cannot read screen package.json");
         return result;
@@ -790,6 +822,18 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
                 {.role = "fontPackage", .id = std::string{assets->font.id}, .locale = assets->locale, .sha256 = hexDigest(assets->fontJson)});
             locales.push_back(std::move(*assets));
         }
+    }
+
+    std::optional<ImageAssets> imageAssets;
+    if (!screen.approvedImagePackages.empty()) {
+        if (screen.approvedImagePackages.size() != 1) {
+            report(result.diagnostics, packagePath, "VUI006", "S1 supports exactly one approved image package per screen");
+            return result;
+        }
+        imageAssets = loadImage(screen.approvedImagePackages.front(), artifactRoot, result.diagnostics);
+        if (!imageAssets.has_value())
+            return result;
+        result.inputs.push_back({.role = "imagePackage", .id = imageAssets->image.header.id, .locale = {}, .sha256 = hexDigest(imageAssets->imageJson)});
     }
 
     // Validate every artifact-derived expectation before creating a device or rendering a frame.
@@ -869,9 +913,10 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
     }
 
     for (std::size_t scopeIndex = 0; scopeIndex < (hasText ? locales.size() : 1U); ++scopeIndex) {
-        const mv::RenderScope                   scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
-        std::optional<mdux::medui::TextBinding> binding;
-        LocaleAssets*                           locale = hasText ? &locales[scopeIndex] : nullptr;
+        const mv::RenderScope                    scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
+        std::optional<mdux::medui::TextBinding>  binding;
+        std::optional<mdux::medui::ImageBinding> imageBinding;
+        LocaleAssets*                            locale = hasText ? &locales[scopeIndex] : nullptr;
         if (hasText) {
             auto made = mdux::medui::TextBinding::create(screen, locale->font, locale->text, std::as_bytes(std::span{locale->textJson}), locale->runs);
             if (!made.has_value()) {
@@ -880,8 +925,19 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             }
             binding.emplace(std::move(*made));
         }
+        if (imageAssets.has_value()) {
+            auto made = mdux::medui::ImageBinding::create(screen, imageAssets->image, std::as_bytes(std::span{imageAssets->imageJson}), imageAssets->pixels);
+            if (!made.has_value()) {
+                report(result.diagnostics, packagePath, "VUI008", "authenticated image binding became unavailable before render");
+                return result;
+            }
+            imageBinding.emplace(std::move(*made));
+        }
         drawList->reset();
-        const auto frame = hasText ? mdux::medui::render(screen, *drawList, *binding) : mdux::medui::render(screen, *drawList);
+        const auto frame = mdux::medui::render(screen,
+                                               *drawList,
+                                               hasText ? *binding : mdux::medui::TextBinding{},
+                                               imageBinding.has_value() ? *imageBinding : mdux::medui::ImageBinding{});
         if (!frame.has_value()) {
             report(result.diagnostics,
                    packagePath,
@@ -896,13 +952,28 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
                                                         .queue            = device.queue(),
                                                         .queueFamilyIndex = device.family(),
                                                         .viewport         = extent};
-        auto                                    renderer = hasText ? mdux::render::UiRenderer::createWithCoverageAtlas(context,
-                                                                                    shader->view(),
-                                                                                    screen.budget,
-                                                                                    locale->atlas,
-                                                                                    locale->font.atlas.width,
-                                                                                    locale->font.atlas.height)
-                                                                   : mdux::render::UiRenderer::create(context, shader->view(), screen.budget);
+        auto                                    renderer = hasText && imageAssets.has_value() ? mdux::render::UiRenderer::createWithAtlases(context,
+                                                                                                         shader->view(),
+                                                                                                         screen.budget,
+                                                                                                         locale->atlas,
+                                                                                                         locale->font.atlas.width,
+                                                                                                         locale->font.atlas.height,
+                                                                                                         imageAssets->pixels,
+                                                                                                         imageAssets->image.width,
+                                                                                                         imageAssets->image.height)
+                                                           : hasText                          ? mdux::render::UiRenderer::createWithCoverageAtlas(context,
+                                                                                      shader->view(),
+                                                                                      screen.budget,
+                                                                                      locale->atlas,
+                                                                                      locale->font.atlas.width,
+                                                                                      locale->font.atlas.height)
+                                                           : imageAssets.has_value()          ? mdux::render::UiRenderer::createWithImageAtlas(context,
+                                                                                                   shader->view(),
+                                                                                                   screen.budget,
+                                                                                                   imageAssets->pixels,
+                                                                                                   imageAssets->image.width,
+                                                                                                   imageAssets->image.height)
+                                                                                     : mdux::render::UiRenderer::create(context, shader->view(), screen.budget);
         if (!renderer.has_value()) {
             report(result.diagnostics,
                    packagePath,

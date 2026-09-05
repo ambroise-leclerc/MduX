@@ -4,7 +4,7 @@
     {
       "id": "endoscope-monitor",
       "role": "screenPackage",
-      "sha256": "79bb460bbf10e51b69eeddde9782e3ef99c464a2c8d9e71cc0601623703fde07"
+      "sha256": "cd22a85eb6e339efd374ed76e494f065a57eabe360a078ca7e3b9a9b286bff85"
     },
     {
       "id": "endoscope-monitor",
@@ -14,7 +14,7 @@
     {
       "id": "mdux-ui",
       "role": "shaderPackage",
-      "sha256": "d3a6531a26084f559fe514b190ce3b06bdfb7452be90a45a1b5b7fd35464c105"
+      "sha256": "5389d2cdffeff9f971b925607a9be82d18cec559336fd420d8a440bd993cfb71"
     },
     {
       "id": "endoscope-monitor-en-us",
@@ -27,6 +27,11 @@
       "locale": "en-US",
       "role": "fontPackage",
       "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+    },
+    {
+      "id": "brand-mark",
+      "role": "imagePackage",
+      "sha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22"
     }
   ],
   "kind": "screen",

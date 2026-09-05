@@ -93,6 +93,7 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.evidence.digest`, `.json`, `.report` | `include/mdux/evidence/` | `src/evidence/` |
 | `mdux.governance`, `mdux.governance.compliance` | `include/mdux/governance/` | `src/governance/` |
 | `mdux.shader.schema` (governed) | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.image.schema` (governed) | `include/mdux/image/Schema.cppm` | `src/image/Schema.cpp` |
 | `mdux.ml.schema` (governed) | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
@@ -231,17 +232,17 @@ look-alike command line; they are not needed to build by hand, and each uses its
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
   `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
-  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
+  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`, `mdux-imagebake`,
   `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, `mdux-verify-ui`, and `mdux-verify-bake`.
   Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
-- Tests: twenty-five executables. Nine on the in-repository MduXTest framework (`core_tests`,
+- Tests: twenty-seven executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fifteen on SpecLab
-  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seventeen on SpecLab
+  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`, `image_spec`, `image_tools_spec`,
   `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
   `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`) — see ADR-009 — plus the
   dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest entry per case, so
