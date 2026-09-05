@@ -84,6 +84,15 @@ struct CellInk {
     return cell;
 }
 
+/// How far the widest-reaching glyph's bitmap starts behind its pen, in pixels, or zero.
+///
+/// The one number the measurement and the placement must agree on, so it is computed once and used
+/// by both. A positive left bearing is *not* pulled the other way: shifting the grid left to close a
+/// gap would put ink outside the node on the right, and the node's edge is the thing being protected.
+[[nodiscard]] std::int64_t overhangOf(const CellInk& cell) noexcept {
+    return cell.inked && cell.left < 0 ? -cell.left : 0;
+}
+
 }  // namespace
 
 mdux::core::ResultVoid<FieldError> fieldAccepts(std::size_t cells, std::size_t textLength, std::optional<std::size_t> caret) noexcept {
@@ -120,12 +129,22 @@ std::string_view describe(FieldError error) noexcept {
             return "the value needs a character the font package cannot draw";
         case FieldError::EmptyCharset:
             return "the font package admits no code point, so no cell width can be derived";
+        case FieldError::CharsetHasNoInk:
+            return "every code point the font package admits is blank, so no field could show anything";
         case FieldError::ListRejected:
             return "the draw list refused a rectangle - budget, or a degenerate extent";
     }
     // Named rather than defaulted so that adding an enumerator without a case here is a warning at
     // this switch instead of a blank string later.
     return "unknown field error";
+}
+
+mdux::core::Result<std::int64_t, FieldError> fieldOriginX(const mdux::font::FontPackage& font) noexcept {
+    const CellInk cell = cellInkOf(font);
+    if (!cell.anyPermitted) {
+        return mdux::core::err(FieldError::EmptyCharset);
+    }
+    return overhangOf(cell);
 }
 
 mdux::core::Result<std::int64_t, FieldError> cellWidth(const mdux::font::FontPackage& font) noexcept {
@@ -148,22 +167,24 @@ mdux::core::Result<FieldExtent, FieldError> measureField(const mdux::font::FontP
     if (!cell.anyPermitted) {
         return mdux::core::err(FieldError::EmptyCharset);
     }
+    if (!cell.inked) {
+        // Every permitted glyph is blank. This used to be reported as a legitimate measurement of
+        // height zero, and `recordField()` then drew no caret for it and returned success - a caller
+        // asking for a caret got neither a caret nor a refusal, which is the silent-absence failure
+        // this module refuses everywhere else. A package that can put no ink in a cell is one no
+        // field can display anything with, so it is refused in both places instead.
+        return mdux::core::err(FieldError::CharsetHasNoInk);
+    }
     const std::int64_t pitch = toPixels(cell.widestAdvance, font);
 
-    if (!cell.inked) {
-        // Every permitted glyph is blank. A field of them draws no glyph, but the caret is still
-        // drawn and still has to fit, so the extent is the caret's own column rather than nothing.
-        return FieldExtent{.inked = false, .width = (static_cast<std::int64_t>(cells) * pitch) + caretWidth, .height = 0};
-    }
-
     // The leftmost ink any value can put in cell 0, and the rightmost in the last cell. `left` may
-    // be negative for a glyph whose bitmap starts behind its pen, which is why the width is a
-    // difference rather than the right edge alone.
+    // be negative for a glyph whose bitmap starts behind its pen - `J`, `T`, `Y`, `_` and `j` all do
+    // in the committed package - which is why the width is a difference rather than the right edge
+    // alone, and why `fieldOriginX()` shifts the grid by exactly the same amount.
     const std::int64_t lastCellPen = static_cast<std::int64_t>(cells - 1) * pitch;
-    const std::int64_t inkLeft     = std::min<std::int64_t>(cell.left, 0);
     const std::int64_t inkRight    = std::max(lastCellPen + cell.right, static_cast<std::int64_t>(cells) * pitch + caretWidth);
 
-    return FieldExtent{.inked = true, .width = inkRight - inkLeft, .height = cell.bottom - cell.top};
+    return FieldExtent{.inked = true, .width = inkRight + overhangOf(cell), .height = cell.bottom - cell.top};
 }
 
 mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          list,
@@ -181,6 +202,12 @@ mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          li
     if (!cell.anyPermitted) {
         return mdux::core::err(FieldError::EmptyCharset);
     }
+    if (!cell.inked) {
+        // The same refusal `measureField()` makes, in the same words: a package that can put no ink
+        // in a cell can draw neither a character nor a caret, and returning success for it would
+        // report a field nobody can see as a field that was drawn.
+        return mdux::core::err(FieldError::CharsetHasNoInk);
+    }
     const std::int64_t pitch = toPixels(cell.widestAdvance, font);
 
     const mdux::draw::DrawList::Marker start  = list.mark();
@@ -193,10 +220,26 @@ mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          li
 
     // The grid's own origin, from the envelope rather than from this value's ink - see Field.cppm
     // for why a field that re-derived its baseline per value would jump as an operator typed.
-    const auto originX   = static_cast<mdux::core::Px>(node.x);
+    //
+    // The x shift is what keeps the placement and the measurement talking about the same rectangle.
+    // A glyph whose bitmap starts behind its pen would otherwise put cell 0's ink left of the node -
+    // one pixel, for five of the committed package's glyphs - and `mdux.medui.screen`'s own overflow
+    // check refuses the *whole frame* for it, so a patient identifier beginning with `J` blanked the
+    // display. `measureField()` had always reserved the room; only the placement had not used it.
+    const auto originX   = static_cast<mdux::core::Px>(node.x + overhangOf(cell));
     const auto baselineY = static_cast<mdux::core::Px>(node.y - cell.top);
 
     for (std::size_t index = 0; index < text.size(); ++index) {
+        if (!font.permits(text[index])) {
+            // The charset is the bound, and the glyph table is not the same set: `validate()`
+            // requires every permitted code point to have a glyph but admits glyphs beyond the
+            // charset. Drawing one of those would put a character the cell was never sized for into
+            // a cell - `cellWidth()` is the widest advance over the *charset* - so what a field can
+            // display has to be asked of the charset rather than of whatever the package happens to
+            // carry. Same refusal as an absent glyph, because from a caller's side it is the same
+            // fact: this package will not display that character.
+            return refuse(FieldError::GlyphNotInPackage);
+        }
         const mdux::font::GlyphRecord* glyph = font.find(text[index]);
         if (glyph == nullptr) {
             // No fallback: ADR-010 leaves the runtime none, and a substitute character in an
@@ -218,15 +261,14 @@ mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          li
         // compiler measured - so a caret in an empty field is as visible as one after a character,
         // and neither depends on what has been typed.
         const auto caretX = static_cast<mdux::core::Px>(originX + static_cast<mdux::core::Px>(static_cast<std::int64_t>(*caret) * pitch));
-        const auto height = static_cast<mdux::core::Px>(cell.inked ? cell.bottom - cell.top : 0);
-        if (height > 0) {
-            const mdux::core::Rect bar{.x      = caretX,
-                                       .y      = static_cast<mdux::core::Px>(node.y),
-                                       .width  = static_cast<mdux::core::Px>(caretWidth),
-                                       .height = height};
-            if (const auto added = list.addSolidRect(bar, color); !added.has_value()) {
-                return refuse(FieldError::ListRejected);
-            }
+        // Always drawn, and always the envelope's full height: `cell.inked` is guaranteed above, so
+        // there is no branch here in which a caret was asked for and silently not recorded.
+        const mdux::core::Rect bar{.x      = caretX,
+                                   .y      = static_cast<mdux::core::Px>(node.y),
+                                   .width  = static_cast<mdux::core::Px>(caretWidth),
+                                   .height = static_cast<mdux::core::Px>(cell.bottom - cell.top)};
+        if (const auto added = list.addSolidRect(bar, color); !added.has_value()) {
+            return refuse(FieldError::ListRejected);
         }
     }
 

@@ -607,8 +607,13 @@ const mdux::spec::Register aFieldLongerThanTheRuntimeDrawsIsRefused{
                                                                                "budget.medui",
                                                                                {.font = &fontPackage, .locales = locales, .dynamicText = {}});
                       checks.expect(!result.ok(), "the screen is rejected");
-                      checks.expect(find(result, md::Code::CharsetEscape) != nullptr, "reported as MEDUI-E053");
+                      const cli::Diagnostic* reported = find(result, md::Code::CharsetEscape);
+                      checks.expect(reported != nullptr, "reported as MEDUI-E053");
                       checks.expect(find(result, md::Code::TextBudgetExceeded) == nullptr, "and not as a box that is merely too small");
+                      // And it does not blame the font package for a limit no font could change: an
+                      // author sent to bake a wider font here would be sent nowhere.
+                      checks.expect(mentions(reported, "this runtime will draw"), "the diagnostic names the runtime's cap");
+                      checks.expect(!mentions(reported, "cannot serve"), "and does not attribute it to the font package");
                       checks.raise();
                   })
             .Execute();

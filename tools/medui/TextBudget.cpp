@@ -532,16 +532,22 @@ private:
 
         const auto measured = mdux::medui::measureField(*inputs_.font, static_cast<std::size_t>(value.number));
         if (!measured.has_value()) {
-            // Structure rather than geometry: a length the runtime will not draw, or a package that
-            // admits no code point. Both are refusals the device would make on every frame, so a
-            // compiler that signed them would be signing a screen that can never draw.
+            // Structure rather than geometry, and both are refusals the device would make on every
+            // frame - so a compiler that signed them would be signing a screen that can never draw.
+            //
+            // Which *party* they name differs, though, and the message says which. A cell count past
+            // the cap is the runtime's limit and no font would change it; the rest are the package
+            // failing to serve a field. Blaming the font package for a `max_length` of 200 would
+            // send an author to bake a wider font, which cannot help.
+            const bool runtimeLimit = measured.error() == mdux::medui::FieldError::TooManyCells;
             report(Code::CharsetEscape,
                    value.position,
-                   std::format("'{}' declares max_length {}, which font package '{}' cannot serve: {}",
-                               node.id,
-                               value.number,
-                               inputs_.font->id,
-                               mdux::medui::describe(measured.error())));
+                   runtimeLimit ? std::format("'{}' declares max_length {}, and {}", node.id, value.number, mdux::medui::describe(measured.error()))
+                                : std::format("'{}' declares max_length {}, which font package '{}' cannot serve: {}",
+                                              node.id,
+                                              value.number,
+                                              inputs_.font->id,
+                                              mdux::medui::describe(measured.error())));
             return;
         }
 

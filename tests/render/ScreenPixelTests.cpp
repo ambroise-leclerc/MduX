@@ -846,10 +846,15 @@ TEST_CASE("An authored screen's bound text field reaches the pixels", "pixel") {
     REQUIRE(spec != nullptr);
     REQUIRE(spec->maxLength == 12);
 
-    // The pitch the runtime will use, from the same package and the same function - not a number
-    // written here. A test that fixed its own pitch would keep passing while the font changed.
+    // The pitch and the grid's origin, from the same package and the same functions the runtime
+    // uses - not numbers written here. A test that fixed its own would keep passing while the font
+    // changed, and the origin in particular is not zero for this package: five of its glyphs start
+    // their bitmap a pixel behind the pen, so the whole grid sits one pixel inside the node.
     const auto pitch = medui::cellWidth(bound.font);
     REQUIRE(pitch.has_value());
+    const auto origin = medui::fieldOriginX(bound.font);
+    REQUIRE(origin.has_value());
+    CHECK(*origin == 1);
     const auto extent = medui::measureField(bound.font, static_cast<std::size_t>(spec->maxLength));
     REQUIRE(extent.has_value());
     // The build-time promise, restated where it can be checked against the artifact: the box the
@@ -920,9 +925,9 @@ TEST_CASE("An authored screen's bound text field reaches the pixels", "pixel") {
     CHECK(painted.right <= input->bounds.x + input->bounds.width);
     CHECK(painted.bottom <= input->bounds.y + input->bounds.height);
 
-    // The caret stands before cell 3, so its column is exactly three pitches from the node's left
-    // edge - and it is the rightmost thing drawn, because `7` is narrower than a cell.
-    const auto caretColumn = static_cast<core::Px>(input->bounds.x + static_cast<std::int32_t>(3 * *pitch));
+    // The caret stands before cell 3, so its column is exactly three pitches from the grid's origin
+    // - and it is the rightmost thing drawn, because `7` is narrower than a cell.
+    const auto caretColumn = static_cast<core::Px>(input->bounds.x + static_cast<std::int32_t>(*origin + (3 * *pitch)));
     CHECK(painted.right == caretColumn + static_cast<core::Px>(medui::caretWidth));
 
     // Every column the caret occupies is painted, top to bottom of the envelope: a caret drawn as a

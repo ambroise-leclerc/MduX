@@ -32,6 +32,19 @@
  * price of a placement a compiler can certify, and the alternative is not a nicer field - it is a
  * pen this architecture does not admit.
  *
+ * ## Where the grid starts, and why that is not the node's edge
+ *
+ * Cell 0's pen sits `fieldOriginX()` inside the node's left edge, which is zero for most packages
+ * and positive when some permitted glyph's bitmap begins *behind* its pen. Five of the committed
+ * `dejavu-ui` package's glyphs do - `J`, `T`, `Y`, `_` and `j` - so this is the ordinary case rather
+ * than a defensive one.
+ *
+ * `measureField()` has always reserved that overhang in its width; the placement has to spend it in
+ * the same direction or the two describe different rectangles. When they did not, a value beginning
+ * with `J` put one pixel of ink left of the node, `mdux.medui.screen`'s own overflow check refused
+ * the **whole frame**, and a patient identifier beginning with a common letter blanked the display.
+ * That is why the overhang is computed once, by one function, and used by both.
+ *
  * ## Why the cell width comes from the font package rather than from the screen
  *
  * `cellWidth()` is the widest advance over the font package's **whole restricted charset**, which is
@@ -58,10 +71,16 @@
  * says what it is, with nothing on screen to say it was cut - the same refusal `recordNumeric()`
  * makes about a value with more digits than its slots, for the same reason.
  *
- * A character the font package cannot draw is `GlyphNotInPackage`. There is no fallback and no
- * substitute: ADR-010 leaves the runtime none, and a `?` in a patient identifier is a different
- * identifier. The compile-time counterpart is the charset check the budget stage already performs,
- * which is what makes this refusal the second line rather than the first.
+ * A character the font package's **restricted charset** does not admit is `GlyphNotInPackage`, and
+ * the charset is the question rather than the glyph table: `FontPackage::validate()` requires every
+ * permitted code point to have a glyph but admits glyphs beyond the charset, and one of those would
+ * be a character no cell was ever sized for - `cellWidth()` is the widest advance over the charset.
+ * Asking `permits()` is what makes "the restricted charset bounds what can be displayed" a property
+ * of the runtime and not only of the compiler.
+ *
+ * There is no fallback and no substitute: ADR-010 leaves the runtime none, and a `?` in a patient
+ * identifier is a different identifier. The compile-time counterpart is the charset check the budget
+ * stage already performs, which is what makes this refusal the second line rather than the first.
  */
 module;
 
@@ -103,6 +122,7 @@ enum class FieldError : std::uint8_t {
     CaretOutOfRange,    ///< the caret is not a position in the field, nor just past its last cell
     GlyphNotInPackage,  ///< a character the value needs is one the font package cannot draw
     EmptyCharset,       ///< the font package admits no code point, so no cell width can be derived
+    CharsetHasNoInk,    ///< every code point it admits is blank, so no field could show anything
     ListRejected,       ///< `DrawList` refused a rectangle - budget, or a degenerate extent
 };
 
@@ -120,6 +140,19 @@ enum class FieldError : std::uint8_t {
 [[nodiscard]] mdux::core::Result<std::int64_t, FieldError> cellWidth(const mdux::font::FontPackage& font) noexcept;
 
 /**
+ * @brief How far cell 0's pen sits inside the node's left edge, in pixels.
+ *
+ * Zero for most packages, and positive when some permitted glyph's bitmap starts *behind* its pen -
+ * `J`, `T`, `Y`, `_` and `j` all do in the committed `dejavu-ui` package. Shifting the whole grid by
+ * that overhang is what keeps cell 0's ink inside the node, and `measureField()` reserves exactly
+ * the same amount, so the box a compiler signs and the rectangle a device draws are one rectangle.
+ *
+ * Exported because a caller checking where a caret landed needs the same number, and deriving it
+ * twice is how the measurement and the placement drifted apart in the first place.
+ */
+[[nodiscard]] mdux::core::Result<std::int64_t, FieldError> fieldOriginX(const mdux::font::FontPackage& font) noexcept;
+
+/**
  * @brief The ink a field of `cells` cells can occupy at worst, over every value it can show.
  *
  * The build-time half of the rule `recordField()` implements: a node that can hold this can hold any
@@ -130,8 +163,10 @@ enum class FieldError : std::uint8_t {
  * column past the last one. The extrema may come from different values; a box sized to this holds
  * more than any single value needs, which is the fail-closed direction for a compile-time bound.
  *
- * `inked` false means the package's charset paints nothing at all - a font of blanks - which is a
- * degenerate package rather than an error here.
+ * `inked` is always true for a package this function accepts. A charset whose every glyph is blank
+ * is `CharsetHasNoInk` rather than a measurement of height zero: such a field can draw neither a
+ * character nor a caret, and reporting it as measurable let `recordField()` return success while
+ * drawing nothing at all.
  */
 struct FieldExtent {
     bool         inked{false};

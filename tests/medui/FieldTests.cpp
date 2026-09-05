@@ -82,6 +82,19 @@ constexpr std::uint16_t narrowAdvance = 400;
          .height          = 0,
          .bitmapOriginX   = 0,
          .bitmapOriginY   = 0},
+        // A glyph whose bitmap starts *behind* its pen. Not a contrivance: `J`, `T`, `Y`, `_` and
+        // `j` all carry `bitmapOriginX = -1` in the committed `dejavu-ui` package, so a field whose
+        // value begins with one is an ordinary patient identifier rather than an edge case.
+        {.codePoint       = U'J',
+         .glyphIndex      = 4,
+         .advanceWidth    = narrowAdvance,
+         .leftSideBearing = 0,
+         .x               = 11,
+         .y               = 0,
+         .width           = 3,
+         .height          = 6,
+         .bitmapOriginX   = -1,
+         .bitmapOriginY   = 6},
         {.codePoint       = U'W',
          .glyphIndex      = 2,
          .advanceWidth    = wideAdvance,
@@ -105,6 +118,7 @@ constexpr std::uint16_t narrowAdvance = 400;
     };
     package.restrictedCharset = {
         {.first = U' ', .last = U' '},
+        {.first = U'J', .last = U'J'},
         {.first = U'W', .last = U'W'},
         {.first = U'i', .last = U'i'}
     };
@@ -190,6 +204,70 @@ constexpr ms::ScreenPackage inputScreen{.id                   = "field",
 
 static_assert(inputScreen.validate().has_value(), "the reference screen must be one a device could hold");
 
+/**
+ * @brief The text binding a field needs, for the font it carries rather than for its words.
+ *
+ * `ReadingBinding`'s arrangement, and here for its reason: `needsTextPackageApproval()` puts
+ * `TextInput` among the components whose screen must list an approved text package, so a screen with
+ * a field on it always has a `TextBinding` to be had - and its font is one whose identity
+ * `create()` authenticated. The package below carries one run nothing names; this fixture is a
+ * *font* carrier, built through the real `create()` rather than around it.
+ */
+struct FontCarrier {
+    mdux::text::TextPackage  package;
+    std::array<std::byte, 6> sidecar{};
+    std::string              canonical;
+    ms::TextPackageApproval  approval{};
+
+    FontCarrier() {
+        package.header.id         = "field-text";
+        package.header.kind       = std::string{mdux::text::packageKind};
+        package.atlasId           = theFont().id;
+        package.locale            = "en-US";
+        package.sidecarPath       = "runs.bin";
+        package.sidecarByteLength = sidecar.size();
+        package.sidecarSha256     = mdux::evidence::sha256(sidecar);
+        package.runs.push_back(
+            mdux::text::TextRun{.id = "STR-UNUSED", .byteOffset = 0, .byteLength = sidecar.size(), .sha256 = mdux::evidence::sha256(sidecar)});
+
+        const auto written = package.write();
+        if (!written.has_value()) {
+            throw speclab::core::AssertionFailure("the fixture text package does not serialize", std::source_location::current());
+        }
+        canonical = *written;
+        approval  = ms::TextPackageApproval{.locale = package.locale, .packageId = package.header.id, .packageSha256 = mdux::evidence::sha256(bytes())};
+    }
+
+    [[nodiscard]] std::span<const std::byte> bytes() const noexcept {
+        return std::as_bytes(std::span{canonical.data(), canonical.size()});
+    }
+};
+
+const FontCarrier& theCarrier() {
+    static const FontCarrier carrier;
+    return carrier;
+}
+
+/// The reference screen carrying the carrier's real approval, so `TextBinding::create()` accepts it.
+///
+/// A `Digest` of real bytes is not a constant expression, which is why the `constexpr` screen above
+/// holds a placeholder and this replaces it.
+[[nodiscard]] ms::ScreenPackage approvedScreen() {
+    ms::ScreenPackage bound    = inputScreen;
+    bound.approvedTextPackages = std::span{&theCarrier().approval, 1};
+    return bound;
+}
+
+/// The binding `render()` takes a field's font from. Built once, as a device would at start-up.
+[[nodiscard]] ms::TextBinding textOnlyBinding(const ms::ScreenPackage& screen) {
+    auto made = ms::TextBinding::create(screen, theFont(), theCarrier().package, theCarrier().bytes(), theCarrier().sidecar);
+    if (!made.has_value()) {
+        throw speclab::core::AssertionFailure(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())),
+                                              std::source_location::current());
+    }
+    return *made;
+}
+
 /// The error `TextInputBinding::create()` reported, or nullopt when it accepted the slots.
 [[nodiscard]] std::optional<ms::ScreenError> refusalOf(const ms::ScreenPackage& screen, std::span<const ms::TextInputSlot> slots) {
     auto made = ms::TextInputBinding::create(screen, slots);
@@ -260,12 +338,26 @@ const mdux::spec::Register theGridDoesNotMoveWithTheValue{
                       };
 
                       // The property a proportional pen would break: `i` advances 400 units and `W`
-                      // 1000, so a pen would put the second character of `iW` at x = 24 and the
-                      // second of `Wi` at x = 30. On the grid both are at 20 + 10.
+                      // 1000, so a pen would put the second character of `iW` four pixels along and
+                      // the second of `Wi` ten. On the grid both are one pitch from cell 0.
+                      //
+                      // Cell 0 is `fieldOriginX()` inside the node rather than on its edge, because
+                      // this fixture carries a glyph whose bitmap starts behind its pen - asked of
+                      // the module rather than written out, so this scenario keeps testing the grid
+                      // rather than a number that happened to be true when it was written.
+                      const auto origin = ms::fieldOriginX(theFont());
+                      const auto pitch  = ms::cellWidth(theFont());
+                      checks.expect(origin.has_value() && pitch.has_value(), "the grid has an origin and a pitch");
+                      if (!origin.has_value() || !pitch.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      const auto secondCell = static_cast<mdux::core::Px>(node.x + *origin + *pitch);
+
                       const mdux::core::Px afterNarrow = secondCellLeft({U'i', U'W'});
                       const mdux::core::Px afterWide   = secondCellLeft({U'W', U'i'});
-                      checks.expect(afterNarrow == 30, std::format("the character after a narrow one is at 30, got {}", afterNarrow));
-                      checks.expect(afterWide == 30, std::format("the character after a wide one is at 30, got {}", afterWide));
+                      checks.expect(afterNarrow == secondCell, std::format("the character after a narrow one is at {}, got {}", secondCell, afterNarrow));
+                      checks.expect(afterWide == secondCell, std::format("the character after a wide one is at {}, got {}", secondCell, afterWide));
                       checks.raise();
                   })
             .Execute();
@@ -318,6 +410,62 @@ const mdux::spec::Register theEnvelopeBoundsEveryValue{
                               checks.expect(box.bottom <= node.y + static_cast<mdux::core::Px>(envelope->height),
                                             std::format("nothing reaches past the envelope's height, got {} against {}", box.bottom, envelope->height));
                           }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aNegativeBearingStaysInsideTheNode{
+    "A glyph whose bitmap starts behind its pen still lands inside the node",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-negative-left-bearing")
+            .Given("a value beginning with a glyph whose bitmapOriginX is -1", [] {})
+            .When("it is drawn into a field, and a frame is recorded through the screen runtime", [] {})
+            .Then("nothing is recorded left of the node, and the frame is not refused",
+                  [] {
+                      // The regression this scenario exists for: `measureField()` reserves room for
+                      // a negative left bearing - its width is `inkRight - inkLeft` - and the
+                      // placement did not, so cell 0's ink landed one pixel left of the node. The
+                      // screen runtime's own overflow check then refused the *whole frame*, which on
+                      // the committed screen means a patient identifier beginning with `J` blanks
+                      // the display. The measurement and the placement have to agree about the
+                      // origin, and this is what says they do.
+                      mdux::spec::Checks                checks;
+                      constexpr std::array<char32_t, 2> value{U'J', U'W'};
+
+                      Scratch    scratch;
+                      auto       list     = scratch.list();
+                      const auto recorded = ms::recordField(list, theFont(), node, 4, value, std::optional<std::size_t>{2}, ink);
+                      checks.expect(recorded.has_value(), "the value is recorded");
+
+                      const Box box = boxOf(list);
+                      checks.expect(box.found, "something was drawn");
+                      if (box.found) {
+                          checks.expect(box.left >= node.x, std::format("nothing is drawn left of the node's edge {}, got {}", node.x, box.left));
+                      }
+
+                      // And through the runtime, where the refusal actually bit: `readingFitsNode()`
+                      // rejects a vertex left of the node's origin, so this frame was refused whole.
+                      constexpr std::array<char32_t, 2> entryValue{U'J', U'W'};
+                      const std::array                  slots{
+                          ms::TextInputSlot{.nodeId = "entry", .text = entryValue, .caret = std::optional<std::size_t>{2}}
+                      };
+                      const ms::ScreenPackage screen  = approvedScreen();
+                      auto                    binding = ms::TextInputBinding::create(screen, slots);
+                      checks.expect(binding.has_value(), "the binding is made");
+                      if (!binding.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      Scratch    frameScratch;
+                      auto       frameList = frameScratch.list();
+                      const auto frame     = ms::render(screen, frameList, textOnlyBinding(screen), {}, {}, {}, {}, *binding);
+                      checks.expect(frame.has_value(), std::format("the frame is recorded, got '{}'", frame.has_value() ? "" : ms::describe(frame.error())));
+                      if (frame.has_value()) {
+                          checks.expect(frame->fields == 1, std::format("the field was drawn, got {}", frame->fields));
                       }
                       checks.raise();
                   })
@@ -382,6 +530,84 @@ const mdux::spec::Register aGlyphThePackageLacksIsRefused{
             .Execute();
     }};
 
+const mdux::spec::Register aGlyphOutsideTheCharsetIsRefused{
+    "A glyph the package carries but its charset does not admit is refused",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-charset-is-the-bound")
+            .Given("a package whose glyph table reaches past its declared charset", [] {})
+            .When("a value naming one of those glyphs is drawn", [] {})
+            .Then("it is refused, because the charset is what the cell was sized from",
+                  [] {
+                      // `FontPackage::validate()` requires every *permitted* code point to have a
+                      // glyph; it does not require the glyph table to stop at the charset. So a
+                      // package can carry a glyph nothing declared, and `find()` would happily
+                      // return it - into a cell whose width came from the charset alone, which that
+                      // glyph is under no obligation to fit. Asking the charset rather than the
+                      // table is what makes "the restricted charset bounds what can be displayed"
+                      // true of the runtime and not only of the compiler.
+                      mdux::spec::Checks checks;
+
+                      font::FontPackage narrowed = fixtureFont();
+                      narrowed.restrictedCharset = {
+                          {.first = U' ', .last = U' '},
+                          {.first = U'i', .last = U'i'}
+                      };
+                      checks.expect(narrowed.find(U'W') != nullptr, "the package still carries the glyph");
+                      checks.expect(!narrowed.permits(U'W'), "and its charset no longer admits it");
+
+                      constexpr std::array<char32_t, 1> outside{U'W'};
+                      Scratch                           scratch;
+                      auto                              list     = scratch.list();
+                      const auto                        recorded = ms::recordField(list, narrowed, node, 4, outside, std::nullopt, ink);
+
+                      checks.expect(!recorded.has_value(), "the value is refused");
+                      if (!recorded.has_value()) {
+                          checks.expect(recorded.error() == ms::FieldError::GlyphNotInPackage,
+                                        std::format("reported as GlyphNotInPackage, got '{}'", ms::describe(recorded.error())));
+                      }
+                      checks.expect(list.vertices().empty(), "and nothing is left recorded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register anInkFreeCharsetIsRefusedByBoth{
+    "A charset whose every glyph is blank is refused rather than measured as nothing",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-charset-with-no-ink")
+            .Given("a package admitting only a blank", [] {})
+            .When("a field is measured against it, and a caret drawn into one", [] {})
+            .Then("both refuse, rather than one measuring zero and the other drawing nothing",
+                  [] {
+                      // The silent-absence failure this closes: the measurement used to call such a
+                      // package legitimate with a height of zero, and the placement then recorded no
+                      // caret and returned success. A caller that asked for a caret got neither a
+                      // caret nor a reason.
+                      mdux::spec::Checks checks;
+
+                      font::FontPackage blanks = fixtureFont();
+                      blanks.restrictedCharset = {
+                          {.first = U' ', .last = U' '}
+                      };
+
+                      const auto measured = ms::measureField(blanks, 4);
+                      checks.expect(!measured.has_value() && measured.error() == ms::FieldError::CharsetHasNoInk,
+                                    "the measurement refuses a charset with no ink");
+
+                      Scratch                           scratch;
+                      auto                              list = scratch.list();
+                      constexpr std::array<char32_t, 1> blank{U' '};
+                      const auto                        recorded = ms::recordField(list, blanks, node, 4, blank, std::optional<std::size_t>{1}, ink);
+                      checks.expect(!recorded.has_value() && recorded.error() == ms::FieldError::CharsetHasNoInk,
+                                    "and the placement refuses it in the same words");
+                      checks.expect(list.vertices().empty(), "with nothing left recorded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register theCaretStandsOnACellBoundary{
     "A caret stands on a cell boundary, and one past the last cell is where a full field puts it",
     "evidence-unit",
@@ -411,10 +637,21 @@ const mdux::spec::Register theCaretStandsOnACellBoundary{
                           return static_cast<mdux::core::Px>(vertices[8].x);
                       };
 
-                      checks.expect(caretLeft(2) == 40, "a caret before cell 2 stands two pitches in");
+                      const auto origin = ms::fieldOriginX(theFont());
+                      const auto pitch  = ms::cellWidth(theFont());
+                      checks.expect(origin.has_value() && pitch.has_value(), "the grid has an origin and a pitch");
+                      if (!origin.has_value() || !pitch.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+                      const auto boundary = [&](std::int64_t cell) {
+                          return static_cast<mdux::core::Px>(node.x + *origin + (cell * *pitch));
+                      };
+
+                      checks.expect(caretLeft(2) == boundary(2), std::format("a caret before cell 2 stands at {}, got {}", boundary(2), caretLeft(2)));
                       // `cells` itself is a position - the caret after the last character of a full
                       // field - and it is the one a box has to have reserved room for.
-                      checks.expect(caretLeft(4) == 60, "a caret at the field's end stands four pitches in");
+                      checks.expect(caretLeft(4) == boundary(4), std::format("a caret at the field's end stands at {}, got {}", boundary(4), caretLeft(4)));
 
                       Scratch    scratch;
                       auto       list    = scratch.list();
@@ -472,6 +709,7 @@ const mdux::spec::Register everyFieldErrorHasItsOwnDescription{"Every FieldError
                                                                                                              ms::FieldError::CaretOutOfRange,
                                                                                                              ms::FieldError::GlyphNotInPackage,
                                                                                                              ms::FieldError::EmptyCharset,
+                                                                                                             ms::FieldError::CharsetHasNoInk,
                                                                                                              ms::FieldError::ListRejected};
                                                                                  std::vector<std::string_view> seen;
                                                                                  for (const ms::FieldError error : errors) {

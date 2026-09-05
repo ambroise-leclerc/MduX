@@ -90,8 +90,9 @@ before you write one:
   font package's whole charset, which is conservative in the only safe direction; a narrower set
   would mean shipping a product's charset table beside the artifact.
 - **Display and caret only.** No composition, no candidate window, no key handling. The host edits
-  the value; the screen shows it. A value longer than the field, or a character the package cannot
-  draw, refuses the frame rather than truncating or substituting.
+  the value; the screen shows it. A value longer than the field, or a character the font package's
+  restricted charset does not admit, refuses the frame rather than truncating or substituting — the
+  charset is the bound, not the glyph table, which may carry more than it declares.
 
 A `SignalTrace` draws its **waveform**, given a `SignalBinding` (#257) — the second join, and
 the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
