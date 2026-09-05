@@ -44,6 +44,12 @@
  * approval manifest, deliberately - otherwise a different, individually valid package could be
  * substituted after review while every local consistency check still passed.
  *
+ * The locale in that record is a *tag*, and `isLocaleTag()` below says what that means (#281).
+ * Until then the only rule was non-empty, so `en/US`, `(locale-free)` and a kilobyte of text were
+ * all legal approved locales - while consumers had begun deriving filenames and identifiers from
+ * the tag. Constraining it here rather than at each consumer makes it a compile error in the
+ * generated screen's own `static_assert`, which is the earliest place it can be one.
+ *
  * The cost, stated as a cost: one rectangle serves every locale, so it must be the one that
  * survives the widest approved translation. That is what #195 measures, and why the budget below
  * cannot be derived from the node count.
@@ -116,6 +122,7 @@ enum class SchemaError : std::uint8_t {
     EmptyBudget,                  ///< a screen with nodes whose budget can hold no primitive
     BudgetExceedsIndexWidth,      ///< more vertices than a 16-bit index can address
     EmptyApprovedLocale,          ///< a text-package approval does not name its locale
+    MalformedApprovedLocale,      ///< a locale tag outside the closed subset `isLocaleTag()` admits
     EmptyApprovedPackageId,       ///< a text-package approval does not name its package
     EmptyApprovedPackageDigest,   ///< a text-package approval carries no package identity
     DuplicateApprovedLocale,      ///< two text-package approvals claim the same locale
@@ -171,6 +178,8 @@ enum class SchemaError : std::uint8_t {
             return "the vertex budget exceeds what a 16-bit index can address";
         case SchemaError::EmptyApprovedLocale:
             return "an approved text package does not name its locale";
+        case SchemaError::MalformedApprovedLocale:
+            return "an approved locale is not a well-formed language tag";
         case SchemaError::EmptyApprovedPackageId:
             return "an approved text package does not name its package id";
         case SchemaError::EmptyApprovedPackageDigest:
@@ -727,6 +736,68 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
     return {};
 }
 
+/// The longest locale tag an approval may carry. Not a rule of RFC 5646, which sets no maximum -
+/// this repository's bound, chosen because consumers derive filenames and identifiers from the tag
+/// and a name has to be a name. It admits language-script-region plus several variants, which is
+/// past anything `mdux-textbake` can produce, and rejects a tag long enough to be a payload.
+inline constexpr std::size_t maxLocaleTagLength = 35;
+
+/**
+ * @brief Whether `tag` is a locale tag this schema admits: `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`.
+ *
+ * A **closed subset** of RFC 5646, not the whole of it. Full BCP 47 is a registry and a parser, and
+ * neither belongs in a `constexpr` device-side check; the subset above covers every locale the text
+ * pipeline can bake today - `en-US`, `de-DE`, `fr-FR` and their script and variant forms - and
+ * rejects everything the permissiveness admitted before: `en/US`, `(locale-free)`, `../etc`, a tag
+ * carrying a newline, and a kilobyte of text.
+ *
+ * Case is not constrained. RFC 5646 declares tags case-insensitive and recommends `en-US` casing
+ * without requiring it, so a schema that refused `en-us` would be inventing a rule; equality between
+ * approvals stays exact, which is what makes duplicate detection a comparison rather than a fold.
+ *
+ * Shape is not existence, the same distinction `isColorToken()` draws: a well-formed tag may name a
+ * locale no text package was ever baked for, which the approval manifest's digest answers and this
+ * predicate does not.
+ */
+[[nodiscard]] constexpr bool isLocaleTag(std::string_view tag) noexcept {
+    if (tag.empty() || tag.size() > maxLocaleTagLength) {
+        return false;
+    }
+
+    // The primary subtag: letters only, two or three of them.
+    std::size_t index = 0;
+    while (index < tag.size() && tag[index] != '-') {
+        const char character = tag[index];
+        if (!((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z'))) {
+            return false;
+        }
+        ++index;
+    }
+    if (index < 2 || index > 3) {
+        return false;
+    }
+
+    // Everything after it is a `-` and two to eight alphanumerics, repeated. The loop never has to
+    // know whether a subtag is a script, a region or a variant - telling them apart is the registry
+    // half of BCP 47, and dropping it is what makes this subset a check rather than a parser.
+    while (index < tag.size()) {
+        ++index;  // `tag[index]` is the `-` the loop above or below stopped on.
+        const std::size_t start = index;
+        while (index < tag.size() && tag[index] != '-') {
+            const char character = tag[index];
+            const bool admitted  = (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9');
+            if (!admitted) {
+                return false;
+            }
+            ++index;
+        }
+        if (const std::size_t length = index - start; length < 2 || length > 8) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /**
  * @brief One text package this screen was compiled and reviewed against.
  *
@@ -735,7 +806,7 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
  * when that package is internally valid, uses the same font and carries the same keys.
  */
 struct TextPackageApproval {
-    std::string_view locale;           ///< the package's BCP 47 locale
+    std::string_view locale;           ///< the package's locale; `isLocaleTag()` is the grammar
     std::string_view packageId;        ///< the package header id
     evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
 
@@ -1010,6 +1081,11 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         const TextPackageApproval& approval = approvedTextPackages[index];
         if (approval.locale.empty()) {
             return err(SchemaError::EmptyApprovedLocale);
+        }
+        // Empty first, then shape. `isLocaleTag()` refuses an empty tag too, so the order is what
+        // keeps "the field was never filled in" a different diagnosis from "the tag is not a tag".
+        if (!isLocaleTag(approval.locale)) {
+            return err(SchemaError::MalformedApprovedLocale);
         }
         if (approval.packageId.empty()) {
             return err(SchemaError::EmptyApprovedPackageId);

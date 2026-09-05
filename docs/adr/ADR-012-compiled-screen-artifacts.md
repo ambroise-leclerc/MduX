@@ -117,6 +117,14 @@ form without allocation, requires both digests to agree, and then requires an ex
 The binding retains that identity, and `render()` refuses it against a screen whose manifest does not
 contain the same record.
 
+`locale` is constrained to `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`, at most 35 characters — a closed
+subset of RFC 5646 rather than the whole of it, checked by `mdux::medui::isLocaleTag()` inside
+`ScreenPackage::validate()` and therefore inside every generated screen's `static_assert` (#281).
+The subset is deliberately smaller than BCP 47: full conformance is a registry and a parser, and the
+subset already covers every locale `mdux-textbake` can produce. Before it the manifest's only rule
+was non-empty, which admitted `en/US`, `(locale-free)` and a kilobyte of text into a field consumers
+had started deriving filenames and identifiers from.
+
 This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
 artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is
 still not duplicated and no glyph bytes move into the screen; the changed digest records that the
