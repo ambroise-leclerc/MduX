@@ -12,6 +12,7 @@ module mdux.tools.medui.textbudget;
 
 import std;
 import mdux.font.schema;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.text.draw;
 import mdux.text.schema;
@@ -55,33 +56,24 @@ constexpr std::array dynamicFields{
     return component == "Clock" && field == "format";
 }
 
-/// The five format-template letters that stand for a decimal digit rather than a literal glyph.
-[[nodiscard]] bool isClockDigitSlot(char character) noexcept {
-    return character == 'H' || character == 'M' || character == 'S' || character == 'Y' || character == 'D';
+/// Whether a field names a rendering in the product's numeric-template table (#258).
+///
+/// Separate from `namesDynamicText()` because the two tables answer different questions. A
+/// dynamic-text rule says which code points a name *can produce*, which is a charset claim; a
+/// numeric template says what shape a name *renders as*, which is a geometry claim. A single table
+/// carrying both would let a rule answer one and be consulted for the other.
+[[nodiscard]] bool namesNumericTemplate(std::string_view component, std::string_view field) noexcept {
+    return component == "NumericDisplay" && field == "template";
 }
 
-/// The possible code points at one position of a clock rendering.
-struct ClockSlot {
-    std::array<char32_t, 10> points{};
-    std::size_t              count{0};
-};
-
-[[nodiscard]] ClockSlot clockSlot(char character) noexcept {
-    ClockSlot slot;
-    if (isClockDigitSlot(character)) {
-        for (char32_t digit = U'0'; digit <= U'9'; ++digit) {
-            slot.points[slot.count++] = digit;
-        }
-    } else {
-        slot.points[slot.count++] = static_cast<char32_t>(character);
-    }
-    return slot;
-}
-
-/// Font units to pixels, using the half-up rule the text baker uses for every pen position.
-[[nodiscard]] std::int64_t toPixels(std::int64_t units, const mdux::font::FontPackage& font) noexcept {
-    return (units * static_cast<std::int64_t>(font.pixelSize) + static_cast<std::int64_t>(font.unitsPerEm) / 2) / static_cast<std::int64_t>(font.unitsPerEm);
-}
+// The slot model, the pen arithmetic and the worst-case envelope used to live here as
+// `isClockDigitSlot()`, `clockSlot()`, `toPixels()` and the walk inside `checkClockFormat()`. They
+// are `mdux.medui.reading`'s now (#258), in the governed zone, and this stage imports them.
+//
+// That move is ADR-008 decision 1's doctrine applied to text, and ADR-010 decision 4's amendment
+// depends on it: the runtime places a live reading with this arithmetic, and a compile-time bound
+// computed by a *second* copy of it would certify a box the device could still overflow. One
+// implementation is what makes the certificate mean something.
 
 /// Finds a component in the dictionary semantic analysis published, rather than a second copy of it.
 [[nodiscard]] const ComponentRule* ruleFor(std::string_view component) noexcept {
@@ -336,6 +328,8 @@ private:
                 }
             } else if (carriesFixedText(node.source.component, field.name)) {
                 checkClockFormat(node, field, *field.value);
+            } else if (namesNumericTemplate(node.source.component, field.name)) {
+                checkNumericTemplate(node, field, *field.value);
             } else if (namesDynamicText(node.source.component, field.name)) {
                 checkDynamicText(field, *field.value);
             }
@@ -428,11 +422,9 @@ private:
      * widest shape a clock can draw is known here - `HH:MM:SS` is six digit slots and two colons -
      * and the box can be checked at compile time instead of being trusted.
      *
-     * Equal digit advances stop the clock from jittering, but they do not make digit ink identical:
-     * bitmap origins and dimensions may differ, and a package may carry kerning. The envelope below
-     * therefore considers all ten digits at every placeholder and the full rendered geometry. Its
-     * extrema may come from different clock values, making it conservative rather than falsely
-     * exact; that is the fail-closed direction for a compile-time bound.
+     * The envelope itself is `mdux::medui::measurePattern()`'s since #258, which is the same
+     * function the runtime's placement is built on. See the note where this file's local copies used
+     * to be for why that sharing is load-bearing rather than tidy.
      */
     void checkClockFormat(const ResolvedNode& node, const ast::Field& field, const ast::Value& value) {
         if (value.kind != ast::ValueKind::Identifier) {
@@ -443,102 +435,110 @@ private:
             return;  // MEDUI-E034, already reported by analyze().
         }
 
-        const std::string_view rendering = mdux::medui::rendering(*format);
-        std::int64_t           penMin{0};
-        std::int64_t           penMax{0};
-        std::int64_t           left{0};
-        std::int64_t           right{0};
-        std::int64_t           top{0};
-        std::int64_t           bottom{0};
-        bool                   inked{false};
+        measureAgainstNode(node, value, mdux::medui::rendering(*format), mdux::medui::PatternKind::Clock, std::format("a '{}' clock", value.text));
+        static_cast<void>(field);
+    }
 
-        for (std::size_t index = 0; index < rendering.size(); ++index) {
-            const ClockSlot slot = clockSlot(rendering[index]);
-            std::int64_t    minAdvance{std::numeric_limits<std::int64_t>::max()};
-            std::int64_t    maxAdvance{0};
-
-            for (std::size_t candidate = 0; candidate < slot.count; ++candidate) {
-                const char32_t                 point = slot.points[candidate];
-                const mdux::font::GlyphRecord* glyph = inputs_.font->find(point);
-                if (glyph == nullptr) {
-                    report(Code::CharsetEscape,
-                           value.position,
-                           std::format("format '{}' can render U+{:04X}, which font package '{}' cannot draw",
-                                       value.text,
-                                       static_cast<std::uint32_t>(point),
-                                       inputs_.font->id));
-                    return;
-                }
-
-                minAdvance = std::min(minAdvance, static_cast<std::int64_t>(glyph->advanceWidth));
-                maxAdvance = std::max(maxAdvance, static_cast<std::int64_t>(glyph->advanceWidth));
-                if (glyph->isBlank()) {
-                    continue;
-                }
-
-                const std::int64_t glyphLeft   = toPixels(penMin, *inputs_.font) + glyph->bitmapOriginX;
-                const std::int64_t glyphRight  = toPixels(penMax, *inputs_.font) + glyph->bitmapOriginX + glyph->width;
-                const std::int64_t glyphTop    = -static_cast<std::int64_t>(glyph->bitmapOriginY);
-                const std::int64_t glyphBottom = glyphTop + glyph->height;
-                if (!inked) {
-                    left   = glyphLeft;
-                    right  = glyphRight;
-                    top    = glyphTop;
-                    bottom = glyphBottom;
-                    inked  = true;
-                } else {
-                    left   = std::min(left, glyphLeft);
-                    right  = std::max(right, glyphRight);
-                    top    = std::min(top, glyphTop);
-                    bottom = std::max(bottom, glyphBottom);
-                }
-            }
-
-            if (index + 1 < rendering.size()) {
-                const ClockSlot next = clockSlot(rendering[index + 1]);
-                std::int64_t    minKerning{std::numeric_limits<std::int64_t>::max()};
-                std::int64_t    maxKerning{std::numeric_limits<std::int64_t>::min()};
-                for (std::size_t current = 0; current < slot.count; ++current) {
-                    for (std::size_t following = 0; following < next.count; ++following) {
-                        const std::int64_t adjustment = inputs_.font->kerningFor(slot.points[current], next.points[following]);
-                        minKerning                    = std::min(minKerning, adjustment);
-                        maxKerning                    = std::max(maxKerning, adjustment);
-                    }
-                }
-                penMin += minAdvance + minKerning;
-                penMax += maxAdvance + maxKerning;
-                if (penMin < 0) {
-                    report(Code::CharsetEscape,
-                           value.position,
-                           std::format("format '{}' can move its pen left of the clock origin with font package '{}'", value.text, inputs_.font->id));
-                    return;
-                }
-            }
+    /**
+     * @brief Measures a `NumericDisplay`'s template against its node (#258).
+     *
+     * `template:` is a product identifier, and until this issue the compiler could not expand one:
+     * TextBudget.cppm recorded that it "is left for the same reason" as `TextInput`'s `max_length`,
+     * namely that no runtime pen rule existed to measure against. ADR-010 decision 4's amendment is
+     * that rule, so the template becomes measurable - through the same table mechanism `charset:`
+     * already resolves through, and the same envelope a clock is measured with.
+     *
+     * A template with no rule behind it is `MEDUI-E053`, and it is the same fail-closed reading
+     * `checkDynamicText()` gives an unknown charset name: "this name does not resolve" means the
+     * compiler cannot bound what it produces, which from here is indistinguishable from a name that
+     * produces something unbakeable. Passing it over in silence is how a device-time overflow gets a
+     * compiler's signature on it.
+     */
+    void checkNumericTemplate(const ResolvedNode& node, const ast::Field& field, const ast::Value& value) {
+        if (value.kind != ast::ValueKind::Identifier && value.kind != ast::ValueKind::String) {
+            return;  // MEDUI-E033, already reported by analyze().
         }
 
-        const TextExtent extent{.width = inked ? right - left : 0, .height = inked ? bottom - top : 0};
-        if (extent.width > node.bounds.width) {
+        const auto rule = std::ranges::find(inputs_.numericTemplates, value.text, &NumericTemplateRule::name);
+        if (rule == inputs_.numericTemplates.end()) {
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("template '{}' has no rendering in the numeric-template table, so its widest reading cannot be measured", value.text));
+            return;
+        }
+
+        // Structure before geometry, and through the runtime's own counter rather than a second
+        // copy of it. `measurePattern()` answers "does the widest reading fit this box", which a
+        // template with no digit slots at all passes trivially - `mmHg` measures fine and can never
+        // show a number. `digitsOf()` refuses zero slots and more than `maxDigitsPerField`, so a
+        // template outside that range is one the device must refuse on every frame, rolling back the
+        // whole screen. Refusing it here makes a compiled template structurally drawable, which is
+        // what the compiler's signature on it is supposed to mean.
+        const std::size_t slots = mdux::medui::countSlots(rule->rendering, mdux::medui::PatternKind::Numeric);
+        if (slots == 0) {
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("template '{}' renders '{}', which has no digit slots, so no reading could ever be drawn in it", value.text, rule->rendering));
+            return;
+        }
+        if (slots > mdux::medui::maxDigitsPerField) {
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("template '{}' renders '{}', which has {} digit slots; the runtime draws at most {}",
+                               value.text,
+                               rule->rendering,
+                               slots,
+                               mdux::medui::maxDigitsPerField));
+            return;
+        }
+
+        measureAgainstNode(node, value, rule->rendering, mdux::medui::PatternKind::Numeric, std::format("template '{}'", value.text));
+        static_cast<void>(field);
+    }
+
+    /**
+     * @brief The half a clock and a numeric template share: measure the pattern, refuse the node.
+     *
+     * Both report through the same two codes and the same two sentences, because from an author's
+     * side they are the same fact: this shape needs more room than the box you gave it.
+     */
+    void measureAgainstNode(const ResolvedNode& node, const ast::Value& value, std::string_view pattern, mdux::medui::PatternKind kind, std::string what) {
+        const auto measured = mdux::medui::measurePattern(*inputs_.font, pattern, kind);
+        if (!measured.has_value()) {
+            // Every one of these is the font package failing to serve the pattern rather than the
+            // author writing a bad box, so they report as a charset escape and name the package.
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("{} renders '{}', which font package '{}' cannot draw: {}",
+                               what,
+                               pattern,
+                               inputs_.font->id,
+                               mdux::medui::describe(measured.error())));
+            return;
+        }
+
+        if (measured->width > node.bounds.width) {
             report(Code::TextBudgetExceeded,
                    value.position,
-                   std::format("a '{}' clock renders '{}', which needs {}px of width, and '{}' resolved to {}px",
-                               value.text,
-                               rendering,
-                               extent.width,
+                   std::format("{} renders '{}', which needs {}px of width, and '{}' resolved to {}px",
+                               what,
+                               pattern,
+                               measured->width,
                                node.id,
                                node.bounds.width));
         }
-        if (extent.height > node.bounds.height) {
+        if (measured->height > node.bounds.height) {
             report(Code::TextBudgetExceeded,
                    value.position,
-                   std::format("a '{}' clock renders '{}', which needs {}px of height, and '{}' resolved to {}px",
-                               value.text,
-                               rendering,
-                               extent.height,
+                   std::format("{} renders '{}', which needs {}px of height, and '{}' resolved to {}px",
+                               what,
+                               pattern,
+                               measured->height,
                                node.id,
                                node.bounds.height));
         }
-        static_cast<void>(field);
     }
+
 
     /// Checks that a named dynamic-text source can only produce glyphs the font package holds.
     void checkDynamicText(const ast::Field& field, const ast::Value& value) {
@@ -644,9 +644,15 @@ bool needsTextBudget(const ast::Screen& screen) {
                     }
                 }
             }
-            // Asked through the same predicate the measuring pass uses, so a third dynamic-text
-            // field reaches this question without anyone having to remember it.
-            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)) {
+            // Asked through the same predicates the measuring pass uses, so a third dynamic-text
+            // field reaches this question without anyone having to remember it. The numeric template
+            // belongs here for the same reason and was missing until #258 was reviewed: a screen
+            // whose only text-bearing component is a `NumericDisplay` was classified as carrying no
+            // measurable text, and `Compile.cpp` then refused its `[text]` table before the template
+            // could be measured at all - so a numeric display could not be compiled without a Label
+            // or a Clock beside it to answer this question for it.
+            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)
+                || namesNumericTemplate(node.component, field.name)) {
                 return true;
             }
         }

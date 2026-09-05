@@ -85,6 +85,54 @@ Concretely:
    against the baked atlas. There is no on-device code that walks a font table, no
    on-device code that maps code points to glyphs, and no on-device code that
    advances a pen by a runtime-computed width.
+
+   **Amended by #258: a bounded exception for slot substitution in a measured pattern.**
+   Decision 3 permits dynamic text and this decision forbade the only mechanism that could
+   draw it. That was not a tension anybody had to resolve while no component drew a live
+   value; `Clock` and `NumericDisplay` are the components that do, and the contradiction had
+   to be settled before either could exist. It is settled here rather than worked around,
+   because a runtime that quietly did what a decision forbids is worse than one that says
+   what it does.
+
+   The exception is deliberately narrow, and every clause of it is a check rather than a
+   convention:
+
+   - **The shape is fixed at build time.** A reading is drawn from a *pattern* — `HH:MM:SS`
+     for a `ClockFormat`, `###.# mmHg` for a `NumericDisplay` template — in which the
+     literal characters and the positions of the digit slots are constants. Only which
+     digit stands in each slot varies at run time. Nothing about the sequence, the
+     character set, or the number of glyphs is a function of the value.
+   - **The shape is measured at build time, against the node that will hold it.**
+     `checkClockFormat()` (#219) already computes the worst-case ink envelope over all ten
+     digits at every slot, with the font package's own advances and kerning, and refuses a
+     screen whose box cannot hold it. #258 extends the same measurement to a
+     `NumericDisplay`'s template. A pattern that could overflow its node fails the build, so
+     the runtime is replaying a shape a compiler already certified rather than discovering
+     one.
+   - **One implementation, shared.** The pen arithmetic is `mdux.medui.reading`'s, in the
+     governed zone, and the host budget stage imports it rather than carrying its own copy.
+     This is ADR-008 decision 1's doctrine applied to text: two implementations of the same
+     arithmetic agree until the day they matter, and a device-time clip the compiler had
+     certified is exactly that day.
+   - **The mapping is a bounded lookup, not a shaping decision.** `FontPackage::find()` over
+     the baked glyph table, for a code point the restricted charset permits and the compiler
+     proved the package can draw. There is no GSUB, no GPOS, no contextual form, no
+     ligature, no reordering, and no fallback — a code point the package lacks refuses the
+     frame rather than substituting anything.
+   - **Bounded and allocation-free.** `maxPatternLength` caps the glyphs one reading can
+     record, so per-node work stays a constant a device knows before it runs, and the
+     no-heap property is verified the three ways #63 established.
+
+   What stays forbidden is unchanged and is the whole of what this ADR was written against:
+   a layout engine, a shaping engine, a font-table parser, reflow, and any placement whose
+   *sequence* of glyphs depends on data. The rejected alternatives A through D below are
+   rejected still — none of them is what this admits.
+
+   The honest cost is stated rather than left to be discovered: the runtime now contains
+   arithmetic that must agree with the baker's, and "must agree" is a property held by a
+   shared implementation and a compile-time bound rather than by construction. Static text
+   remains stronger, because its positions are bytes in a committed artifact. A component
+   that *can* be static should be.
 5. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), composite
    glyph substitutions the baker did not pre-bake, CFF/CFF2 outlines, GPOS
    positioning, ligatures and hinting **fail the font baker (#160/#161)** with stable codes
@@ -155,6 +203,14 @@ is what makes a rendered mismatch *diagnostic*.
 
 ### Negative
 
+- **The runtime holds pen arithmetic, since #258.** Decision 4's amendment admits slot
+  substitution in a build-measured pattern, so a live `Clock` or `NumericDisplay` is placed on
+  device rather than read out of an artifact. That is a real reduction in what the committed
+  bytes alone attest, and it is bounded rather than eliminated: the shape is a compile-time
+  constant, the envelope is measured against the node, the arithmetic has one implementation
+  shared with the baker, and the runtime re-checks the drawn extent against the node's bounds
+  before it commits the frame. A reviewer comparing a static `Label` against a live reading
+  should know that the first is attested by bytes and the second by a bound.
 - **No complex scripts in v1.** Latin, Cyrillic and Greek LTR are the entire initial
   repertoire. Arabic, Devanagari, Han, Hangul, Thai and all complex-shaping scripts
   are out of scope until a later wave explicitly widens the baker. A device that

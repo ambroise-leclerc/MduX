@@ -82,11 +82,19 @@
  *
  * `TextInput` carries `max_length`, and the shared component model asks that "bounded-dynamic" text
  * fit its box in the worst case as well. Sizing that worst case means deciding how the runtime
- * advances the pen for text no baker positioned, and no such rule exists yet - the components that
- * would need it are #17. Inventing one here would pin a policy in a diagnostic before the code that
- * has to honour it is written, so the check waits for the runtime rule rather than guessing at it.
- * `NumericDisplay`'s `template:` is left for the same reason: it is a product template identifier,
- * and the compiler cannot expand it into code points without a table nobody has defined.
+ * advances the pen for text no baker positioned, and until #258 no such rule existed - so the check
+ * waited for the runtime rule rather than guessing at it.
+ *
+ * **`NumericDisplay`'s `template:` no longer waits.** It was left for the same reason and is now
+ * measured: ADR-010 decision 4's amendment fixes the runtime pen rule, `mdux.medui.reading` is its
+ * one implementation, and a `[numericTemplates]` table supplies the rendering a product identifier
+ * stands for - the same mechanism `charset:` has always resolved through. A template with no rule
+ * behind it is `MEDUI-E053`, fail-closed exactly as an unknown charset name is.
+ *
+ * `TextInput` still waits, and now for a smaller reason than it did: the pen rule exists, but what
+ * a `max_length` of 12 renders as is a *charset* question rather than a pattern one - the worst case
+ * is the widest twelve glyphs the charset admits, in an order nothing constrains - and that is
+ * #260's to settle rather than this issue's to guess at.
  *
  * ## Why the shared conformance suite does not cover these two codes
  *
@@ -144,6 +152,27 @@ struct DynamicTextRule {
 };
 
 /**
+ * @brief One named numeric template, and the shape it renders as (#258).
+ *
+ * The product's governed table, in the shape `DynamicTextRule` established and for its reason: a
+ * `template:` names something the product owns, not something the language defines, and a compiler
+ * shipping its own list would be authoritative about a set it does not own.
+ *
+ * `rendering` is a pattern in `mdux::medui::PatternKind::Numeric`'s alphabet - `#` is a digit slot
+ * and every other character, letters included, is a literal. `###.# mmHg` is four digit slots, a
+ * point, a space and a four-letter unit. That alphabet is why the slot character is `#` rather than
+ * a letter: a unit is made of letters, and `mmHg` contains an `H` a clock would read as an hour.
+ *
+ * The device draws through this same pattern, and gets it from its `ReadingBinding` rather than
+ * from the compiled screen - see `mdux.medui.screen`, which explains why the artifact carries the
+ * template's *name* and what the runtime re-checks so that a drifted table cannot overflow a node.
+ */
+struct NumericTemplateRule {
+    std::string_view name;
+    std::string_view rendering;
+};
+
+/**
  * @brief Everything one screen is measured against.
  *
  * `font` is the committed font package the approved locales were baked into, and it is required:
@@ -162,9 +191,10 @@ struct DynamicTextRule {
 // an omitted `dynamicText` is fail-closed anyway: a name with no rule behind it is `MEDUI-E053`
 // rather than a name silently accepted.
 struct TextBudgetInputs {
-    const mdux::font::FontPackage*   font{nullptr};
-    std::span<const LocaleText>      locales{};
-    std::span<const DynamicTextRule> dynamicText{};
+    const mdux::font::FontPackage*       font{nullptr};
+    std::span<const LocaleText>          locales{};
+    std::span<const DynamicTextRule>     dynamicText{};
+    std::span<const NumericTemplateRule> numericTemplates{};
 };
 
 /// The ink one baked run paints, in surface pixels.

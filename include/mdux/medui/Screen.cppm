@@ -25,9 +25,11 @@
  *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
  *   locale the device is running. Without a binding there is nothing to join to and the node is
  *   deferred exactly as before, which is also what a screen with no text costs: nothing.
- * - `NumericDisplay` draws its field, and the **reading inside it** is still deferred: the digits a
- *   template expands to are a function of a sample this module is not given, and they arrive with
- *   #258.
+ * - `NumericDisplay` draws its field, and since #258 the **digits inside it** as well, when the
+ *   caller supplies a `ReadingBinding` naming that node. Without one the node is exactly what it was
+ *   after #255: the opaque field it reserves. The expansion is `mdux.medui.reading`'s, and what a
+ *   `templateId` stands for arrives with the value rather than out of the artifact - see
+ *   `ReadingSlot` for why, and for what the runtime re-checks so that cannot go wrong quietly.
  * - `SignalTrace` draws its field, and since #257 the **waveform inside it** as well, when the
  *   caller supplies a `SignalBinding` naming that node's stream. Without one the node is exactly
  *   what it was after #255: the opaque field it reserves. The expansion itself is
@@ -37,8 +39,12 @@
  *   deferred whole. Their text is not the whole of their appearance - a button has a face, a text
  *   input has a caret and a selection - and this module will not invent those. They arrive with #17.
  * - `Clock` carries no colour token at all, and a `StatusIndicator` carries one per state, so
- *   neither has a single tint a field could be painted in - which is the same reason
- *   `collectGoldens()` refuses `ColorHash` for such a node. They stay deferred until #258 and #259.
+ *   neither has a single tint a *field* could be painted in - which is the same reason
+ *   `collectGoldens()` refuses `ColorHash` for such a node. A `StatusIndicator` therefore stays
+ *   deferred until #259. A `Clock` draws since #258, and draws its **reading and nothing else**:
+ *   there is no field under it, because there is no token to paint one in. Its tint comes from the
+ *   `ReadingBinding`, which is the one appearance decision in this module a caller makes rather than
+ *   an artifact - see `ReadingBinding` for why that contradicts no golden.
  * - `Image` draws when the caller supplies the exact baked package the screen approved (#256).
  *   Without an `ImageBinding` it is deferred, just as a Label is without text.
  *
@@ -78,7 +84,7 @@
  * list cannot knock a stroke back to the ground - there is no erase - and a stroke in the field's
  * own tint over an opaque field of that tint is invisible. What was available is the *third* reading
  * of the same rule, which the sentence above did not have to spell out because nothing had needed it
- * yet: one tint at **two coverages**. A bound trace paints its field at `boundTraceFieldCoverage`
+ * yet: one tint at **two coverages**. A bound trace paints its field at `boundFieldCoverage`
  * and its stroke at full tint, so every pixel is still a blend of ground and tint at one coverage -
  * what `ColorHash` asks - the stroke supplies the fully covered pixels `ColorHash` additionally
  * requires, and the field keeps `goldenBounds()` seeing the node's whole rectangle as painted, which
@@ -167,6 +173,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.trace;
 import mdux.text.draw;
@@ -225,6 +232,11 @@ enum class ScreenError : std::uint8_t {
     UnknownStreamSource,   ///< a signal slot names a stream no `SignalTrace` on this screen carries
     DuplicateStream,       ///< two signal slots name the same stream
     MissingSampleRing,     ///< a signal slot carries no ring, so its trace could never draw a sample
+    UnknownReadingNode,    ///< a reading slot names no `NumericDisplay` on this screen
+    DuplicateReading,      ///< two reading slots name the same node
+    MalformedPattern,      ///< a reading slot's rendering is empty or longer than `maxPatternLength`
+    ReadingRefused,        ///< a reading could not be drawn - see `ReadingError` for which way
+    ReadingOverflowsNode,  ///< a drawn reading's ink is wider or taller than the node that holds it
     MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
     MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
     NonFiniteSample,       ///< a live sample is a NaN or an infinity
@@ -416,13 +428,18 @@ private:
 static_assert(!std::is_aggregate_v<ImageBinding>, "an ImageBinding must only be obtainable through create()");
 
 /**
- * @brief The coverage a `SignalTrace`'s field is painted at once its samples are on screen.
+ * @brief The coverage a live component's field is painted at once its reading is on screen.
  *
- * The field is opaque while a trace is unbound - that is #255's rule and nothing here changes it -
- * and drops to this coverage of the same tint the moment a waveform is drawn over it. The reason is
- * arithmetic rather than taste: a `SignalTraceSpec` carries **one** colour token, so a stroke drawn
- * over an opaque field of that token is the field, pixel for pixel, and the component would have
- * gained a feature nobody could see.
+ * The field is opaque while the component is unbound - that is #255's rule and nothing here changes
+ * it - and drops to this coverage of the same tint the moment a reading is drawn over it. The reason
+ * is arithmetic rather than taste: a `SignalTraceSpec` and a `NumericDisplaySpec` each carry **one**
+ * colour token, so content drawn over an opaque field of that token is the field, pixel for pixel,
+ * and the component would have gained a feature nobody could see.
+ *
+ * Named for the field rather than for the trace since #258, because both live components use it. The
+ * argument below was written for a waveform and holds unchanged for a reading: it is about how many
+ * tints a spec carries and what an additive draw list can do with them, not about what shape the
+ * content is.
  *
  * The module comment above states the constraint this has to live inside: a reading drawn in a third
  * colour fails a `ColorHash` golden, so the only tints available are the node's own and the ground
@@ -437,7 +454,7 @@ static_assert(!std::is_aggregate_v<ImageBinding>, "an ImageBinding must only be 
  * number itself is this module's; nothing in the artifacts or the shared contract fixes it, and it is
  * recorded here rather than inlined so a screen's appearance has one place to be argued about.
  */
-inline constexpr float boundTraceFieldCoverage = 0.25F;
+inline constexpr float boundFieldCoverage = 0.25F;
 
 /**
  * @brief One live waveform the caller offers this screen: which stream, whose samples, at what scale.
@@ -537,18 +554,173 @@ private:
 static_assert(!std::is_aggregate_v<SignalBinding>, "a SignalBinding must only be obtainable through create()");
 
 /**
+ * @brief One live reading the caller offers a `NumericDisplay`: which node, what shape, what value.
+ *
+ * `nodeId` rather than the node's `source:` name, and that is worth a sentence. A `SignalTrace` is
+ * addressed by its stream because several nodes may legitimately show one stream; a `NumericDisplay`
+ * shows one reading in one box, and its id is the name a golden reference, a requirement trace and
+ * the layout solver already address it by. Using the same handle means a caller wiring readings and
+ * a reviewer reading `goldens.json` are naming the same thing.
+ *
+ * ## Why the pattern travels here rather than in the artifact
+ *
+ * The compiled node carries `templateId` - a validated *name*, as every other field is - and not the
+ * shape that name stands for. Resolving it into the artifact was the alternative, and it was not
+ * taken: it would put a product's rendering table inside a byte-compared screen package and, through
+ * that, inside the shared contract's compiled-screen semantics, which is an upstream change this
+ * needs no part of.
+ *
+ * So the shape arrives with the value, from the host that owns the table - and the obvious risk is
+ * equally plain: the compiler certified the node against table A and the device could draw table B.
+ * That is the same class of exposure `TextBinding` closes with a digest, and there is no digest to
+ * hold here. What closes it instead is the same thing that closes it for a `Label` whose bound
+ * package the runtime cannot authenticate: **the drawn extent is measured again, against the node,
+ * and a reading that does not fit refuses the frame as `ReadingOverflowsNode`.** The build-time
+ * check remains the one that reports a useful diagnostic to the person who can fix it; this one
+ * exists so that a drifted table can never put digits over a neighbour.
+ *
+ * `value` is in the template's own fixed-point units - `1234` under `###.#` is `123.4` - so no float
+ * is formatted on device. That is not only about allocation: a decimal conversion has rounding this
+ * project would then have to pin across toolchains, and the host that owns the units has already
+ * made that decision once.
+ */
+struct ReadingSlot {
+    std::string_view nodeId{};     ///< the `NumericDisplay` node this reading is for
+    std::string_view rendering{};  ///< what its `templateId` stands for, e.g. `###.# mmHg`
+    std::int64_t     value{0};     ///< the reading, in the template's own fixed-point units
+};
+
+/**
+ * @brief The live readings a screen's `NumericDisplay` and `Clock` nodes are joined to.
+ *
+ * `TextBinding`'s counterpart for readings, and `SignalBinding`'s sibling. What it proves is that
+ * the caller and the screen agree about *nodes* and that each pattern is one the runtime will draw:
+ *
+ * - every slot names a `NumericDisplay` on this screen, because a mistyped node id is otherwise a
+ *   reading that silently never appears while its field goes on being painted;
+ * - no two slots name the same node, because which would win is arbitrary and undetectable;
+ * - every pattern is non-empty and within `maxPatternLength`, checked once here rather than
+ *   rediscovered on the first frame of a device's life.
+ *
+ * A screen need **not** have a slot for every `NumericDisplay`, and need not carry a time. A reading
+ * that has not arrived is a normal state, and its node draws the opaque field it reserved - which is
+ * exactly what this runtime did for every such node before #258.
+ *
+ * ## The clock's two arguments
+ *
+ * `now` is one time for the whole binding rather than one per node: a screen showing two clocks
+ * showing different times is not a screen anybody means to build, and offering the option would make
+ * that mistake expressible.
+ *
+ * `clockColorToken` is the awkward one, and it is stated rather than buried. The shared component
+ * model gives `Clock` no `color:` field - `id`, `width`, `height`, `format`, and an optional
+ * `position:` - so unlike every other drawn component, the artifact names no tint for it. Something
+ * must, and the host is the only other party. It is a *token*, resolved through the governed table
+ * exactly as a screen's own would be, so what a host can choose is which approved colour rather than
+ * any colour. And it contradicts no artifact: `collectGoldens()` already refuses `ColorHash` for a
+ * node with no single declared token, so no golden can ever have pinned a clock's tint.
+ *
+ * A default-constructed binding is *unbound* and means "this caller has no readings": every such
+ * node draws its field, and a `Clock` stays deferred, which is what every existing caller has.
+ *
+ * ## The font is the text binding's, and that is not an accident of wiring
+ *
+ * A reading needs glyph metrics and nothing else the text pipeline provides - no translations, no
+ * keys, no sidecar - so carrying a `const FontPackage*` here looked like the independent design. It
+ * is not the one the schema already chose. `needsTextPackageApproval()` puts `NumericDisplay` and
+ * `Clock` among the components whose screen **must** list an approved text package, and
+ * `ScreenPackage::validate()` refuses one that does not: a screen carrying either of them and no
+ * `Label` is not a screen this project admits. So a `TextBinding` is always obtainable for a screen
+ * that has a reading to draw, and taking the font from it means the metrics come from a package
+ * whose identity `TextBinding::create()` authenticated against the screen's own approval manifest -
+ * rather than from a second font this type would have nothing to check.
+ *
+ * The consequence a caller meets is therefore real and small: drawing a number requires binding a
+ * locale. That is a start-up cost, paid once, on a screen the schema already required to declare
+ * one.
+ *
+ * Nothing here is owned, and the slot span is the caller's storage, so `render()` allocates nothing
+ * by construction rather than by discipline.
+ */
+class ReadingBinding {
+public:
+    /// An unbound binding: no readings, no time, every such node as it was before #258.
+    constexpr ReadingBinding() noexcept = default;
+
+    /// Proves every slot names a distinct `NumericDisplay` on `screen` and carries a usable pattern.
+    ///
+    /// `now` may be null, which means this caller has no clock and every `Clock` stays deferred.
+    /// When it is not null, `clockColorToken` must resolve through the governed colour table.
+    [[nodiscard]] static mdux::core::Result<ReadingBinding, ScreenError>
+    create(const ScreenPackage& screen, std::span<const ReadingSlot> readings, const CivilTime* now = nullptr, std::string_view clockColorToken = {}) noexcept;
+
+    /// Whether this binding carries anything. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return !readings_.empty() || now_ != nullptr;
+    }
+
+    [[nodiscard]] constexpr std::span<const ReadingSlot> readings() const noexcept {
+        return readings_;
+    }
+
+    /// The time every `Clock` on this screen shows, or nullptr when this caller has none.
+    [[nodiscard]] constexpr const CivilTime* now() const noexcept {
+        return now_;
+    }
+
+    [[nodiscard]] constexpr std::string_view clockColorToken() const noexcept {
+        return clockColorToken_;
+    }
+
+    /// The reading for `nodeId`, or nullptr when this caller offers none.
+    ///
+    /// Linear, for `ScreenPackage::find()`'s reason: a screen holds a handful of readings, and a map
+    /// would cost more to build than every lookup it could serve.
+    [[nodiscard]] constexpr const ReadingSlot* find(std::string_view nodeId) const noexcept {
+        for (const ReadingSlot& slot : readings_) {
+            if (slot.nodeId == nodeId) {
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Whether this binding was built for `screen`. `SignalBinding::approvedBy()`'s rule, verbatim.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        return !bound() || screen.id == screenId_;
+    }
+
+private:
+    constexpr ReadingBinding(std::string_view screenId, std::span<const ReadingSlot> readings, const CivilTime* now, std::string_view clockColorToken) noexcept
+        : readings_{readings}, now_{now}, screenId_{screenId}, clockColorToken_{clockColorToken} {}
+
+    std::span<const ReadingSlot> readings_{};
+    const CivilTime*             now_{nullptr};
+    std::string_view             screenId_{};
+    std::string_view             clockColorToken_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline -
+// `TextBinding`'s static_assert, for its reason.
+static_assert(!std::is_aggregate_v<ReadingBinding>, "a ReadingBinding must only be obtainable through create()");
+
+/**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
  * for the reasons the module comment gives one by one. A caller that expects a screen to be fully
  * drawn can assert it is zero; today, on a screen carrying an `Image`, a `VulkanViewport`, a
- * `Clock`, a `StatusIndicator` or any of the three interactive components, it will not be - and on
- * one carrying text it will not be either unless a `TextBinding` was supplied.
+ * `StatusIndicator` or any of the three interactive components, it will not be - and on one carrying
+ * text or an unbound `Clock` it will not be either unless the matching binding was supplied.
  *
- * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255: its field is drawn, and
- * only the reading inside it waits on a sample. That distinction is the point of the counter - a
- * node whose rectangle is painted is a node a golden reference can check, whatever it will later
- * show in it.
+ * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255: its field is drawn even
+ * with nothing bound. That distinction is the point of the counter - a node whose rectangle is
+ * painted is a node a golden reference can check, whatever it will later show in it. A `Clock` has
+ * no such rectangle, so an unbound one is a deferral in the ordinary sense.
+ *
+ * `readings` and `traces` count the nodes whose *live* content was drawn, which is the fact
+ * `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred, and only
+ * one of them is showing a number.
  */
 struct FrameStats {
     std::uint32_t nodes{0};     ///< nodes visited
@@ -556,6 +728,7 @@ struct FrameStats {
     std::uint32_t deferred{0};  ///< nodes visited and left undrawn
     std::uint32_t steps{0};     ///< units of per-node work, for the bounded-work tests
     std::uint32_t traces{0};    ///< `SignalTrace` nodes whose samples were expanded
+    std::uint32_t readings{0};  ///< `NumericDisplay` and `Clock` nodes whose value was drawn
 
     [[nodiscard]] constexpr bool operator==(const FrameStats&) const noexcept = default;
 };
@@ -571,6 +744,8 @@ struct FrameStats {
  *                default means "no image", and every `Image` node is then deferred
  * @param signals the live rings this screen's stream sources resolve against; default means "no
  *                signals", and every trace then draws the opaque field it reserves
+ * @param readings the live values this screen's `NumericDisplay` and `Clock` nodes show; default
+ *                means "no readings", and each such node is then what it was before #258
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -583,8 +758,9 @@ struct FrameStats {
  */
 [[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
                                                                  mdux::draw::DrawList& list,
-                                                                 const TextBinding&    text    = {},
-                                                                 const ImageBinding&   image   = {},
-                                                                 const SignalBinding&  signals = {}) noexcept;
+                                                                 const TextBinding&    text     = {},
+                                                                 const ImageBinding&   image    = {},
+                                                                 const SignalBinding&  signals  = {},
+                                                                 const ReadingBinding& readings = {}) noexcept;
 
 }  // namespace mdux::medui

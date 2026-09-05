@@ -44,6 +44,21 @@ maxVertices = 4096
 maxIndices  = 6144
 maxCommands = 64
 
+# What each `template:` a NumericDisplay names actually renders as (#258). The product's table, not
+# the language's: `TPL-PRESSURE-MMHG` is this device's name for an insufflation-pressure readout, and
+# the compiler measures the widest reading that shape can ever produce against the node holding it.
+#
+# `#` is a digit slot and every other character is a literal, which is why the slot character is not
+# a letter: `mmHg` contains an H, and a clock's alphabet would read it as an hour.
+#
+# `##.# mmHg` is therefore 0.0 to 99.9 mmHg - the range an insufflator works in - with the reading
+# carried to the device as a fixed-point integer in tenths, so nothing formats a float on a device.
+# Widening this to `###.# mmHg` is a re-bake and a review of the diff, and the budget stage is what
+# tells you if the node stopped being wide enough.
+[numericTemplates]
+names      = ["TPL-PRESSURE-MMHG"]
+renderings = ["##.# mmHg"]
+
 # The packages this screen's text is validated against (#235). `fontPackage` supplies the glyph
 # metrics every box is measured with; `packages` lists one committed text package per locale the
 # font approves, which today is `en-US` alone.

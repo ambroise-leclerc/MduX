@@ -84,6 +84,24 @@ struct DynamicText {
 };
 
 /**
+ * @brief One entry of the product's numeric-template table (#258).
+ *
+ * `NumericDisplay.template` names a rendering the product owns - `TPL-PRESSURE-MMHG` stands for
+ * something like `###.# mmHg` - and this is where a recipe states what it stands for, so the budget
+ * stage can measure the widest reading it can ever show against the node that holds it.
+ *
+ * A table rather than a closed set, for `DynamicText`'s reason: the names belong to a product's
+ * governed tables and not to the language, and the shared contract leaves `template:` an open name.
+ *
+ * Owning its strings rather than viewing them, likewise: a `NumericTemplateRule` is a view, and the
+ * storage it views has to outlive the compile that uses it.
+ */
+struct NumericTemplate {
+    std::string name;
+    std::string rendering;
+};
+
+/**
  * @brief A parsed and resolved screen recipe.
  *
  * Paths are repository-relative, because the compiler runs with the repository root as its working
@@ -95,15 +113,16 @@ struct DynamicText {
  * that is safe rather than a way around the check.
  */
 struct Recipe {
-    std::string              id;      ///< the artifact slug: `generated/screen/<id>/`
-    std::string              source;  ///< the `.medui` file
-    std::int64_t             surfaceWidth{0};
-    std::int64_t             surfaceHeight{0};
-    mdux::draw::DrawBudget   budget{};
-    std::string              fontPackage;    ///< committed font package.json, or empty
-    std::vector<std::string> textPackages;   ///< committed text package.json, one per approved locale
-    std::vector<std::string> imagePackages;  ///< committed image package.json files
-    std::vector<DynamicText> dynamicText;    ///< the product's governed dynamic-text table
+    std::string                  id;      ///< the artifact slug: `generated/screen/<id>/`
+    std::string                  source;  ///< the `.medui` file
+    std::int64_t                 surfaceWidth{0};
+    std::int64_t                 surfaceHeight{0};
+    mdux::draw::DrawBudget       budget{};
+    std::string                  fontPackage;       ///< committed font package.json, or empty
+    std::vector<std::string>     textPackages;      ///< committed text package.json, one per approved locale
+    std::vector<std::string>     imagePackages;     ///< committed image package.json files
+    std::vector<DynamicText>     dynamicText;       ///< the product's governed dynamic-text table
+    std::vector<NumericTemplate> numericTemplates;  ///< the product's numeric-template table (#258)
 
     /// The fully resolved options, as `report.json` records them.
     [[nodiscard]] evidence::json::Value toOptions() const;
