@@ -1033,6 +1033,62 @@ constexpr std::array<Point2F, 4> slantedQuad{
     Point2F{ .x = 10.5F, .y = 22.0F}
 };
 
+const mdux::spec::Register aSmallQuadSurvivesLargeCoordinates{
+    "A small quad is admitted just as far from the origin as beside it",
+    "evidence-unit",
+    [] {
+        struct State {
+            SmallStorage             storage;
+            std::optional<DrawList>  list;
+            std::optional<DrawError> nearOrigin;
+            std::optional<DrawError> farFromOrigin;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-large-coordinates")
+            .Given("one unit square, offered at the origin and again at a large offset", [] {})
+            .When("each is added to a list with budget to spare",
+                  [state] {
+                      // The degeneracy test is a shoelace sum, and a shoelace sum over *absolute*
+                      // coordinates subtracts two products of similar magnitude. At 4096 those
+                      // products are near 2^24, where a float's ulp is larger than this square's
+                      // area, so the area cancels to zero and a perfectly good quad reads as
+                      // collinear. A trace drawn on a large surface emits one small cap per sample,
+                      // so this is the arithmetic every one of them lands on.
+                      //
+                      // (4096, 4096) rather than an arbitrary large offset: whether the cancellation
+                      // reaches exactly zero depends on the corner values, and this pair is one that
+                      // does. Nearby offsets survive with a wrong-but-nonzero area, which the
+                      // zero-check cannot see - the reason to fix the arithmetic rather than the
+                      // threshold.
+                      const auto square = [](float x, float y) {
+                          return std::array<Point2F, 4>{
+                              Point2F{    .x = x,     .y = y},
+                              Point2F{.x = x + 1,     .y = y},
+                              Point2F{.x = x + 1, .y = y + 1},
+                              Point2F{    .x = x, .y = y + 1}
+                          };
+                      };
+                      state->list = requireCreated(state->storage.list(), "the list");
+
+                      const auto near   = state->list->addSolidQuad(square(0.0F, 0.0F), red);
+                      state->nearOrigin = near.has_value() ? std::nullopt : std::optional{near.error()};
+
+                      const auto far       = state->list->addSolidQuad(square(4096.0F, 4096.0F), red);
+                      state->farFromOrigin = far.has_value() ? std::nullopt : std::optional{far.error()};
+                  })
+            .Then("both are admitted, because area does not depend on where a shape sits",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(!state->nearOrigin.has_value(), "the unit square at the origin is admitted");
+                      checks.expect(!state->farFromOrigin.has_value(),
+                                    std::format("the same square at (4096, 4096) is admitted, got {}",
+                                                state->farFromOrigin.has_value() ? describe(*state->farFromOrigin) : "no error"));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register quadKeepsItsCorners{
     "A solid quad records its four corners unrounded", "evidence-unit", [] {
         struct State {

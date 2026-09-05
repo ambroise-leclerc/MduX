@@ -189,6 +189,53 @@ const mdux::spec::Register valueIsUp{"The larger sample is the higher one on scr
                                              .Execute();
                                      }};
 
+const mdux::spec::Register anExtremeRangeStillSeparatesItsRails{
+    "A full-scale range maps its endpoints to opposite rails",
+    "evidence-unit",
+    [] {
+        struct State {
+            Scratch                       scratch;
+            std::optional<draw::DrawList> list;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("trace-extreme-range-separates-rails")
+            .Given("a range spanning the whole float line, and a sample at each end",
+                   [state] {
+                       // Every value here is finite, so `create()`'s checks pass - and the span
+                       // between them is not: `maximum - minimum` overflows in float, and so does
+                       // `sample - minimum` at the top. The float path divided one infinity by
+                       // another and sent the resulting NaN to the bottom rail, so a transition from
+                       // the smallest sample to the largest drew a flat line rather than a step.
+                       // The one failure a monitor must not have, from a range that is merely wide.
+                       static constexpr float                extreme = std::numeric_limits<float>::max();
+                       static constexpr std::array<float, 2> samples{-extreme, extreme};
+                       static constexpr ms::TraceStyle       wide{.minimum = -extreme, .maximum = extreme, .strokeWidth = 1};
+                       state->list = state->scratch.list();
+                       requireRecorded(ms::recordTrace(*state->list, band, ringOver(samples), wide, nominal), "the full-scale trace");
+                   })
+            .When("the two caps are compared", [] {})
+            .Then("they sit on opposite rails, the larger sample higher",
+                  [state] {
+                      // Record order and vertex layout as in `trace-value-is-up`: cap, then cap and
+                      // the segment behind it, each quad's first vertex its top-left corner.
+                      const std::span<const draw::UiVertex> vertices = state->list->vertices();
+                      mdux::spec::Checks                    checks;
+                      checks.expect(vertices.size() == 12, std::format("two caps and one segment is twelve vertices, got {}", vertices.size()));
+                      if (vertices.size() != 12) {
+                          checks.raise();
+                          return;
+                      }
+                      checks.expect(vertices[4].y < vertices[0].y,
+                                    std::format("the largest sample is higher than the smallest: y {} against {}", vertices[4].y, vertices[0].y));
+                      checks.expect(vertices[0].y == static_cast<float>(band.y + band.height - 1),
+                                    std::format("the smallest sample is on the bottom rail, got y {}", vertices[0].y));
+                      checks.expect(vertices[4].y == static_cast<float>(band.y), std::format("the largest sample is on the top rail, got y {}", vertices[4].y));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register everyStrokeWidthStaysInside{
     "Every admitted stroke width stays inside the node",
     "evidence-unit",

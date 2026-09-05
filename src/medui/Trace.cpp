@@ -61,9 +61,21 @@ struct SamplePoint {
  * range is a real reading a monitor pins to its rail.
  */
 [[nodiscard]] Px rowFor(float sample, const TraceStyle& style, Px rows) noexcept {
-    const float span       = style.maximum - style.minimum;
-    const float offset     = sample - style.minimum;
-    const float normalised = offset / span;
+    // Widened before subtracting, not afterwards. `create()` checks that the minimum, the maximum
+    // and every sample are finite, which does not make their *differences* finite: a range of
+    // [-FLT_MAX, FLT_MAX] passes every one of those checks and still overflows to an infinite span,
+    // and at the top of that range `sample - minimum` overflows too. The float path then divided one
+    // infinity by another, and the NaN fell into the `!(t > 0.0F)` branch below - so the largest
+    // sample a screen can carry drew on the bottom rail, indistinguishable from the smallest. A
+    // full-scale transition rendered as a flat line, which is the one failure a monitor must not
+    // have.
+    //
+    // The difference of two floats is exact in double, so nothing is rounded here that was not
+    // rounded before, and the division is exactly rounded once on the way back to float. Rail
+    // clamping below is unchanged and still does the work for finite excursions.
+    const double span       = static_cast<double>(style.maximum) - static_cast<double>(style.minimum);
+    const double offset     = static_cast<double>(sample) - static_cast<double>(style.minimum);
+    const auto   normalised = static_cast<float>(offset / span);
 
     float t = normalised;
     // `!(t > 0.0F)` rather than `t < 0.0F`, so a NaN lands on the bottom rail instead of falling

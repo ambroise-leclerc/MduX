@@ -158,13 +158,28 @@ ResultVoid<DrawError> DrawList::addSolidQuad(const std::array<Point2F, 4>& corne
     // collinear or coincident, which is `addRect()`'s DegenerateRect in the shape a quad has it.
     // The sign is not checked: a caller may wind either way, and the fixed 0-1-2 / 0-2-3 split
     // draws both - the pipeline disables face culling, so winding is not a visibility question.
-    float doubledArea = 0.0F;
+    //
+    // Measured relative to the first corner, and accumulated in double. Both matter, and neither is
+    // caution for its own sake: over absolute coordinates the two products are of similar magnitude
+    // and their difference is the area, so a small quad far from the origin loses that difference to
+    // rounding. A 1px cap at (4096, 4096) cancels to exactly zero in float and reads as collinear -
+    // which is a trace refusing to draw because of where it was placed. Translating first is exact
+    // (a float minus a float is exact in double) and makes the products small; the double
+    // accumulation then keeps a unit area from vanishing under coordinates a surface can reach.
+    // Translation does not change an area, so this is the same test, computed where it survives.
+    const double originX     = static_cast<double>(corners[0].x);
+    const double originY     = static_cast<double>(corners[0].y);
+    double       doubledArea = 0.0;
     for (std::size_t i = 0; i < corners.size(); ++i) {
-        const Point2F& a = corners[i];
-        const Point2F& b = corners[(i + 1) % corners.size()];
-        doubledArea += (a.x * b.y) - (b.x * a.y);
+        const Point2F& a  = corners[i];
+        const Point2F& b  = corners[(i + 1) % corners.size()];
+        const double   ax = static_cast<double>(a.x) - originX;
+        const double   ay = static_cast<double>(a.y) - originY;
+        const double   bx = static_cast<double>(b.x) - originX;
+        const double   by = static_cast<double>(b.y) - originY;
+        doubledArea += (ax * by) - (bx * ay);
     }
-    if (!(doubledArea > 0.0F) && !(doubledArea < 0.0F)) {
+    if (!(doubledArea > 0.0) && !(doubledArea < 0.0)) {
         return err(DrawError::DegenerateQuad);
     }
 
