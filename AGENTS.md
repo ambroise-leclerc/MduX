@@ -80,9 +80,11 @@ draw a `Label`; `#257` has since given a `SignalTrace` its waveform, expanded on
 caller-owned ring buffer into the screen's pre-sized vertex budget; and `#258` has given a
 `NumericDisplay` its digits and a `Clock` its time, which needed an amendment to
 [ADR-010](docs/adr/ADR-010-no-on-device-text-shaping.md) decision 4 - read it before touching
-`mdux.medui.reading`; and `#259` has given a `StatusIndicator` its state, drawn from a list the
-compiler closed, with an index outside that list refused rather than drawn blank. The rest of `#17`
-- `TextInput` and the two buttons - is still deferred.
+`mdux.medui.reading`; `#259` has given a `StatusIndicator` its state, drawn from a list the compiler
+closed, with an index outside that list refused rather than drawn blank; and `#260` has given a
+`TextInput` its value and caret on a fixed-pitch grid, which extended ADR-010 decision 4 a second
+time - read that amendment before touching `mdux.medui.field`. The rest of `#17` - the two buttons -
+is still deferred.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -103,6 +105,11 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.medui.schema` (governed) | `include/mdux/medui/Schema.cppm` | header-only |
+| `mdux.medui.screen` (governed) | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
+| `mdux.medui.reading` (governed) | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
+| `mdux.medui.trace` (governed) | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
+| `mdux.medui.field` (governed) | `include/mdux/medui/Field.cppm` | `src/medui/Field.cpp` |
 | `mdux.verify` (governed) | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 | `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |

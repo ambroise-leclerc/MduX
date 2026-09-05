@@ -12,6 +12,7 @@ module mdux.tools.medui.textbudget;
 
 import std;
 import mdux.font.schema;
+import mdux.medui.field;
 import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.text.draw;
@@ -64,6 +65,15 @@ constexpr std::array dynamicFields{
 /// carrying both would let a rule answer one and be consulted for the other.
 [[nodiscard]] bool namesNumericTemplate(std::string_view component, std::string_view field) noexcept {
     return component == "NumericDisplay" && field == "template";
+}
+
+/// Whether a field declares how many cells a fixed-pitch text field has (#260).
+///
+/// A third question again, and separate for the reason the other two are: `max_length` names neither
+/// a charset nor a rendering, but a *count* - and what that count costs in pixels is the font
+/// package's answer rather than any product table's.
+[[nodiscard]] bool namesFieldLength(std::string_view component, std::string_view field) noexcept {
+    return component == "TextInput" && field == "max_length";
 }
 
 // The slot model, the pen arithmetic and the worst-case envelope used to live here as
@@ -330,6 +340,8 @@ private:
                 checkClockFormat(node, field, *field.value);
             } else if (namesNumericTemplate(node.source.component, field.name)) {
                 checkNumericTemplate(node, field, *field.value);
+            } else if (namesFieldLength(node.source.component, field.name)) {
+                checkFieldLength(node, *field.value);
             } else if (namesDynamicText(node.source.component, field.name)) {
                 checkDynamicText(field, *field.value);
             }
@@ -497,6 +509,71 @@ private:
     }
 
     /**
+     * @brief Measures a `TextInput`'s `max_length` against its node (#260).
+     *
+     * The check TextBudget.cppm said was "#260's to settle". What settles it is that a field is a
+     * *grid*: `mdux.medui.field` places cell *k* at `k * cellWidth(font)`, so the worst case a
+     * `max_length` of twelve can produce is twelve of the font's widest permitted glyph plus the
+     * caret's column - a number this stage can compute today, from the same package the device will
+     * hold, through the same function the device will call.
+     *
+     * That is why the answer does not need the node's `charset:`. A named charset narrows what may
+     * appear and never widens it, so a box that holds the font's widest glyph holds every glyph a
+     * narrower set admits. The compiler is conservative in the direction that cannot produce a
+     * device-time overflow, and `Field.cppm` records the trade rather than leaving it to be inferred.
+     */
+    void checkFieldLength(const ResolvedNode& node, const ast::Value& value) {
+        if (value.kind != ast::ValueKind::Number) {
+            return;  // MEDUI-E033, already reported by analyze().
+        }
+        if (value.number <= 0) {
+            return;  // MEDUI-E035, already reported by analyze(): a non-positive length is not a field.
+        }
+
+        const auto measured = mdux::medui::measureField(*inputs_.font, static_cast<std::size_t>(value.number));
+        if (!measured.has_value()) {
+            // Structure rather than geometry, and both are refusals the device would make on every
+            // frame - so a compiler that signed them would be signing a screen that can never draw.
+            //
+            // Which *party* they name differs, though, and the message says which. A cell count past
+            // the cap is the runtime's limit and no font would change it; the rest are the package
+            // failing to serve a field. Blaming the font package for a `max_length` of 200 would
+            // send an author to bake a wider font, which cannot help.
+            const bool runtimeLimit = measured.error() == mdux::medui::FieldError::TooManyCells;
+            report(Code::CharsetEscape,
+                   value.position,
+                   runtimeLimit ? std::format("'{}' declares max_length {}, and {}", node.id, value.number, mdux::medui::describe(measured.error()))
+                                : std::format("'{}' declares max_length {}, which font package '{}' cannot serve: {}",
+                                              node.id,
+                                              value.number,
+                                              inputs_.font->id,
+                                              mdux::medui::describe(measured.error())));
+            return;
+        }
+
+        if (measured->width > node.bounds.width) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a {}-cell field needs {}px of width in font package '{}', and '{}' resolved to {}px",
+                               value.number,
+                               measured->width,
+                               inputs_.font->id,
+                               node.id,
+                               node.bounds.width));
+        }
+        if (measured->height > node.bounds.height) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a {}-cell field needs {}px of height in font package '{}', and '{}' resolved to {}px",
+                               value.number,
+                               measured->height,
+                               inputs_.font->id,
+                               node.id,
+                               node.bounds.height));
+        }
+    }
+
+    /**
      * @brief The half a clock and a numeric template share: measure the pattern, refuse the node.
      *
      * Both report through the same two codes and the same two sentences, because from an author's
@@ -644,15 +721,28 @@ bool needsTextBudget(const ast::Screen& screen) {
                     }
                 }
             }
-            // Asked through the same predicates the measuring pass uses, so a third dynamic-text
-            // field reaches this question without anyone having to remember it. The numeric template
-            // belongs here for the same reason and was missing until #258 was reviewed: a screen
-            // whose only text-bearing component is a `NumericDisplay` was classified as carrying no
-            // measurable text, and `Compile.cpp` then refused its `[text]` table before the template
-            // could be measured at all - so a numeric display could not be compiled without a Label
-            // or a Clock beside it to answer this question for it.
+            // Asked through the same predicates the measuring pass uses, so a field added to that
+            // pass reaches this question without anyone having to remember it. That is the intent;
+            // the list below is the part that still has to be extended by hand, and it has been
+            // forgotten twice.
+            //
+            // The numeric template was missing until #258 was reviewed: a screen whose only
+            // text-bearing component is a `NumericDisplay` was classified as carrying no measurable
+            // text, and `Compile.cpp` then refused its `[text]` table before the template could be
+            // measured at all. `max_length` was missing until #260 was reviewed, with a worse
+            // symptom - a `TextInput`-only screen had no way to compile at all. With a `[text]`
+            // table it was `MEDUI-E002`, "carries no measurable text"; without one it was
+            // `MEDUI-E000`, an internal error, because `needsTextPackageApproval()` puts `TextInput`
+            // among the components whose screen *must* approve a text package. Two predicates
+            // disagreeing about the same component told the author to report a compiler defect
+            // whichever way they turned, which is what `medui-compile-textinput-only-screen` pins.
+            //
+            // The rule for the next component: if the measuring pass consults a field, this must
+            // count it, and `needsTextPackageApproval()` in `mdux.medui.schema` must agree about the
+            // component. All three are one decision - "this screen needs a font" - asked in three
+            // places.
             if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)
-                || namesNumericTemplate(node.component, field.name)) {
+                || namesNumericTemplate(node.component, field.name) || namesFieldLength(node.component, field.name)) {
                 return true;
             }
         }

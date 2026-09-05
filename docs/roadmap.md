@@ -430,7 +430,7 @@ governed renderer.
 - #257 S2 `SignalTrace` — shares the demonstrator's sample ring
 - #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
 - #259 S4 `StatusIndicator` — **shipped**; the ECG demonstrator binds its classifier's class to one
-- #260 S5 `TextInput` (display and caret only)
+- #260 S5 `TextInput` (display and caret only) — **shipped**; a fixed-pitch grid, measured at compile time
 - #261 S6 Buttons with requirement binding — touches #219
 
 Largely independent of one another, unlike #16's. **#256 is the one to start**, depending on nothing

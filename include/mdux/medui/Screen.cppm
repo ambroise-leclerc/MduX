@@ -35,9 +35,15 @@
  *   what it was after #255: the opaque field it reserves. The expansion itself is
  *   `mdux.medui.trace`'s, split out for the reason `mdux.text.draw` is - geometry that can be tested
  *   against numbers rather than only against a rendered frame.
- * - `Button`, `CriticalButton`, `TextInput` carry text keys or live sources as well, and are still
- *   deferred whole. Their text is not the whole of their appearance - a button has a face, a text
- *   input has a caret and a selection - and this module will not invent those. They arrive with #17.
+ * - `Button` and `CriticalButton` carry text keys as well, and are still deferred whole. A button's
+ *   text is not the whole of its appearance - it has a face nothing in this project has decided -
+ *   and this module will not invent one. They arrive with #17.
+ * - `TextInput` draws since #260, when the caller supplies a `TextInputBinding` naming that node:
+ *   the value's glyphs on the fixed-pitch grid `mdux.medui.field` defines, and a caret when the slot
+ *   carries one. Display and caret is the whole of it - #17 cuts input-method editing, and ADR-004
+ *   is why: an IME needs the platform headers a governed module is compiled without. What it does
+ *   *not* draw is a box or a border, for the reason a `Label`'s box is not filled either: its single
+ *   token is the text's colour, and no artifact names it a face.
  * - `Clock` carries no colour token at all, and a `StatusIndicator` carries one per state, so
  *   neither has a single tint a *field* could be painted in while nothing is bound - which is the
  *   same reason `collectGoldens()` refuses `ColorHash` for such a node. A `Clock` draws since #258,
@@ -179,6 +185,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
+import mdux.medui.field;
 import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.trace;
@@ -248,6 +255,10 @@ enum class ScreenError : std::uint8_t {
     DuplicateStatus,       ///< two status slots name the same node
     StateOutOfRange,       ///< a slot's state is not a position in that node's closed `states` list
     StatusHasNoTint,       ///< a bound indicator declares no per-state colours, so its states look alike
+    UnknownTextInputNode,  ///< a text-input slot names no `TextInput` on this screen
+    DuplicateTextInput,    ///< two text-input slots name the same node
+    FieldRefused,          ///< a field could not be drawn - see `FieldError` for which way
+    FieldOverflowsNode,    ///< a drawn field's ink is wider or taller than the node that holds it
     MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
     MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
     NonFiniteSample,       ///< a live sample is a NaN or an infinity
@@ -827,6 +838,110 @@ private:
 static_assert(!std::is_aggregate_v<StatusBinding>, "a StatusBinding must only be obtainable through create()");
 
 /**
+ * @brief One live value the caller offers a `TextInput`: which node, what it shows, where the caret is.
+ *
+ * `nodeId` for `ReadingSlot`'s reason: an input shows one value in one box, and its id is the handle
+ * a golden reference, a requirement trace and the layout solver already address it by. Its `source:`
+ * names the live datum the host reads, which is the host's own business.
+ *
+ * `text` is **code points, not bytes**, and `mdux.medui.field` says why at length: decoding UTF-8 is
+ * parsing, the governed zone does not parse, and a decoder here would be the first step of the
+ * on-device text machinery ADR-010 exists to keep out. The span is the caller's storage and is read
+ * afresh each frame, exactly as a `SampleRing` is.
+ *
+ * `caret` is the cell the caret sits *before*, so a caret at `max_length` is the one standing after
+ * the last character of a full field. `nullopt` means this field is not being edited and draws no
+ * caret - which is a display state, not an error.
+ *
+ * ## What this deliberately is not
+ *
+ * It is not an input event, a key, a composition, or a candidate list. #17 cuts input-method editing
+ * from this dictionary and ADR-010 records the reason: an IME needs platform, graphics and OS
+ * headers, and a governed module is compiled without access to any of them (ADR-004). The host owns
+ * the editing; what crosses this boundary is what to *display*.
+ */
+struct TextInputSlot {
+    std::string_view           nodeId{};  ///< the `TextInput` node this value is for
+    std::span<const char32_t>  text{};    ///< the value, already decoded by the host
+    std::optional<std::size_t> caret{};   ///< the cell the caret precedes, or nullopt for no caret
+};
+
+/**
+ * @brief The live values a screen's `TextInput` nodes display, once the join is proved.
+ *
+ * `StatusBinding`'s sibling, and checked the same way: what it proves is that the caller and the
+ * screen agree about *nodes*, and that each value is one the field can actually show.
+ *
+ * - every slot names a `TextInput` on this screen, because a mistyped node id is otherwise a field
+ *   that silently stays empty while an operator types into it;
+ * - no two slots name the same node, because which of them would win is arbitrary;
+ * - every value fits the node's `max_length`, and every caret is a position in that field. Both are
+ *   checked here *and* in `recordField()`, for `StatusBinding`'s reason: this one reports at
+ *   start-up where a caller can act on it, and that one holds when the two disagree.
+ *
+ * A screen need **not** have a slot for every input. A field the host has no value for yet is a
+ * normal state of a device still starting up, and its node is deferred - not drawn as an empty box,
+ * which would say the operator's entry was blank rather than absent.
+ *
+ * ## What a bound one draws, and what it does not
+ *
+ * The value's glyphs on the fixed-pitch grid `mdux.medui.field` defines, and a caret when the slot
+ * carries one, both in the node's own colour token. **No box, no border and no background**: a
+ * `TextInput`'s single token is its *text* colour, exactly as a `Label`'s is, and this module does
+ * not invent a face for a component whose artifact names none. That is the same line #255 drew - it
+ * painted a field for the two components whose golden entry pins their whole rectangle against one
+ * token, and a `TextInput`'s does not.
+ *
+ * Nothing is owned, and the slot span is the caller's storage, so `render()` allocates nothing by
+ * construction rather than by discipline.
+ */
+class TextInputBinding {
+public:
+    /// An unbound binding: no values, every `TextInput` deferred as it was before #260.
+    constexpr TextInputBinding() noexcept = default;
+
+    /// Proves every slot names a distinct `TextInput` on `screen` and carries a value that fits it.
+    [[nodiscard]] static mdux::core::Result<TextInputBinding, ScreenError> create(const ScreenPackage& screen, std::span<const TextInputSlot> slots) noexcept;
+
+    /// Whether this binding carries slots. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return !slots_.empty();
+    }
+
+    [[nodiscard]] constexpr std::span<const TextInputSlot> slots() const noexcept {
+        return slots_;
+    }
+
+    /// The value for `nodeId`, or nullptr when this caller offers none.
+    ///
+    /// Linear, for `ScreenPackage::find()`'s reason: a screen holds a handful of inputs, and a map
+    /// would cost more to build than every lookup it could serve.
+    [[nodiscard]] constexpr const TextInputSlot* find(std::string_view nodeId) const noexcept {
+        for (const TextInputSlot& slot : slots_) {
+            if (slot.nodeId == nodeId) {
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Whether this binding was built for `screen`. `SignalBinding::approvedBy()`'s rule, verbatim.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        return !bound() || screen.id == screenId_;
+    }
+
+private:
+    constexpr TextInputBinding(std::string_view screenId, std::span<const TextInputSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+
+    std::span<const TextInputSlot> slots_{};
+    std::string_view               screenId_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline -
+// `TextBinding`'s static_assert, for its reason.
+static_assert(!std::is_aggregate_v<TextInputBinding>, "a TextInputBinding must only be obtainable through create()");
+
+/**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
@@ -841,9 +956,9 @@ static_assert(!std::is_aggregate_v<StatusBinding>, "a StatusBinding must only be
  * painted is a node a golden reference can check, whatever it will later show in it. A `Clock` has
  * no such rectangle, so an unbound one is a deferral in the ordinary sense.
  *
- * `readings`, `traces` and `states` count the nodes whose *live* content was drawn, which is the
- * fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred, and
- * only one of them is showing a number.
+ * `readings`, `traces`, `states` and `fields` count the nodes whose *live* content was drawn, which
+ * is the fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred,
+ * and only one of them is showing a number.
  */
 struct FrameStats {
     std::uint32_t nodes{0};     ///< nodes visited
@@ -853,6 +968,7 @@ struct FrameStats {
     std::uint32_t traces{0};    ///< `SignalTrace` nodes whose samples were expanded
     std::uint32_t readings{0};  ///< `NumericDisplay` and `Clock` nodes whose value was drawn
     std::uint32_t states{0};    ///< `StatusIndicator` nodes whose bound state was drawn
+    std::uint32_t fields{0};    ///< `TextInput` nodes whose bound value was drawn
 
     [[nodiscard]] constexpr bool operator==(const FrameStats&) const noexcept = default;
 };
@@ -872,6 +988,8 @@ struct FrameStats {
  *                means "no readings", and each such node is then what it was before #258
  * @param status  the live states this screen's `StatusIndicator` nodes are in; default means "no
  *                states", and every such node is then deferred as it was before #259
+ * @param inputs  the live values this screen's `TextInput` nodes display; default means "no
+ *                values", and every such node is then deferred as it was before #260
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -882,12 +1000,13 @@ struct FrameStats {
  * list can carry several screens; without the second check the screen's declared budget would be
  * decorative, and a mistake in a baked budget would be bypassed rather than observed.
  */
-[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
-                                                                 mdux::draw::DrawList& list,
-                                                                 const TextBinding&    text     = {},
-                                                                 const ImageBinding&   image    = {},
-                                                                 const SignalBinding&  signals  = {},
-                                                                 const ReadingBinding& readings = {},
-                                                                 const StatusBinding&  status   = {}) noexcept;
+[[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    screen,
+                                                                 mdux::draw::DrawList&   list,
+                                                                 const TextBinding&      text     = {},
+                                                                 const ImageBinding&     image    = {},
+                                                                 const SignalBinding&    signals  = {},
+                                                                 const ReadingBinding&   readings = {},
+                                                                 const StatusBinding&    status   = {},
+                                                                 const TextInputBinding& inputs   = {}) noexcept;
 
 }  // namespace mdux::medui

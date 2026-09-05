@@ -76,6 +76,30 @@ What it draws is the state's own tint over the node's whole rectangle, with the 
 when a `TextBinding` is bound - the field dimming to quarter coverage under the word, exactly as a
 bound `NumericDisplay`'s does.
 
+A `TextInput` draws its **value and caret**, given a `TextInputBinding` (#260). Four things to know
+before you write one:
+
+- **It is a grid, not a run.** Cell *k* sits at `k * cellWidth(font)`, where the pitch is the widest
+  advance the font package's charset admits, so a proportional font comes out looking monospaced.
+  That is the price of a placement a compiler can certify - ADR-010 decision 4 forbids a pen whose
+  width is computed at run time, and a proportional field is exactly that pen.
+- **`max_length` is measured against your box**, since this issue: `max_length` cells of the font's
+  widest glyph plus the caret's column must fit, or the screen fails to compile with `MEDUI-E050`.
+  A `max_length` past `maxFieldCells` (64) is `MEDUI-E053` instead, because no box makes it drawable.
+- **Your `charset:` is a compile-time claim about the *source*, not a runtime filter.** It says which
+  code points this field's data can produce, and the compiler checks that the font package can draw
+  all of them (`MEDUI-E053`). It does not reach the device: a compiled node carries the charset's
+  *name*, not its set, so what the runtime refuses is a character the **font package's** charset does
+  not admit — which is wider than yours whenever you narrowed it. A host that sends a letter to a
+  digits-only field gets a letter on screen. The box is measured against the font's charset too, for
+  the same reason, which is conservative in the only safe direction. Narrowing enforcement to the
+  node's own set needs the compiled screen to carry resolved ranges, which is
+  [#297](https://github.com/ambroise-leclerc/MduX/issues/297).
+- **Display and caret only.** No composition, no candidate window, no key handling. The host edits
+  the value; the screen shows it. A value longer than the field, or a character the font package's
+  restricted charset does not admit, refuses the frame rather than truncating or substituting — the
+  charset is the bound, not the glyph table, which may carry more than it declares.
+
 A `SignalTrace` draws its **waveform**, given a `SignalBinding` (#257) — the second join, and
 the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
 ring of samples, and the range those samples are read against; that range is the host's because what
@@ -84,10 +108,10 @@ know before you write one: a ring past `maxSamplesPerTrace` (256) is **refused r
 truncated**, and a bound trace dims its field so the full-tint stroke over it is visible — an unbound
 one is the opaque field #255 draws, unchanged.
 
-One limit is worth knowing before you write a screen: every other component is visited, counted in
-`FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
-this project has decided — and a `TextInput` has a caret and a selection besides. Both are
-[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+One limit is worth knowing before you write a screen: `Button` and `CriticalButton` are still
+visited, counted in `FrameStats::deferred` and left undrawn. A button is more than its text — it has
+a face nothing in this project has decided — and inventing one here is not this module's call. Both
+are [#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -188,7 +212,9 @@ There is no product-supplied table to configure, and a box too narrow for the fo
 error.
 
 `charset:` on `TextInput` stays an open name — it resolves against the character sets a build bakes,
-which the contract does not enumerate.
+which the contract does not enumerate. It bounds what the field may *display*; what its box must
+*hold* is measured against the font package's own charset, for the reason the `TextInput` notes
+above give.
 
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 

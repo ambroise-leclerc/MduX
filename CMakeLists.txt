@@ -267,6 +267,7 @@ target_sources(MduXCore
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
             include/mdux/medui/Schema.cppm
+            include/mdux/medui/Field.cppm
             include/mdux/medui/Reading.cppm
             include/mdux/medui/Screen.cppm
             include/mdux/medui/Trace.cppm
@@ -283,6 +284,7 @@ target_sources(MduXCore
         src/font/Schema.cpp
         src/text/Draw.cpp
         src/text/Schema.cpp
+        src/medui/Field.cpp
         src/medui/Reading.cpp
         src/medui/Screen.cpp
         src/medui/Trace.cpp
