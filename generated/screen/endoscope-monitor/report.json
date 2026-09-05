@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "c9592fb2c70691d84ca146de8e7e73c6a912d045994a07e868f67d0669ff017e"
+      "sha256": "91b1f4496b53f876fe1f149b2df690a8fc1b2f1864a7083ff04aedd32fafb0fd"
     },
     {
       "path": "generated/font/dejavu-ui/package.json",
@@ -62,11 +62,11 @@
     },
     {
       "path": "package.json",
-      "sha256": "a876061d552c560a707aa9e417cdc1059f1b4c8901b2f2c2549ba7b712aad036"
+      "sha256": "0a8dd71f26b78656758a06c7381a699a552492721a8d34eb564468bdec19dce4"
     },
     {
       "path": "verification.json",
-      "sha256": "26de4803679ba3a5bac48006dc3ccfe45236ea4e23b60177a491637b1347f89c"
+      "sha256": "4e121e3b1bd007eeb181b83bb2bc1bae0c6a889c3d1f7a5eb6ee4aac99eb6420"
     }
   ],
   "recipe": {

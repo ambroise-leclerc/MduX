@@ -12,6 +12,7 @@ module mdux.tools.medui.textbudget;
 
 import std;
 import mdux.font.schema;
+import mdux.medui.field;
 import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.text.draw;
@@ -64,6 +65,15 @@ constexpr std::array dynamicFields{
 /// carrying both would let a rule answer one and be consulted for the other.
 [[nodiscard]] bool namesNumericTemplate(std::string_view component, std::string_view field) noexcept {
     return component == "NumericDisplay" && field == "template";
+}
+
+/// Whether a field declares how many cells a fixed-pitch text field has (#260).
+///
+/// A third question again, and separate for the reason the other two are: `max_length` names neither
+/// a charset nor a rendering, but a *count* - and what that count costs in pixels is the font
+/// package's answer rather than any product table's.
+[[nodiscard]] bool namesFieldLength(std::string_view component, std::string_view field) noexcept {
+    return component == "TextInput" && field == "max_length";
 }
 
 // The slot model, the pen arithmetic and the worst-case envelope used to live here as
@@ -330,6 +340,8 @@ private:
                 checkClockFormat(node, field, *field.value);
             } else if (namesNumericTemplate(node.source.component, field.name)) {
                 checkNumericTemplate(node, field, *field.value);
+            } else if (namesFieldLength(node.source.component, field.name)) {
+                checkFieldLength(node, *field.value);
             } else if (namesDynamicText(node.source.component, field.name)) {
                 checkDynamicText(field, *field.value);
             }
@@ -494,6 +506,65 @@ private:
 
         measureAgainstNode(node, value, rule->rendering, mdux::medui::PatternKind::Numeric, std::format("template '{}'", value.text));
         static_cast<void>(field);
+    }
+
+    /**
+     * @brief Measures a `TextInput`'s `max_length` against its node (#260).
+     *
+     * The check TextBudget.cppm said was "#260's to settle". What settles it is that a field is a
+     * *grid*: `mdux.medui.field` places cell *k* at `k * cellWidth(font)`, so the worst case a
+     * `max_length` of twelve can produce is twelve of the font's widest permitted glyph plus the
+     * caret's column - a number this stage can compute today, from the same package the device will
+     * hold, through the same function the device will call.
+     *
+     * That is why the answer does not need the node's `charset:`. A named charset narrows what may
+     * appear and never widens it, so a box that holds the font's widest glyph holds every glyph a
+     * narrower set admits. The compiler is conservative in the direction that cannot produce a
+     * device-time overflow, and `Field.cppm` records the trade rather than leaving it to be inferred.
+     */
+    void checkFieldLength(const ResolvedNode& node, const ast::Value& value) {
+        if (value.kind != ast::ValueKind::Number) {
+            return;  // MEDUI-E033, already reported by analyze().
+        }
+        if (value.number <= 0) {
+            return;  // MEDUI-E035, already reported by analyze(): a non-positive length is not a field.
+        }
+
+        const auto measured = mdux::medui::measureField(*inputs_.font, static_cast<std::size_t>(value.number));
+        if (!measured.has_value()) {
+            // Structure rather than geometry: a length the runtime will not draw, or a package that
+            // admits no code point. Both are refusals the device would make on every frame, so a
+            // compiler that signed them would be signing a screen that can never draw.
+            report(Code::CharsetEscape,
+                   value.position,
+                   std::format("'{}' declares max_length {}, which font package '{}' cannot serve: {}",
+                               node.id,
+                               value.number,
+                               inputs_.font->id,
+                               mdux::medui::describe(measured.error())));
+            return;
+        }
+
+        if (measured->width > node.bounds.width) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a {}-cell field needs {}px of width in font package '{}', and '{}' resolved to {}px",
+                               value.number,
+                               measured->width,
+                               inputs_.font->id,
+                               node.id,
+                               node.bounds.width));
+        }
+        if (measured->height > node.bounds.height) {
+            report(Code::TextBudgetExceeded,
+                   value.position,
+                   std::format("a {}-cell field needs {}px of height in font package '{}', and '{}' resolved to {}px",
+                               value.number,
+                               measured->height,
+                               inputs_.font->id,
+                               node.id,
+                               node.bounds.height));
+        }
     }
 
     /**

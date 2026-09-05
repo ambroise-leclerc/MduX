@@ -123,6 +123,31 @@ Concretely:
      record, so per-node work stays a constant a device knows before it runs, and the
      no-heap property is verified the three ways #63 established.
 
+   **Extended by #260: the same exception, over a grid rather than a pattern.** A `TextInput`
+   displays a value from an open-ended charset, so the pattern form above does not fit it: no
+   fixed string of literals describes what an operator types. What does fit is the clause the
+   amendment actually turns on — *slot positions are build-time constants* — applied to a field
+   whose cells are a **fixed pitch**: `mdux.medui.field` places cell *k* at `k * cellWidth(font)`,
+   where `cellWidth()` is the widest advance the font package's restricted charset admits. Only
+   which permitted character occupies a cell varies, exactly as only which digit occupies a slot
+   varies above.
+
+   Every clause of the exception holds unchanged, and two are worth stating in this form:
+
+   - **The shape is fixed at build time**, and more strictly than a pattern's: a cell's position
+     depends on nothing but its index and one number derived from a committed font package.
+     A proportional pen was the alternative and is the thing this decision forbids — cell 5 would
+     sit where characters 0 to 4 put it, which is a runtime-computed width.
+   - **The measurement and the placement share one implementation and one input.** `cellWidth()`
+     is derived from the font package rather than supplied by a host, so the compiler's number and
+     the device's number are the same number whenever the bytes are the same bytes. The screen's
+     own `charset:` deliberately does not narrow it: a box holding the font's widest glyph holds
+     every glyph a narrower set admits, and consulting the narrower set would mean shipping a
+     product's charset table beside the artifact.
+
+   The honest cost, again stated rather than discovered: a proportional font on a fixed pitch
+   looks monospaced. That is the appearance price of a placement a compiler can certify.
+
    What stays forbidden is unchanged and is the whole of what this ADR was written against:
    a layout engine, a shaping engine, a font-table parser, reflow, and any placement whose
    *sequence* of glyphs depends on data. The rejected alternatives A through D below are
@@ -203,9 +228,10 @@ is what makes a rendered mismatch *diagnostic*.
 
 ### Negative
 
-- **The runtime holds pen arithmetic, since #258.** Decision 4's amendment admits slot
-  substitution in a build-measured pattern, so a live `Clock` or `NumericDisplay` is placed on
-  device rather than read out of an artifact. That is a real reduction in what the committed
+- **The runtime holds pen arithmetic, since #258, and grid arithmetic since #260.** Decision 4's
+  amendment admits slot substitution in a build-measured pattern, so a live `Clock` or
+  `NumericDisplay` is placed on device rather than read out of an artifact, and a `TextInput`'s
+  value is placed on a fixed-pitch grid derived from the same font package. That is a real reduction in what the committed
   bytes alone attest, and it is bounded rather than eliminated: the shape is a compile-time
   constant, the envelope is measured against the node, the arithmetic has one implementation
   shared with the baker, and the runtime re-checks the drawn extent against the node's bounds
@@ -222,7 +248,9 @@ is what makes a rendered mismatch *diagnostic*.
   to see it.
 - **No IME integration.** Epic #17 explicitly cuts IME from the component dictionary
   for the same trust-zone reason; this ADR is consistent with that cut. Input-method
-  editing is a platform concern, not a governed-renderer concern.
+  editing is a platform concern, not a governed-renderer concern. #260 landed a `TextInput`
+  that honours the cut exactly: it displays a value and a caret the host supplies, and contains
+  no composition, no candidate list and no key handling of any kind.
 - **Atlas size is a build-time dimension.** A larger supported repertoire costs more
   atlas memory on every device whether a given screen uses it or not. The packer
   (#160) is responsible for power-of-two sizing and for failing closed on over-budget

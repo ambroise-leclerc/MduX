@@ -166,9 +166,9 @@ Eight artifacts are committed today:
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
-cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
-`SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does
-not exist until the frame does. What `package.json` carries instead is layout: where each node is,
+cannot bake vertices, because five of the eleven components in the dictionary — `NumericDisplay`,
+`SignalTrace`, `StatusIndicator`, `Clock` and `TextInput` — draw from live data, and the *reading*
+they show does not exist until the frame does. What `package.json` carries instead is layout: where each node is,
 how much it may draw, and which validated token and key it draws with.
 
 An `Image` joins that screen to one approved `mdux.image.schema` package by id, canonical-package
@@ -226,6 +226,25 @@ field in that state's tint, with the state's word over it when a locale is bound
 deferred, because a default state is a reading nobody supplied. One refusal there is about appearance
 rather than names: a node that declares no `colors:` cannot be bound at all, since with no per-state
 tint its states are told apart by nothing a frame carries unless a locale happens to be bound.
+
+`mdux.medui.field` (#260) is the fourth join and the one that needed ADR-010 extended a second time.
+A `TextInput`'s value is characters from an open-ended charset, so the pattern form #258 admitted
+does not describe it — no fixed string of literals describes what an operator types. What does hold
+is the clause that amendment turns on, *slot positions are build-time constants*, applied to a
+**fixed-pitch grid**: cell *k* sits at `k * cellWidth(font)`, where `cellWidth()` is the widest
+advance the font package's restricted charset admits. A proportional pen was the alternative and is
+precisely what decision 4 forbids, since cell 5 would then sit where characters 0 to 4 put it.
+
+Two consequences are worth naming. The compiler and the device derive the pitch from the *same
+committed package* through the same function, so a `max_length` is measurable at build time —
+`measureField()` is what the budget stage checks a box against, closing the last "this stage
+deliberately does not check" in `TextBudget.cppm`. And a value longer than its field, or a character
+the package cannot draw, refuses the frame rather than truncating or substituting: a shortened
+patient identifier is a different identifier that looks like a whole one.
+
+Display and caret is the whole of the component. #17 cuts input-method editing and ADR-004 is the
+reason — an IME needs the platform, graphics and OS headers a governed module is compiled without —
+so the host owns the keystrokes and what crosses the boundary is what to display.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -373,9 +392,9 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with. Interactive component content remains under #17 |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, and a `TextInput` (#260) whose bound value and caret reach pixels there too. The two buttons remain under #17 |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `TextInput`, `Button` and `CriticalButton` remain. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, and `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Button` and `CriticalButton` remain. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to, and `TextInput` with #260 — display and caret on a fixed-pitch grid, no input-method editing |
 
 ### The HTML/CSS path is gone, not planned
 

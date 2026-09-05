@@ -318,8 +318,9 @@ int main() {
                  list->commands().size(),
                  endoscopeMonitor.budget.maxCommands);
     std::println("");
-    std::println("  The label, the image and the video surface are deferred: they need bound packages");
-    std::println("  this program opens no files to load. The waveform and the state do not.");
+    std::println("  The label, the image, the video surface and the patient-id field are deferred:");
+    std::println("  they need bound packages this program opens no files to load. The waveform and");
+    std::println("  the state do not.");
 
     std::println("");
     std::println("Swapping these weights is a re-bake of the recipe and a change to the configured");

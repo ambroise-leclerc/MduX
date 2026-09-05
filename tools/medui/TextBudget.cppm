@@ -78,23 +78,36 @@
  * package's own charset - which cannot escape itself. An author names a charset to *narrow* the
  * set, never to widen it.
  *
- * ## What this stage deliberately does not check
+ * ## Every text-bearing field is now measured, and how that came about
  *
- * `TextInput` carries `max_length`, and the shared component model asks that "bounded-dynamic" text
- * fit its box in the worst case as well. Sizing that worst case means deciding how the runtime
- * advances the pen for text no baker positioned, and until #258 no such rule existed - so the check
- * waited for the runtime rule rather than guessing at it.
+ * This section used to be called "what this stage deliberately does not check", and it named two
+ * fields: `NumericDisplay`'s `template:` and `TextInput`'s `max_length`. Both were left for one
+ * reason - sizing a worst case means deciding how the runtime advances the pen for text no baker
+ * positioned, and no such rule existed - and both have since been settled rather than guessed at.
  *
- * **`NumericDisplay`'s `template:` no longer waits.** It was left for the same reason and is now
- * measured: ADR-010 decision 4's amendment fixes the runtime pen rule, `mdux.medui.reading` is its
- * one implementation, and a `[numericTemplates]` table supplies the rendering a product identifier
- * stands for - the same mechanism `charset:` has always resolved through. A template with no rule
- * behind it is `MEDUI-E053`, fail-closed exactly as an unknown charset name is.
+ * **`template:` was settled by #258.** ADR-010 decision 4's amendment fixes the runtime pen rule,
+ * `mdux.medui.reading` is its one implementation, and a `[numericTemplates]` table supplies the
+ * rendering a product identifier stands for - the same mechanism `charset:` has always resolved
+ * through. A template with no rule behind it is `MEDUI-E053`, fail-closed exactly as an unknown
+ * charset name is.
  *
- * `TextInput` still waits, and now for a smaller reason than it did: the pen rule exists, but what
- * a `max_length` of 12 renders as is a *charset* question rather than a pattern one - the worst case
- * is the widest twelve glyphs the charset admits, in an order nothing constrains - and that is
- * #260's to settle rather than this issue's to guess at.
+ * **`max_length` was settled by #260**, and this file recorded the obstacle: "what a `max_length` of
+ * 12 renders as is a *charset* question rather than a pattern one - the worst case is the widest
+ * twelve glyphs the charset admits, in an order nothing constrains". What removes it is that a field
+ * is a **grid**: `mdux.medui.field` places cell *k* at `k * cellWidth(font)`, so the order stops
+ * mattering and the worst case is twelve cells of the font's widest permitted glyph plus the
+ * caret's column. `measureField()` is that number, computed here from the same package the device
+ * will hold and through the same function the device will call.
+ *
+ * The node's own `charset:` is deliberately not consulted for it. A named charset narrows what may
+ * appear and never widens it, so a box that holds the font's widest glyph holds every glyph a
+ * narrower set admits - and the alternative would put a product's charset table inside the artifact,
+ * which is the exposure `mdux.medui.field` declines for the reason `ReadingSlot` gives about a
+ * template. The conservatism is in the direction that cannot produce a device-time overflow.
+ *
+ * A `max_length` the runtime will not draw - zero, or past `maxFieldCells` - is `MEDUI-E053` rather
+ * than `MEDUI-E050`, because it is a structural refusal the device would make on every frame rather
+ * than a box an author can widen.
  *
  * ## Why the shared conformance suite does not cover these two codes
  *

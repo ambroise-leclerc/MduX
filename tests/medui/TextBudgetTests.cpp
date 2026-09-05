@@ -26,6 +26,7 @@ import std;
 import speclab;
 import mdux.core.result;
 import mdux.font.schema;
+import mdux.medui.field;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.diagnostics;
@@ -533,6 +534,81 @@ const mdux::spec::Register aStatesListNamesTheStateTheLocaleAndTheOverflow{
                       checks.expect(mentions(reported, "de-DE"), "and the locale its widest translation is in");
                       checks.expect(mentions(reported, "58px"), "and the width that translation needs");
                       checks.expect(mentions(reported, "40px"), "and the width the node has");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aFieldLengthIsMeasuredAgainstItsBox{
+    "A max_length whose worst case does not fit its box is a compile error",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-field-length")
+            .Given("a TextInput of eight cells against the fixture font's widest glyph", [] {})
+            .When("a box that fits the grid, and one that does not, are checked", [] {})
+            .Then("the narrow box is rejected and the diagnostic names the cells, the width and the box",
+                  [] {
+                      // #260's acceptance, and the check TextBudget.cppm said was #260's to settle.
+                      // Every fixture glyph advances 500 units at 10px per 1000 em units, so a cell
+                      // is 5px; the last cell's pen is at 35 and its 8px-wide ink reaches 43, which
+                      // is past the caret's own column at 41. The envelope is the union of the two,
+                      // which is why this is 43px rather than the grid's width alone.
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+                      const ApprovedText      approved    = approvedText("STR-TITLE", 1, 1);
+                      const auto              locales     = approved.views();
+
+                      const auto field = [](std::int64_t width) {
+                          return screenWith(std::format("    TextInput {{ id: entry; width: {}px; height: 20px; "
+                                                        "source: \"PATIENT_ID\"; max_length: 8; color: Theme.Colors.Title; }}\n",
+                                                        width));
+                      };
+
+                      const md::TextBudgetResult fits = md::checkTextBudgets(layoutOf(field(60)),
+                                                                             "budget.medui",
+                                                                             {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+                      checks.expect(fits.ok(), std::format("the wide box compiles, got {} diagnostics", fits.diagnostics.size()));
+
+                      const md::TextBudgetResult narrow   = md::checkTextBudgets(layoutOf(field(30)),
+                                                                               "budget.medui",
+                                                                                 {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+                      const cli::Diagnostic*     reported = find(narrow, md::Code::TextBudgetExceeded);
+                      checks.expect(!narrow.ok(), "the narrow box is rejected");
+                      checks.expect(mentions(reported, "8-cell"), "the diagnostic names how many cells were declared");
+                      checks.expect(mentions(reported, "43px"), "and the width those cells need");
+                      checks.expect(mentions(reported, "30px"), "and the width the node has");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aFieldLongerThanTheRuntimeDrawsIsRefused{
+    "A max_length past what the runtime draws is a structural refusal, not a sizing one",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-field-length-cap")
+            .Given("a TextInput declaring more cells than maxFieldCells", [] {})
+            .When("the resolved screen is checked", [] {})
+            .Then("it is MEDUI-E053 rather than MEDUI-E050, however wide the box is",
+                  [] {
+                      // The distinction is worth pinning because the fix differs: a box an author
+                      // can widen is E050, and a field the device would refuse on every frame is
+                      // E053 - no box is wide enough to make it drawable.
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+                      const ApprovedText      approved    = approvedText("STR-TITLE", 1, 1);
+                      const auto              locales     = approved.views();
+
+                      const std::string source = screenWith(std::format("    TextInput {{ id: entry; width: 190px; height: 20px; "
+                                                                        "source: \"PATIENT_ID\"; max_length: {}; color: Theme.Colors.Title; }}\n",
+                                                                        mdux::medui::maxFieldCells + 1));
+
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(find(result, md::Code::CharsetEscape) != nullptr, "reported as MEDUI-E053");
+                      checks.expect(find(result, md::Code::TextBudgetExceeded) == nullptr, "and not as a box that is merely too small");
                       checks.raise();
                   })
             .Execute();

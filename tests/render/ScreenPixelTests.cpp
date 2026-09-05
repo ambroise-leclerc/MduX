@@ -18,8 +18,9 @@
  * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
  * text package (#242). Below it the `NumericDisplay` and the `SignalTrace` paint the rectangles they
  * reserve, in the tokens their author gave them. Its video surface is still visited, counted as
- * deferred, and left undrawn because no test supplies a stream - and so is its status indicator,
- * which no test here binds a state to.
+ * deferred, and left undrawn because no test supplies a stream. Its status indicator and its text
+ * input are drawn only by the scenarios that bind one, which is what keeps the unbound path a tested
+ * contract rather than a code path nothing exercises.
  *
  * Two authored-screen scenarios below, deliberately not one. The first renders without bindings and is the older
  * claim unchanged - the panel and the fields land where the compiler put them, every text node
@@ -65,6 +66,7 @@ import mdux.core.result;
 import mdux.core.units;
 import mdux.evidence.json;
 import mdux.draw;
+import mdux.medui.field;
 import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.medui.schema;
 import mdux.medui.screen;
@@ -326,7 +328,7 @@ TEST_CASE("The compiled screen is the one the compiler produced", "pixel") {
     CHECK(package.validate().has_value());
     CHECK(package.surfaceWidth == 1280);
     CHECK(package.surfaceHeight == 720);
-    CHECK(package.nodes.size() == 7);
+    CHECK(package.nodes.size() == 8);
 
     // The safety-critical node #201 asks for, reached through the function a traceability export
     // walks rather than by index.
@@ -373,10 +375,11 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     REQUIRE(recorded.has_value());
     // The Row's synthetic panel, and the two fields #255 taught the runtime to paint.
     CHECK(recorded->rects == 3);
-    // Four of seven nodes are visited and left undrawn, and the frame says so rather than looking
-    // complete. See this file's header for which, and why each - the status indicator joins them
-    // because no test here binds a state, and an indicator with none is in no state to paint.
-    CHECK(recorded->deferred == 4);
+    // Five of eight nodes are visited and left undrawn, and the frame says so rather than looking
+    // complete. See this file's header for which, and why each - the status indicator is among them
+    // because no test here binds a state, and an indicator with none is in no state to paint, and so
+    // is the text input, which has no value to display and does not draw an empty box for one.
+    CHECK(recorded->deferred == 5);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -627,7 +630,7 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     // image. Asserted as the count rather than as "the label was drawn" so that a future component
     // learning to draw cannot make this scenario pass for a reason it does not name. The status
     // indicator is one of the two that remain: this scenario binds text and an image, not a state.
-    CHECK(recorded->deferred == 2);
+    CHECK(recorded->deferred == 3);
     // The panel and the two fields, plus one rectangle per inked glyph. "Endoscope Monitor" is 17
     // characters of which the space paints nothing, so 16 glyphs and three filled rectangles.
     CHECK(recorded->rects == 20);
@@ -742,11 +745,11 @@ TEST_CASE("An authored screen's bound status state reaches the pixels", "pixel")
         const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package), {}, {}, *status);
         REQUIRE(recorded.has_value());
         CHECK(recorded->states == 1);
-        // Only the video surface is left: the panel, the image, the label, the two fields and now
-        // the indicator all draw. Asserted as the count for the label scenario's reason - a future
-        // component learning to draw must not be able to make this pass for a reason it does not
-        // name.
-        CHECK(recorded->deferred == 1);
+        // The video surface and the text input are left: the panel, the image, the label, the two
+        // fields and the indicator all draw. Asserted as the count for the label scenario's reason -
+        // a future component learning to draw must not be able to make this pass for a reason it
+        // does not name.
+        CHECK(recorded->deferred == 2);
 
         RecordContext recording{.renderer = &*renderer, .list = &*list};
         auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -822,4 +825,143 @@ TEST_CASE("An authored screen's bound status state reaches the pixels", "pixel")
     };
 
     CHECK(inkMask(alarmed, field) != inkMask(nominal, fieldPixel(nominal)));
+}
+
+TEST_CASE("An authored screen's bound text field reaches the pixels", "pixel") {
+    // Display and caret, on the committed screen, through the committed font package - the whole of
+    // what #260 adds, checked where it is visible rather than only where it is computed.
+    //
+    // The grid is what makes the assertions below arithmetic rather than approximation: cell *k*
+    // sits at `k * cellWidth(font)` and nothing about that position depends on the value, so this
+    // scenario can say where the caret must be for a given value instead of measuring where it went
+    // and agreeing with itself.
+    const medui::ScreenPackage package = screen();
+    const core::Extent2D       surface = surfaceOf(package);
+    const BoundText            bound   = loadCommittedText();
+    const BoundImage           image   = loadCommittedImage();
+
+    const medui::CompiledNode* input = package.find("patient-id");
+    REQUIRE(input != nullptr);
+    const auto* spec = std::get_if<medui::TextInputSpec>(&input->payload);
+    REQUIRE(spec != nullptr);
+    REQUIRE(spec->maxLength == 12);
+
+    // The pitch the runtime will use, from the same package and the same function - not a number
+    // written here. A test that fixed its own pitch would keep passing while the font changed.
+    const auto pitch = medui::cellWidth(bound.font);
+    REQUIRE(pitch.has_value());
+    const auto extent = medui::measureField(bound.font, static_cast<std::size_t>(spec->maxLength));
+    REQUIRE(extent.has_value());
+    // The build-time promise, restated where it can be checked against the artifact: the box the
+    // compiler signed holds the worst case the field can ever draw.
+    CHECK(extent->width <= input->bounds.width);
+    CHECK(extent->height <= input->bounds.height);
+
+    const auto& gpu    = sharedDevice();
+    auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
+    REQUIRE(target.has_value());
+
+    VulkanRenderContext context;
+    context.device           = gpu.device();
+    context.physicalDevice   = gpu.physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = gpu.queue();
+    context.queueFamilyIndex = gpu.queueFamilyIndex();
+    context.viewport         = surface;
+
+    auto renderer = UiRenderer::createWithAtlases(context,
+                                                  mdux::shader::generated::mdux_ui::package(),
+                                                  package.budget,
+                                                  bound.atlas,
+                                                  bound.font.atlas.width,
+                                                  bound.font.atlas.height,
+                                                  image.pixels,
+                                                  image.image.width,
+                                                  image.image.height);
+    REQUIRE(renderer.has_value());
+
+    const auto frameFor = [&](std::span<const char32_t> text, std::optional<std::size_t> caret) {
+        const std::array<medui::TextInputSlot, 1> slots{
+            medui::TextInputSlot{.nodeId = "patient-id", .text = text, .caret = caret}
+        };
+        auto inputs = medui::TextInputBinding::create(package, slots);
+        REQUIRE(inputs.has_value());
+
+        Frame frame;
+        auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
+        REQUIRE(list.has_value());
+
+        const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package), {}, {}, {}, *inputs);
+        REQUIRE(recorded.has_value());
+        CHECK(recorded->fields == 1);
+
+        RecordContext recording{.renderer = &*renderer, .list = &*list};
+        auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
+        REQUIRE(pixels.has_value());
+        // Copied out: the span is the target's own staging buffer and is valid only until the next
+        // call, so two live handles would leave this scenario comparing one frame against itself.
+        return std::vector<core::ColorRgba8>{pixels->begin(), pixels->end()};
+    };
+
+    // Three characters and a caret after them, which is what a field being typed into looks like.
+    constexpr std::array<char32_t, 3>   typed{U'A', U'B', U'7'};
+    const std::vector<core::ColorRgba8> withCaret = frameFor(typed, std::optional<std::size_t>{3});
+
+    // The topbar panel is what the field is drawn over, so "painted" means "differs from it".
+    constexpr core::ColorRgba8 topbar{.r = 209, .g = 214, .b = 219, .a = 255};
+
+    const InkBox painted = paintedWithin(withCaret, surface, input->bounds, topbar);
+    REQUIRE(painted.found);
+
+    // The grid's origin is the node's own left edge - not the first glyph's ink box, which is what a
+    // Label uses. `A` has no left side bearing at this size, so the two coincide here; what the next
+    // scenario half pins is that the *caret* is where the grid says, which no ink box could explain.
+    CHECK(painted.left >= input->bounds.x);
+    CHECK(painted.right <= input->bounds.x + input->bounds.width);
+    CHECK(painted.bottom <= input->bounds.y + input->bounds.height);
+
+    // The caret stands before cell 3, so its column is exactly three pitches from the node's left
+    // edge - and it is the rightmost thing drawn, because `7` is narrower than a cell.
+    const auto caretColumn = static_cast<core::Px>(input->bounds.x + static_cast<std::int32_t>(3 * *pitch));
+    CHECK(painted.right == caretColumn + static_cast<core::Px>(medui::caretWidth));
+
+    // Every column the caret occupies is painted, top to bottom of the envelope: a caret drawn as a
+    // dot, or one clipped to a glyph's height, would satisfy the bound above and fail this.
+    std::size_t caretPixels = 0;
+    for (std::int32_t y = 0; y < static_cast<std::int32_t>(extent->height); ++y) {
+        const auto index = static_cast<std::size_t>(input->bounds.y + y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(caretColumn);
+        caretPixels     += static_cast<std::size_t>(withCaret[index] != topbar);
+    }
+    CHECK(caretPixels == static_cast<std::size_t>(extent->height));
+
+    // And the caret is the *only* difference between an edited field and an unedited one: the same
+    // value with no caret paints the same glyphs and nothing in that column.
+    const std::vector<core::ColorRgba8> noCaret           = frameFor(typed, std::nullopt);
+    std::size_t                         caretColumnPixels = 0;
+    for (std::int32_t y = 0; y < static_cast<std::int32_t>(extent->height); ++y) {
+        const auto index   = static_cast<std::size_t>(input->bounds.y + y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(caretColumn);
+        caretColumnPixels += static_cast<std::size_t>(noCaret[index] != topbar);
+    }
+    CHECK(caretColumnPixels == 0);
+
+    // The glyphs themselves are unmoved by the caret's presence, which is the property that makes
+    // the field a grid rather than a run: a pen that packed the caret in among the characters would
+    // shift them here.
+    //
+    // Compared over the cells *before* the caret rather than over the whole node, because the caret
+    // is legitimately taller than these three characters - it spans the envelope, which is the
+    // tallest ink any permitted glyph can have, so a box including it would differ at the top for a
+    // reason that has nothing to do with where the glyphs went.
+    const medui::NodeRect cells{.x      = input->bounds.x,
+                                .y      = input->bounds.y,
+                                .width  = static_cast<std::int32_t>(caretColumn) - input->bounds.x,
+                                .height = input->bounds.height};
+    const InkBox          glyphsWithCaret = paintedWithin(withCaret, surface, cells, topbar);
+    const InkBox          glyphsAlone     = paintedWithin(noCaret, surface, cells, topbar);
+    REQUIRE(glyphsWithCaret.found);
+    REQUIRE(glyphsAlone.found);
+    CHECK(glyphsAlone.left == glyphsWithCaret.left);
+    CHECK(glyphsAlone.top == glyphsWithCaret.top);
+    CHECK(glyphsAlone.right == glyphsWithCaret.right);
+    CHECK(glyphsAlone.bottom == glyphsWithCaret.bottom);
 }

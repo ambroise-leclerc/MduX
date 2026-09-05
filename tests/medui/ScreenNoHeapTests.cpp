@@ -733,3 +733,154 @@ const mdux::spec::Register drawingAStateAllocatesNothing{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register drawingAFieldAllocatesNothing{
+    "Drawing a bound text field allocates nothing, whatever is typed into it",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-render-field")
+            .Given("a screen whose TextInput is bound to a value that changes between frames", [] {})
+            .When("frames are recorded as characters are added and removed", [] {})
+            .Then(
+                "the allocation counter does not move",
+                [] {
+                    mdux::spec::Checks checks;
+
+                    // The path #260 adds. Its obvious wrong implementation keeps a `std::u32string`
+                    // per node, or decodes UTF-8 into a growing buffer - and a value that changes
+                    // length between frames is exactly what would make either allocate. What
+                    // actually happens is a walk over the caller's span into the caller's list.
+                    static const mdux::font::FontPackage font = [] {
+                        mdux::font::FontPackage built;
+                        built.id                     = "noheap-field";
+                        built.unitsPerEm             = 1000;
+                        built.pixelSize              = 10;
+                        built.locales                = {"en-US"};
+                        built.atlas.path             = "atlas.bin";
+                        built.atlas.width            = 64;
+                        built.atlas.height           = 64;
+                        built.atlas.byteLength       = 64 * 64;
+                        built.atlas.sha256           = std::string(64, 'a');
+                        built.atlas.occupancyPercent = 25;
+                        for (char32_t point = U'0'; point <= U'9'; ++point) {
+                            const auto slot = static_cast<std::uint32_t>(built.glyphs.size());
+                            built.glyphs.push_back(mdux::font::GlyphRecord{.codePoint       = point,
+                                                                           .glyphIndex      = static_cast<std::uint16_t>(slot + 1),
+                                                                           .advanceWidth    = 1000,
+                                                                           .leftSideBearing = 0,
+                                                                           .x               = slot * 4,
+                                                                           .y               = 0,
+                                                                           .width           = 4,
+                                                                           .height          = 6,
+                                                                           .bitmapOriginX   = 0,
+                                                                           .bitmapOriginY   = 6});
+                        }
+                        built.restrictedCharset = {
+                            {.first = U'0', .last = U'9'}
+                        };
+                        return built;
+                    }();
+
+                    static const std::array<std::byte, 6> records{};
+                    static const mdux::text::TextPackage  text = [] {
+                        mdux::text::TextPackage built;
+                        built.header.id         = "noheap-field-text";
+                        built.header.kind       = std::string{mdux::text::packageKind};
+                        built.atlasId           = "noheap-field";
+                        built.locale            = "en-US";
+                        built.sidecarPath       = "runs.bin";
+                        built.sidecarByteLength = records.size();
+                        built.sidecarSha256     = mdux::evidence::sha256(records);
+                        built.runs.push_back(
+                            mdux::text::TextRun{.id = "STR-UNUSED", .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
+                        return built;
+                    }();
+
+                    const auto canonical = text.write();
+                    if (!canonical.has_value()) {
+                        checks.expect(false, "the fixture package serializes");
+                        checks.raise();
+                        return;
+                    }
+                    const std::array approvals{
+                        ms::TextPackageApproval{.locale        = text.locale,
+                                                .packageId     = text.header.id,
+                                                .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))}
+                    };
+
+                    static constexpr ms::TextInputSpec               entry{.source      = "PATIENT_ID",
+                                                                           .colorToken  = "Theme.Colors.Title",
+                                                                           .maxLength   = 8,
+                                                                           .charset     = {},
+                                                                           .requirement = {}};
+                    static constexpr std::array<ms::CompiledNode, 1> fieldNodes{
+                        ms::CompiledNode{.id = "entry", .bounds = {0, 0, 200, 20}, .payload = entry}
+                    };
+                    ms::ScreenPackage fieldScreen{.id                   = "noheap-field",
+                                                  .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                  .surfaceWidth         = 200,
+                                                  .surfaceHeight        = 60,
+                                                  .approvedTextPackages = approvals,
+                                                  .nodes                = fieldNodes,
+                                                  .budget               = budget};
+
+                    const auto textBound =
+                        ms::TextBinding::create(fieldScreen, font, text, std::as_bytes(std::span{canonical->data(), canonical->size()}), records);
+                    if (!textBound.has_value()) {
+                        checks.expect(false, "the fixture text binding is valid");
+                        checks.raise();
+                        return;
+                    }
+                    const ms::TextBinding textBinding = *textBound;
+
+                    // The value a producer edits between frames. Static so the slot can point at it,
+                    // exactly as a device's would.
+                    static std::array<char32_t, 8> typed{U'0', U'1', U'2', U'3', U'4', U'5', U'6', U'7'};
+
+                    static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                    static std::array<mdux::draw::Index, 768>      indices{};
+                    static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                    auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+                    if (!created.has_value()) {
+                        checks.expect(false, "the storage satisfies the budget");
+                        checks.raise();
+                        return;
+                    }
+                    mdux::draw::DrawList list = std::move(*created);
+
+                    std::uint32_t lastFields  = 0;
+                    bool          allRecorded = true;
+
+                    const std::size_t before = allocations();
+                    for (int frame = 0; frame < 8; ++frame) {
+                        // A value whose *length* changes, which is what a cached buffer would grow
+                        // for, with the caret following the end of it.
+                        const auto                             length = static_cast<std::size_t>(frame % 8) + 1;
+                        const std::array<ms::TextInputSlot, 1> slots{
+                            ms::TextInputSlot{.nodeId = "entry", .text = std::span{typed}.first(length), .caret = length}
+                        };
+
+                        const auto bound = ms::TextInputBinding::create(fieldScreen, slots);
+                        if (!bound.has_value()) {
+                            allRecorded = false;
+                            continue;
+                        }
+
+                        list.reset();
+                        const auto recorded = ms::render(fieldScreen, list, textBinding, {}, {}, {}, {}, *bound);
+                        if (!recorded.has_value()) {
+                            allRecorded = false;
+                            continue;
+                        }
+                        lastFields = recorded->fields;
+                    }
+                    const std::size_t after = allocations();
+
+                    checks.expect(allRecorded, "each frame is recorded");
+                    checks.expect(lastFields == 1, std::format("the field was drawn, got {}", lastFields));
+                    checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
+                    checks.raise();
+                })
+            .Execute();
+    }};

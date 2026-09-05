@@ -14,6 +14,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
+import mdux.medui.field;
 import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.trace;
@@ -132,6 +133,19 @@ struct InkBox {
         }
     }
     return true;
+}
+
+/// A `FieldError` as the screen runtime's caller sees it.
+///
+/// Collapsed to one enumerator, as `ReadingError` is and for its reason: a field's refusals all name
+/// the same party - whoever supplied the value and the caret supplied both, and `FieldError`'s own
+/// `describe()` tells them which it was. `ListRejected` is the exception for its usual reason, being
+/// the frame's budget rather than the caller's value, and something a caller acts on differently.
+[[nodiscard]] ScreenError asScreenError(FieldError error) noexcept {
+    if (error == FieldError::ListRejected) {
+        return ScreenError::BudgetExhausted;
+    }
+    return ScreenError::FieldRefused;
 }
 
 }  // namespace
@@ -357,6 +371,43 @@ mdux::core::Result<StatusBinding, ScreenError> StatusBinding::create(const Scree
     return StatusBinding{screen.id, slots};
 }
 
+mdux::core::Result<TextInputBinding, ScreenError> TextInputBinding::create(const ScreenPackage& screen, std::span<const TextInputSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const TextInputSlot& slot = slots[index];
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateTextInput);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownTextInputNode);
+        }
+        const NodePayload payload = node->payload;
+        const auto*       input   = std::get_if<TextInputSpec>(&payload);
+        if (input == nullptr) {
+            // A node that exists and is something else. `ReadingBinding::create()`'s rule: from the
+            // caller's side this and a missing node are both "this slot will never be drawn".
+            return mdux::core::err(ScreenError::UnknownTextInputNode);
+        }
+
+        // `maxLength` is `std::int64_t` in the schema and positive by `validatePayload()`, so the
+        // cast is the narrowing this comparison needs rather than an assumption about the value.
+        // Everything about *what fits* is `mdux.medui.field`'s to answer, and it answers it here as
+        // well as per frame - the same doubling `StatusBinding` documents.
+        const auto cells = input->maxLength <= 0 ? std::size_t{0} : static_cast<std::size_t>(input->maxLength);
+        if (const auto fits = fieldAccepts(cells, slot.text.size(), slot.caret); !fits.has_value()) {
+            return mdux::core::err(asScreenError(fits.error()));
+        }
+    }
+
+    return TextInputBinding{screen.id, slots};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -419,6 +470,14 @@ std::string_view describe(ScreenError error) noexcept {
             return "a status slot's state is not one this node's states list carries";
         case ScreenError::StatusHasNoTint:
             return "a bound StatusIndicator declares no per-state colour to tell its states apart";
+        case ScreenError::UnknownTextInputNode:
+            return "a text-input slot names no TextInput on this screen";
+        case ScreenError::DuplicateTextInput:
+            return "two text-input slots name the same node";
+        case ScreenError::FieldRefused:
+            return "a field could not be drawn from the value, caret and length it was given";
+        case ScreenError::FieldOverflowsNode:
+            return "a drawn field's ink is larger than the node that holds it";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -472,13 +531,14 @@ namespace {
 
 }  // namespace
 
-mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
-                                                   mdux::draw::DrawList& list,
-                                                   const TextBinding&    text,
-                                                   const ImageBinding&   image,
-                                                   const SignalBinding&  signals,
-                                                   const ReadingBinding& readings,
-                                                   const StatusBinding&  status) noexcept {
+mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    screen,
+                                                   mdux::draw::DrawList&   list,
+                                                   const TextBinding&      text,
+                                                   const ImageBinding&     image,
+                                                   const SignalBinding&    signals,
+                                                   const ReadingBinding&   readings,
+                                                   const StatusBinding&    status,
+                                                   const TextInputBinding& inputs) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -511,6 +571,9 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
         return refuse(ScreenError::ScreenNotApproved);
     }
     if (!status.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!inputs.approvedBy(screen)) {
         return refuse(ScreenError::ScreenNotApproved);
     }
 
@@ -712,6 +775,53 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
             // No reading for this node, or no locale bound to draw one with. Falls through to the
             // field path below,
             // paints the opaque rectangle this node reserves - #255's behaviour, unchanged.
+        }
+
+        // A `TextInput` the caller has a value for. Unbound it is deferred: an empty box would say
+        // the operator's entry was blank rather than absent, and those are different facts.
+        if (const auto* input = std::get_if<TextInputSpec>(&node.payload); input != nullptr) {
+            const TextInputSlot* slot = inputs.find(node.id);
+            if (slot == nullptr || !text.bound()) {
+                // No value for this node, or no locale bound to take a font from. Deferred rather
+                // than refused: a caller still starting up is in a normal state, and the font comes
+                // from the text binding for the reason `ReadingBinding` gives - the schema already
+                // requires a screen carrying a `TextInput` to approve a text package.
+                ++stats.deferred;
+                continue;
+            }
+
+            const auto colour = resolveColorToken(input->colorToken);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            const auto cells = input->maxLength <= 0 ? std::size_t{0} : static_cast<std::size_t>(input->maxLength);
+
+            const std::size_t verticesBefore = list.vertices().size();
+            if (const auto recorded = recordField(list, *text.font(), toRect(node.bounds), cells, slot->text, slot->caret, quantise(*colour));
+                !recorded.has_value()) {
+                // Forwarded rather than flattened, unlike the label path's: every way `recordField()`
+                // refuses is a distinct thing the caller can act on, and none of them was already
+                // refused here.
+                return refuse(asScreenError(recorded.error()));
+            }
+            // The re-check that makes the grid safe when the bound font is not the font the compiler
+            // measured. `cellWidth()` is derived from the package rather than supplied, so the two
+            // sides agree whenever the bytes do - and this is what holds when they do not.
+            if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                return refuse(ScreenError::FieldOverflowsNode);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            // Payload-proportional work, bounded by `maxFieldCells` exactly as a label's is by
+            // `maxGlyphsPerRun`.
+            stats.steps += static_cast<std::uint32_t>(slot->text.size());
+            stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            ++stats.fields;
+            ++stats.steps;
+            continue;
         }
 
         // A `StatusIndicator` the caller has a state for. Unbound it is deferred, exactly as it was

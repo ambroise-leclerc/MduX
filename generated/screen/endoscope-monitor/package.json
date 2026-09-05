@@ -51,7 +51,7 @@
     {
       "bounds": {
         "height": 72,
-        "width": 840,
+        "width": 640,
         "x": 240,
         "y": 0
       },
@@ -66,7 +66,7 @@
       "bounds": {
         "height": 72,
         "width": 200,
-        "x": 1080,
+        "x": 880,
         "y": 0
       },
       "id": "classifier-state",
@@ -86,6 +86,21 @@
           "STR-EM-CLASS-2",
           "STR-EM-CLASS-3"
         ]
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 200,
+        "x": 1080,
+        "y": 0
+      },
+      "id": "patient-id",
+      "kind": "TextInput",
+      "spec": {
+        "colorToken": "Theme.Colors.Title",
+        "maxLength": 12,
+        "source": "PATIENT_ID"
       }
     },
     {

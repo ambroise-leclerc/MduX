@@ -2,8 +2,8 @@
 //
 // It draws the Row background the solver synthesises, a live video surface, a live waveform, a
 // baked image, an explicitly positioned node whose rectangle a golden reference pins, a label since
-// #235 - and, since #259, a status indicator whose closed list of states the ECG demonstrator
-// drives. The label is what puts the text-budget stage over a committed artifact: its box is
+// #235, a status indicator whose closed list of states the ECG demonstrator drives since #259 - and,
+// since #260, a bounded text field whose worst case the compiler measures against its box. The label is what puts the text-budget stage over a committed artifact: its box is
 // measured against the widest translation every approved locale carries, which is a check that had
 // only ever run over packages a test built for itself.
 //
@@ -33,7 +33,7 @@ Screen EndoscopeMonitor {
         // approved locale, because a compiled screen is locale-free (ADR-011 as amended by #203).
         Label {
             id: screen-title;
-            width: 840px;
+            width: 640px;
             height: 72px;
             text: t("STR-EM-TITLE");
             color: Theme.Colors.Title;
@@ -56,6 +56,23 @@ Screen EndoscopeMonitor {
             source: "ECG_CLASS";
             states: [t("STR-EM-CLASS-0"), t("STR-EM-CLASS-1"), t("STR-EM-CLASS-2"), t("STR-EM-CLASS-3")];
             colors: [Theme.Colors.Neutral, Theme.Colors.Nominal, Theme.Colors.Alert, Theme.Colors.Fault];
+        }
+
+        // The screen's bounded input (#260), and the reason it is here rather than in a dialogue this
+        // project has no concept of: a `max_length` in a resolved box is what puts the field
+        // measurement over a committed artifact. Twelve cells of the font's widest permitted glyph
+        // plus the caret's column is 193px, which is what the budget stage checks this 200px box
+        // against - and it fails the build if a wider font is ever baked under the same id.
+        //
+        // Display and caret only. Nothing in this repository edits it: #17 cuts input-method
+        // editing, and the host owns the keystrokes that would change what it shows.
+        TextInput {
+            id: patient-id;
+            width: 200px;
+            height: 72px;
+            source: "PATIENT_ID";
+            max_length: 12;
+            color: Theme.Colors.Title;
         }
     }
 
