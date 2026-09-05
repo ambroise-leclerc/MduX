@@ -194,6 +194,28 @@ jobs:
           exit 1
         fi
 
+    # The rendered-truth gate, asserted here as it is on the two Linux legs and macOS.
+    # `mdux_compile_screen()` registers one `verify.screen.<id>` per screen, so a second committed
+    # screen is covered without this file changing - and `--no-tests=error` is what makes that
+    # automatic rather than silent: a label matching nothing would otherwise pass this step over
+    # zero screens.
+    #
+    # #255 left this leg without a step of its own, on the grounds that the four-leg claim is about
+    # bytes and this gate is about pixels. It did not leave the leg unchecked: the unfiltered
+    # `Run Tests` step above has always executed `verify.screen.<id>` along with everything else, so
+    # Mesa's Windows build was already gate-critical. What this step adds is a named failure instead
+    # of one line in a full-suite log, the `--no-tests=error` guard above, and the diff image
+    # uploaded at the end of this job. ADR-007 decision 6 and this component's controls in
+    # docs/governance/soup-register.toml record that distinction.
+    #
+    # No skip guard, unlike the pixel step above, because there is no skip to guard against:
+    # `mdux-verify-ui` has no 77 status - an absent device exits 3 - and cmake/MduXCompileScreen.cmake
+    # therefore sets no SKIP_RETURN_CODE. A device that vanished between the bake and the tests fails
+    # this step as itself.
+    - name: Verify committed screens against their goldens (lavapipe)
+      run: ctest --preset ninja-msvc -L verify -V --no-tests=error
+      shell: cmd
+
     # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
     # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a
     # *cross-toolchain* contract - the Linux/GCC step is the other. Neither leg alone can falsify
@@ -223,3 +245,19 @@ jobs:
           Write-Host $status
           exit 1
         }
+
+    # Last in the job, and only on failure. `if: failure()` is evaluated where the step sits, so an
+    # upload placed above a step that can fail is skipped before that failure happens. The image is a
+    # measurement of the frame rather than a property of the screen, so ADR-014 decision 4 keeps it
+    # out of `generated/` and #255 makes it an attachment instead - worth nothing unless it is
+    # actually attached, and a gate this leg now asserts is a gate whose failures need a picture.
+    # `if-no-files-found` is `ignore` because a failure that is not a rendered one (an unreadable
+    # artifact, a digest drift) legitimately produces no image, and a red step should not gain a
+    # second red mark saying so. `build/` is this preset's binary dir - see CMakePresets.json.
+    - name: Upload the rendered-truth diff images
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-diff-msvc
+        path: build/verify-diff/
+        if-no-files-found: ignore
