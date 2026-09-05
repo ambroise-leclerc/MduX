@@ -189,27 +189,35 @@ MoltenVK, and Windows/MSVC under Mesa's Windows lavapipe build. None of the four
 `SKIP_RETURN_CODE` - `mdux-verify-ui` has no 77 status and an absent device exits 3 - so a runner
 that lost its ICD fails its step as itself rather than reporting a skip.
 
-**The asymmetry #255 left, and why #282 closed it.** #255 asserted the gate on three legs and said
-so deliberately: the four-leg claim is about *bytes*, where Windows carries its full weight, while
-this gate is about *pixels*, which ADR-013 and the two Linux legs already treat as the render legs'
-question. Windows ran the test as an ordinary ctest inside its full suite but asserted nothing
-separately, so a Windows runner that lost its ICD would have reported that one check as skipped and
-the leg would have stayed green on it.
+**The asymmetry #255 left, and what #282 actually closed.** #255 asserted the gate on three legs
+and said so deliberately: the four-leg claim is about *bytes*, where Windows carries its full
+weight, while this gate is about *pixels*, which ADR-013 and the two Linux legs already treat as the
+render legs' question. What Windows lacked was a *named step*, not the check: the leg's unfiltered
+`ctest --preset ninja-msvc` has always run `verify.screen.<id>` along with everything else, and that
+test sets no `SKIP_RETURN_CODE`, so a lost ICD or a misrendered frame already failed the full-suite
+step and took the leg red with it.
 
-What #282 changed is not that argument but its cost. Adding the fourth assertion promotes Mesa's
-Windows build (pinned by release tag and SHA-256, registered in the SOUP register by #254) from a
-**build-critical** dependency to a **gate-critical** one: a green CI now depends on a third-party
-redistribution of a software rasterizer producing a correct frame, not merely a device. That is the
-whole of the change, it is recorded in that component's controls column in
-`docs/governance/soup-register.toml`, and it is what a future reversal would be giving back.
+That distinction matters for what #282 costs, because the answer is nothing. Mesa's Windows build
+(pinned by release tag and SHA-256, registered in the SOUP register by #254) was **already**
+gate-critical: from the moment #255 registered `verify.screen.<id>` as an ordinary test, a green
+Windows CI depended on that third-party rasterizer producing a correct frame, not merely a device.
+#282 does not promote the dependency; it makes an existing one legible.
 
-The exposure it buys is narrow and was narrow when #255 named it. Since #254 the bake renders, so a
-Windows runner with no ICD fails to build and nothing is hidden. What was left uncovered is a device
-that builds but *misrenders*: `evidence.screen.<id>`'s byte comparison would catch that only if the
-misrender changed a recorded outcome, because ADR-014 decision 4 keeps measurements out of
-`verification.json`. Asserting the gate here is what makes a Windows-specific misrender fail as
-itself. The diff-image upload was added to this leg in the same change, for the same reason: a gate
-that can now fail on pixels needs its picture attached.
+What the named step buys is therefore diagnostic rather than protective, and it is worth having on
+its own terms:
+
+- **The gate is named in the job.** A rendered-truth failure appears as its own red step instead of
+  one line inside a full-suite log, which is what the other three legs already give a reviewer.
+- **`--no-tests=error` guards the selection.** If the `verify` label ever selects nothing - a
+  renamed label, a screen dropped from the bake - the step fails. The unfiltered full-suite run
+  cannot notice that, because a test that no longer exists is not a test that failed. This is the
+  one case the named step catches that the old arrangement genuinely did not.
+- **Diff images are uploaded on failure.** A gate that fails on pixels needs its picture attached,
+  and that artifact was not collected on this leg before.
+
+A future reversal would give back those three, and only those three. The rendered check itself would
+survive inside the full suite, which is the point of recording the distinction here rather than
+letting a later reader infer that removing the step removes the coverage.
 
 **A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
 **and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable

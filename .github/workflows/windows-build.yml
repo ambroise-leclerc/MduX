@@ -200,11 +200,13 @@ jobs:
     # automatic rather than silent: a label matching nothing would otherwise pass this step over
     # zero screens.
     #
-    # #255 deliberately left this leg out, on the grounds that the four-leg claim is about bytes and
-    # this gate is about pixels. #282 takes the opposite decision, and the cost is named rather than
-    # absorbed: it promotes Mesa's Windows build from a build-critical dependency to a gate-critical
-    # one, which is recorded in ADR-007 decision 6 and in this component's controls in
-    # docs/governance/soup-register.toml.
+    # #255 left this leg without a step of its own, on the grounds that the four-leg claim is about
+    # bytes and this gate is about pixels. It did not leave the leg unchecked: the unfiltered
+    # `Run Tests` step above has always executed `verify.screen.<id>` along with everything else, so
+    # Mesa's Windows build was already gate-critical. What this step adds is a named failure instead
+    # of one line in a full-suite log, the `--no-tests=error` guard above, and the diff image
+    # uploaded at the end of this job. ADR-007 decision 6 and this component's controls in
+    # docs/governance/soup-register.toml record that distinction.
     #
     # No skip guard, unlike the pixel step above, because there is no skip to guard against:
     # `mdux-verify-ui` has no 77 status - an absent device exits 3 - and cmake/MduXCompileScreen.cmake
