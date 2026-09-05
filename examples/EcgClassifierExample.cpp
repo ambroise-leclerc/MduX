@@ -60,7 +60,10 @@
  * The words are *not* drawn here, and that is a property of this program rather than a limit of the
  * runtime: drawing them needs a bound text package, this demonstrator opens no files, and there is
  * no `constexpr` emitter for a text package the way there is for a screen and a model. So the state
- * reaches the frame as its tint. `ScreenPixelTests` is where the same indicator draws its word.
+ * reaches the frame as its tint. `ScreenPixelTests`'s
+ * "An authored screen's bound status state reaches the pixels" is where the same node - the same
+ * `classifier-state`, on the same committed screen - is bound with a text package as well, and its
+ * word is compared against the committed run under lavapipe.
  *
  * The package emitter is the equivalent of the shader pipeline's issue #121: the committed JSON is
  * mechanically rendered into build-tree source and validated by `static_assert`. Only the weight

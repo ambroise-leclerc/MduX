@@ -680,3 +680,146 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     CHECK_MESSAGE(mismatchedImagePixels == 0,
                   std::format("{} baked image pixels differ from the committed RGBA sidecar", mismatchedImagePixels));
 }
+
+TEST_CASE("An authored screen's bound status state reaches the pixels", "pixel") {
+    // The claim #259 made and this scenario is what makes true: the state on screen is drawn from
+    // the committed text package, in that state's own tint, at the corner the compiler measured its
+    // box against. Everything here is a committed artifact - the screen, the font, the text package
+    // and its sidecar - and the only thing this test supplies is a *position* in a closed list.
+    //
+    // Kept apart from the label/image scenario for that scenario's own reason: an unbound indicator
+    // is a tested contract (it is what the first scenario renders), and folding a state into the
+    // scenario next door would leave the unbound path unexercised the moment a binding exists.
+    const medui::ScreenPackage package = screen();
+    const core::Extent2D       surface = surfaceOf(package);
+    const BoundText            bound   = loadCommittedText();
+    const BoundImage           image   = loadCommittedImage();
+
+    const medui::CompiledNode* indicator = package.find("classifier-state");
+    REQUIRE(indicator != nullptr);
+    const auto* spec = std::get_if<medui::StatusIndicatorSpec>(&indicator->payload);
+    REQUIRE(spec != nullptr);
+    REQUIRE(spec->stateKeys.size() == 4);
+
+    const auto& gpu    = sharedDevice();
+    auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
+    REQUIRE(target.has_value());
+
+    VulkanRenderContext context;
+    context.device           = gpu.device();
+    context.physicalDevice   = gpu.physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = gpu.queue();
+    context.queueFamilyIndex = gpu.queueFamilyIndex();
+    context.viewport         = surface;
+
+    auto renderer = UiRenderer::createWithAtlases(context,
+                                                  mdux::shader::generated::mdux_ui::package(),
+                                                  package.budget,
+                                                  bound.atlas,
+                                                  bound.font.atlas.width,
+                                                  bound.font.atlas.height,
+                                                  image.pixels,
+                                                  image.image.width,
+                                                  image.image.height);
+    REQUIRE(renderer.has_value());
+
+    /// One frame of the committed screen with `state` bound to the indicator, read back as pixels.
+    ///
+    /// A lambda rather than two copies, because the point of this scenario is the *difference*
+    /// between two states and a difference needs both halves produced the same way.
+    const auto frameFor = [&](std::uint32_t state) {
+        const std::array<medui::StatusSlot, 1> slots{
+            medui::StatusSlot{.nodeId = "classifier-state", .state = state}
+        };
+        auto status = medui::StatusBinding::create(package, slots);
+        REQUIRE(status.has_value());
+
+        Frame frame;
+        auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
+        REQUIRE(list.has_value());
+
+        const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package), {}, {}, *status);
+        REQUIRE(recorded.has_value());
+        CHECK(recorded->states == 1);
+        // Only the video surface is left: the panel, the image, the label, the two fields and now
+        // the indicator all draw. Asserted as the count for the label scenario's reason - a future
+        // component learning to draw must not be able to make this pass for a reason it does not
+        // name.
+        CHECK(recorded->deferred == 1);
+
+        RecordContext recording{.renderer = &*renderer, .list = &*list};
+        auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
+        REQUIRE(pixels.has_value());
+        // Copied out, and that is not incidental: the span `renderAndRead()` returns is the target's
+        // own staging buffer and is valid only until the next call. Holding two of them would leave
+        // this scenario comparing one frame against itself and reporting the two states as
+        // indistinguishable - which is the failure it exists to detect.
+        return std::vector<core::ColorRgba8>{pixels->begin(), pixels->end()};
+    };
+
+    // `Class 2`, whose tint is `Theme.Colors.Alert`.
+    const std::vector<core::ColorRgba8> alarmed = frameFor(2);
+
+    // The field's colour, read out of the frame at a corner the word cannot reach rather than
+    // predicted: the field is one tint at `boundFieldCoverage` composited over the topbar panel, and
+    // an expectation carrying that blend would be testing this file's arithmetic against the
+    // renderer's. What is under test here is where the *glyphs* landed, and for that the field is
+    // simply the ground they are drawn on - which is exactly what `paintedWithin()` needs.
+    const auto fieldPixel = [&](const std::vector<core::ColorRgba8>& pixels) {
+        const auto x = static_cast<std::size_t>(indicator->bounds.x + indicator->bounds.width - 1);
+        const auto y = static_cast<std::size_t>(indicator->bounds.y + indicator->bounds.height - 1);
+        return pixels[y * static_cast<std::size_t>(surface.width) + x];
+    };
+
+    const core::ColorRgba8 field = fieldPixel(alarmed);
+
+    // The field is painted, and painted over the topbar rather than left as it: an indicator that
+    // drew only its word would leave the panel's colour here and every assertion below would still
+    // hold.
+    constexpr core::ColorRgba8 topbar{.r = 209, .g = 214, .b = 219, .a = 255};
+    CHECK(field != topbar);
+
+    // The state's word, from the committed text package, where the compiler measured it.
+    const InkBox derived = inkOfRun(bound, spec->stateKeys[2]);
+    REQUIRE(derived.found);
+    const InkBox painted = paintedWithin(alarmed, surface, indicator->bounds, field);
+    REQUIRE(painted.found);
+
+    CHECK(painted.left == indicator->bounds.x);
+    CHECK(painted.top == indicator->bounds.y);
+    CHECK(painted.right - painted.left == derived.right - derived.left);
+    CHECK(painted.bottom - painted.top == derived.bottom - derived.top);
+    CHECK(painted.right <= indicator->bounds.x + indicator->bounds.width);
+    CHECK(painted.bottom <= indicator->bounds.y + indicator->bounds.height);
+
+    // And the state is what decides the tint, not the node. `Class 0` and `Class 2` are the same
+    // length, so their ink boxes are identical and only the colour tells the two frames apart -
+    // which is the property `StatusBinding` refuses an untinted indicator to protect.
+    const std::vector<core::ColorRgba8> nominal = frameFor(0);
+    CHECK(fieldPixel(nominal) != field);
+
+    // And the *word* is the state's own, not the first state's. Every state on this screen reads
+    // `Class N`, so the two words differ in one glyph and nothing else - and whether that is visible
+    // to the extent checks above is an accident of the font: `0` and `2` happen to have different
+    // ink widths at this size, so today they would catch it.
+    //
+    // This does not depend on that accident. The ink *mask* - which pixels differ from their own
+    // frame's field, taken per frame so the colour difference cancels out - separates two words of
+    // identical extent as long as their glyphs do not cover the same pixels, which is what makes
+    // them different glyphs. A mask that matched would mean one word was drawn for both states.
+    const auto inkMask = [&](const std::vector<core::ColorRgba8>& pixels, core::ColorRgba8 ground) {
+        std::vector<bool> mask;
+        mask.reserve(static_cast<std::size_t>(indicator->bounds.width) * static_cast<std::size_t>(indicator->bounds.height));
+        for (std::int32_t y = 0; y < indicator->bounds.height; ++y) {
+            for (std::int32_t x = 0; x < indicator->bounds.width; ++x) {
+                const auto index = static_cast<std::size_t>(indicator->bounds.y + y) * static_cast<std::size_t>(surface.width)
+                                   + static_cast<std::size_t>(indicator->bounds.x + x);
+                mask.push_back(pixels[index] != ground);
+            }
+        }
+        return mask;
+    };
+
+    CHECK(inkMask(alarmed, field) != inkMask(nominal, fieldPixel(nominal)));
+}
