@@ -50,5 +50,10 @@ sidecar = "runs.bin"
 # than an array of tables because `mdux.tools.toml` implements a deliberate subset without them -
 # see tools/common/Toml.cppm:13, where it says so.
 [strings]
-keys   = ["STR-EM-TITLE"]
-values = ["Endoscope Monitor"]
+#
+# The four `STR-EM-CLASS-*` keys are the `classifier-state` indicator's closed states (#259). They
+# are named for the demonstrator model's output classes deliberately: the model has synthetic weights
+# and no clinical validity, so a translation reading "Bradycardia" would put a diagnosis on a screen
+# that has no right to show one. The screen source says the same thing beside the component.
+keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3"]
+values = ["Endoscope Monitor", "Class 0", "Class 1", "Class 2", "Class 3"]

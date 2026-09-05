@@ -565,3 +565,171 @@ const mdux::spec::Register drawingAReadingAllocatesNothing{
                 })
             .Execute();
     }};
+
+const mdux::spec::Register drawingAStateAllocatesNothing{
+    "Drawing a bound status indicator allocates nothing, whichever state it is in",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-render-status")
+            .Given("a screen whose StatusIndicator is bound to a state that changes between frames", [] {})
+            .When("frames are recorded as the state moves through the closed list", [] {})
+            .Then("the allocation counter does not move",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The path #259 adds. Its obvious wrong implementation caches the state's run
+                      // somewhere that grows - a map from node to `std::vector<std::byte>`, a
+                      // `std::string` for the key - and a state change is what would make it allocate.
+                      // What actually happens is a lookup in the bound package and a walk over the
+                      // sidecar the binding already holds.
+                      static const mdux::font::FontPackage font = [] {
+                          mdux::font::FontPackage built;
+                          built.id                     = "noheap-status";
+                          built.unitsPerEm             = 1000;
+                          built.pixelSize              = 10;
+                          built.locales                = {"en-US"};
+                          built.atlas.path             = "atlas.bin";
+                          built.atlas.width            = 16;
+                          built.atlas.height           = 16;
+                          built.atlas.byteLength       = 16 * 16;
+                          built.atlas.sha256           = std::string(64, 'a');
+                          built.atlas.occupancyPercent = 25;
+                          built.glyphs.push_back(mdux::font::GlyphRecord{.codePoint       = U'A',
+                                                                         .glyphIndex      = 1,
+                                                                         .advanceWidth    = 1000,
+                                                                         .leftSideBearing = 0,
+                                                                         .x               = 0,
+                                                                         .y               = 0,
+                                                                         .width           = 4,
+                                                                         .height          = 6,
+                                                                         .bitmapOriginX   = 0,
+                                                                         .bitmapOriginY   = 6});
+                          built.restrictedCharset = {
+                              {.first = U'A', .last = U'A'}
+                          };
+                          return built;
+                      }();
+
+                      // Two runs of one v1 record each, little-endian: glyph 0 - the font's only one -
+                      // at the run's own origin, then the same glyph four pixels along, so the two
+                      // states differ in what is drawn rather than only in which key was looked up.
+                      static const std::array<std::byte, 12> records{std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{4},
+                                                                     std::byte{0},
+                                                                     std::byte{0},
+                                                                     std::byte{0}};
+
+                      static const mdux::text::TextPackage text = [] {
+                          mdux::text::TextPackage built;
+                          built.header.id         = "noheap-status-text";
+                          built.header.kind       = std::string{mdux::text::packageKind};
+                          built.atlasId           = "noheap-status";
+                          built.locale            = "en-US";
+                          built.sidecarPath       = "runs.bin";
+                          built.sidecarByteLength = records.size();
+                          built.sidecarSha256     = mdux::evidence::sha256(records);
+                          const auto slice        = [](std::size_t offset, std::size_t length) {
+                              return std::span<const std::byte>{records}.subspan(offset, length);
+                          };
+                          built.runs.push_back(
+                              mdux::text::TextRun{.id = "STR-OK", .byteOffset = 0, .byteLength = 6, .sha256 = mdux::evidence::sha256(slice(0, 6))});
+                          built.runs.push_back(
+                              mdux::text::TextRun{.id = "STR-ALARM", .byteOffset = 6, .byteLength = 6, .sha256 = mdux::evidence::sha256(slice(6, 6))});
+                          return built;
+                      }();
+
+                      const auto canonical = text.write();
+                      if (!canonical.has_value()) {
+                          checks.expect(false, "the fixture package serializes");
+                          checks.raise();
+                          return;
+                      }
+                      const std::array approvals{
+                          ms::TextPackageApproval{.locale        = text.locale,
+                                                  .packageId     = text.header.id,
+                                                  .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))}
+                      };
+
+                      static constexpr std::array              stateKeys{std::string_view{"STR-OK"}, std::string_view{"STR-ALARM"}};
+                      static constexpr std::array              stateTints{std::string_view{"Theme.Colors.Nominal"}, std::string_view{"Theme.Colors.Fault"}};
+                      static constexpr ms::StatusIndicatorSpec indicator{.requirement = "REQ-1",
+                                                                         .source      = "STATE",
+                                                                         .stateKeys   = stateKeys,
+                                                                         .colorTokens = stateTints};
+                      static constexpr std::array<ms::CompiledNode, 1> statusNodes{
+                          ms::CompiledNode{.id = "state", .bounds = {0, 0, 200, 20}, .payload = indicator}
+                      };
+                      ms::ScreenPackage statusScreen{.id                   = "noheap-status",
+                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                     .surfaceWidth         = 200,
+                                                     .surfaceHeight        = 60,
+                                                     .approvedTextPackages = approvals,
+                                                     .nodes                = statusNodes,
+                                                     .budget               = budget};
+
+                      const auto textBound =
+                          ms::TextBinding::create(statusScreen, font, text, std::as_bytes(std::span{canonical->data(), canonical->size()}), records);
+                      if (!textBound.has_value()) {
+                          checks.expect(false, "the fixture text binding is valid");
+                          checks.raise();
+                          return;
+                      }
+                      const ms::TextBinding textBinding = *textBound;
+
+                      // The state a producer moves between frames. Static so the binding can point at
+                      // it, exactly as a device's would.
+                      static std::array<ms::StatusSlot, 1> slots{
+                          ms::StatusSlot{.nodeId = "state", .state = 0}
+                      };
+
+                      static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                      static std::array<mdux::draw::Index, 768>      indices{};
+                      static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                      auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+                      if (!created.has_value()) {
+                          checks.expect(false, "the storage satisfies the budget");
+                          checks.raise();
+                          return;
+                      }
+                      mdux::draw::DrawList list = std::move(*created);
+
+                      std::uint32_t lastStates  = 0;
+                      bool          allRecorded = true;
+
+                      const std::size_t before = allocations();
+                      for (int frame = 0; frame < 8; ++frame) {
+                          slots[0].state = static_cast<std::uint32_t>(frame % 2);
+
+                          // Rebuilt every frame, as a caller carrying a state by value must: the join
+                          // is what would allocate if it held anything but spans.
+                          const auto bound = ms::StatusBinding::create(statusScreen, slots);
+                          if (!bound.has_value()) {
+                              allRecorded = false;
+                              continue;
+                          }
+
+                          list.reset();
+                          const auto recorded = ms::render(statusScreen, list, textBinding, {}, {}, {}, *bound);
+                          if (!recorded.has_value()) {
+                              allRecorded = false;
+                              continue;
+                          }
+                          lastStates = recorded->states;
+                      }
+                      const std::size_t after = allocations();
+
+                      checks.expect(allRecorded, "each frame is recorded");
+                      checks.expect(lastStates == 1, std::format("the indicator's state was drawn, got {}", lastStates));
+                      checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
+                      checks.raise();
+                  })
+            .Execute();
+    }};

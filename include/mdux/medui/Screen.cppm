@@ -39,12 +39,18 @@
  *   deferred whole. Their text is not the whole of their appearance - a button has a face, a text
  *   input has a caret and a selection - and this module will not invent those. They arrive with #17.
  * - `Clock` carries no colour token at all, and a `StatusIndicator` carries one per state, so
- *   neither has a single tint a *field* could be painted in - which is the same reason
- *   `collectGoldens()` refuses `ColorHash` for such a node. A `StatusIndicator` therefore stays
- *   deferred until #259. A `Clock` draws since #258, and draws its **reading and nothing else**:
- *   there is no field under it, because there is no token to paint one in. Its tint comes from the
- *   `ReadingBinding`, which is the one appearance decision in this module a caller makes rather than
- *   an artifact - see `ReadingBinding` for why that contradicts no golden.
+ *   neither has a single tint a *field* could be painted in while nothing is bound - which is the
+ *   same reason `collectGoldens()` refuses `ColorHash` for such a node. A `Clock` draws since #258,
+ *   and draws its **reading and nothing else**: there is no field under it, because there is no
+ *   token to paint one in. Its tint comes from the `ReadingBinding`, which is the one appearance
+ *   decision in this module a caller makes rather than an artifact - see `ReadingBinding` for why
+ *   that contradicts no golden.
+ * - `StatusIndicator` draws since #259, when the caller supplies a `StatusBinding` naming that node
+ *   and one of its states. A state resolves the plural the deferral rested on: the node carries one
+ *   tint *per state*, and a bound state is one state, so this frame has exactly one tint for it -
+ *   the field in that tint, and the state's own word over it when a locale is bound. Without a slot
+ *   the node is deferred exactly as before, because a default state is a reading nobody supplied.
+ *   See `StatusSlot` for why the state is a position in a closed list rather than a name.
  * - `Image` draws when the caller supplies the exact baked package the screen approved (#256).
  *   Without an `ImageBinding` it is deferred, just as a Label is without text.
  *
@@ -192,8 +198,9 @@ export namespace mdux::medui {
  * `NumericDisplay` and a `SignalTrace` are here because the golden entry their own compiler emits
  * pairs their whole rectangle with their single token, and `goldenBounds()` reads that pairing as an
  * equality - see the module comment. Everything else is deferred: a `Clock` has no token, a
- * `StatusIndicator` has one per state and therefore no single tint, and the rest have an appearance
- * with more than one part that nothing in this project has settled.
+ * `StatusIndicator` has one per state and therefore no single tint until a state is bound - which
+ * `render()` settles before it reaches this function - and the rest have an appearance with more
+ * than one part that nothing in this project has settled.
  *
  * **`nullopt` and an empty token are different answers**, and collapsing them would lose a refusal.
  * `nullopt` means "this component does not paint a field", which is a deferral. An engaged optional
@@ -237,6 +244,10 @@ enum class ScreenError : std::uint8_t {
     MalformedPattern,      ///< a reading slot's rendering is empty or longer than `maxPatternLength`
     ReadingRefused,        ///< a reading could not be drawn - see `ReadingError` for which way
     ReadingOverflowsNode,  ///< a drawn reading's ink is wider or taller than the node that holds it
+    UnknownStatusNode,     ///< a status slot names no `StatusIndicator` on this screen
+    DuplicateStatus,       ///< two status slots name the same node
+    StateOutOfRange,       ///< a slot's state is not a position in that node's closed `states` list
+    StatusHasNoTint,       ///< a bound indicator declares no per-state colours, so its states look alike
     MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
     MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
     NonFiniteSample,       ///< a live sample is a NaN or an infinity
@@ -705,22 +716,134 @@ private:
 static_assert(!std::is_aggregate_v<ReadingBinding>, "a ReadingBinding must only be obtainable through create()");
 
 /**
+ * @brief One live state the caller offers a `StatusIndicator`: which node, and which of its states.
+ *
+ * `nodeId` for `ReadingSlot`'s reason: an indicator shows one state in one box, and its id is the
+ * handle a golden reference, a requirement trace and the layout solver already address it by. Its
+ * `source:` names the live datum the host reads, which is the caller's own business and not a name
+ * this screen needs to agree about.
+ *
+ * `state` is a **position in the node's own `states:` list**, not a name and not an open value. The
+ * list is closed at compile time - the compiler validates every key against every approved locale
+ * and measures the widest of them against this box (#195) - so the set of things this node can ever
+ * show is fixed in the artifact, and an index is the whole of what the host still has to supply. An
+ * index outside it is `StateOutOfRange` and refuses the frame; it is never clamped, never wrapped,
+ * and never drawn as a blank box, because each of those shows a state the device is not in.
+ */
+struct StatusSlot {
+    std::string_view nodeId{};  ///< the `StatusIndicator` node this state is for
+    std::uint32_t    state{0};  ///< the position in that node's `states:` list, and nothing else
+};
+
+/**
+ * @brief The live states a screen's `StatusIndicator` nodes are joined to, once the join is proved.
+ *
+ * `ReadingBinding`'s sibling, and cheap for its reason: what it proves is that the caller and the
+ * screen agree about *nodes* and *positions*, not that artifacts hash to each other. The checks are
+ * the ones actually available here, and each closes a way a wrong state reaches a screen looking
+ * like a right one:
+ *
+ * - every slot names a `StatusIndicator` on this screen, because a mistyped node id is otherwise an
+ *   indicator that silently never leaves the state it was born in;
+ * - no two slots name the same node, because which of them would win is arbitrary and the wrong
+ *   answer is undetectable from the frame;
+ * - every `state` is a position in that node's `states:` list, which is the closed-list rule this
+ *   type exists for. Checked once here, and again in `render()` before the list is indexed;
+ * - every bound node declares `colors:`, so its states are told apart on the frame rather than only
+ *   in the caller's variable. See below - this is the one refusal that is about appearance.
+ *
+ * A screen need **not** have a slot for every indicator. A state that has not arrived is a normal
+ * state of a device that is still starting up, and its node is deferred exactly as it was before
+ * #259 - not painted in some default state, which would be a reading nobody supplied.
+ *
+ * ## Why a bound indicator must declare `colors:`
+ *
+ * `colors:` is optional in the shared component dictionary, and `validatePayload()` admits a node
+ * with none. What such a node cannot do is *show* which state it is in: with no per-state tint, the
+ * only thing that varies between its states is the word, and the word needs a bound text package
+ * this runtime cannot require - a device that has not joined a locale yet still runs. An indicator
+ * that painted the same rectangle in every state would be the worst of the failures available here,
+ * because it is the one that looks like a working indicator.
+ *
+ * So a slot naming such a node is `StatusHasNoTint` at `create()`, at start-up, where a caller can
+ * still do something about it - rather than a frame that draws and means nothing. The node stays
+ * perfectly legal and stays deferred, which is what it was before this issue.
+ *
+ * ## What a bound indicator draws
+ *
+ * The state's own tint, and the state's own word when a locale is bound: the field at
+ * `boundFieldCoverage` with the word over it at full tint, or - with no text binding - the field
+ * opaque, which is #255's rule applied to the one tint a bound node has. The word is placed and
+ * re-measured exactly as a `Label`'s is, so what #195 proved about the widest state is a property of
+ * the rectangle actually drawn. See the module comment for both arguments; neither is new here.
+ *
+ * Nothing is owned, and the slot span is the caller's storage, so `render()` allocates nothing by
+ * construction rather than by discipline.
+ */
+class StatusBinding {
+public:
+    /// An unbound binding: no states, every `StatusIndicator` deferred as it was before #259.
+    constexpr StatusBinding() noexcept = default;
+
+    /// Proves every slot names a distinct, tinted `StatusIndicator` on `screen` and holds one of its states.
+    [[nodiscard]] static mdux::core::Result<StatusBinding, ScreenError> create(const ScreenPackage& screen, std::span<const StatusSlot> slots) noexcept;
+
+    /// Whether this binding carries slots. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return !slots_.empty();
+    }
+
+    [[nodiscard]] constexpr std::span<const StatusSlot> slots() const noexcept {
+        return slots_;
+    }
+
+    /// The state for `nodeId`, or nullptr when this caller offers none.
+    ///
+    /// Linear, for `ScreenPackage::find()`'s reason: a screen holds a handful of indicators, and a
+    /// map would cost more to build than every lookup it could serve.
+    [[nodiscard]] constexpr const StatusSlot* find(std::string_view nodeId) const noexcept {
+        for (const StatusSlot& slot : slots_) {
+            if (slot.nodeId == nodeId) {
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Whether this binding was built for `screen`. `SignalBinding::approvedBy()`'s rule, verbatim.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        return !bound() || screen.id == screenId_;
+    }
+
+private:
+    constexpr StatusBinding(std::string_view screenId, std::span<const StatusSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+
+    std::span<const StatusSlot> slots_{};
+    std::string_view            screenId_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline -
+// `TextBinding`'s static_assert, for its reason.
+static_assert(!std::is_aggregate_v<StatusBinding>, "a StatusBinding must only be obtainable through create()");
+
+/**
  * @brief What one frame did, and what it left undone.
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
  * for the reasons the module comment gives one by one. A caller that expects a screen to be fully
- * drawn can assert it is zero; today, on a screen carrying an `Image`, a `VulkanViewport`, a
- * `StatusIndicator` or any of the three interactive components, it will not be - and on one carrying
- * text or an unbound `Clock` it will not be either unless the matching binding was supplied.
+ * drawn can assert it is zero; today, on a screen carrying a `VulkanViewport` or any of the three
+ * interactive components, it will not be - and on one carrying text, an unbound `Clock`, an unbound
+ * `Image` or an unbound `StatusIndicator` it will not be either unless the matching binding was
+ * supplied.
  *
  * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255: its field is drawn even
  * with nothing bound. That distinction is the point of the counter - a node whose rectangle is
  * painted is a node a golden reference can check, whatever it will later show in it. A `Clock` has
  * no such rectangle, so an unbound one is a deferral in the ordinary sense.
  *
- * `readings` and `traces` count the nodes whose *live* content was drawn, which is the fact
- * `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred, and only
- * one of them is showing a number.
+ * `readings`, `traces` and `states` count the nodes whose *live* content was drawn, which is the
+ * fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred, and
+ * only one of them is showing a number.
  */
 struct FrameStats {
     std::uint32_t nodes{0};     ///< nodes visited
@@ -729,6 +852,7 @@ struct FrameStats {
     std::uint32_t steps{0};     ///< units of per-node work, for the bounded-work tests
     std::uint32_t traces{0};    ///< `SignalTrace` nodes whose samples were expanded
     std::uint32_t readings{0};  ///< `NumericDisplay` and `Clock` nodes whose value was drawn
+    std::uint32_t states{0};    ///< `StatusIndicator` nodes whose bound state was drawn
 
     [[nodiscard]] constexpr bool operator==(const FrameStats&) const noexcept = default;
 };
@@ -746,6 +870,8 @@ struct FrameStats {
  *                signals", and every trace then draws the opaque field it reserves
  * @param readings the live values this screen's `NumericDisplay` and `Clock` nodes show; default
  *                means "no readings", and each such node is then what it was before #258
+ * @param status  the live states this screen's `StatusIndicator` nodes are in; default means "no
+ *                states", and every such node is then deferred as it was before #259
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -761,6 +887,7 @@ struct FrameStats {
                                                                  const TextBinding&    text     = {},
                                                                  const ImageBinding&   image    = {},
                                                                  const SignalBinding&  signals  = {},
-                                                                 const ReadingBinding& readings = {}) noexcept;
+                                                                 const ReadingBinding& readings = {},
+                                                                 const StatusBinding&  status   = {}) noexcept;
 
 }  // namespace mdux::medui

@@ -312,6 +312,51 @@ ReadingBinding::create(const ScreenPackage& screen, std::span<const ReadingSlot>
     return ReadingBinding{screen.id, readings, now, clockColorToken};
 }
 
+mdux::core::Result<StatusBinding, ScreenError> StatusBinding::create(const ScreenPackage& screen, std::span<const StatusSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const StatusSlot& slot = slots[index];
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateStatus);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownStatusNode);
+        }
+        const NodePayload payload   = node->payload;
+        const auto*       indicator = std::get_if<StatusIndicatorSpec>(&payload);
+        if (indicator == nullptr) {
+            // A node that exists and is something else. `ReadingBinding::create()`'s rule: from the
+            // caller's side this and a missing node are both "this slot will never be drawn", and
+            // the fix for both is to correct the id.
+            return mdux::core::err(ScreenError::UnknownStatusNode);
+        }
+
+        // The closed-list check this type exists for. The `states:` list is fixed in the artifact -
+        // every key validated against every approved locale, the widest measured against this box -
+        // so an index outside it names a state the screen was never compiled for. Refused here, at
+        // start-up, and again in `render()` before the list is indexed.
+        if (slot.state >= indicator->stateKeys.size()) {
+            return mdux::core::err(ScreenError::StateOutOfRange);
+        }
+
+        // The one refusal about appearance rather than about names, and `StatusBinding` says why at
+        // length: a node with no per-state tint shows the same rectangle in every state unless a
+        // locale is bound, and an indicator that cannot indicate is the failure here that looks most
+        // like a working one.
+        if (indicator->colorTokens.size() != indicator->stateKeys.size()) {
+            return mdux::core::err(ScreenError::StatusHasNoTint);
+        }
+    }
+
+    return StatusBinding{screen.id, slots};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -366,6 +411,14 @@ std::string_view describe(ScreenError error) noexcept {
             return "a reading could not be drawn from the value and pattern it was given";
         case ScreenError::ReadingOverflowsNode:
             return "a drawn reading's ink is larger than the node that holds it";
+        case ScreenError::UnknownStatusNode:
+            return "a status slot names no StatusIndicator on this screen";
+        case ScreenError::DuplicateStatus:
+            return "two status slots name the same node";
+        case ScreenError::StateOutOfRange:
+            return "a status slot's state is not one this node's states list carries";
+        case ScreenError::StatusHasNoTint:
+            return "a bound StatusIndicator declares no per-state colour to tell its states apart";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -424,7 +477,8 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
                                                    const TextBinding&    text,
                                                    const ImageBinding&   image,
                                                    const SignalBinding&  signals,
-                                                   const ReadingBinding& readings) noexcept {
+                                                   const ReadingBinding& readings,
+                                                   const StatusBinding&  status) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -454,6 +508,9 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
         return refuse(ScreenError::ScreenNotApproved);
     }
     if (!readings.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!status.approvedBy(screen)) {
         return refuse(ScreenError::ScreenNotApproved);
     }
 
@@ -655,6 +712,99 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
             // No reading for this node, or no locale bound to draw one with. Falls through to the
             // field path below,
             // paints the opaque rectangle this node reserves - #255's behaviour, unchanged.
+        }
+
+        // A `StatusIndicator` the caller has a state for. Unbound it is deferred, exactly as it was
+        // before #259: the node carries one tint per state and no state, so nothing this module
+        // could paint would say which one the device is in.
+        if (const auto* indicator = std::get_if<StatusIndicatorSpec>(&node.payload); indicator != nullptr) {
+            const StatusSlot* slot = status.find(node.id);
+            if (slot == nullptr) {
+                ++stats.deferred;
+                continue;
+            }
+
+            // Both were proved once by `StatusBinding::create()`. Both are checked again because the
+            // lines below index these two spans, and a bound is worth more here than the branch it
+            // costs - `validate()` is a property of the binary, not of a screen assembled by hand.
+            if (slot->state >= indicator->stateKeys.size()) {
+                return refuse(ScreenError::StateOutOfRange);
+            }
+            if (indicator->colorTokens.size() != indicator->stateKeys.size()) {
+                return refuse(ScreenError::StatusHasNoTint);
+            }
+
+            const auto colour = resolveColorToken(indicator->colorTokens[slot->state]);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            // The state's word is measured before anything is recorded, because the field's coverage
+            // depends on whether a word will cover it. Measuring writes nothing, so a refusal here
+            // rolls back a frame rather than a rectangle this node had already put in it.
+            std::span<const std::byte> records{};
+            InkBox                     ink{};
+            if (text.bound()) {
+                const auto found = runFor(text, indicator->stateKeys[slot->state]);
+                if (!found.has_value()) {
+                    return refuse(found.error());
+                }
+                records = *found;
+
+                const auto measured = measureInk(*text.font(), records);
+                if (!measured.has_value()) {
+                    return refuse(measured.error());
+                }
+                ink = *measured;
+
+                // Payload-proportional work, counted per record for the reason the label path gives:
+                // `maxGlyphsPerRun` bounds it, and `steps` has to say so.
+                stats.steps += static_cast<std::uint32_t>(records.size() / mdux::text::draw::recordSize);
+
+                // The label path's re-measurement, for the label path's reason. #195 proved the
+                // *widest* state fits this box in every approved locale; this proves the state
+                // actually on screen fits it in the package actually bound.
+                if (ink.inked
+                    && (ink.width() > static_cast<mdux::core::Px>(node.bounds.width) || ink.height() > static_cast<mdux::core::Px>(node.bounds.height))) {
+                    return refuse(ScreenError::TextOverflowsNode);
+                }
+            }
+
+            // #255's opaque field when nothing will cover it, and `boundFieldCoverage`'s two-coverage
+            // composition when the state's word will. The field dims exactly when there is something
+            // over it to be seen, which is the whole of the rule and is why it is one expression.
+            mdux::core::ColorRgba8 fieldColour = quantise(*colour);
+            if (ink.inked) {
+                fieldColour.a = quantise((*colour)[3] * boundFieldCoverage);
+            }
+            if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+            ++stats.rects;
+
+            if (ink.inked) {
+                // The ink box's corner on the node's corner, `measureInk()`'s placement rule and the
+                // label path's arithmetic - not a second copy of a decision, the same one.
+                const auto originX = static_cast<mdux::core::Px>(node.bounds.x) - ink.left;
+                const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink.top;
+
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), records, originX, originY, quantise(*colour));
+                    !recorded.has_value()) {
+                    // The label path's reasoning about this error: every other way `recordRun()` can
+                    // fail here was already refused above, and the list declining a write is the one
+                    // a caller can act on.
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            ++stats.states;
+            ++stats.steps;
+            continue;
         }
 
         // A `SignalTrace` the caller has samples for. Everything else about the node - where it is,

@@ -58,6 +58,24 @@ Three things to know before writing either:
   screen. That is the one appearance decision the runtime leaves to the host, and it is why a golden
   never pins a clock's colour.
 
+A `StatusIndicator` draws its **state**, given a `StatusBinding` (#259). Three things to know before
+you write one:
+
+- **A bound indicator must declare `colors:`.** The field is optional in the dictionary and stays
+  optional here, but a node with no per-state tint cannot be bound at all - `StatusHasNoTint`, at
+  start-up. With no tint, the only thing that varies between its states is the word, and the word
+  needs a locale a device may not have joined yet; an indicator that paints the same rectangle in
+  every state is the failure that looks most like a working one.
+- **A state is a position in your `states:` list**, not a name and not an open value. The list is
+  closed by the time a device holds it, so an index past the end is `StateOutOfRange` and refuses the
+  frame - never clamped to the last state, never wrapped to the first, never drawn blank.
+- **Without a slot the node is deferred**, not painted in state 0. A device that has not read its
+  first status yet is in a normal state, and a default one would be a reading nobody supplied.
+
+What it draws is the state's own tint over the node's whole rectangle, with the state's word over it
+when a `TextBinding` is bound - the field dimming to quarter coverage under the word, exactly as a
+bound `NumericDisplay`'s does.
+
 A `SignalTrace` draws its **waveform**, given a `SignalBinding` (#257) — the second join, and
 the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
 ring of samples, and the range those samples are read against; that range is the host's because what
@@ -68,9 +86,8 @@ one is the opaque field #255 draws, unchanged.
 
 One limit is worth knowing before you write a screen: every other component is visited, counted in
 `FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
-this project has decided — an `Image` needs a package this repository does not yet bake, and a
-`StatusIndicator` has one tint per state and so no single tint a field could be painted in. All of
-them are [#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+this project has decided — and a `TextInput` has a caret and a selection besides. Both are
+[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -186,7 +203,8 @@ verifier checks against. Rules:
   without `@safety_critical` — a declared position is a safety-relevant claim by itself.
 - **A node with both gets exactly one merged entry** (deduplicated `cvChecks`), never two.
 - Dynamic content (`NumericDisplay`, `StatusIndicator`, `Clock`, `SignalTrace`) pins its *bounds*
-  and *color* but never its varying value — the golden reference says **where** critical content
+  and *color* but never its varying value — and a `StatusIndicator` carries one colour per state, so
+  `ColorHash` is refused for it and only its bounds can be pinned — the golden reference says **where** critical content
   must appear and in what tint, not what the live number is.
 
 ## Checking a file without a full build

@@ -11,7 +11,7 @@
     {
       "locale": "en-US",
       "packageId": "endoscope-monitor-en-us",
-      "packageSha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "packageSha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
     }
   ],
   "budget": {
@@ -51,7 +51,7 @@
     {
       "bounds": {
         "height": 72,
-        "width": 1040,
+        "width": 840,
         "x": 240,
         "y": 0
       },
@@ -60,6 +60,32 @@
       "spec": {
         "colorToken": "Theme.Colors.Title",
         "textKey": "STR-EM-TITLE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 200,
+        "x": 1080,
+        "y": 0
+      },
+      "id": "classifier-state",
+      "kind": "StatusIndicator",
+      "spec": {
+        "colorTokens": [
+          "Theme.Colors.Neutral",
+          "Theme.Colors.Nominal",
+          "Theme.Colors.Alert",
+          "Theme.Colors.Fault"
+        ],
+        "requirement": "REQ-EM-002",
+        "source": "ECG_CLASS",
+        "stateKeys": [
+          "STR-EM-CLASS-0",
+          "STR-EM-CLASS-1",
+          "STR-EM-CLASS-2",
+          "STR-EM-CLASS-3"
+        ]
       }
     },
     {

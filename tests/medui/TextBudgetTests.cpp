@@ -490,6 +490,54 @@ const mdux::spec::Register listValuedTextIsMeasuredPerElement{
             .Execute();
     }};
 
+const mdux::spec::Register aStatesListNamesTheStateTheLocaleAndTheOverflow{
+    "A states list that overflows names the state, the locale and both widths",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-textbudget-states-overflow-names-all-three")
+            .Given("an indicator whose second state is three glyphs in en-US and six in de-DE", [] {})
+            .When("its box is narrower than that state's widest translation", [] {})
+            .Then("the diagnostic names the state, the locale it is widest in, and what it needs against what it has",
+                  [] {
+                      // #259's first acceptance, over the field it is actually about. The list
+                      // scenario above establishes that every element is measured; this establishes
+                      // that the report identifies *which* element, in *which* locale, by how much -
+                      // which is the difference between a diagnostic an author can act on and one
+                      // that says a screen is too small somewhere.
+                      mdux::spec::Checks      checks;
+                      const font::FontPackage fontPackage = fixtureFont();
+
+                      const std::array<std::pair<std::string, std::size_t>, 2> english{
+                          std::pair{   std::string{"STR-OK"}, std::size_t{2}},
+                          std::pair{std::string{"STR-ALARM"}, std::size_t{3}}
+                      };
+                      const std::array<std::pair<std::string, std::size_t>, 2> german{
+                          std::pair{   std::string{"STR-OK"}, std::size_t{2}},
+                          std::pair{std::string{"STR-ALARM"}, std::size_t{6}}
+                      };
+                      const ApprovedText approved{.english = lettersLocale("en-US", english), .german = lettersLocale("de-DE", german)};
+                      const auto         locales = approved.views();
+
+                      // Six glyphs at a 10px pen with an 8px last glyph is 58px; the box is 40px.
+                      const std::string source = screenWith("    StatusIndicator { id: status; width: 40px; height: 20px; "
+                                                            "requirement: \"REQ-1\"; source: \"STATE\"; "
+                                                            "states: [t(\"STR-OK\"), t(\"STR-ALARM\")]; }\n");
+
+                      const md::TextBudgetResult result = md::checkTextBudgets(layoutOf(source),
+                                                                               "budget.medui",
+                                                                               {.font = &fontPackage, .locales = locales, .dynamicText = {}});
+
+                      const cli::Diagnostic* reported = find(result, md::Code::TextBudgetExceeded);
+                      checks.expect(!result.ok(), "the screen is rejected");
+                      checks.expect(mentions(reported, "STR-ALARM"), "the diagnostic names the state that does not fit");
+                      checks.expect(mentions(reported, "de-DE"), "and the locale its widest translation is in");
+                      checks.expect(mentions(reported, "58px"), "and the width that translation needs");
+                      checks.expect(mentions(reported, "40px"), "and the width the node has");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register diagnosticsFollowNodeAndLocaleOrder{
     "Diagnostics accumulate in node order, then in the input order of the locales",
     "evidence-unit",

@@ -1,8 +1,9 @@
 // The first screen this repository compiles into a committed artifact (#198).
 //
 // It draws the Row background the solver synthesises, a live video surface, a live waveform, a
-// baked image, an explicitly positioned node whose rectangle a golden reference pins - and, since
-// #235, a label. The label is what puts the text-budget stage over a committed artifact: its box is
+// baked image, an explicitly positioned node whose rectangle a golden reference pins, a label since
+// #235 - and, since #259, a status indicator whose closed list of states the ECG demonstrator
+// drives. The label is what puts the text-budget stage over a committed artifact: its box is
 // measured against the widest translation every approved locale carries, which is a check that had
 // only ever run over packages a test built for itself.
 //
@@ -32,10 +33,29 @@ Screen EndoscopeMonitor {
         // approved locale, because a compiled screen is locale-free (ADR-011 as amended by #203).
         Label {
             id: screen-title;
-            width: 1040px;
+            width: 840px;
             height: 72px;
             text: t("STR-EM-TITLE");
             color: Theme.Colors.Title;
+        }
+
+        // The ECG demonstrator's waiting consumer (#259). `EcgClassifierExample` binds the class its
+        // classifier chose to this node, so the same window of samples reaches the screen twice:
+        // once as the waveform below, and once as the state up here.
+        //
+        // The states are named for the model's output classes and nothing else, because the model is
+        // a demonstrator with synthetic weights and no clinical validity (ADR-008): a state called
+        // "Bradycardia" would be a diagnosis this screen has no right to display. The four tints are
+        // chosen to be told apart at a glance and carry no severity claim either - which is the same
+        // reason the words are here at all, since a colour alone would invite one to be read into it.
+        StatusIndicator {
+            id: classifier-state;
+            width: 200px;
+            height: 72px;
+            requirement: "REQ-EM-002";
+            source: "ECG_CLASS";
+            states: [t("STR-EM-CLASS-0"), t("STR-EM-CLASS-1"), t("STR-EM-CLASS-2"), t("STR-EM-CLASS-3")];
+            colors: [Theme.Colors.Neutral, Theme.Colors.Nominal, Theme.Colors.Alert, Theme.Colors.Fault];
         }
     }
 

@@ -4,7 +4,7 @@
     {
       "id": "endoscope-monitor",
       "role": "screenPackage",
-      "sha256": "cd22a85eb6e339efd374ed76e494f065a57eabe360a078ca7e3b9a9b286bff85"
+      "sha256": "a876061d552c560a707aa9e417cdc1059f1b4c8901b2f2c2549ba7b712aad036"
     },
     {
       "id": "endoscope-monitor",
@@ -20,7 +20,7 @@
       "id": "endoscope-monitor-en-us",
       "locale": "en-US",
       "role": "textPackage",
-      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "sha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
     },
     {
       "id": "dejavu-ui",
