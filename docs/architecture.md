@@ -79,6 +79,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
+| `mdux.medui.reading` | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
 | `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
 | `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
@@ -183,7 +184,7 @@ exactly the pair their golden entry pins. ADR-014 decision 5 is why that is read
 sidecar rather than invented in the renderer, and why a `Clock` (no token) and a `StatusIndicator`
 (one per state) are not in it.
 
-One of the two now draws the live part as well. `mdux.medui.trace` expands a **caller-owned ring
+Both now draw the live part as well. `mdux.medui.trace` expands a **caller-owned ring
 buffer** into stroke quads — segments as quads with square joint caps rather than mitred joins, which
 have no unbounded spike as an angle closes — and `SignalBinding` is what joins a stream name the
 screen carries to the samples and the scale only the host knows. The samples never enter the
@@ -198,6 +199,22 @@ bound trace paints its field at reduced coverage under a full-tint stroke, which
 composition an additive draw list and a `ColorHash` golden both admit; an *unbound* trace is
 unchanged, which is why the committed screen's pixel and `verify` legs are unchanged too — both
 render it without signals.
+
+`mdux.medui.reading` (#258) does the same for a `NumericDisplay`'s digits and a `Clock`'s time, and
+it needed an **amendment to ADR-010** to exist at all. That ADR's decision 4 forbade "on-device code
+that advances a pen by a runtime-computed width", while its decision 3 permitted dynamic text — a
+contradiction nobody had to resolve while no component drew a live value. The amendment resolves it
+narrowly: a reading is drawn from a *pattern* (`HH:MM:SS`, `###.# mmHg`) whose literals, slot
+positions and glyph count are build-time constants, whose worst-case ink envelope the compiler
+measures against the node that will hold it, and whose pen arithmetic has one implementation the
+host budget stage imports rather than copies. Only which digit stands in each slot varies.
+
+What a `template:` renders as is a **product table**, supplied by the screen recipe rather than
+resolved into the artifact — so the compiled screen still carries a validated name and the shared
+contract's compiled-screen semantics are untouched. The obvious exposure of that split is closed the
+way a `Label`'s is: the runtime measures what it actually drew against the node and refuses the frame
+if it does not fit, so a device holding a table the compiler never saw cannot put digits over a
+neighbour.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -347,7 +364,7 @@ tracking issue; the issue is authoritative for what remains.
 |---|---|---|
 | `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255), and a baked QOI-derived Image (#256); live and interactive component content remains under #17 |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Image`, `StatusIndicator`, `TextInput`, `Button` and the rest. `SignalTrace` has shipped (#257): it draws a live waveform from a caller-owned ring, and the `EcgClassifierExample` binds the same ring its classifier reads |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Image`, `StatusIndicator`, `TextInput` and `Button` remain. `SignalTrace` shipped with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — and `NumericDisplay` and `Clock` with #258 |
 
 ### The HTML/CSS path is gone, not planned
 

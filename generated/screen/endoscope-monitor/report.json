@@ -37,6 +37,12 @@
     "imagePackages": [
       "generated/image/brand-mark/package.json"
     ],
+    "numericTemplates": [
+      {
+        "name": "TPL-PRESSURE-MMHG",
+        "rendering": "##.# mmHg"
+      }
+    ],
     "source": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
     "surfaceHeight": 720,
     "surfaceWidth": 1280,
@@ -65,7 +71,7 @@
   ],
   "recipe": {
     "path": "recipes/screen/endoscope-monitor.toml",
-    "sha256": "38d631365038dd5b4b03e56510b68ebc7cc3ea5e12d826d5b682b79a3178de2c"
+    "sha256": "53a2ef140fb7be0cab37a9fc40ebc114d78f9c2c9c3927706a50523cb6fc285f"
   },
   "schemaVersion": 1,
   "stages": [

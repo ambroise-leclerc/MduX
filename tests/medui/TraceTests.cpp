@@ -766,7 +766,7 @@ const mdux::spec::Register aBoundTraceDimsItsField{
                       // stroke has to reach full coverage somewhere or `colorHash()` would report
                       // TintAbsent for the node; the field has to differ from the ground or
                       // `goldenBounds()` would stop seeing the node's whole rectangle as painted.
-                      const auto  expectedDim = static_cast<std::uint8_t>((255.0F * ms::boundTraceFieldCoverage) + 0.5F);
+                      const auto  expectedDim = static_cast<std::uint8_t>((255.0F * ms::boundFieldCoverage) + 0.5F);
                       std::size_t dimmed      = 0;
                       std::size_t solid       = 0;
                       for (const draw::UiVertex& vertex : state->vertices) {

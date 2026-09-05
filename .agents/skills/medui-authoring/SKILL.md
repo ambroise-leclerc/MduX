@@ -44,7 +44,21 @@ is running, and its sidecar. Without one, a label is deferred rather than refuse
 It also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves (#255): that node's whole
 rectangle, in the single token it carries, which is exactly the pair its golden entry pins.
 
-A `SignalTrace` draws its **waveform** as well, given a `SignalBinding` (#257) — the second join, and
+A `NumericDisplay` draws its **digits** and a `Clock` its **time**, given a `ReadingBinding` (#258).
+Three things to know before writing either:
+
+- **A `template:` needs a `[numericTemplates]` entry in the screen recipe**, naming what it renders
+  as — `##.# mmHg`, where `#` is a digit slot and every other character is a literal. Without one
+  the compile fails with `MEDUI-E053`, because a template the compiler cannot expand is one whose
+  widest reading it cannot measure against your box. The slot character is `#` rather than a letter
+  precisely so a unit like `mmHg` stays a unit.
+- **The value is a fixed-point integer**, in the template's own units: `1234` under `###.#` is
+  `123.4`. A value with more digits than its slots is refused, never truncated.
+- **A `Clock` has no `color:` field**, so its tint comes from the binding rather than from your
+  screen. That is the one appearance decision the runtime leaves to the host, and it is why a golden
+  never pins a clock's colour.
+
+A `SignalTrace` draws its **waveform**, given a `SignalBinding` (#257) — the second join, and
 the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
 ring of samples, and the range those samples are read against; that range is the host's because what
 a sample means in millivolts is a property of an amplifier rather than of a layout. Two things to
@@ -55,8 +69,8 @@ one is the opaque field #255 draws, unchanged.
 One limit is worth knowing before you write a screen: every other component is visited, counted in
 `FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
 this project has decided — an `Image` needs a package this repository does not yet bake, and a
-`Clock` or `StatusIndicator` has no single tint a field could be painted in. All of them are
-[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+`StatusIndicator` has one tint per state and so no single tint a field could be painted in. All of
+them are [#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering

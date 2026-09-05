@@ -356,10 +356,10 @@ const mdux::spec::Register aDimmedFieldUnderAFullTintStrokeIsAdmitted{
                       const mv::GoldenExpectation expectation = expect(readoutGolden, textlessScreen, mv::RenderScope::localeFree());
                       const ColorRgba8            tint        = tintOf(readoutToken);
 
-                      // `mdux::medui::boundTraceFieldCoverage` as the runtime quantises it. Written
+                      // `mdux::medui::boundFieldCoverage` as the runtime quantises it. Written
                       // as the same arithmetic rather than as 64, so a change to the constant moves
                       // this scenario with it instead of leaving it testing a number nothing paints.
-                      const auto dimmed = static_cast<std::uint8_t>((255.0F * mdux::medui::boundTraceFieldCoverage) + 0.5F);
+                      const auto dimmed = static_cast<std::uint8_t>((255.0F * mdux::medui::boundFieldCoverage) + 0.5F);
 
                       Canvas canvas{16, 20, ground};
                       canvas.fill({4, 4, 8, 6}, mv::blend(ground, tint, dimmed));

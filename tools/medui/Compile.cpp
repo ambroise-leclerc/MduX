@@ -14,6 +14,7 @@ import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.font.schema;
 import mdux.image.schema;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
@@ -174,9 +175,22 @@ evidence::json::Value Recipe::toOptions() const {
         dynamic.push_back(std::move(named));
     }
 
+    // Likewise, and for the same reason: a report that named `TPL-PRESSURE-MMHG` without recording
+    // what it renders as would say which template a screen was measured against and not what that
+    // measurement was of.
+    std::vector<Value> templates;
+    templates.reserve(numericTemplates.size());
+    for (const NumericTemplate& rule : numericTemplates) {
+        Value named = Value::emptyObject();
+        put(named, "name", Value::string(rule.name));
+        put(named, "rendering", Value::string(rule.rendering));
+        templates.push_back(std::move(named));
+    }
+
     Value options = Value::emptyObject();
     put(options, "budget", std::move(budgetValue));
     put(options, "dynamicText", Value::array(std::move(dynamic)));
+    put(options, "numericTemplates", Value::array(std::move(templates)));
     // The id belongs in the report for the reason every other resolved knob does: it names the
     // directory the artifact lives in, and a report that did not record it would describe a compile
     // without saying which screen it produced.
@@ -404,6 +418,67 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
             rule.name = names[index];
             rule.produces.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
             recipe.dynamicText.push_back(std::move(rule));
+        }
+    }
+
+    // The product's numeric-template table (#258). Optional as a table for [dynamicText]'s reason: a
+    // screen with no `NumericDisplay` names no template, and the budget stage refuses an unknown
+    // name rather than accepting one, so an absent table is fail-closed rather than permissive.
+    if (const toml::Table* templateTable = document.table("numericTemplates"); templateTable != nullptr) {
+        std::vector<std::string> names;
+        std::vector<std::string> renderings;
+        std::size_t              namesLine = 0;
+        try {
+            const toml::Value& namesValue = templateTable->require("names");
+            namesLine                     = namesValue.line();
+            names                         = namesValue.asStringArray();
+            renderings                    = templateTable->require("renderings").asStringArray();
+        } catch (const toml::TomlError& error) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   error.line(),
+                   error.what(),
+                   "[numericTemplates] needs parallel 'names' and 'renderings' arrays");
+            return std::nullopt;
+        }
+
+        if (names.size() != renderings.size()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   namesLine,
+                   std::format("[numericTemplates] names has {} entries and renderings {}", names.size(), renderings.size()),
+                   "the arrays are positional: entry N of each describes template N");
+            return std::nullopt;
+        }
+
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            // Both bounds are checked here rather than left to the budget stage, so a recipe error
+            // names the entry an author wrote instead of the glyph a walk stopped at. An empty
+            // rendering is the fail-open one: it measures as zero and would fit any box.
+            if (renderings[index].empty()) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] entry '{}' renders as nothing", names[index]),
+                       "an empty rendering measures as zero width and would fit any node, so it is refused");
+                return std::nullopt;
+            }
+            if (renderings[index].size() > mdux::medui::maxPatternLength) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] entry '{}' renders as {} characters, and the runtime draws at most {}",
+                                   names[index],
+                                   renderings[index].size(),
+                                   mdux::medui::maxPatternLength),
+                       "the cap is mdux::medui::maxPatternLength, which bounds per-node work on a device");
+                return std::nullopt;
+            }
+            recipe.numericTemplates.push_back(NumericTemplate{.name = names[index], .rendering = renderings[index]});
         }
     }
 
@@ -858,7 +933,14 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
         }
 
-        const TextBudgetResult budgets = checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts, .dynamicText = dynamicRules});
+        std::vector<NumericTemplateRule> templateRules;
+        templateRules.reserve(recipe.numericTemplates.size());
+        for (const NumericTemplate& rule : recipe.numericTemplates) {
+            templateRules.push_back(NumericTemplateRule{.name = rule.name, .rendering = rule.rendering});
+        }
+
+        const TextBudgetResult budgets =
+            checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts, .dynamicText = dynamicRules, .numericTemplates = templateRules});
         if (!budgets.diagnostics.empty()) {
             diagnostics.insert(diagnostics.end(), budgets.diagnostics.begin(), budgets.diagnostics.end());
             return std::nullopt;

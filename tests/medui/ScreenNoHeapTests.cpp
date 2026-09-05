@@ -21,6 +21,7 @@ import mdux.evidence.report;
 import mdux.draw;
 import mdux.font.schema;
 import mdux.medui.schema;
+import mdux.medui.reading;
 import mdux.medui.screen;
 import mdux.medui.trace;
 import mdux.text.schema;
@@ -403,5 +404,164 @@ const mdux::spec::Register expandingATraceAllocatesNothing{
                       checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
                       checks.raise();
                   })
+            .Execute();
+    }};
+
+const mdux::spec::Register drawingAReadingAllocatesNothing{
+    "Drawing a live reading and a clock allocates nothing either",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-render-reading")
+            .Given("a screen whose NumericDisplay and Clock are bound to live values", [] {})
+            .When("frames are recorded while the value and the time advance", [] {})
+            .Then(
+                "the allocation counter does not move",
+                [] {
+                    mdux::spec::Checks checks;
+
+                    // The path #258 adds. Its obvious wrong implementation is a `std::string` for
+                    // the formatted number - `std::format` into a scratch, then draw the characters
+                    // - and that is exactly what this measurement refuses. The pattern is a
+                    // `string_view` over static storage, the digits go into a fixed array, and the
+                    // glyphs are recorded straight into the caller's list.
+                    static const mdux::font::FontPackage font = [] {
+                        mdux::font::FontPackage built;
+                        built.id                     = "noheap-reading";
+                        built.unitsPerEm             = 1000;
+                        built.pixelSize              = 10;
+                        built.locales                = {"en-US"};
+                        built.atlas.path             = "atlas.bin";
+                        built.atlas.width            = 64;
+                        built.atlas.height           = 64;
+                        built.atlas.byteLength       = 64 * 64;
+                        built.atlas.sha256           = std::string(64, 'a');
+                        built.atlas.occupancyPercent = 25;
+                        // U+002E to U+003A: the decimal point, the ten digits and the colon - every
+                        // character `##.#` and `HH:MM:SS` need, and no more.
+                        for (char32_t point = U'.'; point <= U':'; ++point) {
+                            const auto slot = static_cast<std::uint32_t>(built.glyphs.size());
+                            built.glyphs.push_back(mdux::font::GlyphRecord{.codePoint       = point,
+                                                                           .glyphIndex      = static_cast<std::uint16_t>(slot + 1),
+                                                                           .advanceWidth    = 1000,
+                                                                           .leftSideBearing = 0,
+                                                                           .x               = slot * 4,
+                                                                           .y               = 0,
+                                                                           .width           = 4,
+                                                                           .height          = 6,
+                                                                           .bitmapOriginX   = 0,
+                                                                           .bitmapOriginY   = 6});
+                        }
+                        built.restrictedCharset = {
+                            {.first = U'.', .last = U':'}
+                        };
+                        return built;
+                    }();
+
+                    static const std::array<std::byte, 6> records{};
+                    static const mdux::text::TextPackage  text = [] {
+                        mdux::text::TextPackage built;
+                        built.header.id         = "noheap-reading-text";
+                        built.header.kind       = std::string{mdux::text::packageKind};
+                        built.atlasId           = "noheap-reading";
+                        built.locale            = "en-US";
+                        built.sidecarPath       = "runs.bin";
+                        built.sidecarByteLength = records.size();
+                        built.sidecarSha256     = mdux::evidence::sha256(records);
+                        built.runs.push_back(mdux::text::TextRun{
+                            .id = "STR-UNUSED", .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
+                        return built;
+                    }();
+
+                    const auto canonical = text.write();
+                    if (!canonical.has_value()) {
+                        checks.expect(false, "the fixture package serializes");
+                        checks.raise();
+                        return;
+                    }
+                    const std::array approvals{
+                        ms::TextPackageApproval{.locale        = text.locale,
+                                                .packageId     = text.header.id,
+                                                .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))}
+                    };
+
+                    constexpr ms::NumericDisplaySpec pressure{
+                        .requirement = "REQ-1", .templateId = "TPL-X", .source = "SRC", .colorToken = "Theme.Colors.ScoreDigits"};
+                    constexpr ms::ClockSpec                  wall{.format = ms::ClockFormat::TimeSeconds};
+                    static constexpr std::array<ms::CompiledNode, 2> readingNodes{
+                        ms::CompiledNode{.id = "pressure", .bounds = {0, 0, 200, 20}, .payload = pressure},
+                        ms::CompiledNode{   .id = "clock", .bounds = {0, 20, 200, 20}, .payload = wall}
+                    };
+                    ms::ScreenPackage readingScreen{.id                   = "noheap-reading",
+                                                    .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                    .surfaceWidth         = 200,
+                                                    .surfaceHeight        = 60,
+                                                    .approvedTextPackages = approvals,
+                                                    .nodes                = readingNodes,
+                                                    .budget               = budget};
+
+                    const auto textBound =
+                        ms::TextBinding::create(readingScreen, font, text, std::as_bytes(std::span{canonical->data(), canonical->size()}), records);
+                    if (!textBound.has_value()) {
+                        checks.expect(false, "the fixture text binding is valid");
+                        checks.raise();
+                        return;
+                    }
+                    const ms::TextBinding textBinding = *textBound;
+
+                    // The value and the time a producer moves between frames. Static so the binding
+                    // can point at them, exactly as a device's would.
+                    static ms::CivilTime                 now{.year = 2026, .month = 9, .day = 5, .hour = 8, .minute = 0, .second = 0};
+                    static std::array<ms::ReadingSlot, 1> slots{
+                        ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.#", .value = 0}
+                    };
+
+                    const auto made = ms::ReadingBinding::create(readingScreen, slots, &now, "Theme.Colors.Neutral");
+                    if (!made.has_value()) {
+                        checks.expect(false, "the fixture reading binding is valid");
+                        checks.raise();
+                        return;
+                    }
+                    const ms::ReadingBinding readingBinding = *made;
+
+                    static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                    static std::array<mdux::draw::Index, 768>      indices{};
+                    static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                    auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+                    if (!created.has_value()) {
+                        checks.expect(false, "the storage satisfies the budget");
+                        checks.raise();
+                        return;
+                    }
+                    mdux::draw::DrawList list = std::move(*created);
+
+                    // Nothing inside the measured loop may format a message: `std::format`
+                    // allocates, and a per-frame assertion carrying one would report the test's own
+                    // allocation as the runtime's.
+                    std::uint32_t lastReadings = 0;
+                    bool          allRecorded  = true;
+
+                    const std::size_t before = allocations();
+                    for (int frame = 0; frame < 8; ++frame) {
+                        // The producer, between frames. A reading that changes its digit count is
+                        // the case a cached formatting buffer would allocate for.
+                        slots[0].value = static_cast<std::int64_t>(frame) * 13;
+                        now.second     = static_cast<std::uint8_t>(frame * 7);
+
+                        list.reset();
+                        const auto recorded = ms::render(readingScreen, list, textBinding, {}, {}, readingBinding);
+                        if (!recorded.has_value()) {
+                            allRecorded = false;
+                            continue;
+                        }
+                        lastReadings = recorded->readings;
+                    }
+                    const std::size_t after = allocations();
+
+                    checks.expect(allRecorded, "each frame is recorded");
+                    checks.expect(lastReadings == 2, std::format("the reading and the clock were both drawn, got {}", lastReadings));
+                    checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
+                    checks.raise();
+                })
             .Execute();
     }};

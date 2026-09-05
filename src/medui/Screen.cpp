@@ -14,6 +14,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.trace;
 import mdux.text.draw;
@@ -106,6 +107,31 @@ struct InkBox {
         return mdux::core::err(ScreenError::UnknownTextKey);
     }
     return binding.runs().subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength));
+}
+
+/**
+ * @brief Whether everything recorded since `verticesBefore` lies inside `bounds`.
+ *
+ * The runtime half of ADR-010 decision 4's amendment: a reading's shape was measured against this
+ * node at build time, and this measures what was actually drawn against it again. The two are not
+ * redundant, for the reason Screen.cppm gives about a `Label`'s ink - the build-time check reports a
+ * useful diagnostic to the person who can fix it, and this one holds when the table the device was
+ * given is not the table the compiler measured.
+ *
+ * Read off the recorded vertices rather than recomputed, so it measures the frame rather than a
+ * second opinion about it.
+ */
+[[nodiscard]] bool readingFitsNode(const mdux::draw::DrawList& list, std::size_t verticesBefore, const NodeRect& bounds) noexcept {
+    const std::span<const mdux::draw::UiVertex> recorded = list.vertices().subspan(verticesBefore);
+    for (const mdux::draw::UiVertex& vertex : recorded) {
+        if (vertex.x < static_cast<float>(bounds.x) || vertex.y < static_cast<float>(bounds.y)) {
+            return false;
+        }
+        if (vertex.x > static_cast<float>(bounds.x + bounds.width) || vertex.y > static_cast<float>(bounds.y + bounds.height)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -244,6 +270,48 @@ mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const Scree
     return SignalBinding{screen.id, slots};
 }
 
+mdux::core::Result<ReadingBinding, ScreenError>
+ReadingBinding::create(const ScreenPackage& screen, std::span<const ReadingSlot> readings, const CivilTime* now, std::string_view clockColorToken) noexcept {
+    for (std::size_t index = 0; index < readings.size(); ++index) {
+        const ReadingSlot& slot = readings[index];
+
+        if (slot.rendering.empty() || slot.rendering.size() > maxPatternLength) {
+            return mdux::core::err(ScreenError::MalformedPattern);
+        }
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (readings[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateReading);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownReadingNode);
+        }
+        const NodePayload payload = node->payload;
+        if (!std::holds_alternative<NumericDisplaySpec>(payload)) {
+            // A node that exists and is something else. The same refusal as one that does not
+            // exist, because from the caller's side both are "this slot will never be drawn", and
+            // the fix in both cases is to correct the id.
+            return mdux::core::err(ScreenError::UnknownReadingNode);
+        }
+    }
+
+    if (now != nullptr) {
+        // A clock the artifact names no tint for. See `ReadingBinding` for why the host supplies one
+        // and why that contradicts no golden; what is checked here is that it supplies an *approved*
+        // one, resolved through the same governed table a screen's own token resolves through.
+        if (const auto colour = resolveColorToken(clockColorToken); !colour.has_value()) {
+            return mdux::core::err(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+        }
+    }
+
+    return ReadingBinding{screen.id, readings, now, clockColorToken};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -287,7 +355,17 @@ std::string_view describe(ScreenError error) noexcept {
         case ScreenError::TraceBandTooSmall:
             return "a bound trace's node is too small to hold its stroke";
         case ScreenError::ScreenNotApproved:
-            return "the signal binding was built for a different screen";
+            return "the binding was built for a different screen";
+        case ScreenError::UnknownReadingNode:
+            return "a reading slot names no NumericDisplay on this screen";
+        case ScreenError::DuplicateReading:
+            return "two reading slots name the same node";
+        case ScreenError::MalformedPattern:
+            return "a reading slot's rendering is empty or longer than this runtime will draw";
+        case ScreenError::ReadingRefused:
+            return "a reading could not be drawn from the value and pattern it was given";
+        case ScreenError::ReadingOverflowsNode:
+            return "a drawn reading's ink is larger than the node that holds it";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -302,6 +380,23 @@ namespace {
 /// colour-token failures are kept apart: a malformed ring is the producer's defect, a too-long one is
 /// a caller asking for more than the cap admits, and a non-finite sample is a driver fault. Sending
 /// all three to the same integrator would send two of them to the wrong person.
+/// A `ReadingError` as the screen runtime's caller sees it.
+///
+/// Collapsed to one enumerator, unlike `TraceError`'s mapping, and the asymmetry is deliberate. A
+/// trace's failures name different parties - the producer's ring, the integrator's cap, a driver's
+/// NaN - and each needs a different person. A reading's are all the same party's: whoever supplied
+/// the pattern and the value supplied both, and `ReadingError`'s own `describe()` is what tells them
+/// which of the two it was. Minting five screen-level enumerators that all mean "ask the same
+/// integrator" would be a wider error surface saying nothing more.
+[[nodiscard]] ScreenError asScreenError(mdux::medui::ReadingError error) noexcept {
+    if (error == ReadingError::ListRejected) {
+        // The one that is not the caller's: the frame ran out of budget, which is what every other
+        // path in this file reports as BudgetExhausted and what a caller can act on differently.
+        return ScreenError::BudgetExhausted;
+    }
+    return ScreenError::ReadingRefused;
+}
+
 [[nodiscard]] ScreenError asScreenError(mdux::medui::TraceError error) noexcept {
     switch (error) {
         case TraceError::MalformedRing:
@@ -324,8 +419,12 @@ namespace {
 
 }  // namespace
 
-mdux::core::Result<FrameStats, ScreenError>
-render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text, const ImageBinding& image, const SignalBinding& signals) noexcept {
+mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&  screen,
+                                                   mdux::draw::DrawList& list,
+                                                   const TextBinding&    text,
+                                                   const ImageBinding&   image,
+                                                   const SignalBinding&  signals,
+                                                   const ReadingBinding& readings) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -352,6 +451,9 @@ render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBindin
     // say nothing about screen B's. Weaker than the text binding's check by exactly as much as the
     // available evidence is weaker - an id rather than a digest - which `approvedBy()` says.
     if (!signals.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!readings.approvedBy(screen)) {
         return refuse(ScreenError::ScreenNotApproved);
     }
 
@@ -469,6 +571,92 @@ render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBindin
             continue;
         }
 
+        // A `Clock` the caller has a time for. First among the live components because it is the
+        // one with nothing else to fall back on: it carries no colour token, so there is no field
+        // to reserve and a `Clock` with no binding is still deferred whole, exactly as before #258.
+        if (const auto* clock = std::get_if<ClockSpec>(&node.payload); clock != nullptr) {
+            if (!text.bound() || readings.now() == nullptr) {
+                // No locale bound, or no time in the reading binding. Deferred rather than
+                // refused: a caller with no clock service, or one still starting up, is in a normal
+                // state. The font comes from the text binding - see `ReadingBinding` for why that is
+                // the schema's choice rather than this module's.
+                ++stats.deferred;
+                continue;
+            }
+
+            // The tint the host chose, already proved to resolve by `ReadingBinding::create()`.
+            // Resolved again rather than carried, because a binding stores a token and this is the
+            // one place a colour is needed - and re-resolving is a bounded scan of eight entries.
+            const auto colour = resolveColorToken(readings.clockColorToken());
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            const std::size_t verticesBefore = list.vertices().size();
+            if (const auto recorded = recordClock(list, *text.font(), toRect(node.bounds), clock->format, *readings.now(), quantise(*colour));
+                !recorded.has_value()) {
+                return refuse(asScreenError(recorded.error()));
+            }
+            if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                return refuse(ScreenError::ReadingOverflowsNode);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            stats.steps += static_cast<std::uint32_t>(rendering(clock->format).size());
+            ++stats.readings;
+            continue;
+        }
+
+        // A `NumericDisplay` the caller has a reading for.
+        if (const auto* numeric = std::get_if<NumericDisplaySpec>(&node.payload); numeric != nullptr) {
+            const ReadingSlot* slot = readings.find(node.id);
+            if (slot != nullptr && text.bound()) {
+                const auto colour = resolveColorToken(numeric->colorToken);
+                if (!colour.has_value()) {
+                    return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+                }
+
+                // The field at reduced coverage, then the digits at full tint - the composition
+                // `boundFieldCoverage` documents and `verify-golden-two-coverage-composition`
+                // proves both golden checks admit. This node is the one that scenario's fixture
+                // models, since `insufflation-pressure` is what carries `ColorHash` on the
+                // committed screen.
+                mdux::core::ColorRgba8 fieldColour = quantise(*colour);
+                fieldColour.a                      = quantise((*colour)[3] * boundFieldCoverage);
+                if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+                ++stats.rects;
+
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = recordNumeric(list, *text.font(), toRect(node.bounds), slot->rendering, slot->value, quantise(*colour));
+                    !recorded.has_value()) {
+                    return refuse(asScreenError(recorded.error()));
+                }
+                // The check that makes the host-supplied pattern safe. The compiler measured this
+                // node against the table it was given; this measures what was actually drawn against
+                // the node, so a drifted table cannot put digits over a neighbour. See `ReadingSlot`.
+                if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                    return refuse(ScreenError::ReadingOverflowsNode);
+                }
+                if (!withinScreenBudget()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+                stats.steps += static_cast<std::uint32_t>(slot->rendering.size());
+                ++stats.readings;
+                ++stats.steps;
+                continue;
+            }
+            // No reading for this node, or no locale bound to draw one with. Falls through to the
+            // field path below,
+            // paints the opaque rectangle this node reserves - #255's behaviour, unchanged.
+        }
+
         // A `SignalTrace` the caller has samples for. Everything else about the node - where it is,
         // which token it draws with - is still the artifact's; what the binding adds is the samples
         // and the scale, which no compiled screen can carry (see `SignalSlot`).
@@ -480,10 +668,10 @@ render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBindin
                 }
 
                 // The field at reduced coverage, then the stroke at full tint. See Screen.cppm,
-                // `boundTraceFieldCoverage`, for why one tint at two coverages is the only
+                // `boundFieldCoverage`, for why one tint at two coverages is the only
                 // composition a `ColorHash` golden and an additive draw list both admit.
                 mdux::core::ColorRgba8 fieldColour = quantise(*colour);
-                fieldColour.a                      = quantise((*colour)[3] * boundTraceFieldCoverage);
+                fieldColour.a                      = quantise((*colour)[3] * boundFieldCoverage);
                 if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
                     return refuse(ScreenError::BudgetExhausted);
                 }

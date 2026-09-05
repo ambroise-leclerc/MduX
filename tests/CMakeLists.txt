@@ -805,6 +805,7 @@ mdux_emit_screen_package(
 add_executable(medui_spec
     medui/MeduiSpecMain.cpp
     medui/SchemaTests.cpp
+    medui/ReadingTests.cpp
     medui/ScreenRuntimeTests.cpp
     medui/TraceTests.cpp
     medui/GeneratedScreenTests.cpp
