@@ -182,7 +182,8 @@ Two of those four have one part that *is* in the artifact, and since #255 the ru
 `NumericDisplay` and a `SignalTrace` carry a single colour token over a single rectangle, which is
 exactly the pair their golden entry pins. ADR-014 decision 5 is why that is read off the golden
 sidecar rather than invented in the renderer, and why a `Clock` (no token) and a `StatusIndicator`
-(one per state) are not in it.
+(one per state) are not in it. A `StatusIndicator` acquires one the moment a state is bound, which is
+what #259 draws — the plural was the obstacle, not the absence.
 
 Both now draw the live part as well. `mdux.medui.trace` expands a **caller-owned ring
 buffer** into stroke quads — segments as quads with square joint caps rather than mitred joins, which
@@ -215,6 +216,16 @@ contract's compiled-screen semantics are untouched. The obvious exposure of that
 way a `Label`'s is: the runtime measures what it actually drew against the node and refuses the frame
 if it does not fit, so a device holding a table the compiler never saw cannot put digits over a
 neighbour.
+
+`mdux.medui.screen`'s `StatusBinding` (#259) is the third join, and the smallest: a slot names a node
+and a **position in that node's own `states:` list**. The list is closed in the artifact — every key
+validated against every approved locale, the widest of them measured against the node's box — so an
+index outside it is refused at `create()` and again in the frame, never clamped, wrapped or drawn as
+a blank box, each of which would show a state the device is not in. A bound indicator paints its
+field in that state's tint, with the state's word over it when a locale is bound; unbound it is
+deferred, because a default state is a reading nobody supplied. One refusal there is about appearance
+rather than names: a node that declares no `colors:` cannot be bound at all, since with no per-state
+tint its states are told apart by nothing a frame carries unless a locale happens to be bound.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -362,9 +373,9 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255), and a baked QOI-derived Image (#256); live and interactive component content remains under #17 |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) that `EcgClassifierExample` binds a state to. Interactive component content remains under #17 |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Image`, `StatusIndicator`, `TextInput` and `Button` remain. `SignalTrace` shipped with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — and `NumericDisplay` and `Clock` with #258 |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `TextInput`, `Button` and `CriticalButton` remain. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, and `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to |
 
 ### The HTML/CSS path is gone, not planned
 

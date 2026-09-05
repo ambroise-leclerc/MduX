@@ -807,6 +807,7 @@ add_executable(medui_spec
     medui/SchemaTests.cpp
     medui/ReadingTests.cpp
     medui/ScreenRuntimeTests.cpp
+    medui/StatusTests.cpp
     medui/TraceTests.cpp
     medui/GeneratedScreenTests.cpp
     medui/GeneratedScreenModuleConsumer.cpp

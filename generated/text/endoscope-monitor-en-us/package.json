@@ -9,12 +9,36 @@
       "byteOffset": 0,
       "id": "STR-EM-TITLE",
       "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 102,
+      "id": "STR-EM-CLASS-0",
+      "sha256": "2ffb10ef54f06db6bdba61e4d1f23b1a368d5498113121ab27858aef6b40e329"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 144,
+      "id": "STR-EM-CLASS-1",
+      "sha256": "7f3575773de319becbff76792bcc748556d38bd0b6bc26ac06bfa15107e964fe"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 186,
+      "id": "STR-EM-CLASS-2",
+      "sha256": "16959055d20c6b8558a8f7a91237bbd21afdad6a8ab1e40470a98c46cf95a66a"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 228,
+      "id": "STR-EM-CLASS-3",
+      "sha256": "7b37fdcfb5c487d1efb21ecc874dd72d5b031741792adb0bd67191f23501407a"
     }
   ],
   "schemaVersion": 1,
   "sidecar": {
-    "byteLength": 102,
+    "byteLength": 270,
     "path": "runs.bin",
-    "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+    "sha256": "853ddce9c50897631dc3593fff3d1d47e4de79e8ce04a1e520f61663aef71921"
   }
 }

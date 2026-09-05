@@ -42,10 +42,25 @@
  * renderer would consume - and building one needs neither a device nor a surface, which is the
  * same thing `MedicalUiExample` demonstrates from the other end.
  *
- * ## One thing it deliberately does not do yet
+ * ## 6. One ring, and now one *state* as well - #259
  *
- * The classifier's output does not drive a `StatusIndicator`: that component is still deferred by
- * the runtime and arrives with #259.
+ * This file used to end the section above by saying that "the classifier's output does not drive a
+ * `StatusIndicator`: that component is still deferred by the runtime and arrives with #259". It
+ * arrived, and the wiring below is three lines: the class the classifier chose becomes a
+ * `StatusSlot` for `classifier-state`, the screen's indicator, and the frame draws that state's tint.
+ *
+ * What makes it worth having rather than decorative is the refusal on the other side of it. The
+ * node's `states:` list is closed in the artifact - four states, each a key the compiler validated
+ * against every approved locale and measured against the node's box - so a class index outside it is
+ * `StateOutOfRange` at `StatusBinding::create()` and the demonstrator exits, exactly as it does when
+ * the classifier itself refuses to start. A model retrained to five classes against a screen
+ * compiled for four is caught at the join rather than shown as a fifth state that looks like the
+ * first.
+ *
+ * The words are *not* drawn here, and that is a property of this program rather than a limit of the
+ * runtime: drawing them needs a bound text package, this demonstrator opens no files, and there is
+ * no `constexpr` emitter for a text package the way there is for a screen and a model. So the state
+ * reaches the frame as its tint. `ScreenPixelTests` is where the same indicator draws its word.
  *
  * The package emitter is the equivalent of the shader pipeline's issue #121: the committed JSON is
  * mechanically rendered into build-tree source and validated by `static_assert`. Only the weight
@@ -199,6 +214,10 @@ int main() {
     std::vector<float> window(package.inputLength, 0.0f);
     std::vector<float> output(package.outputLength, 0.0f);
 
+    // The class the last classified window chose, and the one the screen's indicator is bound to
+    // below. Declared out here rather than inside the loop for exactly that reason.
+    std::size_t latestClass = 0;
+
     std::size_t classified = 0;
     for (std::size_t index = 0; index < sampleRateHz * 4 && classified < 3; ++index) {
         ring.push(syntheticSample(index, 60));
@@ -219,6 +238,7 @@ int main() {
                 best = i;
             }
         }
+        latestClass = best;
         std::print("window {}: class {} (", classified, best);
         for (std::size_t i = 0; i < output.size(); ++i) {
             std::print("{}{:.4f}", i == 0 ? "" : ", ", output[i]);
@@ -248,6 +268,24 @@ int main() {
         return 1;
     }
 
+    // 5. The same classification, read as a state by the same runtime (#259).
+    //
+    // `latestClass` is the index the softmax above chose, offered to the screen's own closed list of
+    // states. Nothing here decides what class 2 *means*: the screen names its four states and the
+    // compiler measured them, and this program supplies a position and nothing else.
+    const std::array<medui::StatusSlot, 1> states{
+        medui::StatusSlot{.nodeId = "classifier-state", .state = static_cast<std::uint32_t>(latestClass)}
+    };
+
+    auto statusBinding = medui::StatusBinding::create(endoscopeMonitor, states);
+    if (!statusBinding.has_value()) {
+        // The closed-list refusal, and the reason this is a `return` rather than a warning: a class
+        // the screen has no state for is a model and a screen that were built against different
+        // ideas of what this device reports. Drawing the nearest state would hide that.
+        std::println(std::cerr, "status binding refused: {}", medui::describe(statusBinding.error()));
+        return 1;
+    }
+
     // Sized once, from the screen's own budget, and never grown - which is what makes the no-heap
     // property true of the frame rather than of an intention. Heap-allocated because a demonstrator
     // on a desktop has a heap; on a device this is a static object, and either way `render()` never
@@ -259,7 +297,7 @@ int main() {
         return 1;
     }
 
-    const auto recorded = medui::render(endoscopeMonitor, *list, {}, {}, *binding);
+    const auto recorded = medui::render(endoscopeMonitor, *list, {}, {}, *binding, {}, *statusBinding);
     if (!recorded.has_value()) {
         std::println(std::cerr, "frame refused: {}", medui::describe(recorded.error()));
         return 1;
@@ -267,6 +305,7 @@ int main() {
 
     std::println("  samples bound  : {} (the window the classifier read, not a copy of it)", view.count);
     std::println("  traces expanded: {}", recorded->traces);
+    std::println("  states drawn   : {} (class {}, in that state's own tint)", recorded->states, latestClass);
     std::println("  nodes / drawn  : {} visited, {} rectangles, {} deferred", recorded->nodes, recorded->rects, recorded->deferred);
     std::println("  budget used    : {}/{} vertices, {}/{} indices, {}/{} commands",
                  list->vertices().size(),
@@ -276,8 +315,8 @@ int main() {
                  list->commands().size(),
                  endoscopeMonitor.budget.maxCommands);
     std::println("");
-    std::println("  The label, the image and the video surface are deferred: they need a bound text");
-    std::println("  package and packages this repository does not yet bake. The waveform does not.");
+    std::println("  The label, the image and the video surface are deferred: they need bound packages");
+    std::println("  this program opens no files to load. The waveform and the state do not.");
 
     std::println("");
     std::println("Swapping these weights is a re-bake of the recipe and a change to the configured");

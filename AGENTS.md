@@ -80,8 +80,9 @@ draw a `Label`; `#257` has since given a `SignalTrace` its waveform, expanded on
 caller-owned ring buffer into the screen's pre-sized vertex budget; and `#258` has given a
 `NumericDisplay` its digits and a `Clock` its time, which needed an amendment to
 [ADR-010](docs/adr/ADR-010-no-on-device-text-shaping.md) decision 4 - read it before touching
-`mdux.medui.reading`. The rest of `#17` - `Image`, `StatusIndicator`, `TextInput`, `Button` - is
-still deferred.
+`mdux.medui.reading`; and `#259` has given a `StatusIndicator` its state, drawn from a list the
+compiler closed, with an index outside that list refused rather than drawn blank. The rest of `#17`
+- `TextInput` and the two buttons - is still deferred.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.

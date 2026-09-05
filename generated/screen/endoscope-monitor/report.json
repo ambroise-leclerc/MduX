@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "1c0a7faaaf703ef89d676d6c635ad622b88680a5396e4c9af7480858c4b7b720"
+      "sha256": "c9592fb2c70691d84ca146de8e7e73c6a912d045994a07e868f67d0669ff017e"
     },
     {
       "path": "generated/font/dejavu-ui/package.json",
@@ -10,11 +10,11 @@
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/package.json",
-      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "sha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/runs.bin",
-      "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+      "sha256": "853ddce9c50897631dc3593fff3d1d47e4de79e8ce04a1e520f61663aef71921"
     },
     {
       "path": "generated/image/brand-mark/package.json",
@@ -62,11 +62,11 @@
     },
     {
       "path": "package.json",
-      "sha256": "cd22a85eb6e339efd374ed76e494f065a57eabe360a078ca7e3b9a9b286bff85"
+      "sha256": "a876061d552c560a707aa9e417cdc1059f1b4c8901b2f2c2549ba7b712aad036"
     },
     {
       "path": "verification.json",
-      "sha256": "630d691f7cfcf63f4547f56b11bb7cecfc235821a057e8f40ec63d1a5e47ec3d"
+      "sha256": "26de4803679ba3a5bac48006dc3ccfe45236ea4e23b60177a491637b1347f89c"
     }
   ],
   "recipe": {

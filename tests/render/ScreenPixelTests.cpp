@@ -18,7 +18,8 @@
  * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
  * text package (#242). Below it the `NumericDisplay` and the `SignalTrace` paint the rectangles they
  * reserve, in the tokens their author gave them. Its video surface is still visited, counted as
- * deferred, and left undrawn because no test supplies a stream.
+ * deferred, and left undrawn because no test supplies a stream - and so is its status indicator,
+ * which no test here binds a state to.
  *
  * Two authored-screen scenarios below, deliberately not one. The first renders without bindings and is the older
  * claim unchanged - the panel and the fields land where the compiler put them, every text node
@@ -325,7 +326,7 @@ TEST_CASE("The compiled screen is the one the compiler produced", "pixel") {
     CHECK(package.validate().has_value());
     CHECK(package.surfaceWidth == 1280);
     CHECK(package.surfaceHeight == 720);
-    CHECK(package.nodes.size() == 6);
+    CHECK(package.nodes.size() == 7);
 
     // The safety-critical node #201 asks for, reached through the function a traceability export
     // walks rather than by index.
@@ -372,9 +373,10 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     REQUIRE(recorded.has_value());
     // The Row's synthetic panel, and the two fields #255 taught the runtime to paint.
     CHECK(recorded->rects == 3);
-    // Three of six nodes are visited and left undrawn, and the frame says so rather than looking
-    // complete. See this file's header for which, and why each.
-    CHECK(recorded->deferred == 3);
+    // Four of seven nodes are visited and left undrawn, and the frame says so rather than looking
+    // complete. See this file's header for which, and why each - the status indicator joins them
+    // because no test here binds a state, and an indicator with none is in no state to paint.
+    CHECK(recorded->deferred == 4);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -621,10 +623,11 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package));
     REQUIRE(recorded.has_value());
 
-    // One fewer deferred node than the unbound frame, and the difference is the label. Asserted as
-    // the count rather than as "the label was drawn" so that a future component learning to draw
-    // cannot make this scenario pass for a reason it does not name.
-    CHECK(recorded->deferred == 1);
+    // Two fewer deferred nodes than the unbound frame, and the difference is the label and the
+    // image. Asserted as the count rather than as "the label was drawn" so that a future component
+    // learning to draw cannot make this scenario pass for a reason it does not name. The status
+    // indicator is one of the two that remain: this scenario binds text and an image, not a state.
+    CHECK(recorded->deferred == 2);
     // The panel and the two fields, plus one rectangle per inked glyph. "Endoscope Monitor" is 17
     // characters of which the space paints nothing, so 16 glyphs and three filled rectangles.
     CHECK(recorded->rects == 20);
