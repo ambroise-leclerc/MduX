@@ -46,6 +46,30 @@ const mdux::spec::Register imageBakerReproducesCommittedPackage{
             .Execute();
     }};
 
+const mdux::spec::Register imageBakerRejectsControlCharacterSidecars{
+    "The image recipe cannot smuggle a NUL into the sidecar filename",
+    "evidence-unit",
+    [] {
+        return speclab::Test("image-baker-control-character-sidecar")
+            .Given("a recipe whose sidecar escapes to package.json followed by a NUL", [] {})
+            .When("the recipe is parsed", [] {})
+            .Then("it is refused before the truncating path can be written",
+                  [] {
+                      namespace bake = mdux::tools::imagebake;
+                      mdux::spec::Checks checks;
+                      // TOML has no \0 escape, but \u0000 is a Unicode scalar value the parser decodes
+                      // into the string, so the recipe is the way a NUL reaches a filesystem path.
+                      for (const std::string_view smuggled : {R"(package.json\u0000.rgba)", R"(pixels\u0000.rgba)", R"(pixels\u0001.rgba)"}) {
+                          const std::string recipe = std::format("[package]\nid = \"fixture\"\nsource = \"fixture.qoi\"\nsidecar = \"{}\"\n", smuggled);
+                          std::vector<mdux::tools::cli::Diagnostic> diagnostics;
+                          checks.expect(!bake::parseRecipe(recipe, "fixture.toml", diagnostics).has_value(), std::format("{} is refused", smuggled));
+                          checks.expect(!diagnostics.empty(), "the refusal carries a diagnostic");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register imageBakerRejectsReservedSidecars{
     "The image recipe cannot name an artifact file as its pixel sidecar",
     "evidence-unit",

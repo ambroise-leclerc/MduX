@@ -154,6 +154,8 @@ std::string_view describe(SchemaError error) noexcept {
             return "sidecar path is empty";
         case SchemaError::SidecarPathHasSeparator:
             return "sidecar path must be a bare filename";
+        case SchemaError::SidecarPathHasControlCharacter:
+            return "sidecar path contains a control character";
         case SchemaError::ReservedSidecarPath:
             return "sidecar path collides with package.json or report.json";
         case SchemaError::MalformedPackage:
@@ -192,6 +194,14 @@ ResultVoid<SchemaError> ImagePackage::validate() const noexcept {
     }
     if (sidecarPath.find('/') != std::string::npos || sidecarPath.find('\\') != std::string::npos) {
         return err(SchemaError::SidecarPathHasSeparator);
+    }
+    // A NUL terminates a pathname for every filesystem call the baker makes, so "package.json\0.rgba"
+    // reads as distinct from "package.json" here and then truncates onto it at open() time. Nothing
+    // legitimate names a bare artifact file with a control character, so the whole class is refused.
+    if (std::ranges::any_of(sidecarPath, [](char character) {
+            return static_cast<unsigned char>(character) < 0x20u || character == 0x7f;
+        })) {
+        return err(SchemaError::SidecarPathHasControlCharacter);
     }
     if (isReservedSidecarPath(sidecarPath)) {
         return err(SchemaError::ReservedSidecarPath);

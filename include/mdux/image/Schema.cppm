@@ -54,6 +54,7 @@ enum class SchemaError : std::uint8_t {
     SidecarSizeMismatch,
     EmptySidecarPath,
     SidecarPathHasSeparator,
+    SidecarPathHasControlCharacter,
     ReservedSidecarPath,
     MalformedPackage,
     ReportRejected,

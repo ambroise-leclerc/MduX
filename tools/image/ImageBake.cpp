@@ -35,6 +35,15 @@ constexpr std::string_view artifactMissing     = "IMB007";
 constexpr std::string_view artifactDiffers     = "IMB008";
 constexpr std::string_view pathEscapesRoot     = "IMB009";
 
+/// Whether a recipe string carries a byte no artifact path or identifier may contain. A NUL ends a
+/// pathname for every filesystem call below, so a sidecar named "package.json\0.rgba" clears the
+/// reserved-name comparison and then truncates onto package.json when the bytes are written.
+[[nodiscard]] bool hasControlCharacter(std::string_view text) noexcept {
+    return std::ranges::any_of(text, [](char character) {
+        return static_cast<unsigned char>(character) < 0x20u || character == 0x7f;
+    });
+}
+
 void report(std::vector<cli::Diagnostic>& diagnostics,
             std::string                   file,
             std::size_t                   line,
@@ -201,6 +210,15 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
     if (recipe.id.empty() || recipe.source.empty() || recipe.sidecar.empty() || mdux::image::isReservedSidecarPath(recipe.sidecar)
         || recipe.sidecar.find('/') != std::string::npos || recipe.sidecar.find('\\') != std::string::npos) {
         report(diagnostics, std::string{recipePath}, 0, recipeMissingMember, "id/source must be non-empty and sidecar must be a bare, non-reserved filename");
+        return std::nullopt;
+    }
+    if (hasControlCharacter(recipe.id) || hasControlCharacter(recipe.source) || hasControlCharacter(recipe.sidecar)) {
+        report(diagnostics,
+               std::string{recipePath},
+               0,
+               recipeMissingMember,
+               "id/source/sidecar must not contain control characters",
+               "A NUL truncates the path at write time, so a sidecar can be made to overwrite package.json.");
         return std::nullopt;
     }
     return recipe;

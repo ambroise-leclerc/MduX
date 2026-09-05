@@ -66,6 +66,31 @@ const mdux::spec::Register imageSchemaRejectsSizeDrift{"An image package refuses
                                                                .Execute();
                                                        }};
 
+const mdux::spec::Register imageSchemaRejectsControlCharacterSidecars{
+    "An image sidecar path carrying a control character is refused",
+    "evidence-unit",
+    [] {
+        return speclab::Test("image-schema-control-character-sidecar")
+            .Given("sidecar names that embed a NUL or another control byte", [] {})
+            .When("each package is validated", [] {})
+            .Then("the governed schema refuses them before any path reaches the filesystem",
+                  [] {
+                      using namespace std::string_literals;
+                      mdux::spec::Checks checks;
+                      // The first spelling is the attack: it is distinct from "package.json" for every
+                      // comparison here, and truncates onto it at open() time.
+                      for (const std::string& embedded : {"package.json\0.rgba"s, "pixels\0.rgba"s, "pixels\n.rgba"s, "pixels\x7f.rgba"s}) {
+                          image::ImagePackage package = validPackage();
+                          package.sidecarPath         = embedded;
+                          const auto valid            = package.validate();
+                          checks.expect(!valid.has_value() && valid.error() == image::SchemaError::SidecarPathHasControlCharacter,
+                                        std::format("a sidecar of {} bytes carrying a control character is refused", embedded.size()));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register imageSchemaRejectsReservedSidecars{
     "Image sidecars cannot overwrite the package or report artifact",
     "evidence-unit",
