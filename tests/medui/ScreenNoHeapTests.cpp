@@ -22,6 +22,7 @@ import mdux.draw;
 import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
+import mdux.medui.trace;
 import mdux.text.schema;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -312,5 +313,95 @@ const mdux::spec::Register drawingTextAllocatesNothing{
                     checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
                     checks.raise();
                 })
+            .Execute();
+    }};
+
+const mdux::spec::Register expandingATraceAllocatesNothing{
+    "Expanding a bound waveform allocates nothing either",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-render-trace")
+            .Given("a screen whose SignalTrace is bound to a caller-owned ring", [] {})
+            .When("frames are recorded while the producer writes into the ring", [] {})
+            .Then("the allocation counter does not move",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The path #257 adds, and the one with the most ways to allocate quietly: a
+                      // per-frame scratch for the expanded polyline is the obvious implementation of a
+                      // waveform, and it is the implementation this measurement exists to refuse. The
+                      // ring, the slots and the storage are all the caller's, made once, outside the
+                      // counter.
+                      constexpr ms::SignalTraceSpec                    trace{.streamSource = "ECG_LEAD_II", .colorToken = "Theme.Colors.Nominal"};
+                      static constexpr std::array<ms::CompiledNode, 1> traceNodes{
+                          ms::CompiledNode{.id = "ecg", .bounds = {0, 0, 200, 60}, .payload = trace}
+                      };
+                      static constexpr mdux::draw::DrawBudget traceBudget{.maxVertices = 512, .maxIndices = 768, .maxCommands = 16};
+                      static constexpr ms::ScreenPackage      traceScreen{.id                   = "noheap-trace",
+                                                                          .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                                          .surfaceWidth         = 200,
+                                                                          .surfaceHeight        = 60,
+                                                                          .approvedTextPackages = {},
+                                                                          .nodes                = traceNodes,
+                                                                          .budget               = traceBudget};
+                      static_assert(traceScreen.validate().has_value(), "the screen under measurement must be one a device could hold");
+
+                      static std::array<float, 24>               samples{};
+                      static ms::SampleRing                      ring{.storage = samples, .oldest = 0, .count = samples.size()};
+                      static const std::array<ms::SignalSlot, 1> slots{
+                          ms::SignalSlot{.streamSource = "ECG_LEAD_II",
+                                         .ring         = &ring,
+                                         .style        = ms::TraceStyle{.minimum = -1.0F, .maximum = 1.0F, .strokeWidth = 2}}
+                      };
+
+                      const auto made = ms::SignalBinding::create(traceScreen, slots);
+                      if (!made.has_value()) {
+                          checks.expect(false, "the fixture binding is valid");
+                          checks.raise();
+                          return;
+                      }
+                      const ms::SignalBinding binding = *made;
+
+                      static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                      static std::array<mdux::draw::Index, 768>      indices{};
+                      static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                      auto created = mdux::draw::DrawList::create(vertices, indices, commands, traceBudget);
+                      if (!created.has_value()) {
+                          checks.expect(false, "the storage satisfies the budget");
+                          checks.raise();
+                          return;
+                      }
+                      mdux::draw::DrawList list = std::move(*created);
+
+                      // Nothing inside the measured loop may format a message: `std::format`
+                      // allocates, and a per-frame assertion carrying one would report the test's own
+                      // allocation as the runtime's.
+                      std::uint32_t lastTraces  = 0;
+                      bool          allRecorded = true;
+
+                      const std::size_t before = allocations();
+                      for (int frame = 0; frame < 8; ++frame) {
+                          // The producer, doing what a producer does between frames: writing one new
+                          // sample and moving the ring's oldest index. A per-frame allocation hidden
+                          // behind "the samples changed" would show up as eight.
+                          samples[static_cast<std::size_t>(frame) % samples.size()] = 0.25F * static_cast<float>(frame % 5);
+                          ring.oldest                                               = (ring.oldest + 1) % samples.size();
+
+                          list.reset();
+                          const auto recorded = ms::render(traceScreen, list, {}, {}, binding);
+                          if (!recorded.has_value()) {
+                              allRecorded = false;
+                              continue;
+                          }
+                          lastTraces = recorded->traces;
+                      }
+                      const std::size_t after = allocations();
+
+                      checks.expect(allRecorded, "each frame is recorded");
+                      checks.expect(lastTraces == 1, std::format("the trace was expanded rather than left as a field, got {}", lastTraces));
+                      checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
+                      checks.raise();
+                  })
             .Execute();
     }};

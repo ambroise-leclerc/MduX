@@ -124,8 +124,20 @@ target_sources(EcgClassifierExample
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_MODEL_DIR}
             FILES ${MDUX_ECG_MODEL_MODULE}
+        # The committed endoscope screen as generated `constexpr` C++ (issue #257). Its own file
+        # set, because the two emitted modules live under different generated directories and a
+        # file set has one set of base dirs. Build-tree only, like the model module beside it.
+        #
+        # This is what makes the demonstrator a *consumer* of the screen rather than a program that
+        # prints numbers: `EndoscopeMonitor` carries a `SignalTrace` named `ECG_LEAD_II`, and the
+        # ring this example already had is bound to it. Still no Vulkan and no window - a draw list
+        # is geometry, and building one needs neither.
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
 )
-add_dependencies(EcgClassifierExample emit-model-${MDUX_ECG_MODEL_ID})
+add_dependencies(EcgClassifierExample emit-model-${MDUX_ECG_MODEL_ID} emit-screen-endoscope-monitor)
 target_link_libraries(EcgClassifierExample PRIVATE MduX::Core)
 
 mdux_embed_blob(EcgClassifierExample

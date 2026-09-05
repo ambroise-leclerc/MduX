@@ -991,7 +991,11 @@ const mdux::spec::Register drawErrorDescriptions{
             .When("each is described", [] {})
             .Then("each has a unique, non-empty description",
                   [] {
-                      constexpr std::array<DrawError, 7> all{
+                      // Every enumerator, not a subset. WrongList was absent from this list until
+                      // #257 added DegenerateQuad beside it and the omission became visible - which
+                      // is the failure mode a hand-maintained "all" array has, and the reason the
+                      // scenario below counts them against the enumeration's own size.
+                      constexpr std::array<DrawError, 9> all{
                           DrawError::EmptyBudget,
                           DrawError::BudgetExceedsIndexWidth,
                           DrawError::StorageTooSmall,
@@ -999,6 +1003,8 @@ const mdux::spec::Register drawErrorDescriptions{
                           DrawError::IndexBudgetExceeded,
                           DrawError::CommandBudgetExceeded,
                           DrawError::DegenerateRect,
+                          DrawError::WrongList,
+                          DrawError::DegenerateQuad,
                       };
                       std::vector<std::string_view> seen;
                       mdux::spec::Checks checks;
@@ -1008,6 +1014,239 @@ const mdux::spec::Register drawErrorDescriptions{
                           checks.expect(std::ranges::find(seen, text) == seen.end(),
                                         "the description is unique");
                           seen.push_back(text);
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// addSolidQuad() - the rotated primitive a polyline segment needs (#257)
+// ---------------------------------------------------------------------------
+
+/// The four corners of a unit-ish quad, wound as a ring. Not axis-aligned, so an implementation
+/// that quietly took a bounding box would be visible in the vertices.
+constexpr std::array<Point2F, 4> slantedQuad{
+    Point2F{ .x = 10.5F, .y = 20.0F},
+    Point2F{.x = 40.25F, .y = 24.0F},
+    Point2F{.x = 40.25F, .y = 26.0F},
+    Point2F{ .x = 10.5F, .y = 22.0F}
+};
+
+const mdux::spec::Register aSmallQuadSurvivesLargeCoordinates{
+    "A small quad is admitted just as far from the origin as beside it",
+    "evidence-unit",
+    [] {
+        struct State {
+            SmallStorage             storage;
+            std::optional<DrawList>  list;
+            std::optional<DrawError> nearOrigin;
+            std::optional<DrawError> farFromOrigin;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-large-coordinates")
+            .Given("one unit square, offered at the origin and again at a large offset", [] {})
+            .When("each is added to a list with budget to spare",
+                  [state] {
+                      // The degeneracy test is a shoelace sum, and a shoelace sum over *absolute*
+                      // coordinates subtracts two products of similar magnitude. At 4096 those
+                      // products are near 2^24, where a float's ulp is larger than this square's
+                      // area, so the area cancels to zero and a perfectly good quad reads as
+                      // collinear. A trace drawn on a large surface emits one small cap per sample,
+                      // so this is the arithmetic every one of them lands on.
+                      //
+                      // (4096, 4096) rather than an arbitrary large offset: whether the cancellation
+                      // reaches exactly zero depends on the corner values, and this pair is one that
+                      // does. Nearby offsets survive with a wrong-but-nonzero area, which the
+                      // zero-check cannot see - the reason to fix the arithmetic rather than the
+                      // threshold.
+                      const auto square = [](float x, float y) {
+                          return std::array<Point2F, 4>{
+                              Point2F{    .x = x,     .y = y},
+                              Point2F{.x = x + 1,     .y = y},
+                              Point2F{.x = x + 1, .y = y + 1},
+                              Point2F{    .x = x, .y = y + 1}
+                          };
+                      };
+                      state->list = requireCreated(state->storage.list(), "the list");
+
+                      const auto near   = state->list->addSolidQuad(square(0.0F, 0.0F), red);
+                      state->nearOrigin = near.has_value() ? std::nullopt : std::optional{near.error()};
+
+                      const auto far       = state->list->addSolidQuad(square(4096.0F, 4096.0F), red);
+                      state->farFromOrigin = far.has_value() ? std::nullopt : std::optional{far.error()};
+                  })
+            .Then("both are admitted, because area does not depend on where a shape sits",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(!state->nearOrigin.has_value(), "the unit square at the origin is admitted");
+                      checks.expect(!state->farFromOrigin.has_value(),
+                                    std::format("the same square at (4096, 4096) is admitted, got {}",
+                                                state->farFromOrigin.has_value() ? describe(*state->farFromOrigin) : "no error"));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register quadKeepsItsCorners{
+    "A solid quad records its four corners unrounded", "evidence-unit", [] {
+        struct State {
+            SmallStorage storage;
+            std::optional<DrawList> list;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-keeps-corners")
+            .Given("a list and a quad whose corners are not whole pixels",
+                   [state] {
+                       state->list = requireCreated(state->storage.list(), "the list");
+                       requireAdded(state->list->addSolidQuad(slantedQuad, red), "the quad");
+                   })
+            .When("its vertices are read back", [] {})
+            .Then("each corner survives exactly, in the order it was given",
+                  [state] {
+                      // The whole reason Point2F exists: an integer type would have rounded 10.5 and
+                      // 40.25, and a 1px stroke would alternate between one and two pixels wide as
+                      // its slope changed. Compared exactly rather than within a tolerance - these
+                      // are copies, not computations.
+                      const std::span<const UiVertex> vertices = state->list->vertices();
+                      mdux::spec::Checks checks;
+                      checks.expect(vertices.size() == 4, "a quad costs four vertices");
+                      if (vertices.size() != 4) {
+                          checks.raise();
+                          return;
+                      }
+                      for (std::size_t i = 0; i < 4; ++i) {
+                          checks.expect(vertices[i].x == slantedQuad[i].x,
+                                        std::format("corner {} keeps its x", i));
+                          checks.expect(vertices[i].y == slantedQuad[i].y,
+                                        std::format("corner {} keeps its y", i));
+                          checks.expect(vertices[i].mode == static_cast<std::uint32_t>(DrawMode::Solid),
+                                        std::format("corner {} is Solid", i));
+                          checks.expect(vertices[i].u == 0.0F && vertices[i].v == 0.0F,
+                                        std::format("corner {} carries a zeroed uv", i));
+                      }
+                      checks.expect(state->list->indices().size() == 6, "a quad costs six indices");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register quadRefusesDegenerate{
+    "A quad enclosing no area, or carrying a non-finite corner, is refused", "evidence-unit", [] {
+        struct State {
+            SmallStorage storage;
+            std::optional<DrawList> list;
+            std::optional<DrawError> collinear;
+            std::optional<DrawError> notANumber;
+            std::optional<DrawError> infinite;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-refuses-degenerate")
+            .Given("a list",
+                   [state] { state->list = requireCreated(state->storage.list(), "the list"); })
+            .When("degenerate quads are offered",
+                  [state] {
+                      constexpr std::array<Point2F, 4> collinear{
+                          Point2F{.x = 0.0F, .y = 0.0F},
+                          Point2F{.x = 1.0F, .y = 1.0F},
+                          Point2F{.x = 2.0F, .y = 2.0F},
+                          Point2F{.x = 3.0F, .y = 3.0F}
+                      };
+                      state->collinear = requireRejectedAdd(state->list->addSolidQuad(collinear, red),
+                                                            "a collinear quad");
+
+                      std::array<Point2F, 4> withNan = slantedQuad;
+                      withNan[2].y = std::numeric_limits<float>::quiet_NaN();
+                      state->notANumber = requireRejectedAdd(state->list->addSolidQuad(withNan, red),
+                                                              "a quad with a NaN corner");
+
+                      std::array<Point2F, 4> withInf = slantedQuad;
+                      withInf[0].x = std::numeric_limits<float>::infinity();
+                      state->infinite = requireRejectedAdd(state->list->addSolidQuad(withInf, red),
+                                                            "a quad with an infinite corner");
+                  })
+            .Then("each is DegenerateQuad and nothing was recorded",
+                  [state] {
+                      // The NaN case is the one that earns the finiteness test being first: every
+                      // check after it is a comparison, and a NaN compares false against all of
+                      // them - so an unchecked NaN would fall through the area test as "not
+                      // degenerate" and reach the rasteriser, where it is undefined behaviour.
+                      mdux::spec::Checks checks;
+                      checks.expect(state->collinear == DrawError::DegenerateQuad,
+                                    "a collinear quad is DegenerateQuad");
+                      checks.expect(state->notANumber == DrawError::DegenerateQuad,
+                                    "a NaN corner is DegenerateQuad");
+                      checks.expect(state->infinite == DrawError::DegenerateQuad,
+                                    "an infinite corner is DegenerateQuad");
+                      checks.expect(state->list->vertices().empty(), "no vertex was recorded");
+                      checks.expect(state->list->indices().empty(), "no index was recorded");
+                      checks.expect(state->list->commands().empty(), "no command was started");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register quadSharesTheBudget{
+    "A quad is held to the same budget a rectangle is", "evidence-unit", [] {
+        struct State {
+            Storage<8, 12, 2> storage;
+            std::optional<DrawList> list;
+            std::optional<DrawError> refused;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-shares-budget")
+            .Given("a list with room for exactly two primitives",
+                   [state] { state->list = requireCreated(state->storage.list(), "the list"); })
+            .When("a rectangle, a quad and one more quad are offered",
+                  [state] {
+                      requireAdded(state->list->addSolidRect(rect, red), "the rectangle");
+                      requireAdded(state->list->addSolidQuad(slantedQuad, red), "the first quad");
+                      state->refused = requireRejectedAdd(state->list->addSolidQuad(slantedQuad, red),
+                                                          "the third primitive");
+                  })
+            .Then("the third is refused on the vertex budget and the list is intact",
+                  [state] {
+                      // A quad that bypassed the budget would be the whole fixed-budget property
+                      // gone, since #257 makes a trace the primitive a screen records most of.
+                      mdux::spec::Checks checks;
+                      checks.expect(state->refused == DrawError::VertexBudgetExceeded,
+                                    "the third primitive exceeds the vertex budget");
+                      checks.expect(state->list->vertices().size() == 8, "two primitives were kept");
+                      checks.expect(state->list->indices().size() == 12, "their indices were kept");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register quadExtendsTheCurrentCommand{
+    "A quad under an unchanged clip extends the current command", "evidence-unit", [] {
+        struct State {
+            SmallStorage storage;
+            std::optional<DrawList> list;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("draw-quad-extends-command")
+            .Given("a list holding one rectangle",
+                   [state] {
+                       state->list = requireCreated(state->storage.list(), "the list");
+                       requireAdded(state->list->addSolidRect(rect, red), "the rectangle");
+                   })
+            .When("a quad is added under the same clip",
+                  [state] { requireAdded(state->list->addSolidQuad(slantedQuad, red), "the quad"); })
+            .Then("one command covers both",
+                  [state] {
+                      // The property that keeps a command budget meaningful: a trace of 256 samples
+                      // is 511 primitives and must not be 511 commands.
+                      const std::span<const DrawCommand> commands = state->list->commands();
+                      mdux::spec::Checks checks;
+                      checks.expect(commands.size() == 1, "one command");
+                      if (!commands.empty()) {
+                          checks.expect(commands[0].indexCount == 12, "it claims both primitives' indices");
                       }
                       checks.raise();
                   })

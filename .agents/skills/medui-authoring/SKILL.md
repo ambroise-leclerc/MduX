@@ -41,9 +41,21 @@ The runtime draws a `Panel` and, given a `TextBinding`, a `Label` (#242) — the
 compiled screen needs to reach glyphs: the font package, the text package for the locale the device
 is running, and its sidecar. Without one, a label is deferred rather than refused.
 
+It also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves (#255): that node's whole
+rectangle, in the single token it carries, which is exactly the pair its golden entry pins.
+
+A `SignalTrace` draws its **waveform** as well, given a `SignalBinding` (#257) — the second join, and
+the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
+ring of samples, and the range those samples are read against; that range is the host's because what
+a sample means in millivolts is a property of an amplifier rather than of a layout. Two things to
+know before you write one: a ring past `maxSamplesPerTrace` (256) is **refused rather than
+truncated**, and a bound trace dims its field so the full-tint stroke over it is visible — an unbound
+one is the opaque field #255 draws, unchanged.
+
 One limit is worth knowing before you write a screen: every other component is visited, counted in
 `FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
-this project has decided — and live-data components have no geometry until the frame does. Both are
+this project has decided — an `Image` needs a package this repository does not yet bake, and a
+`Clock` or `StatusIndicator` has no single tint a field could be painted in. All of them are
 [#17](https://github.com/ambroise-leclerc/MduX/issues/17).
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which

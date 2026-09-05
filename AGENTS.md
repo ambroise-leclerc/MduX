@@ -76,8 +76,9 @@ twelve of its children have landed: a screen goes from source to a bounded, budg
 golden-annotated set of rectangles, to a committed byte-compared artifact, to `constexpr` C++, to
 draw commands recorded without allocating, to a pixel compared under lavapipe. What the wave leaves
 behind is component content rather than path: a baked text package now lets the governed runtime
-draw a `Label`, while live-data and composite components such as `NumericDisplay` and `SignalTrace`
-remain deferred (`#17`).
+draw a `Label`, and `#257` has since given a `SignalTrace` its waveform, expanded on the device from
+a caller-owned ring buffer into the screen's pre-sized vertex budget. The rest of `#17` - `Image`,
+`NumericDisplay`'s digits, `StatusIndicator`, `TextInput`, `Button` - is still deferred.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
