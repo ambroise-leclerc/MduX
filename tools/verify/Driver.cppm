@@ -120,6 +120,15 @@ struct RunResult {
     /// committed: these are attachments for a person, and what a person needs from one is where it
     /// is. See `mdux.tools.verify.diff` for why the image stays outside the artifact entirely.
     std::vector<std::filesystem::path> diffImages;
+
+    /// Frame images this run wrote, one per render scope, pass or fail. Empty when no destination
+    /// was configured.
+    ///
+    /// A diff image answers "why did this fail"; this one answers "what does this screen look
+    /// like", which is a question a passing run is the only one that can answer honestly. Same
+    /// storage rule as `diffImages`: paths, because these are attachments for a person and nothing
+    /// here is committed.
+    std::vector<std::filesystem::path> frameImages;
 };
 
 /**
@@ -145,6 +154,15 @@ struct RunOptions {
     /// Where to write a diff image for each render scope that fails. Empty means write none, which
     /// is what a run that only wants a verdict asks for. Created if it does not exist.
     std::filesystem::path diffImageDirectory;
+
+    /// Where to write the rendered frame for each render scope, whether or not it failed. Empty
+    /// means write none. Created if it does not exist.
+    ///
+    /// Undimmed and unannotated, unlike the diff image: this is the frame the checks ran against, so
+    /// anything drawn on it would be this tool's opinion about a screen rather than the screen. It
+    /// moves bytes and never a claim - the same obligations run, in the same scopes, and the same
+    /// status is returned whether or not it is set.
+    std::filesystem::path frameImageDirectory;
 };
 
 /// Reads `<screenDirectory>/{package,goldens}.json`, resolves every referenced artifact and runs.
@@ -157,10 +175,15 @@ struct RunOptions {
 /// means, and in particular why an empty `artifactRoot` is supported input rather than a mistake.
 [[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const RunOptions& options);
 
+/// `frameImageDirectory` is last rather than beside its sibling, and deliberately: this is an
+/// exported aggregate, so a caller may initialise it positionally, and inserting a `path` before
+/// `format` would silently rebind an existing third argument from a `Format` to a path. Appending
+/// leaves every such call site compiling and meaning what it did.
 struct Invocation {
     std::filesystem::path    screenDirectory;
     std::filesystem::path    diffImageDirectory;
     mdux::tools::cli::Format format{mdux::tools::cli::Format::Text};
+    std::filesystem::path    frameImageDirectory;
 };
 
 [[nodiscard]] std::string usage();

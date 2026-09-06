@@ -55,5 +55,9 @@ sidecar = "runs.bin"
 # are named for the demonstrator model's output classes deliberately: the model has synthetic weights
 # and no clinical validity, so a translation reading "Bradycardia" would put a diagnosis on a screen
 # that has no right to show one. The screen source says the same thing beside the component.
-keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3"]
-values = ["Endoscope Monitor", "Class 0", "Class 1", "Class 2", "Class 3"]
+#
+# `STR-EM-HALT` is the `emergency-halt` critical button's label (#261). One word, because the widest
+# translation of it has to fit a 160px face beside four other topbar nodes - and because a control
+# whose label needs a sentence is a control an operator has to read before pressing.
+keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3", "STR-EM-HALT"]
+values = ["Endoscope Monitor", "Class 0", "Class 1", "Class 2", "Class 3", "HALT"]

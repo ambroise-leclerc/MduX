@@ -741,8 +741,8 @@ bool needsTextBudget(const ast::Screen& screen) {
             // count it, and `needsTextPackageApproval()` in `mdux.medui.schema` must agree about the
             // component. All three are one decision - "this screen needs a font" - asked in three
             // places.
-            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name)
-                || namesNumericTemplate(node.component, field.name) || namesFieldLength(node.component, field.name)) {
+            if (carriesFixedText(node.component, field.name) || namesDynamicText(node.component, field.name) || namesNumericTemplate(node.component, field.name)
+                || namesFieldLength(node.component, field.name)) {
                 return true;
             }
         }

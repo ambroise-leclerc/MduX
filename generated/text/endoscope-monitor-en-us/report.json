@@ -11,21 +11,21 @@
     "id": "endoscope-monitor-en-us",
     "locale": "en-US",
     "sidecar": "runs.bin",
-    "strings": 5
+    "strings": 6
   },
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
+      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     },
     {
       "path": "runs.bin",
-      "sha256": "853ddce9c50897631dc3593fff3d1d47e4de79e8ce04a1e520f61663aef71921"
+      "sha256": "bd09d7ab2998ac6fdbe9624129387f3d63358d4bede51f59e37096fceb81001d"
     }
   ],
   "recipe": {
     "path": "recipes/text/endoscope-monitor-en-us.toml",
-    "sha256": "f58e25d91d358ca43736ac327dd9c7db9c3c7d9df257f3b369949fb812b71320"
+    "sha256": "212b38a0e0f581a8c4f250e7000087cf525fe2815bee21b8797ecf916c118b95"
   },
   "schemaVersion": 1,
   "tool": "mdux-textbake",
