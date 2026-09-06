@@ -400,6 +400,46 @@ constexpr std::string_view colorUnknown = "Screen Tinted {\n"
                                           "    }\n"
                                           "}\n";
 
+// A child inside a component that is not a `Row`. The parser reads the component name as a field
+// name and meets `{` where a `:` belongs, which is what makes nesting a Row-only shape rather than a
+// general one.
+constexpr std::string_view leafNested = "Screen Nested {\n"
+                                        "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                        "    Label {\n"
+                                        "        id: outer;\n"
+                                        "        width: 120px;\n"
+                                        "        height: 20px;\n"
+                                        "        text: t(\"STR-TITLE\");\n"
+                                        "        color: Theme.Colors.Title;\n"
+                                        "        Label {\n"
+                                        "            id: inner;\n"
+                                        "            width: 10px;\n"
+                                        "            height: 10px;\n"
+                                        "            text: t(\"STR-TITLE\");\n"
+                                        "            color: Theme.Colors.Title;\n"
+                                        "        }\n"
+                                        "    }\n"
+                                        "}\n";
+
+// An annotation argument terminated as though it were a field. It is not one: the parser reads an
+// annotation's arguments unterminated, and the comma or the closing parenthesis is what ends them.
+constexpr std::string_view annotationSemicolon = "Screen Traced {\n"
+                                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                                 "    @safety_critical(cv_check: [Bounds, ColorHash];)\n"
+                                                 "    NumericDisplay {\n"
+                                                 "        id: pressure;\n"
+                                                 "        width: 200px;\n"
+                                                 "        height: 60px;\n"
+                                                 "        requirement: \"REQ-1\";\n"
+                                                 "        template: \"TPL-1\";\n"
+                                                 "        source: \"PRESSURE\";\n"
+                                                 "        color: Theme.Colors.ScoreDigits;\n"
+                                                 "    }\n"
+                                                 "}\n";
+
+constexpr std::array<std::pair<std::string_view, Code>, 1> leafRejects{{{leafNested, Code::UnexpectedToken}}};
+constexpr std::array<std::pair<std::string_view, Code>, 1> annotationArgumentRejects{{{annotationSemicolon, Code::UnexpectedToken}}};
+
 constexpr std::array memberAccepts{memberAccept};
 constexpr std::array listAccepts{listAccept};
 constexpr std::array imageAccepts{imageAccept};
@@ -409,7 +449,7 @@ constexpr std::array<std::pair<std::string_view, Code>, 1> fieldRejects{{{fieldN
 constexpr std::array<std::pair<std::string_view, Code>, 1> colorRejects{{{colorUnknown, Code::UnknownColorToken}}};
 constexpr std::array<std::pair<std::string_view, Code>, 0> noRejects{};
 
-constexpr std::array<Production, 17> productions{
+constexpr std::array<Production, 20> productions{
     {{.name    = "screen",
       .rule    = "screen = \"Screen\" identifier \"{\" { screen-member } \"}\" ;",
       .note    = "The whole file is one screen. Its name is CamelCase; the recipe records the pairing "
@@ -424,19 +464,21 @@ constexpr std::array<Production, 17> productions{
       .accepts = surfaceAccepts,
       .rejects = surfaceRejects},
      {.name    = "component",
-      .rule    = "component = identifier \"{\" { field | node } \"}\" ;",
-      .note    = "The component name must be one the dictionary carries, and its fields exactly the "
-                 "set that entry admits: every required one present, no unknown one. See components.",
+      .rule    = "component = leaf-component | row ;",
+      .note    = "Only a Row takes children. Every other component is a leaf, which is why this is an "
+                 "alternation rather than one recursive rule - a rule that let any component nest "
+                 "would describe a language this parser rejects.",
       .accepts = componentAccepts,
       .rejects = componentRejects},
      {.name    = "row",
-      .rule    = "row = \"Row\" \"{\" { field | component } \"}\" ;",
-      .note    = "A single-level horizontal group, flattened at compile time. A Row inside a Row is "
-                 "refused rather than flattened, because the solver has no second axis to give it.",
+      .rule    = "row = \"Row\" \"{\" { field | row-child } \"}\" ;",
+      .note    = "A single-level horizontal group, flattened at compile time. Its children are leaf "
+                 "components and may be annotated; a Row inside a Row is refused rather than "
+                 "flattened, because the solver has no second axis to give it.",
       .accepts = rowAccepts,
       .rejects = rowRejects},
      {.name    = "annotation",
-      .rule    = "annotation = \"@\" identifier [ \"(\" field { \",\" field } \")\" ] ;",
+      .rule    = "annotation = \"@\" identifier [ \"(\" annotation-argument { \",\" annotation-argument } \")\" ] ;",
       .note    = "Precedes the node it annotates. @safety_critical(cv_check: [...]) is the one "
                  "annotation with a rule attached: the node it marks must carry a requirement.",
       .accepts = annotationAccepts,
@@ -466,6 +508,27 @@ constexpr std::array<Production, 17> productions{
       .note    = "Annotations precede the component they mark, and there may be more than one.",
       .accepts = memberAccepts,
       .rejects = noRejects},
+     {.name    = "leaf-component",
+      .rule    = "leaf-component = identifier \"{\" { field } \"}\" ;",
+      .note    = "Every component but Row. The name must be one the dictionary carries and its fields "
+                 "exactly the set that entry admits: every required one present, no unknown one. See "
+                 "components. A child here is read as a field name, which is why nesting fails at the "
+                 "brace rather than at the dictionary.",
+      .accepts = componentAccepts,
+      .rejects = leafRejects},
+     {.name    = "row-child",
+      .rule    = "row-child = { annotation } leaf-component ;",
+      .note    = "What a Row may contain besides its own fields. Annotated, because a golden "
+                 "reference on a child of a Row is a thing an author writes.",
+      .accepts = rowAccepts,
+      .rejects = noRejects},
+     {.name    = "annotation-argument",
+      .rule    = "annotation-argument = identifier \":\" value ;",
+      .note    = "A field's shape **without** the terminating semicolon - the comma or the closing "
+                 "parenthesis ends it. Writing one as a field is the mistake this form exists to "
+                 "rule out.",
+      .accepts = annotationAccepts,
+      .rejects = annotationArgumentRejects},
      {.name    = "field",
       .rule    = "field = identifier \":\" value \";\" ;",
       .note    = "One property per line by convention, and the sibling implementation requires it - "
