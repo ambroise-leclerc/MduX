@@ -378,6 +378,112 @@ const mdux::spec::Register theIrDescribesTheCompileThatProducedIt{
             .Execute();
     }};
 
+const mdux::spec::Register aRefusedScreenStillYieldsItsIr{
+    "A screen refused by its text budget still hands over the box tree that refused it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-ir-on-refusal")
+            .Given("a screen whose title box is one pixel wide", [] {})
+            .When("the compiler refuses it and the caller asks for the diagnostic IR", [] {})
+            .Then("there are no artifacts, and the IR carries the refused node's resolved rectangle",
+                  [] {
+                      // The IR is worth most on the compile that failed, and the first revision of
+                      // #265 gave it up exactly then: `run()` returned before the outputs were
+                      // built, so `--dump-ir` on a screen reporting MEDUI-E050 printed nothing at
+                      // all. The dump and the artifacts are different things with different
+                      // lifetimes, and this scenario is what keeps them apart.
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-ir-refusal"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/too-narrow/TooNarrow.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen TooNarrow {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    Label {\n"
+                                 "        id: title;\n"
+                                 "        width: 1px;\n"
+                                 "        height: 20px;\n"
+                                 "        text: t(\"STR-EM-TITLE\");\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      const std::string recipeText = "[package]\n"
+                                                     "id            = \"too-narrow\"\n"
+                                                     "source        = \"recipes/screen/too-narrow/TooNarrow.medui\"\n"
+                                                     "surfaceWidth  = 400\n"
+                                                     "surfaceHeight = 200\n"
+                                                     "\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 1024\n"
+                                                     "maxIndices  = 1536\n"
+                                                     "maxCommands = 16\n"
+                                                     "\n"
+                                                     "[text]\n"
+                                                     "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+
+                      const auto recipe = md::parseRecipe(recipeText, "recipes/screen/too-narrow.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, "the recipe parses");
+                          checks.raise();
+                          return;
+                      }
+
+                      std::string ir;
+                      const auto  outputs = md::run(*recipe, "recipes/screen/too-narrow.toml", asBytes(recipeText), root.path(), diagnostics, &ir);
+                      checks.expect(!outputs.has_value(), "the screen is refused, so there is nothing to write");
+                      checks.expect(firstCode(diagnostics) == "MEDUI-E050", std::format("reported as MEDUI-E050, got '{}'", firstCode(diagnostics)));
+
+                      const auto parsed = mdux::evidence::json::parse(ir);
+                      if (!parsed.has_value()) {
+                          checks.expect(false, "the diagnostic IR is canonical JSON a reader accepts");
+                          checks.raise();
+                          return;
+                      }
+
+                      // The one thing the diagnostic cannot carry. MEDUI-E050 names the extent and
+                      // the locale; what an author cannot see from it is the box among its
+                      // neighbours, which is the rectangle read out here.
+                      bool        sawRefusedBox = false;
+                      const auto* nodes         = parsed->find("nodes");
+                      if (nodes != nullptr) {
+                          for (const auto& node : nodes->elements()) {
+                              const auto* id = node.find("id");
+                              if (id == nullptr || id->asString().value_or("") != "title") {
+                                  continue;
+                              }
+                              const auto* bounds = node.find("bounds");
+                              sawRefusedBox      = bounds != nullptr && bounds->find("width") != nullptr && bounds->find("width")->asInt().value_or(0) == 1;
+                          }
+                      }
+                      checks.expect(sawRefusedBox, "the IR carries the refused node's resolved rectangle");
+
+                      // And is honest about what it does not have. `TextBudgetResult` empties its
+                      // measurements whenever it reports, so no caller - this one included - can
+                      // read the budget of a screen that failed its budget check.
+                      const auto* budgets = parsed->find("textBudgets");
+                      checks.expect(budgets != nullptr && budgets->elements().empty(), "and no text budgets, because the budgeting pass reported instead");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aTextInputOnlyScreenCompiles{
     "A screen whose only text-bearing component is a TextInput compiles end to end",
     "evidence-unit",

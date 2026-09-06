@@ -38,7 +38,8 @@ namespace medui = mdux::tools::medui;
 
 /// Reads the recipe and runs every compiler stage. Shared by both modes: `verify` must produce the
 /// same bytes `bake` would before it can compare them to what is committed.
-[[nodiscard]] std::optional<medui::CompileOutputs> produce(const std::string& recipePath, std::vector<cli::Diagnostic>& diagnostics) {
+[[nodiscard]] std::optional<medui::CompileOutputs>
+produce(const std::string& recipePath, std::vector<cli::Diagnostic>& diagnostics, std::string* diagnosticIr = nullptr) {
     const std::optional<std::vector<std::byte>> recipeBytes = medui::readFile(recipePath);
     if (!recipeBytes.has_value()) {
         // The one diagnostic this tool raises itself; every other one comes from a stage.
@@ -61,7 +62,7 @@ namespace medui = mdux::tools::medui;
     // The working directory is the repository root - `mdux_bake_artifact()` runs every baker that
     // way - so every path the recipe names and every path the report records stays repository
     // relative, which is what keeps a report free of absolute paths.
-    return medui::run(*recipe, recipePath, *recipeBytes, std::filesystem::current_path(), diagnostics);
+    return medui::run(*recipe, recipePath, *recipeBytes, std::filesystem::current_path(), diagnostics, diagnosticIr);
 }
 
 /**
@@ -159,27 +160,39 @@ namespace medui = mdux::tools::medui;
             std::println(std::cerr, "{}: --dump-ir takes exactly one recipe path", medui::compilerToolName);
             return 2;
         }
-        // The real compile, and then its own working printed rather than written. A recipe that
-        // does not compile reports its diagnostics and exits non-zero exactly as `bake` would:
-        // there is no IR for a screen that was refused, and printing a partial one would describe a
-        // compile that did not happen.
+        // The real compile, and then its own working printed rather than written.
+        //
+        // **A refused screen still prints its IR**, which the first revision got backwards: it
+        // returned early on any diagnostic, so the one case this flag is most useful for - a box
+        // that failed its text budget - produced a diagnostic and not one byte of working. The
+        // compile still fails and the exit status still says so; what changes is that the boxes go
+        // to stdout while the reason goes to stderr, which is the arrangement `> screen.ir.json`
+        // wants.
+        //
+        // A screen that never reached a box tree leaves the IR empty and prints nothing. That is not
+        // a partial dump withheld: there is no working to show for a source that did not parse or a
+        // layout that did not resolve.
         std::vector<cli::Diagnostic>         diagnostics;
         const std::string                    recipePath{arguments[1]};
+        std::string                          ir;
         std::optional<medui::CompileOutputs> outputs;
         try {
-            outputs = produce(recipePath, diagnostics);
+            outputs = produce(recipePath, diagnostics, &ir);
         } catch (const std::exception& error) {
             std::println(std::cerr, "{}: the compiler stopped on an internal error: {}", medui::compilerToolName, error.what());
             return 2;
         }
+        // Diagnostics to stderr, so a redirected stdout holds the document alone.
         const std::string rendered = cli::render(diagnostics, cli::Format::Text, medui::compilerToolName);
         if (!rendered.empty()) {
             std::print(std::cerr, "{}", rendered);
         }
-        if (!outputs.has_value()) {
-            return cli::exitStatus(diagnostics);
+        if (outputs.has_value()) {
+            ir = outputs->irJson;
         }
-        std::print(std::cout, "{}", outputs->irJson);
+        if (!ir.empty()) {
+            std::print(std::cout, "{}", ir);
+        }
         return cli::exitStatus(diagnostics);
     }
 

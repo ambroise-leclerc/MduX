@@ -100,6 +100,36 @@ class RealRepositoryTests(unittest.TestCase):
             "the four outputs the wrapper fixes, read from it rather than restated here",
         )
 
+    def test_the_screen_lists_the_source_it_is_compiled_from(self):
+        # `mdux_compile_screen()` reads the `.medui` path out of the recipe and appends it, so it is
+        # in no call site - which is how a manifest came to list a screen's font and text packages
+        # and not the screen.
+        meduic = next(t for t in self.manifest["tools"] if t["name"] == "mdux-meduic")
+        screen = next(b for b in meduic["bakes"] if b["kind"] == "screen")
+        medui_sources = [s for s in screen["sources"] if s.endswith(".medui")]
+        self.assertEqual(1, len(medui_sources), f"the screen's own source is missing: {screen['sources']}")
+        self.assertTrue((self.root / medui_sources[0]).is_file())
+        # And the packages the render half reads, which the wrapper appends for the same reason.
+        self.assertIn("generated/shader/mdux-ui/package.json", screen["sources"])
+
+    def test_the_screen_records_both_halves_of_its_production_sequence(self):
+        # `THEN_TOOLS mdux-verify-bake` writes verification.json and extends the report. A manifest
+        # crediting `mdux-meduic` with all four outputs and leaving `mdux-verify-bake` with none
+        # would tell a consumer how to produce three quarters of a bundle.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        expected = ["mdux-meduic", "mdux-verify-bake"]
+        for name in expected:
+            screens = [b for b in by_name[name]["bakes"] if b["kind"] == "screen"]
+            with self.subTest(tool=name):
+                self.assertTrue(screens, f"{name} is part of the screen sequence and must say so")
+                self.assertEqual(expected, screens[0]["toolchain"], "in the order they run")
+
+    def test_a_single_tool_artifact_names_only_that_tool(self):
+        # The counterweight: a baker that produces its artifact alone must not acquire a sequence.
+        shaderbake = next(t for t in self.manifest["tools"] if t["name"] == "mdux-shaderbake")
+        for baked in shaderbake["bakes"]:
+            self.assertEqual(["mdux-shaderbake"], baked["toolchain"])
+
     def test_a_shared_grammar_tool_carries_the_shared_options(self):
         # `--format` and `--help` are spelled in tools/common/Cli.cpp, not in each entry point, so a
         # manifest reading only the file would be accurate about the source and wrong about the tool.

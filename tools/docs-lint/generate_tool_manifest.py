@@ -22,6 +22,10 @@ verifying a list is *complete* - a manifest missing a tool mentions nothing that
   `CMakeLists.txt`, which already name `TOOL`, `RECIPE`, `SOURCES` and `OUTPUTS` per artifact. The
   build uses those exact values to run the baker and to byte-compare what it produced, so nothing
   else in the tree is a better description of what a baker consumes and emits.
+  `mdux_compile_screen()` supplies three of those itself - the `.medui` the recipe names, the
+  committed packages the render half reads, and `THEN_TOOLS` - so the wrapper is read as well as the
+  call site. Reading only the call site described a screen built by one tool from six files, when it
+  is built by two in sequence from nine.
 - **Diagnostic codes** come from the string literals in the tool's own source directory. Every code
   in this repository is a `PREFIX###` literal - `mdux.tools.medui.diagnostics` registers them in a
   table and the other tools spell them at the call site, which its own header comment records - so
@@ -114,26 +118,54 @@ def parse_bake_call(body: str) -> dict:
     return call
 
 
-def screen_outputs(root: Path) -> list[str]:
-    """The output set `mdux_compile_screen()` fixes, read from the wrapper rather than restated.
+def screen_wrapper(root: Path) -> dict:
+    """What `mdux_compile_screen()` supplies that a call site does not: tools, inputs and outputs.
 
-    ADR-012 makes three of them unconditional and ADR-014 decision 4 adds the fourth, and the
-    wrapper's own comment says it fixes them there so a call site cannot drop one. Reading them from
-    it keeps this manifest following that decision instead of carrying a fifth copy of it.
+    Read from the wrapper rather than restated, because the wrapper is where each of them is *fixed*
+    - ADR-012 makes three outputs unconditional and ADR-014 decision 4 adds the fourth, and the
+    wrapper's own comment says they sit there so that a call site cannot drop one. A manifest that
+    listed only what a call site writes described a screen built by a single tool from six files,
+    when it is built by two tools in sequence from nine.
     """
-    # Anchored to the keyword at the start of its own line: the file's header comment *mentions*
-    # OUTPUTS while explaining why the set is fixed here, and a search that took the first match
-    # read that sentence instead of the block and reported a screen with no outputs at all.
     text = (root / SCREEN_CMAKE).read_text(encoding="utf-8")
-    match = re.search(r"^\s*OUTPUTS\s*$(?P<body>.*?)^\s*\)", text, re.DOTALL | re.MULTILINE)
-    if not match:
+
+    def block(keyword: str) -> list[str]:
+        # Anchored to the keyword on its own line: the file's header comment *mentions* OUTPUTS
+        # while explaining why the set is fixed there, and a search taking the first match read
+        # that sentence instead of the block.
+        match = re.search(rf"^\s*{keyword}\s*$(?P<body>.*?)^\s*(?:[A-Z_]+\s*$|\))", text, re.DOTALL | re.MULTILINE)
+        if not match:
+            return []
+        found = []
+        for line in match.group("body").splitlines():
+            token = line.strip()
+            if token and not token.startswith("#") and not token.startswith("$"):
+                found.append(token)
+        return found
+
+    then = re.search(r"^\s*THEN_TOOLS\s+(?P<tools>[\w\s-]+?)$", text, re.MULTILINE)
+    return {
+        "thenTools": then.group("tools").split() if then else [],
+        # The literal paths the wrapper appends to every screen's SOURCES, beside the `${...}`
+        # expansions it also adds - those are the call site's own list and the recipe's source,
+        # both resolved separately below.
+        "sources": sorted(block("SOURCES")),
+        "outputs": sorted(block("OUTPUTS")),
+    }
+
+
+def recipe_source(root: Path, recipe: str) -> list[str]:
+    """The `.medui` file a screen recipe names, which the wrapper reads and adds as an input.
+
+    Not in any call site: `_mdux_screen_check_recipe()` parses it out of the recipe and appends it,
+    which is why the first draft of this manifest listed a screen's font and text packages and not
+    the screen.
+    """
+    path = root / recipe
+    if not path.is_file():
         return []
-    outputs = []
-    for line in match.group("body").splitlines():
-        token = line.strip()
-        if token and not token.startswith("#"):
-            outputs.append(token)
-    return sorted(outputs)
+    match = re.search(r'^\s*source\s*=\s*"([^"]+)"', path.read_text(encoding="utf-8"), re.MULTILINE)
+    return [match.group(1)] if match else []
 
 
 def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
@@ -141,7 +173,7 @@ def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
     text = (root / ROOT_CMAKE).read_text(encoding="utf-8")
     grouped: dict[str, list[dict]] = {}
 
-    def record(tool: str, call: dict, outputs: list[str], kind: str) -> None:
+    def record(tool: str, call: dict, outputs: list[str], kind: str, toolchain: list[str] | None = None) -> None:
         grouped.setdefault(tool, []).append(
             {
                 "kind": kind,
@@ -149,6 +181,10 @@ def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
                 "recipe": call.get("RECIPE", ""),
                 "sources": sorted(call.get("SOURCES", [])),
                 "outputs": outputs,
+                # Every tool that runs, in order. One entry for a baker that produces its artifact
+                # alone; two for a screen, which `mdux-meduic` compiles and `mdux-verify-bake` then
+                # renders and extends. A consumer asking "how do I produce this bundle" reads this.
+                "toolchain": toolchain if toolchain is not None else [tool],
             }
         )
 
@@ -158,9 +194,19 @@ def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
         if tool is not None:
             record(tool, call, sorted(call.get("OUTPUTS", [])), call.get("KIND", ""))
 
-    fixed = screen_outputs(root)
+    wrapper = screen_wrapper(root)
     for match in SCREEN_RE.finditer(text):
-        record("mdux-meduic", parse_bake_call(match.group("body")), fixed, "screen")
+        call = parse_bake_call(match.group("body"))
+        recipe = call.get("RECIPE", "")
+        # Everything the screen is actually built from: the call site's list, the `.medui` the
+        # recipe names, and the committed packages the wrapper appends for the render half.
+        call["SOURCES"] = sorted(set(call.get("SOURCES", [])) | set(wrapper["sources"]) | set(recipe_source(root, recipe)))
+        # Both tools, in the order they run. A bundle produced by `mdux-meduic` alone is missing
+        # `verification.json`, so a manifest naming one tool would tell a consumer how to produce
+        # three quarters of an artifact - see `toolchain` on the entry.
+        record("mdux-meduic", call, wrapper["outputs"], "screen", ["mdux-meduic", *wrapper["thenTools"]])
+        for follower in wrapper["thenTools"]:
+            record(follower, call, wrapper["outputs"], "screen", ["mdux-meduic", *wrapper["thenTools"]])
 
     for artifacts in grouped.values():
         artifacts.sort(key=lambda entry: (entry["kind"], entry["id"]))

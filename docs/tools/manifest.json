@@ -14,6 +14,9 @@
           "recipe": "recipes/image/brand-mark.toml",
           "sources": [
             "recipes/image/brand-mark/brand-mark.qoi"
+          ],
+          "toolchain": [
+            "mdux-imagebake"
           ]
         }
       ],
@@ -110,8 +113,15 @@
             "generated/font/dejavu-ui/package.json",
             "generated/image/brand-mark/package.json",
             "generated/image/brand-mark/pixels.rgba",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
             "generated/text/endoscope-monitor-en-us/package.json",
-            "generated/text/endoscope-monitor-en-us/runs.bin"
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+          ],
+          "toolchain": [
+            "mdux-meduic",
+            "mdux-verify-bake"
           ]
         }
       ],
@@ -181,6 +191,9 @@
           "recipe": "recipes/model/ecg-demo.toml",
           "sources": [
             "recipes/model/ecg-demo/ecg-demo.safetensors"
+          ],
+          "toolchain": [
+            "mdux-mlbake"
           ]
         },
         {
@@ -194,6 +207,9 @@
           "recipe": "recipes/model/ecg-demo-alt.toml",
           "sources": [
             "recipes/model/ecg-demo/ecg-demo-alt.safetensors"
+          ],
+          "toolchain": [
+            "mdux-mlbake"
           ]
         }
       ],
@@ -299,6 +315,9 @@
           "sources": [
             "recipes/shader/mdux-ui/ui.frag.spv",
             "recipes/shader/mdux-ui/ui.vert.spv"
+          ],
+          "toolchain": [
+            "mdux-shaderbake"
           ]
         },
         {
@@ -313,6 +332,9 @@
           "sources": [
             "recipes/shader/triangle/triangle.frag.spv",
             "recipes/shader/triangle/triangle.vert.spv"
+          ],
+          "toolchain": [
+            "mdux-shaderbake"
           ]
         }
       ],
@@ -395,6 +417,9 @@
           "recipe": "recipes/font/dejavu-ui.toml",
           "sources": [
             "recipes/font/dejavu-ui/DejaVuSans.ttf"
+          ],
+          "toolchain": [
+            "mdux-textbake"
           ]
         },
         {
@@ -408,6 +433,9 @@
           "recipe": "recipes/text/endoscope-monitor-en-us.toml",
           "sources": [
             "generated/font/dejavu-ui/package.json"
+          ],
+          "toolchain": [
+            "mdux-textbake"
           ]
         }
       ],
@@ -455,7 +483,34 @@
       "sourceDirectory": "tools/text"
     },
     {
-      "bakes": [],
+      "bakes": [
+        {
+          "id": "endoscope-monitor",
+          "kind": "screen",
+          "outputs": [
+            "goldens.json",
+            "package.json",
+            "report.json",
+            "verification.json"
+          ],
+          "recipe": "recipes/screen/endoscope-monitor.toml",
+          "sources": [
+            "generated/font/dejavu-ui/atlas.bin",
+            "generated/font/dejavu-ui/package.json",
+            "generated/image/brand-mark/package.json",
+            "generated/image/brand-mark/pixels.rgba",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
+            "generated/text/endoscope-monitor-en-us/package.json",
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+          ],
+          "toolchain": [
+            "mdux-meduic",
+            "mdux-verify-bake"
+          ]
+        }
+      ],
       "diagnosticCodes": [
         "VUI001",
         "VUI002",

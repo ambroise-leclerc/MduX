@@ -167,6 +167,10 @@ struct CompileOutputs {
  * @param recipeBytes the recipe's own bytes, for its digest
  * @param root        the directory the recipe's paths resolve against - the repository root
  * @param diagnostics appended to; a stage that reports anything stops the compile
+ * @param diagnosticIr when non-null, receives the resolved IR as soon as layout succeeds, and is
+ *        refreshed before a successful return - so a compile that a *later* stage refused still
+ *        leaves the working behind. See `Ir.cppm`; `--dump-ir` is what passes it, and a run that
+ *        never reached a box tree leaves it untouched, because there is no working to show.
  *
  * Returns nullopt when any stage rejects the screen, when an input cannot be read, or when the
  * compiled screen fails its own schema.
@@ -175,7 +179,8 @@ struct CompileOutputs {
                                                 std::string_view              recipePath,
                                                 std::span<const std::byte>    recipeBytes,
                                                 const std::filesystem::path&  root,
-                                                std::vector<cli::Diagnostic>& diagnostics);
+                                                std::vector<cli::Diagnostic>& diagnostics,
+                                                std::string*                  diagnosticIr = nullptr);
 
 /// Writes `outputs` into `outputDir`, creating it if needed. All three files, always: ADR-012 makes
 /// them unconditional outputs, so "this screen pins nothing" is an empty array rather than a missing

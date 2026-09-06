@@ -19,9 +19,26 @@
  *
  * This is that working: the bounded box tree `resolveLayout()` produced, each node's authored fields
  * with their values rendered, the colour every `Theme.Colors.<Token>` resolves to, and the text
- * measurement each budgeted node was checked against. An agent that has just been handed
- * `MEDUI-E050` - "this box is too small for its widest approved translation" - can read the extent
- * that failed and the locale that produced it rather than inferring them.
+ * measurement each budgeted node was checked against.
+ *
+ * ## What it shows for a screen that was refused, and what it does not
+ *
+ * A stage after layout may refuse the screen, and the IR is handed over anyway - `run()`'s
+ * `diagnosticIr` - because the box tree is exactly what a reader wants when that happens. This
+ * paragraph used to promise more than that, and the promise was wrong in both halves: it said an
+ * author handed `MEDUI-E050` could read "the extent that failed and the locale that produced it"
+ * here, when the first revision printed no IR at all for a refused compile, and when both numbers
+ * are in the diagnostic already - *"text key 'STR-EM-TITLE' in locale 'en-US' needs 152px of width,
+ * and 'title' resolved to 1px"*.
+ *
+ * What the IR adds on a failure is the rest of the picture the diagnostic cannot carry: the refused
+ * node's resolved rectangle among its neighbours, its other fields, and the colours it draws with.
+ * `textBudgets` is **empty** on such a run, and deliberately so rather than by omission -
+ * `TextBudgetResult` empties `measurements` whenever it reports, so that no caller can consume the
+ * budget of a screen that failed its budget check, and this module is a caller like any other.
+ *
+ * A screen that never reached a box tree leaves the IR empty and prints nothing. That is not a
+ * partial dump withheld: there is no working to show for a source that did not parse.
  *
  * ## Floats are bit patterns, for the same reason baked artifacts are
  *
