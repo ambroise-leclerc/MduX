@@ -293,6 +293,211 @@ class MainTests(unittest.TestCase):
             self.assertEqual(1, drift.main(["--repo-root", tmp]))
 
 
+class ValidatorTests(unittest.TestCase):
+    """The JSON Schema subset the recipe schemas are checked with.
+
+    Written out because a hand-written validator that quietly accepts everything is worse than no
+    validator: the check would go green while documenting nothing.
+    """
+
+    def test_type_mismatches_are_reported_with_the_path(self):
+        problems = drift.validate({"id": 7}, {"type": "object", "properties": {"id": {"type": "string"}}}, "o")
+        self.assertEqual(["o.id: expected string, found int"], problems)
+
+    def test_a_boolean_is_not_an_integer(self):
+        # `bool` is a subclass of `int` in Python and is not an integer in JSON, so a validator
+        # that used isinstance() alone would accept `true` where a count belongs.
+        self.assertTrue(drift.validate(True, {"type": "integer"}, "v"))
+        self.assertFalse(drift.validate(True, {"type": "boolean"}, "v"))
+
+    def test_required_and_undeclared_properties_are_both_drift(self):
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["id"],
+            "properties": {"id": {"type": "string"}},
+        }
+        self.assertIn("required property 'id' is absent", drift.validate({}, schema, "o")[0])
+        self.assertIn("carries 'extra'", drift.validate({"id": "a", "extra": 1}, schema, "o")[0])
+
+    def test_items_are_validated_by_index(self):
+        schema = {"type": "array", "items": {"type": "string"}}
+        self.assertEqual(["a[1]: expected string, found int"], drift.validate(["x", 2], schema, "a"))
+
+    def test_enum_and_bounds(self):
+        self.assertTrue(drift.validate("qoi", {"enum": ["png"]}, "v"))
+        self.assertTrue(drift.validate(0, {"type": "integer", "minimum": 1}, "v"))
+        self.assertTrue(drift.validate("", {"type": "string", "minLength": 1}, "v"))
+        self.assertTrue(drift.validate([], {"type": "array", "minItems": 1}, "v"))
+
+    def test_pattern_and_unique_items_are_enforced_not_merely_named(self):
+        # Both were in SUPPORTED_KEYWORDS before they were implemented, which is the one hole
+        # check_recipe_schema_keywords() could not close about itself: a schema could claim either
+        # constraint and the checker would accept a report violating it.
+        self.assertTrue(drift.validate("Xy", {"type": "string", "pattern": "^[a-z]+$"}, "v"))
+        self.assertFalse(drift.validate("xy", {"type": "string", "pattern": "^[a-z]+$"}, "v"))
+        duplicated = drift.validate(["a", "a"], {"type": "array", "uniqueItems": True}, "v")
+        self.assertEqual(1, len(duplicated))
+        self.assertIn("appears more than once", duplicated[0])
+        self.assertFalse(drift.validate(["a", "b"], {"type": "array", "uniqueItems": True}, "v"))
+
+    def test_every_supported_keyword_is_actually_implemented(self):
+        # The list and the validator are two places, so this asserts they agree rather than
+        # trusting that whoever adds a keyword to one remembers the other.
+        probes = {
+            "type": ({"type": "string"}, 1),
+            "enum": ({"enum": ["a"]}, 1),
+            "minimum": ({"minimum": 5}, 4),
+            "minLength": ({"minLength": 2}, "a"),
+            "minItems": ({"minItems": 2}, ["a"]),
+            "pattern": ({"pattern": "^z"}, "a"),
+            "uniqueItems": ({"uniqueItems": True}, ["a", "a"]),
+            "required": ({"required": ["a"]}, {}),
+            "additionalProperties": ({"additionalProperties": False, "properties": {}}, {"a": 1}),
+        }
+        for keyword, (schema, offending) in probes.items():
+            with self.subTest(keyword=keyword):
+                self.assertTrue(
+                    drift.validate(offending, schema, "v"),
+                    f"'{keyword}' is in SUPPORTED_KEYWORDS but constrains nothing",
+                )
+        # The rest are structural or documentation, and carry no constraint to enforce.
+        structural = {"$schema", "$id", "title", "description", "properties", "items", "examples"}
+        self.assertEqual(drift.SUPPORTED_KEYWORDS, set(probes) | structural)
+
+    def test_only_the_false_spelling_of_additional_properties_is_accepted(self):
+        # The schema-valued form constrains the properties a schema does not name, and validate()
+        # reads anything that is not False as "do not check" - so a schema using it would let an
+        # undeclared property of any type through in silence. Refused at the guard instead.
+        schema_valued = {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {"type": "integer"},
+        }
+        problems = drift.check_recipe_schema_keywords(schema_valued, "s")
+        self.assertEqual(1, len(problems))
+        self.assertIn("implements the `false` spelling only", problems[0])
+        # And the reason it must be refused: validate() finds nothing wrong with a string there.
+        self.assertEqual([], drift.validate({"anything": "a string"}, schema_valued, "o"))
+
+        self.assertEqual([], drift.check_recipe_schema_keywords(
+            {"type": "object", "properties": {}, "additionalProperties": False}, "s"))
+
+    def test_an_unimplemented_keyword_is_refused_rather_than_ignored(self):
+        # The failure mode a subset validator actually has: a keyword it does not know constrains
+        # nothing, and the schema reads as though it does.
+        problems = drift.check_recipe_schema_keywords(
+            {"type": "object", "properties": {"id": {"type": "string", "maxLength": 3}}}, "s"
+        )
+        self.assertEqual(1, len(problems))
+        self.assertIn("maxLength", problems[0])
+
+
+class RecipeSchemaTests(unittest.TestCase):
+    """Every committed report's resolved options, against the schema for its kind."""
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[2]
+
+    def test_every_recipe_kind_has_a_schema_that_parses(self):
+        for kind, relative, _ in drift.RECIPE_SCHEMAS:
+            with self.subTest(kind=kind):
+                path = self.root / relative
+                self.assertTrue(path.is_file(), f"{relative} is bound but missing")
+                json.loads(path.read_text(encoding="utf-8"))
+
+    def test_every_recipe_directory_has_a_schema(self):
+        # The acceptance is "one schema per recipe kind", so a kind added under recipes/ with no
+        # schema is the gap this catches - the check cannot notice a kind it was never told about.
+        kinds = {p.name for p in (self.root / "recipes").iterdir() if p.is_dir()}
+        self.assertEqual(kinds, {kind for kind, _, _ in drift.RECIPE_SCHEMAS})
+
+    def test_every_schema_example_validates_against_its_own_schema(self):
+        # An example that would not validate is the contradiction a reader is most likely to be
+        # misled by, and `examples` is documentation to every other part of this checker - so it
+        # went unnoticed until review. The font schema shipped with `atlas` pinned to `""` and an
+        # example saying `"atlas.bin"`.
+        for kind, relative, _ in drift.RECIPE_SCHEMAS:
+            with self.subTest(kind=kind):
+                schema = json.loads((self.root / relative).read_text(encoding="utf-8"))
+                self.assertTrue(schema.get("examples"), f"{relative} carries no example to check")
+                for index, example in enumerate(schema["examples"]):
+                    self.assertEqual([], drift.validate(example, schema, f"examples[{index}]"))
+
+    def test_the_forms_a_baker_emits_with_an_empty_path_validate(self):
+        """The recipe shapes that legitimately carry an empty string where a path usually goes.
+
+        Three of these have now been wrong at some point in review, each the same mistake: a
+        `minLength` on a member the baker deliberately leaves empty. They are asserted together so
+        the next one is a failing test rather than a third round.
+        """
+        root = self.root
+
+        # A text package positioning nothing: `parseStrings()` accepts `font` and `[strings]`
+        # together or neither, so an empty path means "this package positions nothing".
+        text = json.loads((root / "docs/recipes/text.schema.json").read_text(encoding="utf-8"))
+        stringless = {"id": "empty-en-us", "font": "", "atlas": "dejavu-ui", "locale": "en-US",
+                      "sidecar": "runs.bin", "strings": 0}
+        self.assertEqual([], drift.validate(stringless, text, "options"))
+
+        # A font recipe leaves both of the text-only members on the shared Recipe empty.
+        font = json.loads((root / "docs/recipes/font.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual([""], font["properties"]["atlas"]["enum"])
+        self.assertEqual([""], font["properties"]["locale"]["enum"])
+
+        # A screen with no text approves no locale and needs no font to measure against.
+        screen = json.loads((root / "docs/recipes/screen.schema.json").read_text(encoding="utf-8"))
+        self.assertNotIn("minLength", screen["properties"]["fontPackage"])
+
+    def test_the_cross_property_invariants_are_checked(self):
+        # What no JSON Schema keyword can state: a constraint relating two properties, or reading a
+        # pair of members inside an item. Each is a rule a baker refuses at parse time.
+        unequal = {"moduleIds": ["a", "b"], "moduleSources": ["x"]}
+        self.assertIn("moduleIds against", drift.check_shader_options(unequal, "r")[0])
+        self.assertEqual([], drift.check_shader_options({"moduleIds": ["a"], "moduleSources": ["x"]}, "r"))
+
+        inverted = {"charset": [{"name": "n", "first": 99, "last": 10}]}
+        self.assertIn("is above last", drift.check_font_options(inverted, "r")[0])
+
+        screen = {"dynamicText": [{"name": "S", "produces": [{"first": 99, "last": 10}]}]}
+        self.assertIn("is above last", drift.check_screen_options(screen, "r")[0])
+        self.assertEqual([], drift.check_screen_options({"dynamicText": []}, "r"))
+
+    def test_a_malformed_report_is_reported_rather_than_crashing(self):
+        """A semantic checker must not run over a value that failed its type contract.
+
+        `moduleIds: null` reached `len(None)` and took the whole lint down with a traceback -
+        the tool crashing on exactly the input it exists to reject. The ordering rule is the fix:
+        schema validation first, semantics only when it found nothing.
+        """
+        root = self.root
+        schema = json.loads((root / "docs/recipes/shader.schema.json").read_text(encoding="utf-8"))
+        broken = {"id": "triangle", "sidecar": "shaders.spv", "moduleIds": None, "moduleSources": []}
+
+        problems = drift.validate(broken, schema, "options")
+        self.assertTrue(problems, "the schema must catch the wrong type")
+        self.assertIn("expected array", problems[0])
+        # The guarantee the ordering gives: the semantic checker is never reached with this value.
+        # Asserted as the contract rather than by calling it, because calling it is what crashed.
+        self.assertIn("shader", drift.SEMANTIC_CHECKS)
+
+    def test_schema_examples_go_through_the_semantic_checks_too(self):
+        # An example carrying unequal shader arrays would otherwise be a published illustration of
+        # something the baker refuses - the schema constraints alone cannot see it.
+        schema = json.loads(
+            (self.root / "docs/recipes/shader.schema.json").read_text(encoding="utf-8")
+        )
+        for index, example in enumerate(schema["examples"]):
+            with self.subTest(example=index):
+                self.assertEqual([], drift.validate(example, schema, f"examples[{index}]"))
+                self.assertEqual([], drift.check_shader_options(example, f"examples[{index}]"))
+
+    def test_the_committed_reports_validate(self):
+        findings, checked = drift.check_recipe_schemas(self.root)
+        self.assertEqual([], findings)
+        self.assertGreater(checked, 0, "the check passed without reading a single report")
+
+
 class RealRepositoryTests(unittest.TestCase):
     """The bindings must name files that exist, whatever branch this is checked out on."""
 

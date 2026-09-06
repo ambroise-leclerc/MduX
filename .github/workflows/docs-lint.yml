@@ -69,7 +69,12 @@ jobs:
     # Issue #33: the alignment between docs/<standard>/schemas/*.json and the governance types is
     # the point of those schemas. A schema that has silently diverged from the type it documents
     # still looks authoritative, which is what makes the drift worth failing a build over.
-    - name: Check schemas have not drifted from the governance types
+    #
+    # Since #264 the same run also checks docs/recipes/*.schema.json against every committed
+    # generated/<kind>/<id>/report.json - the resolved option set each baker records. One mechanism
+    # rather than two, which is what that issue asked for: a recipe schema and a governance schema
+    # rot the same way and there is no reason to notice them differently.
+    - name: Check schemas have not drifted from the types and bakers they document
       env:
         PYTHONDONTWRITEBYTECODE: "1"
       run: python3 tools/docs-lint/check_schema_type_drift.py

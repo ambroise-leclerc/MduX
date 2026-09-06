@@ -152,6 +152,20 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
+Each kind's **resolved** option set — every default expanded, which is what ADR-007 decision 4
+requires `report.json` to record — is published as `docs/recipes/<kind>.schema.json` (#264). Those
+schemas document what a report's `options` carries rather than the literal TOML, because a schema
+describing only the recipe would document a different thing from what the report names.
+
+They are checked rather than written and left: `tools/docs-lint/check_schema_type_drift.py` validates
+every committed `generated/<kind>/<id>/report.json` against the schema for its kind, in both
+directions — an option a baker records that the schema does not declare, and a property the schema
+declares that no report carries, are both drift. Binding to the reports rather than to a C++ struct
+is deliberate: a baker's options are a *projection* (`ShaderBake`'s `Recipe` holds `modules`, and
+`toOptions()` flattens it into `moduleIds` and `moduleSources`), and the reports are byte-compared
+against a fresh bake on four toolchains, so checking against them is checking against the bakers
+exactly.
+
 Eight artifacts are committed today:
 
 | Artifact | Baker | Payload |
