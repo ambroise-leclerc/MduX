@@ -385,6 +385,36 @@ void writeFrameImage(RunResult&                              result,
     return ground;
 }
 
+/**
+ * @brief How many layers the runtime paints over the ground for this node, in this scope.
+ *
+ * `colorHash()` allows one UNORM step of device rounding per composite, so this is the number that
+ * keeps a correct frame from reading as a `ForeignColour`. One everywhere except the node that made
+ * the distinction necessary: a `Button` or a `CriticalButton` that paints its field and then its
+ * word, which is two.
+ *
+ * ## All three conditions, because two of them were not enough
+ *
+ * Being a button is not sufficient, and neither is the scope having a locale. `hasText` is a
+ * property of the *screen* - some node on it carries a key - so a button that names none would take
+ * two composites from a neighbour's text, while painting only its face. That is slack granted where
+ * none is needed, and one extra UNORM step on a face is exactly enough to admit a tint that is
+ * wrong. `textKeyOf()` is the third condition, and it is the node's own.
+ *
+ * A validated screen cannot hold such a button - `validatePayload()` requires a non-empty `labelKey`
+ * for both - but this driver deliberately never calls `validate()`, so the case is reachable from a
+ * bundle assembled by hand, which is the kind of input ADR-014 decision 2 expects it to fail closed
+ * on rather than trust.
+ *
+ * The fourth case does not need a condition: a node whose key names a run with **no ink** paints one
+ * layer, not two, and never reaches a golden check at all, because `TextExpectation::create()`
+ * refuses an inkless run and the run stops at VUI007 before any check is raised.
+ */
+[[nodiscard]] std::size_t goldenCompositesFor(const mdux::medui::CompiledNode& node, bool hasText) {
+    const bool paintsAWordOverItsFace = hasText && mdux::medui::buttonFace(node.payload).has_value() && !mv::textKeyOf(node).empty();
+    return paintsAWordOverItsFace ? 2U : 1U;
+}
+
 /// What a node's *run* is composited onto, and how many device composites produced it.
 struct TextGround {
     mdux::core::ColorRgba8 color{};
@@ -416,22 +446,6 @@ struct TextGround {
  * this would then name the wrong colour. It is unreachable: `TextExpectation::create()` refuses a
  * run with no ink outright, so no check is ever raised for such a node.
  */
-/**
- * @brief How many layers the runtime paints over the ground for this node, in this scope.
- *
- * `colorHash()` allows one UNORM step of device rounding per composite, so this is the number that
- * keeps a correct frame from reading as a `ForeignColour`. One everywhere except the node that made
- * the distinction necessary: a `Button` or a `CriticalButton` with a locale bound paints its field
- * and then its word, which is two.
- *
- * `hasText` is what keeps that from being slack granted where none is needed. In a locale-free scope
- * a button paints an opaque face and nothing over it, which is one composite exactly - and the
- * default an expectation gets when nobody says otherwise.
- */
-[[nodiscard]] std::size_t goldenCompositesFor(const mdux::medui::CompiledNode& node, bool hasText) {
-    return hasText && mdux::medui::buttonFace(node.payload).has_value() ? 2U : 1U;
-}
-
 [[nodiscard]] TextGround textGroundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
     const mdux::core::ColorRgba8 under = groundFor(screen, node);
 
