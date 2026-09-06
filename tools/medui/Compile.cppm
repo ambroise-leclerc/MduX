@@ -143,6 +143,14 @@ struct CompileOutputs {
     std::string screenId;     ///< for the summary line
     std::size_t nodeCount{0};
     std::size_t goldenCount{0};
+
+    /// The resolved intermediate representation as canonical JSON (#265), which `--dump-ir` prints.
+    ///
+    /// Built on every compile and written nowhere unless a caller asks for it. See `Ir.cppm` for why
+    /// it is not computed on demand: a dump produced by a second run of the stages could disagree
+    /// with the artifact beside it, and describing a different compile is the one thing an
+    /// intermediate representation must not do.
+    std::string irJson;
 };
 
 /// Reads a file as bytes. Returns nullopt when it cannot be opened or read.

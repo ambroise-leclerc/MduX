@@ -45,7 +45,7 @@ ADR-012 describes.
 | Remaining | 2 |
 | Waves shipped | 5, plus half of Wave 6 (#16 in v0.7.0; #17 open) |
 | Standalone open issues | 3 (#280, #281, #282) |
-| Open epic children | 1 (#265) |
+| Open epic children | 0 |
 
 ## The thesis
 
@@ -487,10 +487,9 @@ the IR dump.
 - #118 Stable JSON diagnostic envelope across all tools · _closed_
 - #263 S4 Machine-readable `.medui` grammar and `--explain` — **shipped**; `docs/medui/grammar.json`, emitted from the compiler's own tables
 - #264 S5 JSON Schemas for every recipe kind — **shipped**; `docs/recipes/*.schema.json`, checked against every committed report
-- #265 S6 `--dump-ir` JSON and a generated tool manifest
+- #265 S6 `--dump-ir` JSON and a generated tool manifest — **shipped**; the resolved IR, and a manifest generated from the build's own registration
 
-_S1–S5 closed. S6 (#265) follows #15 and #18 — closed on 23 August and 3 August — and is
-actionable._
+_S1–S6 closed. #19 has no open child._
 
 ---
 
@@ -550,5 +549,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 _Epic status re-verified against `develop` @ `51eb779` · 3 September 2026_
 _13 epics · 11 delivered · Waves 1–5 shipped · Wave 6 half-shipped in v0.7.0 (#16 done, #17 open) · no enforcement gaps outstanding_
-_3 standalone open issues: #280, #281, #282 (all from #255) · 1 open epic child (#265)_
+_3 standalone open issues: #280, #281, #282 (all from #255) · 0 open epic children_
 _All epics on GitHub_

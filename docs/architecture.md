@@ -302,6 +302,29 @@ beneath the node, together with the number of device composites that produced it
 checks allow that many UNORM steps on a ground pixel. Zero keeps the old exactness, which is what
 every other node still passes: a slack granted where none is needed is a wrong tint waved through.
 
+### The toolchain as a file an agent can read
+
+`docs/tools/manifest.json` lists every host tool: its entry point, whether it speaks the shared
+`bake`/`verify` grammar or its own, the long options it accepts, the library it links, the
+diagnostic-code family that library publishes, and the artifacts it bakes with their recipes,
+sources and outputs.
+
+It is **generated** — from `add_executable()` in `tools/CMakeLists.txt` and the
+`mdux_bake_artifact()` and `mdux_compile_screen()` call sites — and `generate_tool_manifest.py
+--check` gates it on the docs-only CI job. That derivation is the point rather than a convenience:
+a hand-written manifest is a present-tense claim about what exists, true until somebody adds a tool,
+and `mdux-named-mechanisms` would not catch the lapse because it resolves the names a document
+mentions rather than verifying a list is complete. A manifest missing a tool mentions nothing that
+fails to resolve.
+
+`mdux-meduic --dump-ir <recipe>` answers the question no published document can: what *this* compile
+resolved. It prints the bounded box tree the layout solver produced, each node's authored fields with
+their values as the source wrote them, the RGBA every `Theme.Colors.<Token>` resolves to, and the
+text measurement each budgeted node was checked against — so an author handed `MEDUI-E050` can read
+the extent that failed and the locale that produced it instead of inferring them. Colours are `u32`
+bit patterns for ADR-007 decision 2's reason, and the IR is built on every compile rather than on
+demand, so a dump cannot describe a different compile from the artifact beside it.
+
 ### The language as a file an agent can read
 
 `mdux-meduic --grammar` emits the whole `.medui` contract as canonical JSON, committed as

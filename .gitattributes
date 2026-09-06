@@ -24,6 +24,11 @@ tests/medui/fixtures/** -text
 # alone reported 24041 bytes committed against 23235 emitted, which is one carriage return per line.
 docs/medui/** -text
 
+# The generated tool manifest is compared byte for byte by `generate_tool_manifest.py --check`, so
+# it needs the rule for the same reason `docs/medui/` does. Added with the file rather than after the
+# MSVC leg found it, which is how the two entries above this one were arrived at.
+docs/tools/** -text
+
 # Rendered-truth fixtures are also parsed and byte-compared as canonical JSON. Keep their bytes
 # identical when Windows checks them out, including fixtures that deliberately contain no golden.
 tests/verify_ui/fixtures/** -text

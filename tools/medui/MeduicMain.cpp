@@ -16,14 +16,15 @@
  *
  * ## Two informational modes that produce no artifact
  *
- * `--grammar` and `--explain` (#263) are handled here, *before* `cli::parse()`, rather than by
- * widening the shared grammar. That placement is the decision worth recording: `cli::Mode` is
+ * `--grammar` and `--explain` (#263) and `--dump-ir` (#265) are handled here, *before*
+ * `cli::parse()`, rather than by widening the shared grammar. That placement is the decision worth recording: `cli::Mode` is
  * `Bake` or `Verify` for six other bakers, and neither of these is either - they read no recipe,
  * write no file and produce no diagnostic. Adding them upstream would have put two modes that mean
  * nothing for a font or a shader into every one of those tools' usage text.
  *
- * Both answer from `mdux.tools.medui.grammar`, which reads the compiler's own tables. This file
- * holds only the argument shapes and the exit statuses.
+ * The first two answer from `mdux.tools.medui.grammar`, which reads the compiler's own tables.
+ * `--dump-ir` runs the real compile and prints what it resolved, writing nothing. This file holds
+ * only the argument shapes and the exit statuses.
  */
 import std;
 import mdux.tools.cli;
@@ -153,6 +154,35 @@ namespace medui = mdux::tools::medui;
         return 0;
     }
 
+    if (arguments[0] == "--dump-ir") {
+        if (arguments.size() != 2) {
+            std::println(std::cerr, "{}: --dump-ir takes exactly one recipe path", medui::compilerToolName);
+            return 2;
+        }
+        // The real compile, and then its own working printed rather than written. A recipe that
+        // does not compile reports its diagnostics and exits non-zero exactly as `bake` would:
+        // there is no IR for a screen that was refused, and printing a partial one would describe a
+        // compile that did not happen.
+        std::vector<cli::Diagnostic>         diagnostics;
+        const std::string                    recipePath{arguments[1]};
+        std::optional<medui::CompileOutputs> outputs;
+        try {
+            outputs = produce(recipePath, diagnostics);
+        } catch (const std::exception& error) {
+            std::println(std::cerr, "{}: the compiler stopped on an internal error: {}", medui::compilerToolName, error.what());
+            return 2;
+        }
+        const std::string rendered = cli::render(diagnostics, cli::Format::Text, medui::compilerToolName);
+        if (!rendered.empty()) {
+            std::print(std::cerr, "{}", rendered);
+        }
+        if (!outputs.has_value()) {
+            return cli::exitStatus(diagnostics);
+        }
+        std::print(std::cout, "{}", outputs->irJson);
+        return cli::exitStatus(diagnostics);
+    }
+
     if (arguments[0] == "--explain" || arguments[0].starts_with("--explain=")) {
         const std::optional<std::string_view> code = explainArgument(arguments);
         if (!code.has_value() || code->empty()) {
@@ -193,9 +223,10 @@ int main(int argc, char** argv) {
         // `--help` is a flag that does not exist for the reader it was built for.
         std::println(std::cerr, "{}", error.what());
         std::println(std::cerr,
-                     "\n{0} also answers two questions about the language itself:\n"
+                     "\n{0} also answers three questions that produce no artifact:\n"
                      "  {0} --grammar              the .medui contract as canonical JSON\n"
-                     "  {0} --explain <MEDUI-EXXX> what one diagnostic code means, and how to fix it",
+                     "  {0} --explain <MEDUI-EXXX> what one diagnostic code means, and how to fix it\n"
+                     "  {0} --dump-ir <recipe>     what a compile resolved: boxes, colours, budgets",
                      medui::compilerToolName);
         return 2;
     }
