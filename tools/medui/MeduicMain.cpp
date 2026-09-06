@@ -112,13 +112,19 @@ namespace medui = mdux::tools::medui;
     }
 }
 
-/// The value after `--explain`, whether it was written joined or separate, or nothing.
+/// The code `--explain` was given, in either spelling, or nothing when the invocation is not one.
+///
+/// The arity is part of the answer rather than a separate check, which is what the first revision
+/// got wrong: it enforced a count for `--explain CODE` and not for `--explain=CODE`, so
+/// `--explain=MEDUI-E034 --format=json` printed an explanation and exited 0 while silently
+/// discarding a flag `cli::parse()` would have had an opinion about. One argument for the joined
+/// form and two for the separate one, decided here, where the form is known.
 [[nodiscard]] std::optional<std::string_view> explainArgument(std::span<const std::string_view> arguments) {
     constexpr std::string_view joined = "--explain=";
     if (arguments[0].starts_with(joined)) {
-        return arguments[0].substr(joined.size());
+        return arguments.size() == 1 ? std::optional{arguments[0].substr(joined.size())} : std::nullopt;
     }
-    return arguments.size() >= 2 ? std::optional{arguments[1]} : std::nullopt;
+    return arguments.size() == 2 ? std::optional{arguments[1]} : std::nullopt;
 }
 
 /**
@@ -149,7 +155,7 @@ namespace medui = mdux::tools::medui;
 
     if (arguments[0] == "--explain" || arguments[0].starts_with("--explain=")) {
         const std::optional<std::string_view> code = explainArgument(arguments);
-        if (!code.has_value() || code->empty() || (arguments[0] == "--explain" && arguments.size() != 2)) {
+        if (!code.has_value() || code->empty()) {
             std::println(std::cerr, "{}: --explain takes exactly one diagnostic code, for example MEDUI-E030", medui::compilerToolName);
             return 2;
         }

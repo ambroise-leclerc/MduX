@@ -717,6 +717,125 @@
       "rule": "value = pixels | \"Fill\" | number | string | text-key | image-ref | color-token | identifier | point | list ;"
     },
     {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "screen-member",
+      "note": "A screen's body is these three in any order. `layout` and `surface` may each appear once; everything else is a node.",
+      "rejects": [],
+      "rule": "screen-member = layout | surface | node ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "layout",
+      "note": "The identifier is the layout kind - `Vertical` is the one the solver implements. The block carries `spacing` and `padding`, both sizes.",
+      "rejects": [
+        {
+          "code": "MEDUI-E016",
+          "source": "Screen Members {\n    layout: if { spacing: 0px; }\n}\n"
+        }
+      ],
+      "rule": "layout = \"layout\" \":\" identifier [ \"{\" { field } \"}\" ] [ \";\" ] ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "node",
+      "note": "Annotations precede the component they mark, and there may be more than one.",
+      "rejects": [],
+      "rule": "node = { annotation } component ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "field",
+      "note": "One property per line by convention, and the sibling implementation requires it - it splits a component body on the first colon of each line. This parser is token-based and would accept several on one line, so writing one per line is what keeps a screen portable in both directions.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Members {\n    layout: Vertical { spacing 0px; padding: 0px; }\n}\n"
+        }
+      ],
+      "rule": "field = identifier \":\" value \";\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "pixels",
+      "note": "The only unit. `Fill` is the other size form and takes no number; there is no percentage, em or point.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Sized {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    surface: 1280pt, 720px;\n}\n"
+        }
+      ],
+      "rule": "pixels = number \"px\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "point",
+      "note": "What `position:` and `surface:` take. A lone `Npx` is a size; the comma is what makes it a point.",
+      "rejects": [],
+      "rule": "point = pixels \",\" pixels ;"
+    },
+    {
+      "accepts": [
+        "Screen Listed {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    StatusIndicator {\n        id: state;\n        width: 100px;\n        height: 20px;\n        requirement: \"REQ-1\";\n        source: \"STATE\";\n        states: [t(\"STR-OK\"), t(\"STR-ALARM\")];\n        colors: [Theme.Colors.Nominal, Theme.Colors.Fault];\n    }\n}\n"
+      ],
+      "name": "list",
+      "note": "Used by `states:` and `colors:` on a StatusIndicator, which must pair one to one.",
+      "rejects": [],
+      "rule": "list = \"[\" [ value { \",\" value } ] \"]\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "text-key",
+      "note": "The only way to write localizable text. A literal in such a field is refused, because a compiled screen is locale-free and carries the key rather than the words.",
+      "rejects": [
+        {
+          "code": "MEDUI-E017",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: \"Endoscope Monitor\";\n        color: Theme.Colors.Title;\n    }\n}\n"
+        },
+        {
+          "code": "MEDUI-E034",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Clock {\n        id: wall;\n        width: 120px;\n        height: 20px;\n        format: HH_MM;\n    }\n}\n"
+        }
+      ],
+      "rule": "text-key = \"t\" \"(\" string \")\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Branded {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Image {\n        id: brand;\n        width: 240px;\n        height: 72px;\n        source: img(\"brand-mark\");\n    }\n}\n"
+      ],
+      "name": "image-ref",
+      "note": "Names a baked image package by id. The screen approves that package's identity and intrinsic extent; no compressed bytes and no decoder reach a device.",
+      "rejects": [],
+      "rule": "image-ref = \"img\" \"(\" string \")\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "color-token",
+      "note": "Written `Theme.Colors.<Token>`, and validated against the governed table rather than against the shape - see themeTokens for the set. The parser keeps the dotted path whole and unresolved; semantic analysis is what refuses an unknown one.",
+      "rejects": [
+        {
+          "code": "MEDUI-E030",
+          "source": "Screen Tinted {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.NotInTheTable;\n    }\n}\n"
+        }
+      ],
+      "rule": "color-token = identifier { \".\" identifier } ;"
+    },
+    {
       "accepts": [],
       "name": "forbidden",
       "note": "Absent by design rather than unimplemented. A screen whose shape depends on data is a screen whose worst case no compiler can measure, which is what every bound in this language rests on.",

@@ -264,12 +264,19 @@ rather than this skill when you want the *set* of something — every component,
 component admits and whether it is required, every field domain and its written form, both closed
 named-value sets, every theme token, and every diagnostic with its summary and fix hint.
 
-Every one of those sections is **read off the compiler's own tables**, so it cannot be stale: adding
-a component or a theme token changes that file without anybody editing it. The one written section
-is `productions`, the EBNF, and it carries executable examples — sources the compiler accepts, and
-sources it rejects with the code each rejection must produce — which a test runs through the real
-front end. What that buys is worth knowing precisely: the examples are verified, the EBNF prose is
-checked only as far as they reach.
+Every one of those sections is **read off the compiler's own tables**, so what `--grammar` prints is
+never stale: adding a component or a theme token changes the emitted document with nobody editing
+anything. The committed file is a separate thing — a snapshot an agent can read without building —
+and a snapshot can be stale in a working tree. `medui-grammar-committed-copy-is-current` *detects*
+that, it does not prevent it: a file edited or left behind is caught the next time the suite runs,
+not at the moment something reads it. If it matters that you have the current one, run
+`mdux-meduic --grammar` rather than trusting the checkout.
+
+The one written section is `productions`, the EBNF, and it carries executable examples — sources the
+compiler accepts, and sources it rejects with the code each rejection must produce — which a test
+runs through the real front end. What that buys is worth knowing precisely: the examples are
+verified, the EBNF prose is checked only as far as they reach. What *is* checked mechanically is
+that no rule refers to a form the document leaves undefined, so the contract is at least closed.
 
 `mdux-meduic --explain MEDUI-E034` answers for one code:
 

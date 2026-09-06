@@ -130,10 +130,97 @@ const mdux::spec::Register examplesMatchTheParser{
                           }
                       }
 
-                      // A production with no examples proves nothing, and a document of them would
-                      // pass this scenario while verifying not one rule.
-                      checks.expect(accepted + rejected >= productions.size(),
-                                    std::format("every production carries at least one example, got {} across {}", accepted + rejected, productions.size()));
+                      // Per production rather than in total, which is what the first revision got
+                      // wrong: an aggregate count is satisfied by one production carrying every
+                      // example and the rest carrying none, and a rule with no example is a rule
+                      // this scenario does not check at all.
+                      for (const json::Value& production : productions) {
+                          const std::size_t examples = arrayAt(production, "accepts").size() + arrayAt(production, "rejects").size();
+                          checks.expect(examples > 0, std::format("production '{}' carries at least one example", stringAt(production, "name")));
+                      }
+                      checks.expect(accepted + rejected > 0, "the document verifies something");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register everyNonterminalIsDefined{
+    "No published rule refers to a form the document does not define",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-grammar-has-no-dangling-nonterminal")
+            .Given("every production's rule text", [] {})
+            .When("the names it refers to are extracted and looked up", [] {})
+            .Then("each resolves to another production or to a token the lexicon publishes",
+                  [] {
+                      // A contract a consumer cannot implement from is not a contract. The first
+                      // revision published `screen = ... { screen-member } ...` and never defined
+                      // `screen-member`, along with five other dangling names - which no test could
+                      // have noticed, because every *example* still behaved as published.
+                      //
+                      // Nonterminals are the unquoted lowercase words; quoted text is a literal and
+                      // `(* ... *)` is a comment. `identifier`, `number` and `string` are the three
+                      // forms the lexer produces directly, so they resolve against the tokens
+                      // section rather than against a production.
+                      mdux::spec::Checks checks;
+
+                      std::vector<std::string_view> defined;
+                      for (const json::Value& production : arrayAt(document(), "productions")) {
+                          defined.push_back(stringAt(production, "name"));
+                      }
+                      for (const std::string_view lexical : {"identifier", "number", "string"}) {
+                          defined.push_back(lexical);
+                      }
+
+                      const auto referenced = [](std::string_view rule) {
+                          std::vector<std::string> names;
+                          std::string              word;
+                          bool                     inQuote   = false;
+                          bool                     inComment = false;
+                          for (std::size_t index = 0; index < rule.size(); ++index) {
+                              const char character = rule[index];
+                              if (!inQuote && !inComment && character == '(' && index + 1 < rule.size() && rule[index + 1] == '*') {
+                                  inComment = true;
+                              }
+                              if (inComment) {
+                                  if (character == ')' && index > 0 && rule[index - 1] == '*') {
+                                      inComment = false;
+                                  }
+                                  continue;
+                              }
+                              if (character == '"') {
+                                  inQuote = !inQuote;
+                                  word.clear();
+                                  continue;
+                              }
+                              if (!inQuote && ((character >= 'a' && character <= 'z') || character == '-')) {
+                                  word.push_back(character);
+                                  continue;
+                              }
+                              if (!word.empty()) {
+                                  names.push_back(word);
+                                  word.clear();
+                              }
+                          }
+                          if (!word.empty()) {
+                              names.push_back(word);
+                          }
+                          return names;
+                      };
+
+                      std::size_t checked = 0;
+                      for (const json::Value& production : arrayAt(document(), "productions")) {
+                          const std::string_view name = stringAt(production, "name");
+                          const std::string_view rule = stringAt(production, "rule");
+                          for (const std::string& reference : referenced(rule)) {
+                              // The rule opens by naming itself, which is a definition rather than a
+                              // reference - but it resolves either way, so nothing special is needed.
+                              checks.expect(std::ranges::find(defined, reference) != defined.end(),
+                                            std::format("'{}' refers to '{}', which the document defines", name, reference));
+                              ++checked;
+                          }
+                      }
+                      checks.expect(checked > 0, "the extraction found references at all, rather than passing on an empty set");
                       checks.raise();
                   })
             .Execute();

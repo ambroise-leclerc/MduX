@@ -35,26 +35,36 @@ void put(json::Value& object, std::string key, json::Value value) {
     return json::Value::string(std::string{value});
 }
 
-/// Every `TokenKind`, in enumeration order.
-///
-/// Listed rather than iterated because C++ has no enumerator range, and pinned by a count assertion
-/// in `GrammarTests.cpp` so that adding a token without adding it here fails a test rather than
-/// publishing a lexicon missing one.
-constexpr std::array tokenKinds{TokenKind::Identifier,
-                                TokenKind::Number,
-                                TokenKind::String,
-                                TokenKind::At,
-                                TokenKind::LBrace,
-                                TokenKind::RBrace,
-                                TokenKind::LParen,
-                                TokenKind::RParen,
-                                TokenKind::LBracket,
-                                TokenKind::RBracket,
-                                TokenKind::Colon,
-                                TokenKind::Semicolon,
-                                TokenKind::Comma,
-                                TokenKind::Dot,
-                                TokenKind::EndOfFile};
+/**
+ * @brief Every member of a `std::uint8_t`-backed enumeration that `name` gives a spelling to.
+ *
+ * The enumerators are found by scanning the underlying value range rather than by listing them, and
+ * that is the whole mechanism by which this document cannot omit one. A hand-written list is a
+ * second place to remember, and an emitter that forgot an entry would publish a lexicon missing a
+ * token while every test that counted the list went on passing.
+ *
+ * What makes the scan safe is that each `name` below is a switch with **no default**, so `-Wswitch`
+ * under `-Werror` makes adding an enumerator a build failure until that switch handles it - and once
+ * it does, this picks the new member up with no further edit. Casting an out-of-range value to a
+ * scoped enumeration with a fixed underlying type is well defined, which is what lets the scan ask
+ * the question at all.
+ *
+ * A member the spelling function deliberately leaves empty is skipped, which is how `Unspecified`
+ * stays out of the closed named-value sets: it is the aggregate default a compiled screen may never
+ * carry, not a spelling an author can write.
+ */
+template <typename Enum, typename Name>
+[[nodiscard]] std::vector<Enum> members(Name name) {
+    static_assert(std::is_same_v<std::underlying_type_t<Enum>, std::uint8_t>, "the scan is over a uint8_t range");
+    std::vector<Enum> found;
+    for (std::uint32_t value = 0; value <= std::numeric_limits<std::uint8_t>::max(); ++value) {
+        const auto candidate = static_cast<Enum>(value);
+        if (!name(candidate).empty()) {
+            found.push_back(candidate);
+        }
+    }
+    return found;
+}
 
 [[nodiscard]] std::string_view tokenName(TokenKind kind) noexcept {
     switch (kind) {
@@ -93,19 +103,6 @@ constexpr std::array tokenKinds{TokenKind::Identifier,
     // than an unnamed entry in a document an agent is entitled to trust.
     return {};
 }
-
-constexpr std::array fieldDomains{FieldDomain::Identifier,
-                                  FieldDomain::Size,
-                                  FieldDomain::Point,
-                                  FieldDomain::String,
-                                  FieldDomain::TextKey,
-                                  FieldDomain::TextKeyList,
-                                  FieldDomain::ColorToken,
-                                  FieldDomain::ColorTokenList,
-                                  FieldDomain::ImageRef,
-                                  FieldDomain::Number,
-                                  FieldDomain::ClockFormatName,
-                                  FieldDomain::SystemEventName};
 
 [[nodiscard]] std::string_view domainName(FieldDomain domain) noexcept {
     switch (domain) {
@@ -346,7 +343,73 @@ constexpr std::string_view forbiddenSource = "Screen Scripted {\n"
 constexpr std::array<std::string_view, 0>                  forbiddenAccepts{};
 constexpr std::array<std::pair<std::string_view, Code>, 1> forbiddenRejects{{{forbiddenSource, Code::ForbiddenConstruct}}};
 
-constexpr std::array<Production, 7> productions{
+// The forms the productions above and below refer to. One accepted screen each, minimal and
+// self-contained: an agent reading `pixels` should not have to follow a cross-reference to see one.
+
+constexpr std::string_view memberAccept = "Screen Members {\n"
+                                          "    layout: Vertical { spacing: 8px; padding: 0px; }\n"
+                                          "    surface: 400px, 200px;\n"
+                                          "    Label {\n"
+                                          "        id: title;\n"
+                                          "        width: 120px;\n"
+                                          "        height: 20px;\n"
+                                          "        text: t(\"STR-TITLE\");\n"
+                                          "        color: Theme.Colors.Title;\n"
+                                          "    }\n"
+                                          "}\n";
+
+constexpr std::string_view layoutBadKind = "Screen Members {\n"
+                                           "    layout: if { spacing: 0px; }\n"
+                                           "}\n";
+
+constexpr std::string_view fieldNoColon = "Screen Members {\n"
+                                          "    layout: Vertical { spacing 0px; padding: 0px; }\n"
+                                          "}\n";
+
+constexpr std::string_view listAccept = "Screen Listed {\n"
+                                        "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                        "    StatusIndicator {\n"
+                                        "        id: state;\n"
+                                        "        width: 100px;\n"
+                                        "        height: 20px;\n"
+                                        "        requirement: \"REQ-1\";\n"
+                                        "        source: \"STATE\";\n"
+                                        "        states: [t(\"STR-OK\"), t(\"STR-ALARM\")];\n"
+                                        "        colors: [Theme.Colors.Nominal, Theme.Colors.Fault];\n"
+                                        "    }\n"
+                                        "}\n";
+
+constexpr std::string_view imageAccept = "Screen Branded {\n"
+                                         "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                         "    Image {\n"
+                                         "        id: brand;\n"
+                                         "        width: 240px;\n"
+                                         "        height: 72px;\n"
+                                         "        source: img(\"brand-mark\");\n"
+                                         "    }\n"
+                                         "}\n";
+
+constexpr std::string_view colorUnknown = "Screen Tinted {\n"
+                                          "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                          "    Label {\n"
+                                          "        id: title;\n"
+                                          "        width: 120px;\n"
+                                          "        height: 20px;\n"
+                                          "        text: t(\"STR-TITLE\");\n"
+                                          "        color: Theme.Colors.NotInTheTable;\n"
+                                          "    }\n"
+                                          "}\n";
+
+constexpr std::array memberAccepts{memberAccept};
+constexpr std::array listAccepts{listAccept};
+constexpr std::array imageAccepts{imageAccept};
+
+constexpr std::array<std::pair<std::string_view, Code>, 1> layoutRejects{{{layoutBadKind, Code::ForbiddenConstruct}}};
+constexpr std::array<std::pair<std::string_view, Code>, 1> fieldRejects{{{fieldNoColon, Code::UnexpectedToken}}};
+constexpr std::array<std::pair<std::string_view, Code>, 1> colorRejects{{{colorUnknown, Code::UnknownColorToken}}};
+constexpr std::array<std::pair<std::string_view, Code>, 0> noRejects{};
+
+constexpr std::array<Production, 17> productions{
     {{.name    = "screen",
       .rule    = "screen = \"Screen\" identifier \"{\" { screen-member } \"}\" ;",
       .note    = "The whole file is one screen. Its name is CamelCase; the recipe records the pairing "
@@ -386,6 +449,67 @@ constexpr std::array<Production, 7> productions{
                  "is refused, because a screen carrying one locale's words is not locale-free.",
       .accepts = valueAccepts,
       .rejects = valueRejects},
+     {.name    = "screen-member",
+      .rule    = "screen-member = layout | surface | node ;",
+      .note    = "A screen's body is these three in any order. `layout` and `surface` may each appear "
+                 "once; everything else is a node.",
+      .accepts = memberAccepts,
+      .rejects = noRejects},
+     {.name    = "layout",
+      .rule    = "layout = \"layout\" \":\" identifier [ \"{\" { field } \"}\" ] [ \";\" ] ;",
+      .note    = "The identifier is the layout kind - `Vertical` is the one the solver implements. "
+                 "The block carries `spacing` and `padding`, both sizes.",
+      .accepts = memberAccepts,
+      .rejects = layoutRejects},
+     {.name    = "node",
+      .rule    = "node = { annotation } component ;",
+      .note    = "Annotations precede the component they mark, and there may be more than one.",
+      .accepts = memberAccepts,
+      .rejects = noRejects},
+     {.name    = "field",
+      .rule    = "field = identifier \":\" value \";\" ;",
+      .note    = "One property per line by convention, and the sibling implementation requires it - "
+                 "it splits a component body on the first colon of each line. This parser is "
+                 "token-based and would accept several on one line, so writing one per line is what "
+                 "keeps a screen portable in both directions.",
+      .accepts = memberAccepts,
+      .rejects = fieldRejects},
+     {.name    = "pixels",
+      .rule    = "pixels = number \"px\" ;",
+      .note    = "The only unit. `Fill` is the other size form and takes no number; there is no "
+                 "percentage, em or point.",
+      .accepts = memberAccepts,
+      .rejects = surfaceRejects},
+     {.name    = "point",
+      .rule    = "point = pixels \",\" pixels ;",
+      .note    = "What `position:` and `surface:` take. A lone `Npx` is a size; the comma is what "
+                 "makes it a point.",
+      .accepts = memberAccepts,
+      .rejects = noRejects},
+     {.name    = "list",
+      .rule    = "list = \"[\" [ value { \",\" value } ] \"]\" ;",
+      .note    = "Used by `states:` and `colors:` on a StatusIndicator, which must pair one to one.",
+      .accepts = listAccepts,
+      .rejects = noRejects},
+     {.name    = "text-key",
+      .rule    = "text-key = \"t\" \"(\" string \")\" ;",
+      .note    = "The only way to write localizable text. A literal in such a field is refused, "
+                 "because a compiled screen is locale-free and carries the key rather than the words.",
+      .accepts = memberAccepts,
+      .rejects = valueRejects},
+     {.name    = "image-ref",
+      .rule    = "image-ref = \"img\" \"(\" string \")\" ;",
+      .note    = "Names a baked image package by id. The screen approves that package's identity and "
+                 "intrinsic extent; no compressed bytes and no decoder reach a device.",
+      .accepts = imageAccepts,
+      .rejects = noRejects},
+     {.name    = "color-token",
+      .rule    = "color-token = identifier { \".\" identifier } ;",
+      .note    = "Written `Theme.Colors.<Token>`, and validated against the governed table rather "
+                 "than against the shape - see themeTokens for the set. The parser keeps the dotted "
+                 "path whole and unresolved; semantic analysis is what refuses an unknown one.",
+      .accepts = memberAccepts,
+      .rejects = colorRejects},
      {.name    = "forbidden",
       .rule    = "(* no production: loops, conditionals, recursion and scripting are absent *)",
       .note    = "Absent by design rather than unimplemented. A screen whose shape depends on data "
@@ -396,9 +520,10 @@ constexpr std::array<Production, 7> productions{
 };
 
 [[nodiscard]] json::Value tokenSection() {
-    std::vector<json::Value> rows;
-    rows.reserve(tokenKinds.size());
-    for (const TokenKind kind : tokenKinds) {
+    const std::vector<TokenKind> kinds = members<TokenKind>(tokenName);
+    std::vector<json::Value>     rows;
+    rows.reserve(kinds.size());
+    for (const TokenKind kind : kinds) {
         json::Value row = json::Value::emptyObject();
         put(row, "name", text(tokenName(kind)));
         put(row, "description", text(describe(kind)));
@@ -408,9 +533,10 @@ constexpr std::array<Production, 7> productions{
 }
 
 [[nodiscard]] json::Value domainSection() {
-    std::vector<json::Value> rows;
-    rows.reserve(fieldDomains.size());
-    for (const FieldDomain domain : fieldDomains) {
+    const std::vector<FieldDomain> domains = members<FieldDomain>(domainName);
+    std::vector<json::Value>       rows;
+    rows.reserve(domains.size());
+    for (const FieldDomain domain : domains) {
         json::Value row = json::Value::emptyObject();
         put(row, "name", text(domainName(domain)));
         put(row, "form", text(domainForm(domain)));
@@ -445,23 +571,25 @@ constexpr std::array<Production, 7> productions{
 /// `mdux.medui.schema` appears here without this file being touched. `Unspecified` is skipped: it is
 /// the aggregate default a compiled screen may never carry, not a spelling an author can write.
 [[nodiscard]] json::Value namedValueSection() {
-    const auto members = [](auto&& values) {
+    // `toWire()` is the spelling function, and it answers empty for `Unspecified` and for any value
+    // the enumeration has no name for - so the scan yields exactly the members an author may write,
+    // with the sentinel excluded by that same rule rather than by a special case here.
+    const auto wire = [](auto value) {
+        return mdux::medui::toWire(value);
+    };
+
+    const auto spellings = [&wire](auto&& found) {
         std::vector<json::Value> rows;
-        for (const auto value : values) {
-            const std::string_view wire = mdux::medui::toWire(value);
-            if (wire.empty()) {
-                continue;
-            }
-            rows.push_back(text(wire));
+        rows.reserve(found.size());
+        for (const auto value : found) {
+            rows.push_back(text(wire(value)));
         }
         return json::Value::array(std::move(rows));
     };
 
     json::Value section = json::Value::emptyObject();
-    put(section,
-        "format",
-        members(std::array{mdux::medui::ClockFormat::Unspecified, mdux::medui::ClockFormat::TimeSeconds, mdux::medui::ClockFormat::DateTimeSeconds}));
-    put(section, "on_press", members(std::array{mdux::medui::SystemEvent::Unspecified, mdux::medui::SystemEvent::NoOp, mdux::medui::SystemEvent::TriggerHalt}));
+    put(section, "format", spellings(members<mdux::medui::ClockFormat>(wire)));
+    put(section, "on_press", spellings(members<mdux::medui::SystemEvent>(wire)));
     return section;
 }
 
