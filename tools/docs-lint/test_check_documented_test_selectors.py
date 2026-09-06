@@ -133,6 +133,48 @@ class CitationExtractionTests(unittest.TestCase):
             # `ctest` itself appears - not the continuation line the flag happened to land on.
             self.assertEqual(citations[0].line, 2)
 
+    def test_a_long_option_list_before_the_flag_does_not_hide_it(self) -> None:
+        # A regex once bounded the gap between `ctest` and `-R` to 60 characters - shorter than a
+        # realistic option list, so this exact line matched nothing at all and the selector inside
+        # it was never checked.
+        text = (
+            "```bash\n"
+            "ctest --test-dir build --output-on-failure --no-tests=error --parallel 4 -R ObsoleteSuite\n"
+            "```\n"
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            citations = selectors.find_citations(path)
+            self.assertEqual([c.selector for c in citations], ["ObsoleteSuite"])
+
+    def test_an_unquoted_selector_keeps_its_punctuation(self) -> None:
+        # A regex once excluded `,` (and `)`, `]`) from an unquoted selector's characters, so
+        # `^unit_tests::Version,obsolete$` was read as `^unit_tests::Version` - a *different*,
+        # actually-live selector silently substituted for the one the document names, which is
+        # worse than missing it: the check would have reported this citation live.
+        text = "```bash\nctest --test-dir build -R ^unit_tests::Version,obsolete$\n```\n"
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            citations = selectors.find_citations(path)
+            self.assertEqual([c.selector for c in citations], ["^unit_tests::Version,obsolete$"])
+
+    def test_a_trailing_comment_does_not_become_part_of_the_selector(self) -> None:
+        text = "```bash\nctest --test-dir build -R MduXUnitTests --output-on-failure  # one suite\n```\n"
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            citations = selectors.find_citations(path)
+            self.assertEqual([c.selector for c in citations], ["MduXUnitTests"])
+
+    def test_a_line_with_unbalanced_quotes_is_skipped_rather_than_guessed_at(self) -> None:
+        text = "```bash\nctest --test-dir build -R 'unterminated\n```\n"
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            self.assertEqual(selectors.find_citations(path), [])
+
     def test_a_continuation_is_not_read_across_a_fence_boundary(self) -> None:
         # A line ending a fenced block in a trailing backslash - unusual, but not this tool's to
         # assume can't happen - must not absorb the next block's first line as if it were the

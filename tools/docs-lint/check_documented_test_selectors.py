@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -60,13 +60,10 @@ from pathlib import Path
 
 FENCE_PATTERN_CHARS = ("```", "~~~")
 
-# Mirrors CTEST_LABEL_PATTERN in check_named_mechanisms.py, for `-R`/`--tests-regex` instead of
-# `-L`/`--label-regex`. The gap between `ctest` and the flag may hold options and a preset name,
-# bounded so a sentence rather than a command line cannot be captured across a bracket or comma.
-CTEST_SELECTOR_PATTERN = re.compile(
-    r"\bctest\b(?P<gap>[^\n(),]{0,60}?)(?:-R\b|--tests-regex\b)(?:\s+|=)"
-    r"(?:(?P<quote>[\"'])(?P<quoted>[^\n]*?)(?P=quote)|(?P<bare>[^\s,\])`]+))"
-)
+# Long-form `--tests-regex=<value>`. Not `-R=<value>`: CTest's own CLI does not accept `=` on the
+# short spelling, and inventing an accepted form here would recognise something no shell would
+# actually pass through.
+TESTS_REGEX_EQUALS_PREFIX = "--tests-regex="
 
 
 @dataclass(frozen=True)
@@ -149,12 +146,53 @@ def join_shell_continuations(lines: list[tuple[int, str]]) -> list[tuple[int, st
     return joined
 
 
+def selectors_in_line(line: str) -> list[str]:
+    """Every `-R`/`--tests-regex` value on one already-joined logical line, read by tokenizing it
+    as a shell would rather than by pattern-matching the text.
+
+    This replaced a regex bounding the gap between `ctest` and the flag to 60 characters and
+    excluding punctuation from an unquoted value - both wrong, found by reproduction rather than
+    inspection: a realistic option list before `-R` is longer than 60 characters
+    (`--test-dir build --output-on-failure --no-tests=error --parallel 4 -R ObsoleteSuite` matched
+    nothing at all), and a selector containing a comma is an ordinary CTest regex
+    (`^unit_tests::Version,obsolete$` truncated to `^unit_tests::Version`, which then reported the
+    *wrong* selector as live). `shlex` has neither problem: it tokenizes the whole line regardless
+    of length, and a quoted or unquoted token is returned whole, punctuation included - the shell
+    property this line is actually being read for.
+
+    `#` starts a comment exactly as it does in the shells these examples are written for, which is
+    what lets a trailing `# one suite` annotation fall away without a second rule for it.
+
+    Returns nothing for a line `shlex` cannot tokenize (unbalanced quotes) rather than guessing -
+    the same "ask, don't reconstruct" choice `matching_test_count()` makes about a `ctest` failure.
+    """
+    try:
+        tokens = shlex.split(line, comments=True)
+    except ValueError:
+        return []
+    if "ctest" not in tokens:
+        return []
+
+    found = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ("-R", "--tests-regex"):
+            if index + 1 < len(tokens):
+                found.append(tokens[index + 1])
+            index += 2
+            continue
+        if token.startswith(TESTS_REGEX_EQUALS_PREFIX):
+            found.append(token[len(TESTS_REGEX_EQUALS_PREFIX) :])
+        index += 1
+    return found
+
+
 def find_citations(path: Path) -> list[Citation]:
     text = path.read_text(encoding="utf-8", errors="replace")
     citations = []
     for line_number, line in join_shell_continuations(fenced_code_lines(text)):
-        for match in CTEST_SELECTOR_PATTERN.finditer(line):
-            selector = match.group("quoted") if match.group("quoted") is not None else match.group("bare")
+        for selector in selectors_in_line(line):
             citations.append(Citation(path, line_number, selector))
     return citations
 
