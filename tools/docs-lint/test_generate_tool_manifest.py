@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -174,10 +175,25 @@ class RealRepositoryTests(unittest.TestCase):
         path = self.root / manifest.MANIFEST
         self.assertTrue(path.is_file(), f"{manifest.MANIFEST} is not committed")
         self.assertEqual(
-            path.read_text(encoding="utf-8"),
-            manifest.render(self.manifest),
+            path.read_bytes(),
+            manifest.render(self.manifest).encode("utf-8"),
             "regenerate with: python3 tools/docs-lint/generate_tool_manifest.py",
         )
+
+    def test_the_freshness_gate_compares_bytes_and_not_decoded_text(self):
+        # The gate was `read_text() != rendered`, which cannot see a carriage return: Python
+        # translates CRLF to LF on read on *every* platform, so a manifest written in text mode on
+        # Windows compares equal to the LF text it came from. `docs/tools/** -text` then keeps those
+        # bytes through every checkout, and all three legs would pass over a file the generator does
+        # not render. Both directions are pinned here, because a comparison that rejects everything
+        # would satisfy half of this.
+        rendered = manifest.render(self.manifest)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_bytes(rendered.encode("utf-8"))
+            self.assertTrue(manifest.committed_matches(path, rendered), "the bytes it renders are current")
+            path.write_bytes(rendered.replace("\n", "\r\n").encode("utf-8"))
+            self.assertFalse(manifest.committed_matches(path, rendered), "the same document with CRLF is not")
 
     def test_the_manifest_carries_nothing_that_changes_between_runs(self):
         rendered = manifest.render(self.manifest)

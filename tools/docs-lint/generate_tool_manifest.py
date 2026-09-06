@@ -168,6 +168,19 @@ def recipe_source(root: Path, recipe: str) -> list[str]:
     return [match.group(1)] if match else []
 
 
+def committed_matches(path: Path, rendered: str) -> bool:
+    """Whether the committed file *is* what `render()` produced - a byte comparison, deliberately.
+
+    `read_text()` is not one. Python translates CRLF to LF on read whatever the platform it runs on,
+    so a manifest written in text mode on Windows - where `write_text()` turns every LF into CRLF -
+    reads back equal to the LF text it was rendered from, and the freshness gate reports a file it
+    would not itself have written as current. `docs/tools/** -text` then carries those bytes verbatim
+    through every checkout, so the three toolchain legs would agree on a manifest none of them
+    renders. The gate compares bytes or it checks nothing.
+    """
+    return path.read_bytes() == rendered.encode("utf-8")
+
+
 def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
     """Every baked artifact, grouped by the tool that bakes it."""
     text = (root / ROOT_CMAKE).read_text(encoding="utf-8")
@@ -351,20 +364,21 @@ def main(argv: list[str]) -> int:
         if not path.is_file():
             print(f"mdux-tool-manifest: {MANIFEST} is not committed", file=sys.stderr)
             return 1
-        committed = path.read_text(encoding="utf-8")
-        if committed != rendered:
+        if not committed_matches(path, rendered):
             print(
                 f"mdux-tool-manifest: {MANIFEST} is out of date. Regenerate it with\n"
                 f"  python3 tools/docs-lint/generate_tool_manifest.py",
                 file=sys.stderr,
             )
             return 1
-        count = len(json.loads(committed)["tools"])
+        count = len(json.loads(rendered)["tools"])
         print(f"mdux-tool-manifest: OK ({count} tools, manifest current)")
         return 0
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rendered, encoding="utf-8")
+    # Bytes for the reason `committed_matches()` gives: text mode would write CRLF on Windows, and
+    # `-text` would then keep it. What is rendered is what is written, on every platform.
+    path.write_bytes(rendered.encode("utf-8"))
     print(f"mdux-tool-manifest: wrote {MANIFEST} ({len(json.loads(rendered)['tools'])} tools)")
     return 0
 
