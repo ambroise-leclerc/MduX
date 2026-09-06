@@ -86,15 +86,21 @@ before you write one:
 - **`max_length` is measured against your box**, since this issue: `max_length` cells of the font's
   widest glyph plus the caret's column must fit, or the screen fails to compile with `MEDUI-E050`.
   A `max_length` past `maxFieldCells` (64) is `MEDUI-E053` instead, because no box makes it drawable.
-- **Your `charset:` is a compile-time claim about the *source*, not a runtime filter.** It says which
-  code points this field's data can produce, and the compiler checks that the font package can draw
-  all of them (`MEDUI-E053`). It does not reach the device: a compiled node carries the charset's
-  *name*, not its set, so what the runtime refuses is a character the **font package's** charset does
-  not admit — which is wider than yours whenever you narrowed it. A host that sends a letter to a
-  digits-only field gets a letter on screen. The box is measured against the font's charset too, for
-  the same reason, which is conservative in the only safe direction. Narrowing enforcement to the
-  node's own set needs the compiled screen to carry resolved ranges, which is
-  [#297](https://github.com/ambroise-leclerc/MduX/issues/297).
+- **Your `charset:` bounds what the device displays, since [#297](https://github.com/ambroise-leclerc/MduX/issues/297).**
+  It says which code points this field's data can produce; the compiler checks the font package can
+  draw all of them (`MEDUI-E053`) *and* writes the resolved ranges into the compiled node, so the
+  runtime holds the field to your set and not only to the font's. A host that sends a letter to a
+  digits-only field is refused. Before #297 the node carried the charset's *name* and nothing else,
+  so the letter went on screen.
+  - The refusal has its own name. `CharacterOutsideFieldCharset` is a character the package draws
+    perfectly well that **this node never declared**; `GlyphNotInPackage` is one the font cannot draw
+    at all. If you see the second, re-bake the font; if you see the first, either the host is sending
+    the wrong data or your `charset:` is narrower than the field's real alphabet.
+  - It is checked when a value is **bound**, not only when a frame is drawn.
+    `TextInputBinding::create()` refuses the slot, which leaves the previous frame on screen and
+    hands your host an error; a violation that reaches `render()` refuses the whole screen instead.
+  - The box is still measured against the **font's** charset, not yours, which is conservative in the
+    only safe direction: a box sized for the widest glyph the font admits holds every narrower one.
 - **Display and caret only.** No composition, no candidate window, no key handling. The host edits
   the value; the screen shows it. A value longer than the field, or a character the font package's
   restricted charset does not admit, refuses the frame rather than truncating or substituting — the
@@ -234,10 +240,26 @@ compiler knows a `TimeSeconds` clock draws eight glyphs and checks them against 
 There is no product-supplied table to configure, and a box too narrow for the format is a compile
 error.
 
-`charset:` on `TextInput` stays an open name — it resolves against the character sets a build bakes,
-which the contract does not enumerate. It bounds what the field may *display*; what its box must
-*hold* is measured against the font package's own charset, for the reason the `TextInput` notes
-above give.
+`charset:` on `TextInput` stays an open **name in the source** — it resolves against the character
+sets a build bakes, which the contract does not enumerate. What the *compiled node* carries is the
+resolved set as well as the name (#297), so the device enforces it without a table shipped beside the
+screen. Write the sets in your screen recipe's `[dynamicText]` table, repeating a name to give it
+more than one run of code points:
+
+```toml
+[dynamicText]
+names           = ["PATIENT-ID", "PATIENT-ID"]
+# Decimal: the TOML subset has no hex. 48..57 is U+0030..U+0039, 65..90 is U+0041..U+005A.
+firstCodePoints = [48, 65]
+lastCodePoints  = [57, 90]
+```
+
+The ranges must not overlap, and the compiler refuses the recipe naming the entry if they do. The
+resolved set lands in the committed `package.json`, so widening what a field will accept is a re-bake
+and a reviewable diff rather than a change in a table nobody reads.
+
+What the field's box must *hold* is still measured against the font package's own charset, for the
+reason the `TextInput` notes above give.
 
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 

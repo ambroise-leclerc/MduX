@@ -127,6 +127,8 @@ std::string_view describe(FieldError error) noexcept {
             return "the caret is not a position in the field";
         case FieldError::GlyphNotInPackage:
             return "the value needs a character the font package cannot draw";
+        case FieldError::CharacterOutsideFieldCharset:
+            return "the value needs a character this field's charset does not admit";
         case FieldError::EmptyCharset:
             return "the font package admits no code point, so no cell width can be derived";
         case FieldError::CharsetHasNoInk:
@@ -187,13 +189,14 @@ mdux::core::Result<FieldExtent, FieldError> measureField(const mdux::font::FontP
     return FieldExtent{.inked = true, .width = inkRight + overhangOf(cell), .height = cell.bottom - cell.top};
 }
 
-mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          list,
-                                               const mdux::font::FontPackage& font,
-                                               const mdux::core::Rect&        node,
-                                               std::size_t                    cells,
-                                               std::span<const char32_t>      text,
-                                               std::optional<std::size_t>     caret,
-                                               mdux::core::ColorRgba8         color) noexcept {
+mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&                     list,
+                                               const mdux::font::FontPackage&            font,
+                                               std::span<const mdux::font::CharsetRange> narrowed,
+                                               const mdux::core::Rect&                   node,
+                                               std::size_t                               cells,
+                                               std::span<const char32_t>                 text,
+                                               std::optional<std::size_t>                caret,
+                                               mdux::core::ColorRgba8                    color) noexcept {
     if (const auto accepted = fieldAccepts(cells, text.size(), caret); !accepted.has_value()) {
         return mdux::core::err(accepted.error());
     }
@@ -239,6 +242,17 @@ mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          li
             // carry. Same refusal as an absent glyph, because from a caller's side it is the same
             // fact: this package will not display that character.
             return refuse(FieldError::GlyphNotInPackage);
+        }
+        // The node's own set, asked second and only when the package already said yes (#297). A
+        // character failing both is the font's refusal, which is the more actionable of the two: no
+        // re-declaration of a charset can make a package draw a glyph it does not have.
+        //
+        // An empty `narrowed` is a node that declared no `charset:`, not a node that admits nothing.
+        // `admits()` says so rather than the loop reading an empty set as a union of no ranges,
+        // which is the fail-*closed* reading of a set and the wrong one here: it would refuse every
+        // character of every field that narrows nothing, which is most of them.
+        if (!admits(narrowed, text[index])) {
+            return refuse(FieldError::CharacterOutsideFieldCharset);
         }
         const mdux::font::GlyphRecord* glyph = font.find(text[index]);
         if (glyph == nullptr) {

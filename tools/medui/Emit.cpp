@@ -148,10 +148,27 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
     return std::format("{}OfNode{}", what, index);
 }
 
-/// The `StatusIndicator` arrays a screen needs, declared before the node table that views them.
+/// The `StatusIndicator` and `TextInput` arrays a screen needs, declared before the node table that
+/// views them. Both are spans in the schema, so both need storage the generated translation unit
+/// owns - which is what makes a compiled screen a value in `.rodata` rather than something built.
 [[nodiscard]] std::string renderStateArrays(const ms::ScreenPackage& package) {
     std::string out;
     for (std::size_t index = 0; index < package.nodes.size(); ++index) {
+        if (const auto* input = std::get_if<ms::TextInputSpec>(&package.nodes[index].payload); input != nullptr && !input->charsetRanges.empty()) {
+            // The set node '<id>' may display, resolved from its `charset:` name at compile time
+            // (#297). Emitted as the ranges rather than the name because a device given the name
+            // could only look it up in a table shipped beside the screen, which is the exposure the
+            // whole boundary exists to avoid.
+            out += std::format("/// The characters node '{}' may display: '{}', resolved.\n", escape(package.nodes[index].id), escape(input->charset));
+            out += std::format("inline constexpr mdux::font::CharsetRange {}[] = {{", arrayName("charsetRanges", index));
+            for (std::size_t range = 0; range < input->charsetRanges.size(); ++range) {
+                out += std::format("{}{{.first = {}, .last = {}}}",
+                                   range == 0 ? "" : ", ",
+                                   static_cast<std::uint32_t>(input->charsetRanges[range].first),
+                                   static_cast<std::uint32_t>(input->charsetRanges[range].last));
+            }
+            out += "};\n\n";
+        }
         const auto* status = std::get_if<ms::StatusIndicatorSpec>(&package.nodes[index].payload);
         if (status == nullptr) {
             continue;
@@ -281,6 +298,9 @@ void appendSpan(std::string& out, bool& first, std::string_view member, std::str
         first = false;
         appendName(out, first, "charset", input->charset);
         appendName(out, first, "requirement", input->requirement);
+        if (!input->charsetRanges.empty()) {
+            appendSpan(out, first, "charsetRanges", arrayName("charsetRanges", index));
+        }
     } else {
         // Unreachable for a package that validated, which is the only kind that reaches here.
         throw std::logic_error("a node carries a payload this emitter does not know");

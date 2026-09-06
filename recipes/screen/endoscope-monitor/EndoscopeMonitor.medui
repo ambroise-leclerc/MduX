@@ -100,6 +100,7 @@ Screen EndoscopeMonitor {
             source: "PATIENT_ID";
             max_length: 12;
             color: Theme.Colors.Title;
+            charset: PATIENT-ID;
         }
     }
 

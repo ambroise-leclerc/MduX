@@ -95,10 +95,12 @@ export module mdux.tools.medui.package;
 
 import std;
 import mdux.draw;
+import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
+import mdux.tools.medui.textbudget;
 
 export namespace mdux::tools::medui {
 
@@ -120,6 +122,16 @@ struct PackageInputs {
     mdux::draw::DrawBudget                             budget{};
     std::span<const mdux::medui::TextPackageApproval>  approvedTextPackages;
     std::span<const mdux::medui::ImagePackageApproval> approvedImagePackages{};
+
+    /// The build's dynamic-text table, so a `TextInput`'s `charset:` can be *resolved* into the
+    /// compiled node rather than carried into it as a name (#297).
+    ///
+    /// `DynamicTextRule` borrowed from the budget stage rather than restated: it is the same table,
+    /// read for a second purpose, and the budget stage's question - "can this name produce something
+    /// the font cannot draw" - is only answerable about the same ranges this one writes down. Two
+    /// stages resolving one name through two tables is exactly the drift that would make a screen's
+    /// compile-time check and its run-time check disagree.
+    std::span<const DynamicTextRule> charsets{};
 };
 
 /**
@@ -168,16 +180,21 @@ public:
     /// parallel `stateKeys` and `colorTokens`.
     [[nodiscard]] std::span<const std::string_view> internList(std::span<const std::string> items);
 
+    /// Interns a resolved charset and returns a stable span of it, for a `TextInput`'s
+    /// `charsetRanges`. Empty interns to an empty span: a node that narrows nothing owns no set.
+    [[nodiscard]] std::span<const mdux::font::CharsetRange> internRanges(std::span<const mdux::font::CharsetRange> ranges);
+
 private:
-    std::deque<std::string>                        text_;
-    std::deque<std::vector<std::string_view>>      lists_;
-    std::vector<mdux::medui::TextPackageApproval>  approvedTextPackages_;
-    std::vector<mdux::medui::ImagePackageApproval> storedImagePackages;
-    std::vector<mdux::medui::CompiledNode>         nodes_;
-    std::string_view                               id_;
-    std::int32_t                                   surfaceWidth_{0};
-    std::int32_t                                   surfaceHeight_{0};
-    mdux::draw::DrawBudget                         budget_{};
+    std::deque<std::string>                           text_;
+    std::deque<std::vector<std::string_view>>         lists_;
+    std::deque<std::vector<mdux::font::CharsetRange>> charsets_;
+    std::vector<mdux::medui::TextPackageApproval>     approvedTextPackages_;
+    std::vector<mdux::medui::ImagePackageApproval>    storedImagePackages;
+    std::vector<mdux::medui::CompiledNode>            nodes_;
+    std::string_view                                  id_;
+    std::int32_t                                      surfaceWidth_{0};
+    std::int32_t                                      surfaceHeight_{0};
+    mdux::draw::DrawBudget                            budget_{};
 };
 
 /**

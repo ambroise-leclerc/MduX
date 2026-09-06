@@ -432,6 +432,8 @@ display and caret and nothing else.
 - #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
 - #259 S4 `StatusIndicator` — **shipped**; the ECG demonstrator binds its classifier's class to one
 - #260 S5 `TextInput` (display and caret only) — **shipped**; a fixed-pitch grid, measured at compile time
+  - #297 — **shipped**; the follow-on that made `charset:` a bound on what the *device* displays and
+    not only a claim about the source, by carrying the resolved code-point ranges in the compiled node
 - #261 S6 Buttons with requirement binding — **shipped**; a face, a closed action, and the requirement it is traced to
 
 Largely independent of one another, unlike #16's, which is why they landed in that order rather than

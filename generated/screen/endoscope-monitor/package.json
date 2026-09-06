@@ -114,6 +114,17 @@
       "id": "patient-id",
       "kind": "TextInput",
       "spec": {
+        "charset": "PATIENT-ID",
+        "charsetRanges": [
+          {
+            "first": 48,
+            "last": 57
+          },
+          {
+            "first": 65,
+            "last": 90
+          }
+        ],
         "colorToken": "Theme.Colors.Title",
         "maxLength": 12,
         "source": "PATIENT_ID"

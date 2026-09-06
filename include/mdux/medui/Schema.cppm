@@ -95,6 +95,12 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 
+// Re-exported, not merely imported. `TextInputSpec::charsetRanges` is a span of
+// `mdux::font::CharsetRange`, so the type is part of this contract rather than an implementation
+// detail behind it: a consumer holding a compiled screen has to be able to name what a field admits,
+// and the generated translation unit that owns the storage has to be able to declare the array.
+export import mdux.font.schema;
+
 export namespace mdux::medui {
 
 /// The `<kind>` component of `generated/<kind>/<id>/`, and the value of a package's `kind` member.
@@ -136,10 +142,28 @@ enum class SchemaError : std::uint8_t {
     MissingImagePackageApproval,  ///< an Image names no approved image package
     UnspecifiedNamedValue,        ///< a closed-set field left at its `Unspecified` sentinel
     NamedValueOutOfRange,         ///< a closed-set field holding no enumerator of its type
+    NarrowedCharsetIsEmpty,       ///< a node names a charset but carries no set, so nothing narrows
+    UnnamedCharsetRanges,         ///< a node carries a charset set that no `charset:` asked for
+    CharsetRangeDescending,       ///< a range ending before it begins, which admits nothing
+    CharsetRangesOverlap,         ///< ranges out of order or overlapping, so the set is ambiguous
+    CodePointOutOfRange,          ///< a range naming something past the last Unicode scalar value
+    SurrogateCodePoint,           ///< a range admitting a lone surrogate, which is no character
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
     switch (error) {
+        case SchemaError::NarrowedCharsetIsEmpty:
+            return "a text input names a charset but carries no resolved set";
+        case SchemaError::UnnamedCharsetRanges:
+            return "a text input carries a resolved charset it never named";
+        case SchemaError::CharsetRangeDescending:
+            return "a charset range ends before it begins";
+        case SchemaError::CharsetRangesOverlap:
+            return "the charset ranges are not sorted and disjoint";
+        case SchemaError::CodePointOutOfRange:
+            return "a charset range names a value past the last Unicode scalar value";
+        case SchemaError::SurrogateCodePoint:
+            return "a charset range admits a surrogate, which is not a character";
         case SchemaError::UnspecifiedNamedValue:
             return "a field whose value must come from a closed set was left unspecified";
         case SchemaError::NamedValueOutOfRange:
@@ -605,6 +629,27 @@ struct StatusIndicatorSpec {
     }
 };
 
+/**
+ * @brief A text input's source, its cell count, and the set of characters it may display.
+ *
+ * `charset` is the name the source wrote and `charsetRanges` is what that name resolved to, and the
+ * pair is the point of #297. A name alone is a claim about the *source*: the compiler proves every
+ * code point the named set can produce is one the font package can draw (`MEDUI-E053`), which stops
+ * a screen escaping its font. It is not a bound on what a *device* displays, because a device
+ * handed only a name has nothing to compare a character against - so a field declared `charset:
+ * DIGITS`, on a font that also admits letters, displayed the `A` a host handed it.
+ *
+ * The ranges close that. They are resolved by the compiler from the build's own character-set table
+ * and carried here, so the device tests membership against data in the artifact and needs no table
+ * shipped beside it. That is what distinguishes this from `NumericDisplaySpec::templateId`, which
+ * #258 deliberately left a name: a template stands for a *rendering the host supplies at run time*
+ * (`ReadingSlot::rendering`), while a charset stands for a set the compiler has already resolved and
+ * already validated. Carrying it is closer to carrying resolved `bounds` than to carrying a product
+ * table.
+ *
+ * Both or neither. `validate()` refuses a name with no ranges - a narrowing nothing can enforce -
+ * and ranges with no name, which would be a set no source asked for.
+ */
 struct TextInputSpec {
     std::string_view source{};
     std::string_view colorToken{};
@@ -612,7 +657,19 @@ struct TextInputSpec {
     std::string_view charset{};      ///< empty when the component narrows nothing
     std::string_view requirement{};  ///< optional on a TextInput
 
-    [[nodiscard]] constexpr bool operator==(const TextInputSpec&) const noexcept = default;
+    /// The code points `charset` resolved to: sorted, non-overlapping, scalar values. Empty exactly
+    /// when `charset` is, and spanning storage the generated translation unit owns, as
+    /// `StatusIndicatorSpec`'s parallel lists do.
+    std::span<const mdux::font::CharsetRange> charsetRanges{};
+
+    [[nodiscard]] constexpr bool operator==(const TextInputSpec& other) const noexcept {
+        return source == other.source && colorToken == other.colorToken && maxLength == other.maxLength && charset == other.charset
+               && requirement == other.requirement && std::ranges::equal(charsetRanges, other.charsetRanges);
+    }
+
+    // The membership test lives in `mdux.medui.field` as `admits()`, not here as an accessor. One
+    // definition: an empty set means "this node narrows nothing" rather than "this node admits
+    // nothing", and a rule with two spellings is a rule two readers can disagree about.
 };
 
 /**
@@ -1050,6 +1107,31 @@ template <typename Member>
     }
     if (spec->maxLength <= 0) {
         return mdux::core::err(SchemaError::NonPositiveMaxLength);
+    }
+    // Both or neither (#297). A name with no set is a narrowing the device cannot enforce, which is
+    // the state this whole member exists to leave; a set with no name is one no source asked for.
+    // Refusing both directions is what makes `narrows()` answerable from either field.
+    if (spec->charset.empty() != spec->charsetRanges.empty()) {
+        return mdux::core::err(spec->charset.empty() ? SchemaError::UnnamedCharsetRanges : SchemaError::NarrowedCharsetIsEmpty);
+    }
+    // The same four rules `FontPackage::validate()` applies to `restrictedCharset`, in the same
+    // order and under the same names, because they are the same rules about the same type. Sorted
+    // and disjoint is not tidiness: `permits()` reads the set as a union, so an overlapping pair
+    // describes a set two readers could enumerate differently.
+    for (std::size_t index = 0; index < spec->charsetRanges.size(); ++index) {
+        const mdux::font::CharsetRange& range = spec->charsetRanges[index];
+        if (range.last < range.first) {
+            return mdux::core::err(SchemaError::CharsetRangeDescending);
+        }
+        if (range.last > mdux::font::maxCodePoint) {
+            return mdux::core::err(SchemaError::CodePointOutOfRange);
+        }
+        if (range.first <= mdux::font::surrogateLast && range.last >= mdux::font::surrogateFirst) {
+            return mdux::core::err(SchemaError::SurrogateCodePoint);
+        }
+        if (index > 0 && range.first <= spec->charsetRanges[index - 1].last) {
+            return mdux::core::err(SchemaError::CharsetRangesOverlap);
+        }
     }
     return requireColor(spec->colorToken);
 }

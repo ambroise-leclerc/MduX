@@ -816,6 +816,93 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
             .Execute();
     }};
 
+const mdux::spec::Register aNarrowedCharsetIsCheckedAsASet{
+    "A text input's resolved charset is a set, and every way it could not be is refused",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-charset-ranges")
+            .Given("a TextInput carrying a charset name and the ranges it resolved to", [] {})
+            .When("each way the pair could be wrong is validated", [] {})
+            .Then("each has its own error, so a screen a device cannot enforce is a compile failure",
+                  [] {
+                      // #297 puts the resolved set in the artifact, and this is what keeps that set
+                      // meaning one thing. `admits()` reads the ranges as a union and an empty span
+                      // as "narrows nothing", so both halves of that reading have to be guaranteed
+                      // here: a name with no set would be a narrowing silently gone - the state
+                      // before #297 - and overlapping ranges are a set two readers could enumerate
+                      // differently.
+                      mdux::spec::Checks checks;
+
+                      static constexpr std::array digits{
+                          mdux::font::CharsetRange{.first = U'0', .last = U'9'}
+                      };
+                      static constexpr std::array descending{
+                          mdux::font::CharsetRange{.first = U'9', .last = U'0'}
+                      };
+                      static constexpr std::array overlapping{
+                          mdux::font::CharsetRange{.first = U'0', .last = U'9'},
+                          mdux::font::CharsetRange{.first = U'5', .last = U'A'}
+                      };
+                      static constexpr std::array pastUnicode{
+                          mdux::font::CharsetRange{.first = 0x30, .last = mdux::font::maxCodePoint + 1}
+                      };
+                      static constexpr std::array surrogates{
+                          mdux::font::CharsetRange{.first = 0xD800, .last = 0xDFFF}
+                      };
+
+                      const auto verdict = [&](std::string_view charset, std::span<const mdux::font::CharsetRange> ranges) {
+                          const std::array<ms::CompiledNode, 1> nodes{
+                              ms::CompiledNode{.id      = "entry",
+                                               .bounds  = {0, 0, 100, 20},
+                                               .payload = ms::TextInputSpec{.source        = "NOTE",
+                                                                            .colorToken    = "Theme.Colors.Title",
+                                                                            .maxLength     = 16,
+                                                                            .charset       = charset,
+                                                                            .requirement   = {},
+                                                                            .charsetRanges = ranges}}
+                          };
+                          const ms::ScreenPackage package{
+                              .id                   = "screen",
+                              .schemaVersion        = mdux::evidence::kSchemaVersion,
+                              .surfaceWidth         = 400,
+                              .surfaceHeight        = 300,
+                              .approvedTextPackages = constApprovals,
+                              .nodes                = nodes,
+                              .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                          };
+                          const auto result = package.validate();
+                          return result.has_value() ? std::optional<ms::SchemaError>{} : std::optional{result.error()};
+                      };
+
+                      checks.expect(!verdict("DIGITS", digits).has_value(), "a name with the set it resolved to is valid");
+                      checks.expect(!verdict({}, {}).has_value(), "and so is a node that narrows nothing, carrying neither");
+
+                      // The pair, in both directions. Neither half alone is a state `admits()` could
+                      // read correctly.
+                      checks.expect(verdict("DIGITS", {}) == ms::SchemaError::NarrowedCharsetIsEmpty, "a name with no set is NarrowedCharsetIsEmpty");
+                      checks.expect(verdict({}, digits) == ms::SchemaError::UnnamedCharsetRanges, "a set with no name is UnnamedCharsetRanges");
+
+                      // The four rules the font package's own charset is held to, under the same
+                      // names, because they are the same rules about the same type.
+                      checks.expect(verdict("DIGITS", descending) == ms::SchemaError::CharsetRangeDescending, "a range ending before it begins is refused");
+                      checks.expect(verdict("DIGITS", overlapping) == ms::SchemaError::CharsetRangesOverlap, "overlapping ranges are refused");
+                      checks.expect(verdict("DIGITS", pastUnicode) == ms::SchemaError::CodePointOutOfRange, "a range past the last scalar value is refused");
+                      checks.expect(verdict("DIGITS", surrogates) == ms::SchemaError::SurrogateCodePoint, "a range admitting a surrogate is refused");
+
+                      // Every one of them has a description, as every other schema error does.
+                      for (const ms::SchemaError error : {ms::SchemaError::NarrowedCharsetIsEmpty,
+                                                          ms::SchemaError::UnnamedCharsetRanges,
+                                                          ms::SchemaError::CharsetRangeDescending,
+                                                          ms::SchemaError::CharsetRangesOverlap,
+                                                          ms::SchemaError::CodePointOutOfRange,
+                                                          ms::SchemaError::SurrogateCodePoint}) {
+                          checks.expect(!ms::describe(error).empty(), "the error names itself");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register unknownPayloadsAreRefused{
     "A payload this module cannot name is refused rather than accepted",
     "evidence-unit",

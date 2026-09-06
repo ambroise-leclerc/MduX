@@ -292,42 +292,43 @@ struct ButtonFace {
 
 /// Why a frame was refused. Every one leaves the draw list exactly as it was found.
 enum class ScreenError : std::uint8_t {
-    MalformedColorToken,      ///< a node's colour is not of the form `Theme.Colors.<Token>`
-    UnknownColorToken,        ///< well-formed, and the governed table does not define it
-    BudgetExhausted,          ///< a write would exceed a `DrawBudget` this frame is held to
-    UnknownTextKey,           ///< a bound text package carries no run for a node's `textKey`
-    MalformedTextRun,         ///< a run's range leaves the sidecar, or its bytes are not whole records
-    RunTooLong,               ///< a run holds more than `maxGlyphsPerRun` records
-    AtlasMismatch,            ///< the text package was baked against a different font package
-    SidecarMismatch,          ///< the sidecar is not the one the text package describes
-    PackageNotApproved,       ///< the screen was not compiled against this locale/package/digest
-    TextOverflowsNode,        ///< a run's ink is wider or taller than the node that names it
-    ImageSidecarMismatch,     ///< RGBA bytes differ from the baked image package
-    ImageNotApproved,         ///< the screen did not approve this image id/digest/extent
-    UnknownStreamSource,      ///< a signal slot names a stream no `SignalTrace` on this screen carries
-    DuplicateStream,          ///< two signal slots name the same stream
-    MissingSampleRing,        ///< a signal slot carries no ring, so its trace could never draw a sample
-    UnknownReadingNode,       ///< a reading slot names no `NumericDisplay` on this screen
-    DuplicateReading,         ///< two reading slots name the same node
-    MalformedPattern,         ///< a reading slot's rendering is empty or longer than `maxPatternLength`
-    ReadingRefused,           ///< a reading could not be drawn - see `ReadingError` for which way
-    ReadingOverflowsNode,     ///< a drawn reading's ink is wider or taller than the node that holds it
-    UnknownStatusNode,        ///< a status slot names no `StatusIndicator` on this screen
-    DuplicateStatus,          ///< two status slots name the same node
-    StateOutOfRange,          ///< a slot's state is not a position in that node's closed `states` list
-    StatusHasNoTint,          ///< a bound indicator declares no per-state colours, so its states look alike
-    UnknownTextInputNode,     ///< a text-input slot names no `TextInput` on this screen
-    DuplicateTextInput,       ///< two text-input slots name the same node
-    FieldRefused,             ///< a field could not be drawn - see `FieldError` for which way
-    FieldOverflowsNode,       ///< a drawn field's ink is wider or taller than the node that holds it
-    MalformedTraceStyle,      ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
-    MalformedSampleRing,      ///< a bound ring's oldest index or live count is not a position in it
-    NonFiniteSample,          ///< a live sample is a NaN or an infinity
-    TraceTooLong,             ///< a bound ring holds more than `maxSamplesPerTrace` samples
-    TraceBandTooSmall,        ///< a bound trace's node is too small to hold its stroke
-    ScreenNotApproved,        ///< a signal binding built for one screen was offered to another
-    UnimplementedEvent,       ///< a pressed `CriticalButton` names no member of the closed `SystemEvent` set
-    UntracedCriticalControl,  ///< a pressed `CriticalButton` declares no requirement to trace it to
+    MalformedColorToken,           ///< a node's colour is not of the form `Theme.Colors.<Token>`
+    UnknownColorToken,             ///< well-formed, and the governed table does not define it
+    BudgetExhausted,               ///< a write would exceed a `DrawBudget` this frame is held to
+    UnknownTextKey,                ///< a bound text package carries no run for a node's `textKey`
+    MalformedTextRun,              ///< a run's range leaves the sidecar, or its bytes are not whole records
+    RunTooLong,                    ///< a run holds more than `maxGlyphsPerRun` records
+    AtlasMismatch,                 ///< the text package was baked against a different font package
+    SidecarMismatch,               ///< the sidecar is not the one the text package describes
+    PackageNotApproved,            ///< the screen was not compiled against this locale/package/digest
+    TextOverflowsNode,             ///< a run's ink is wider or taller than the node that names it
+    ImageSidecarMismatch,          ///< RGBA bytes differ from the baked image package
+    ImageNotApproved,              ///< the screen did not approve this image id/digest/extent
+    UnknownStreamSource,           ///< a signal slot names a stream no `SignalTrace` on this screen carries
+    DuplicateStream,               ///< two signal slots name the same stream
+    MissingSampleRing,             ///< a signal slot carries no ring, so its trace could never draw a sample
+    UnknownReadingNode,            ///< a reading slot names no `NumericDisplay` on this screen
+    DuplicateReading,              ///< two reading slots name the same node
+    MalformedPattern,              ///< a reading slot's rendering is empty or longer than `maxPatternLength`
+    ReadingRefused,                ///< a reading could not be drawn - see `ReadingError` for which way
+    ReadingOverflowsNode,          ///< a drawn reading's ink is wider or taller than the node that holds it
+    UnknownStatusNode,             ///< a status slot names no `StatusIndicator` on this screen
+    DuplicateStatus,               ///< two status slots name the same node
+    StateOutOfRange,               ///< a slot's state is not a position in that node's closed `states` list
+    StatusHasNoTint,               ///< a bound indicator declares no per-state colours, so its states look alike
+    UnknownTextInputNode,          ///< a text-input slot names no `TextInput` on this screen
+    DuplicateTextInput,            ///< two text-input slots name the same node
+    FieldRefused,                  ///< a field could not be drawn - see `FieldError` for which way
+    CharacterOutsideFieldCharset,  ///< a value carries a character its `TextInput`'s `charset:` excludes
+    FieldOverflowsNode,            ///< a drawn field's ink is wider or taller than the node that holds it
+    MalformedTraceStyle,           ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
+    MalformedSampleRing,           ///< a bound ring's oldest index or live count is not a position in it
+    NonFiniteSample,               ///< a live sample is a NaN or an infinity
+    TraceTooLong,                  ///< a bound ring holds more than `maxSamplesPerTrace` samples
+    TraceBandTooSmall,             ///< a bound trace's node is too small to hold its stroke
+    ScreenNotApproved,             ///< a signal binding built for one screen was offered to another
+    UnimplementedEvent,            ///< a pressed `CriticalButton` names no member of the closed `SystemEvent` set
+    UntracedCriticalControl,       ///< a pressed `CriticalButton` declares no requirement to trace it to
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a

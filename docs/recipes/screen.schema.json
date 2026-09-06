@@ -90,7 +90,7 @@
     },
     "dynamicText": {
       "type": "array",
-      "description": "The product's governed dynamic-text table, resolved. A report that named a table without recording its contents would say which table a screen was checked against and not what that check was of.",
+      "description": "The product's governed dynamic-text table, resolved. A report that named a table without recording its contents would say which table a screen was checked against and not what that check was of. One entry per name: the recipe's positional arrays may repeat a name to add a range to its set, and the entries here are those sets, sorted and disjoint.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -105,7 +105,7 @@
           },
           "produces": {
             "type": "array",
-            "description": "The code points this source can produce, as closed ranges. The compiler checks the font package can draw all of them.",
+            "description": "The code points this source can produce, as closed ranges, sorted and non-overlapping. The compiler checks the font package can draw all of them, and - for a `TextInput`'s `charset:` - carries the resolved set into the compiled node so the device can hold a field to it too (#297).",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -117,12 +117,14 @@
                 "first": {
                   "type": "integer",
                   "description": "First code point, inclusive.",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 1114111
                 },
                 "last": {
                   "type": "integer",
-                  "description": "Last code point, inclusive.",
-                  "minimum": 0
+                  "description": "Last code point, inclusive. Bounded at U+10FFFF, the last Unicode scalar value: above it is not a character, so a table naming one describes something no text can contain.",
+                  "minimum": 0,
+                  "maximum": 1114111
                 }
               }
             }

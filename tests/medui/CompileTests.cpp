@@ -22,6 +22,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.font.schema;
+import mdux.medui.field;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.text.schema;
@@ -373,6 +374,138 @@ const mdux::spec::Register theIrDescribesTheCompileThatProducedIt{
                       std::vector<cli::Diagnostic> second;
                       const auto                   again = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), second);
                       checks.expect(again.has_value() && again->irJson == outputs->irJson, "two compiles of one recipe produce one IR");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aCharsetNameIsResolvedIntoTheCompiledNode{
+    "A TextInput's charset is compiled into the node as a set, from a table one name may repeat in",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-charset-is-resolved")
+            .Given("a recipe naming one charset over two entries, and a screen that uses it", [] {})
+            .When("the screen is compiled", [] {})
+            .Then("the node carries both ranges, sorted, and an overlapping table is refused instead",
+                  [] {
+                      // #297. The compiled node used to carry the charset's *name*, which a device
+                      // could only look up in a table shipped beside the screen - so the narrowing
+                      // stopped at the compiler and a field declared for digits displayed the letter
+                      // a host sent it. This is the resolution that closes it, checked end to end
+                      // from the recipe rather than from a hand-built spec.
+                      //
+                      // The repeated name is the other half: one entry carries one contiguous run,
+                      // and a patient identifier is digits *and* uppercase letters. Repeating a name
+                      // used to create a second rule that `checkDynamicText()`'s `find` never
+                      // reached, so the budget stage checked one range and ignored the rest - a
+                      // charset could escape its font while the compile stayed green.
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-charset"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/badge/Badge.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen Badge {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: badge;\n"
+                                 "        width: 240px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"BADGE\";\n"
+                                 "        max_length: 6;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "        charset: BADGE-ID;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      // 48..57 is U+0030..U+0039 and 65..90 is U+0041..U+005A. Decimal because
+                      // mdux.tools.toml's subset has no hexadecimal literals.
+                      const auto recipeWith = [](std::string_view firsts, std::string_view lasts) {
+                          return std::format("[package]\n"
+                                             "id            = \"badge\"\n"
+                                             "source        = \"recipes/screen/badge/Badge.medui\"\n"
+                                             "surfaceWidth  = 400\n"
+                                             "surfaceHeight = 200\n"
+                                             "\n"
+                                             "[budget]\n"
+                                             "maxVertices = 1024\n"
+                                             "maxIndices  = 1536\n"
+                                             "maxCommands = 16\n"
+                                             "\n"
+                                             "[dynamicText]\n"
+                                             "names           = [\"BADGE-ID\", \"BADGE-ID\"]\n"
+                                             "firstCodePoints = [{}]\n"
+                                             "lastCodePoints  = [{}]\n"
+                                             "\n"
+                                             "[text]\n"
+                                             "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                             "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n",
+                                             firsts,
+                                             lasts);
+                      };
+
+                      // Deliberately given out of order, so the sort is exercised rather than
+                      // agreed with: the compiled set has to be sorted whatever order it was written
+                      // in, because `ScreenPackage::validate()` refuses one that is not.
+                      const std::string            recipeText = recipeWith("65, 48", "90, 57");
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   recipe = md::parseRecipe(recipeText, "recipes/screen/badge.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, std::format("the recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/badge.toml", asBytes(recipeText), root.path(), diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, std::format("the screen compiles, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const md::PackageReadResult reread = md::readPackage(outputs->packageJson, "package.json");
+                      checks.expect(reread.ok(), "the compiled package reads back");
+                      if (!reread.ok()) {
+                          checks.raise();
+                          return;
+                      }
+                      const ms::ScreenPackage  package = reread.document.package();
+                      const ms::CompiledNode*  node    = package.find("badge");
+                      const ms::TextInputSpec* input   = node == nullptr ? nullptr : std::get_if<ms::TextInputSpec>(&node->payload);
+                      checks.expect(input != nullptr, "the compiled screen carries the TextInput");
+                      if (input != nullptr) {
+                          checks.expect(input->charset == "BADGE-ID", std::format("the name the source wrote, got '{}'", input->charset));
+                          const std::array expected{
+                              mdux::font::CharsetRange{.first = U'0', .last = U'9'},
+                              mdux::font::CharsetRange{.first = U'A', .last = U'Z'}
+                          };
+                          checks.expect(std::ranges::equal(input->charsetRanges, expected),
+                                        std::format("both ranges, in order, got {}", input->charsetRanges.size()));
+                          // The set is the narrower of the two by construction, which is what makes
+                          // `recordField()`'s second question worth asking at all.
+                          checks.expect(!ms::admits(input->charsetRanges, U'a'), "a lowercase letter the font draws is outside the node's set");
+                      }
+
+                      // And an author who writes two runs that overlap is told which entry, at the
+                      // recipe, rather than through a schema failure that names no line.
+                      std::vector<cli::Diagnostic> overlapping;
+                      const std::string            bad     = recipeWith("48, 55", "57, 90");
+                      const auto                   refused = md::parseRecipe(bad, "recipes/screen/badge.toml", overlapping);
+                      checks.expect(!refused.has_value(), "a table whose ranges overlap is refused");
+                      checks.expect(firstCode(overlapping) == "MEDUI-E002", std::format("reported at the recipe, got '{}'", firstCode(overlapping)));
                       checks.raise();
                   })
             .Execute();

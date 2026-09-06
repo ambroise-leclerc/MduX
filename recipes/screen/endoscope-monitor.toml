@@ -59,6 +59,25 @@ maxCommands = 64
 names      = ["TPL-PRESSURE-MMHG"]
 renderings = ["##.# mmHg"]
 
+# What each `charset:` a TextInput names actually admits (#297). The product's table, exactly as
+# `[numericTemplates]` is: `PATIENT-ID` is this device's rule for what a patient identifier may
+# contain, not the language's.
+#
+# The arrays are positional, and a name repeated across entries adds a range to its set - which is
+# how `PATIENT-ID` is digits *and* uppercase letters rather than one contiguous run. Lowercase,
+# punctuation and space are all drawable by the committed font and none of them is here, which is the
+# whole point: the compiler proves the set cannot escape the font, and the device refuses a character
+# the set does not contain.
+#
+# Widening this is a re-bake and a review of the diff: the resolved ranges are in the committed
+# `package.json`, so what a field will display changes visibly rather than in a table nobody reads.
+[dynamicText]
+names           = ["PATIENT-ID", "PATIENT-ID"]
+# Decimal, as `recipes/font/dejavu-ui.toml` says and for its reason: mdux.tools.toml's subset has no
+# hexadecimal literals. 48..57 is U+0030..U+0039, the digits; 65..90 is U+0041..U+005A, A to Z.
+firstCodePoints = [48, 65]
+lastCodePoints  = [57, 90]
+
 # The packages this screen's text is validated against (#235). `fontPackage` supplies the glyph
 # metrics every box is measured with; `packages` lists one committed text package per locale the
 # font approves, which today is `en-US` alone.

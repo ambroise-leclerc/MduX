@@ -145,6 +145,12 @@ struct InkBox {
     if (error == FieldError::ListRejected) {
         return ScreenError::BudgetExhausted;
     }
+    // Named rather than flattened into `FieldRefused`, because it is the one field refusal a caller
+    // can act on without reading `FieldError`: the character is drawable and the *node* excluded it,
+    // so what is wrong is the value a host supplied and not the screen, the font or the budget.
+    if (error == FieldError::CharacterOutsideFieldCharset) {
+        return ScreenError::CharacterOutsideFieldCharset;
+    }
     return ScreenError::FieldRefused;
 }
 
@@ -403,6 +409,21 @@ mdux::core::Result<TextInputBinding, ScreenError> TextInputBinding::create(const
         if (const auto fits = fieldAccepts(cells, slot.text.size(), slot.caret); !fits.has_value()) {
             return mdux::core::err(asScreenError(fits.error()));
         }
+
+        // The node's declared charset, checked where a host can still do something about it (#297).
+        // This is the *first* line: `recordField()` asks the same question per frame, and a refusal
+        // there rolls back the whole screen, so a value that was never going to be displayable is
+        // much better refused when it is offered than when it is drawn.
+        //
+        // Not checked here: whether the font package can draw the character. That needs a
+        // `FontPackage`, which a text-input binding is deliberately not given - the value and the
+        // glyphs are joined by `TextBinding`, and asking a caller for a second artifact to build
+        // this one would couple two bindings that are independent by design. The frame asks it.
+        for (const char32_t point : slot.text) {
+            if (!admits(input->charsetRanges, point)) {
+                return mdux::core::err(ScreenError::CharacterOutsideFieldCharset);
+            }
+        }
     }
 
     return TextInputBinding{screen.id, slots};
@@ -476,6 +497,8 @@ std::string_view describe(ScreenError error) noexcept {
             return "two text-input slots name the same node";
         case ScreenError::FieldRefused:
             return "a field could not be drawn from the value, caret and length it was given";
+        case ScreenError::CharacterOutsideFieldCharset:
+            return "a value carries a character the node's own charset does not admit";
         case ScreenError::FieldOverflowsNode:
             return "a drawn field's ink is larger than the node that holds it";
         case ScreenError::UnimplementedEvent:
@@ -887,7 +910,8 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
             const auto cells = input->maxLength <= 0 ? std::size_t{0} : static_cast<std::size_t>(input->maxLength);
 
             const std::size_t verticesBefore = list.vertices().size();
-            if (const auto recorded = recordField(list, *text.font(), toRect(node.bounds), cells, slot->text, slot->caret, quantise(*colour));
+            if (const auto recorded =
+                    recordField(list, *text.font(), input->charsetRanges, toRect(node.bounds), cells, slot->text, slot->caret, quantise(*colour));
                 !recorded.has_value()) {
                 // Forwarded rather than flattened, unlike the label path's: every way `recordField()`
                 // refuses is a distinct thing the caller can act on, and none of them was already

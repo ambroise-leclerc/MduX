@@ -82,19 +82,38 @@
  * identifier is a different identifier. The compile-time counterpart is the charset check the budget
  * stage already performs, which is what makes this refusal the second line rather than the first.
  *
- * ## The limit that leaves, stated rather than left to be found
+ * ## The node's own charset, and why it is a second bound rather than the same one
  *
- * A `TextInput`'s own `charset:` is **not** enforced here, and cannot be: a compiled node carries
- * the charset's *name* and not its set (ADR-011), so this module has nothing to compare a character
- * against but the font package. A field declared `charset: DIGITS` against a font that also admits
- * letters will therefore display a letter the host sends it.
+ * A `TextInput`'s `charset:` is enforced here too, since #297. It was not before, and could not be:
+ * a compiled node carried the charset's *name* and nothing else, so this module had nothing to
+ * compare a character against but the font package, and a field declared `charset: DIGITS` against a
+ * font that also admits letters displayed the letter a host sent it. `TextInputSpec::charsetRanges`
+ * now carries what that name resolved to, and `narrowed` is that set arriving here.
  *
- * That is a narrower guarantee than an author might read into the field, so it is written down. The
- * compiler does check the declared set - every code point it can produce must be one the font can
- * draw - which is what the narrowing is *for*: proving a source cannot escape the package. Enforcing
- * it on device needs the compiled screen to carry the resolved ranges, which is a schema change and
- * therefore a change to the shared contract's compiled-screen semantics; #297 is where that is
- * argued, not here.
+ * The two bounds answer two different questions and both are asked, in that order:
+ *
+ * - **`GlyphNotInPackage`** - the font package will not draw this character. A physical limit: there
+ *   is no glyph, no fallback (ADR-010 leaves the runtime none), and no cell was ever sized for it.
+ * - **`CharacterOutsideFieldCharset`** - the package draws it perfectly well, and *this node never
+ *   said it would show it*. A policy limit, and a different fact, which is why it is a different
+ *   error rather than the same one reported twice. A caller told "no glyph" would go and re-bake a
+ *   font; a caller told this one has a host sending a field data the screen was not designed for.
+ *
+ * The font's set is asked first because it is the one that admits no argument. A character failing
+ * both is reported as the physical limit, which is the more actionable of the two.
+ *
+ * ## Where a charset violation is meant to be caught, and why it is checked twice
+ *
+ * Here is the second line, not the first. `TextInputBinding::create()` asks the same question when a
+ * value is *bound*, which is where a host can still act on the answer: a refusal there leaves the
+ * previous frame on screen and hands the caller a named error. A refusal here rolls back the frame,
+ * and `mdux.medui.screen` turns that into a screen that does not render - the right outcome for a
+ * disagreement nobody caught earlier, and a poor one to rely on, because a blank display tells an
+ * operator less than a stale one does.
+ *
+ * That is `TextInputBinding`'s existing arrangement for `max_length` and the caret extended to the
+ * charset, for its stated reason: one place reports at start-up where a caller can act on it, and
+ * one holds when the two disagree.
  */
 module;
 
@@ -130,17 +149,48 @@ inline constexpr std::int64_t caretWidth = 1;
 
 /// Why a field was refused. Every one leaves the draw list exactly as it was found.
 enum class FieldError : std::uint8_t {
-    NoCells,            ///< the field has no cells, so there is nowhere to display anything
-    TooManyCells,       ///< the field has more cells than `maxFieldCells`
-    TextTooLong,        ///< the value has more characters than the field has cells
-    CaretOutOfRange,    ///< the caret is not a position in the field, nor just past its last cell
-    GlyphNotInPackage,  ///< a character the value needs is one the font package cannot draw
-    EmptyCharset,       ///< the font package admits no code point, so no cell width can be derived
-    CharsetHasNoInk,    ///< every code point it admits is blank, so no field could show anything
-    ListRejected,       ///< `DrawList` refused a rectangle - budget, or a degenerate extent
+    NoCells,                       ///< the field has no cells, so there is nowhere to display anything
+    TooManyCells,                  ///< the field has more cells than `maxFieldCells`
+    TextTooLong,                   ///< the value has more characters than the field has cells
+    CaretOutOfRange,               ///< the caret is not a position in the field, nor just past its last cell
+    GlyphNotInPackage,             ///< a character the value needs is one the font package cannot draw
+    CharacterOutsideFieldCharset,  ///< a character the package can draw, that this node never declared
+    EmptyCharset,                  ///< the font package admits no code point, so no cell width can be derived
+    CharsetHasNoInk,               ///< every code point it admits is blank, so no field could show anything
+    ListRejected,                  ///< `DrawList` refused a rectangle - budget, or a degenerate extent
 };
 
 [[nodiscard]] std::string_view describe(FieldError error) noexcept;
+
+/**
+ * @brief Whether a node whose narrowed charset is `narrowed` may display `point`.
+ *
+ * The one definition of that question (#297), used by `recordField()` when a frame is drawn and by
+ * `TextInputBinding::create()` when a value is bound.
+ *
+ * **Empty admits everything.** A node that declared no `charset:` carries no ranges, and that is
+ * "this field narrows nothing" rather than "this field admits nothing" - the fail-closed reading of
+ * an empty set, and the wrong one here, since it would refuse every character of every field that
+ * does not narrow. What keeps that safe rather than convenient is `ScreenPackage::validate()`, which
+ * refuses a node carrying a `charset` name with no ranges: a narrowing that reached a device with its
+ * set lost is a compile error in the generated screen, so an empty set here is always a node that
+ * asked for no bound and never one whose bound went missing.
+ *
+ * Linear over a handful of ranges rather than a binary search. A node's set is the narrow one by
+ * construction - `FontPackage::permits()` searches the wide one - and validation has already
+ * established the ordering a search would need.
+ */
+[[nodiscard]] constexpr bool admits(std::span<const mdux::font::CharsetRange> narrowed, char32_t point) noexcept {
+    if (narrowed.empty()) {
+        return true;
+    }
+    for (const mdux::font::CharsetRange& range : narrowed) {
+        if (range.contains(point)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief The width of one cell, in pixels: the widest advance the font package can produce.
@@ -207,6 +257,7 @@ struct FieldExtent {
  *
  * @param list  the destination; rectangles are appended in cell order, the caret last
  * @param font  the font package the glyphs come from
+ * @param narrowed the node's own `charsetRanges`, or empty for a node that narrows nothing
  * @param node  the node's resolved rectangle, in surface pixels
  * @param cells the field's `max_length`: how many cells the grid has
  * @param text  the value, as code points - decoded by the host, never parsed here
@@ -233,12 +284,13 @@ struct FieldExtent {
  * Allocation-free, `noexcept`, and all-or-nothing: on any refusal the list is rolled back to where
  * it stood on entry.
  */
-[[nodiscard]] mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&          list,
-                                                             const mdux::font::FontPackage& font,
-                                                             const mdux::core::Rect&        node,
-                                                             std::size_t                    cells,
-                                                             std::span<const char32_t>      text,
-                                                             std::optional<std::size_t>     caret,
-                                                             mdux::core::ColorRgba8         color) noexcept;
+[[nodiscard]] mdux::core::ResultVoid<FieldError> recordField(mdux::draw::DrawList&                     list,
+                                                             const mdux::font::FontPackage&            font,
+                                                             std::span<const mdux::font::CharsetRange> narrowed,
+                                                             const mdux::core::Rect&                   node,
+                                                             std::size_t                               cells,
+                                                             std::span<const char32_t>                 text,
+                                                             std::optional<std::size_t>                caret,
+                                                             mdux::core::ColorRgba8                    color) noexcept;
 
 }  // namespace mdux::medui
