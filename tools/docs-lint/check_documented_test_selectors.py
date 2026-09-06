@@ -119,10 +119,40 @@ def fenced_code_lines(text: str) -> list[tuple[int, str]]:
     return lines
 
 
+def join_shell_continuations(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Merges a line ending in a shell continuation backslash with the line(s) that follow it, so
+    a `ctest` invocation split across lines is matched as the one command it is rather than as two
+    lines neither of which contains both `ctest` and `-R`. The merged result keeps the *first*
+    physical line's number - a citation still points at the line a reader looks for the command on,
+    not at whichever continuation line happened to carry the flag.
+
+    Applies within one fenced block at a time. `fenced_code_lines()` numbers its lines with no gap
+    while a fence stays open and at least one gap (the delimiter lines it drops) between two
+    fences, so a break in the sequence is a fence boundary - a continuation must never be read
+    across it, or a line ending a block coincidentally with a trailing `\\` could absorb the next
+    block's first line.
+    """
+    joined: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        start_line, buffer = lines[index]
+        current_line = start_line
+        while buffer.rstrip().endswith("\\") and index + 1 < len(lines):
+            next_line, next_text = lines[index + 1]
+            if next_line != current_line + 1:
+                break
+            buffer = buffer.rstrip()[:-1].rstrip() + " " + next_text.strip()
+            current_line = next_line
+            index += 1
+        joined.append((start_line, buffer))
+        index += 1
+    return joined
+
+
 def find_citations(path: Path) -> list[Citation]:
     text = path.read_text(encoding="utf-8", errors="replace")
     citations = []
-    for line_number, line in fenced_code_lines(text):
+    for line_number, line in join_shell_continuations(fenced_code_lines(text)):
         for match in CTEST_SELECTOR_PATTERN.finditer(line):
             selector = match.group("quoted") if match.group("quoted") is not None else match.group("bare")
             citations.append(Citation(path, line_number, selector))
@@ -213,8 +243,8 @@ def main(argv: list[str]) -> int:
 
     if not (build_dir / "CTestTestfile.cmake").is_file():
         print(
-            f"mdux-doc-selectors: '{build_dir}' has no CTestTestfile.cmake - configure and build "
-            "first, or pass --build-dir at the tree that was",
+            f"mdux-doc-selectors: '{build_dir}' has no CTestTestfile.cmake - pass --build-dir at "
+            "an already configured and built CMake binary directory (e.g. build-gcc)",
             file=sys.stderr,
         )
         return 1

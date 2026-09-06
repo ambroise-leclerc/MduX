@@ -23,13 +23,19 @@ CTEST_AVAILABLE = shutil.which("ctest") is not None
 def write_ctest_testfile(build_dir: Path, test_names: list[str]) -> None:
     """A minimal real CTest configuration: one always-passing test per name given.
 
-    `add_test(<name> "true")` is the old-style positional form `cmake/MduXBake.cmake` and
+    `add_test("<name>" "true")` is the old-style positional form `cmake/MduXBake.cmake` and
     `MduXTestDiscoveryImpl.cmake` both use for the same reason documented there - it is what
     `mdux_discover_tests()` actually writes, so a hand-written fixture here matches production
     shape rather than an idealised one.
+
+    The name is quoted, which is not decoration: every discovered case name contains a space
+    (`"unit_tests::Version Test"`), and CTest reads an *unquoted* `add_test(unit_tests::Version
+    Test "true")` as name `unit_tests::Version`, command `Test`, argument `"true"` - confirmed
+    empirically, and exactly the gap between this fixture and production shape that would have
+    let every test here pass against a name CTest was never asked to register.
     """
     build_dir.mkdir(parents=True, exist_ok=True)
-    lines = [f'add_test({name} "true")\n' for name in test_names]
+    lines = [f'add_test("{name}" "true")\n' for name in test_names]
     (build_dir / "CTestTestfile.cmake").write_text("".join(lines), encoding="utf-8")
 
 
@@ -113,6 +119,31 @@ class CitationExtractionTests(unittest.TestCase):
             citations = selectors.find_citations(path)
             self.assertEqual([c.selector for c in citations], ["Stale"])
 
+    def test_a_selector_on_a_shell_continuation_line_is_still_found(self) -> None:
+        # `ctest` and `-R` on different physical lines used to produce no citation at all - a
+        # command that reads as documented verification and is silently never checked, which is
+        # the exact failure shape this whole tool exists to close.
+        text = "```bash\nctest --test-dir build \\\n    -R MduXUnitTests --output-on-failure\n```\n"
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            citations = selectors.find_citations(path)
+            self.assertEqual([c.selector for c in citations], ["MduXUnitTests"])
+            # The line a reader would look for the command on - the first of the two, where
+            # `ctest` itself appears - not the continuation line the flag happened to land on.
+            self.assertEqual(citations[0].line, 2)
+
+    def test_a_continuation_is_not_read_across_a_fence_boundary(self) -> None:
+        # A line ending a fenced block in a trailing backslash - unusual, but not this tool's to
+        # assume can't happen - must not absorb the next block's first line as if it were the
+        # same command.
+        text = "```bash\necho done \\\n```\n```bash\nctest --test-dir build -R Live\n```\n"
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "doc.md"
+            path.write_text(text, encoding="utf-8")
+            citations = selectors.find_citations(path)
+            self.assertEqual([c.selector for c in citations], ["Live"])
+
 
 @unittest.skipUnless(CTEST_AVAILABLE, "ctest is not on PATH in this environment")
 class LiveCTestQueryTests(unittest.TestCase):
@@ -123,6 +154,19 @@ class LiveCTestQueryTests(unittest.TestCase):
             build_dir = Path(raw)
             write_ctest_testfile(build_dir, ["sample::CaseOne", "sample::CaseTwo", "other::CaseOne"])
             self.assertEqual(selectors.matching_test_count("ctest", build_dir, "^sample::"), 2)
+
+    def test_a_name_containing_a_space_is_registered_whole_rather_than_split(self) -> None:
+        # Every discovered case name contains a space (`unit_tests::Version Test`), and an
+        # unquoted `add_test(unit_tests::Version Test "true")` is read by CTest as name
+        # `unit_tests::Version`, command `Test` - a fixture bug that would have let every test
+        # here pass against a name that was never actually registered. Pinned directly, rather
+        # than relying on the other scenarios happening to use a prefix selector that cannot tell
+        # the difference.
+        with tempfile.TemporaryDirectory() as raw:
+            build_dir = Path(raw)
+            write_ctest_testfile(build_dir, ["unit_tests::Version Test"])
+            self.assertEqual(selectors.matching_test_count("ctest", build_dir, "^unit_tests::Version$"), 0)
+            self.assertEqual(selectors.matching_test_count("ctest", build_dir, "^unit_tests::Version Test$"), 1)
 
     def test_a_selector_matching_nothing_returns_zero_rather_than_raising(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

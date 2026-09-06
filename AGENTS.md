@@ -62,9 +62,10 @@ Three decisions from that programme apply repository-wide:
    closed) — see `regulatory-citations` in § 7 and [ADR-006](docs/adr/ADR-006-no-reproduction-of-normative-standard-text.md).
    Do not add new material that reproduces or closely paraphrases a standard's wording.
    `mdux-docs-lint` enforces this in CI.
-4. **Evidence is baked and committed** (issue `#12`, closed). Eight artifacts live under
-   `generated/` today — see the `evidence-pipeline` skill's own status line for the current count
-   and kinds rather than a second copy of it here. A normal build never writes into
+4. **Evidence is baked and committed** (issue `#12`, closed). Artifacts live under `generated/` —
+   see the `evidence-pipeline` skill's own status line for the current count and kinds rather than
+   a second copy of it here, which is exactly the number this sentence used to restate and go
+   stale by. A normal build never writes into
    the source tree — `mdux-bake-update` is the only path that does, run deliberately by an author
    who commits the diff. CI asserts byte-identity on every toolchain leg that runs the evidence
    label.
