@@ -1,96 +1,184 @@
-# MduX → TrustSC parity roadmap
+# MduX ↔ TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 6 September 2026
-> Epic status re-verified against `develop` @ `8c04087` · 6 September 2026. All thirteen epics were
-> queried on GitHub: twelve closed, one open (`#19`). **#17 closed at 6/6 plus its #297 follow-on and
-> ships in v0.8.0**, which closes Wave 6 — #16 shipped in v0.7.0, and #17 is what it was waiting on.
-> **No non-epic issue is open, and no epic child is open.** `#19`'s own children (S1–S6) are all
-> shipped and closed too; the issue itself stays open only because closing an epic is a manual step
-> GitHub does not take on its last child.
-> The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
-> 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
+> Assessed 6 September 2026 against MduX `develop` at
+> [`e68e04b`](https://github.com/ambroise-leclerc/MduX/commit/e68e04b9f41277775dd4a13b692790aa8c13ad86)
+> and TrustSC `main` at
+> [`4f114dd`](https://github.com/ambroise-leclerc/TrustSC/commit/4f114dd30c64f61d11edb5941e95f422e189f305).
+> All thirteen original parity epics (#7–#19) are closed. PR #306 closed #304, and #19
+> was closed on 6 September. All post-merge MduX workflows reported success at this head,
+> including the four platform/compiler build legs and sanitizers.
+> Phase 2 below is newly planned work: five open epics and sixteen open child issues.
 
-MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
-SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. All six waves have shipped — the renderer
-draws its first pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
-what the build actually produces, #14 closed Wave 4 with the font and text pipeline, v0.6.0 closes
-Wave 5 with #15, the compiler that generates the screens it draws, v0.7.0 adds #16, which checks
-that what the compiler produced is what reaches the screen, and v0.8.0 closes Wave 6 with #17, which
-fills out the rest of the component dictionary that #16's verification checks.
-All twelve of its children have landed — the ADRs,
-the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
-golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
-its CMake registration — so the compiler now reads a `.medui` file, resolves it to a bounded box
-tree, refuses a box that cannot hold its widest approved translation, says where safety-critical
-content must appear, and writes the result as a byte-compared artifact and as `constexpr` C++ a
-device links without a parser. The first compiled screen is committed under
-`generated/screen/endoscope-monitor/`, the governed runtime draws one without allocating, and
-`mdux-medui-check` validates a single file while naming the two checks a file on its own cannot
-cover. With #201 the chain reaches pixels: `ScreenPixelTests` renders the committed screen through
-the governed runtime and compares the frame pixel by pixel under lavapipe. What the epic leaves for
-its successors is content rather than path: #235 has since baked a text package, so the committed
-screen carries a `t("STR-KEY")` measured against it, #242 has since drawn it — the governed
-runtime joins the compiled screen to a text package and the title reaches the display — and #244 has
-since made that join *authenticated* rather than conventional: a screen carries the digests of the
-text packages it was compiled against, `TextBinding::create()` refuses one it was not, and
-`render()` refuses a binding that another screen approved. What was left
-was the rest of the dictionary, and #17 has since filled it in end to end: every component the
-dictionary names now draws, and #297 closed the one gap its own last child exposed - a `TextInput`'s
-`charset:` narrowing the source without narrowing the device. The golden sidecar has both consumers it was written for: the static one in
-`ScreenPixelTests` that checks it against the compiled screen, and, since #255, the rendered one
-ADR-012 describes.
+The original six waves delivered the foundations: trust zones, governance records, baked evidence,
+a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
+bounded widget rendering and rendered-screen verification. Those features are implemented. The
+next programme connects them into an interactive application and an authoring workflow, and makes
+the two siblings' shared behavior precise enough to compare.
 
-| Metric | Count |
+This is a comparison of code and recorded CI evidence, not a new build of both repositories or a
+claim of product certification. MduX remains an experimental C++23 project; TrustSC's Rust
+implementation is a comparison target, not proof of clinical readiness. MduX's Class A/B/C
+metadata scope and TrustSC's B/C scope remain an intentional difference.
+
+| Scope at this assessment | State |
 |---|---|
-| Epics | 13 |
-| Delivered | 12 |
-| Remaining | 1 (`#19`, all children shipped — see below) |
-| Waves shipped | 6 (#16 in v0.7.0, #17 in v0.8.0) |
-| Standalone open issues | 0 |
-| Open epic children | 0 |
+| Original parity epics #7–#19 | 13 closed; no remaining children |
+| Original release waves | Six shipped, v0.2.0 through v0.8.0 |
+| Phase 2 epics | 5 open: #307–#311 |
+| Phase 2 child issues | 16 open: #312–#327 |
+| Additional platform epic #222 | Closed; outside the original thirteen-epic count |
+| First actionable issue | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), behavior matrix and versioned decisions |
 
-## The thesis
+## Current comparison
 
-### Where the two diverge
+The table is re-assessed at the two commits above. The older August comparison and its test totals
+are superseded; closing the original backlog does not imply complete application-level parity.
 
-Re-verified against `develop` on 17 August 2026. Eight of the nine rows have closed since
-this table was first written; the one that remains is the `.medui` authoring story, which is
-the whole of Track C.
+| Area | MduX at the assessed head | TrustSC at the assessed head | Remaining work |
+|---|---|---|---|
+| Architecture and governance | Governed core, separate Vulkan adapter and host tools; requirement/hazard/verification records, traceability and evidence exports exist. | Governed crates, presentation adapter and host tools; corresponding governance records and application facade exist. | Preserve boundaries; add application integration rather than rebuild governance. |
+| MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | #307: common versioned observations, explicit differences and corpus-derived conformance. |
+| Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | #308: bounded interaction, editing and a presented medical monitor. |
+| Presentation and streaming | `UiRenderer` consumes host Vulkan resources; medical examples build draw lists, while the windowed example presents a triangle. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #308 for presentation; #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
+| Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 resolves predicate meaning; #309 verifies dynamic application behavior without weakening the static gate. |
+| Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311: host editing/preview interfaces and Studio integration, with a reuse decision before a fork. |
+| Evidence, ML and text | Recipe-driven committed artifacts, cross-toolchain byte checks, shared host/device inference kernels, fail-closed model creation and bounded runtime bindings. | Baked font/image/shader/model artifacts, deterministic inference and bounded draw paths; the screen/text join still allocates at startup. | Retain existing MduX guarantees. TrustSC #47 is a sibling-side tightening proposal, not missing MduX work. |
+| Platform evidence | MSVC/Windows, GCC/Linux, Clang/libc++ on Linux and Apple Silicon macOS, with pixel/evidence gates and sanitizers. | Current CI builds/tests the Rust workspace on Linux with lavapipe, baker verification, monitor smoke and Studio preview checks. | Do not trade MduX's wider platform coverage for API similarity. |
 
-| Area | MduX today | TrustSC today |
+### Sources and limits
+
+The comparison uses these implemented mechanisms, rather than feature names alone:
+
+- [MduX conformance declaration](../medui-conformance.toml) and
+  [TrustSC conformance declaration](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/medui-conformance.toml).
+  Declared coverage differs; unclaimed phases are not evidence that TrustSC lacks all local behavior.
+- [MduX screen runtime](../include/mdux/medui/Screen.cppm),
+  [example targets](../examples/CMakeLists.txt), and
+  [TrustSC input model](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/crates/trustsc/src/input.rs).
+- [MduX verification driver](../tools/verify/Driver.cpp),
+  [governed predicates](../include/mdux/verify/Verify.cppm), and
+  [TrustSC scenario replay](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/crates/trustsc/src/verify_scenario.rs).
+  Tint checking and pixel hashing must not be reported as interchangeable evidence.
+- [TrustSC verification guide](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/docs/verification/ui-verification.md)
+  explicitly records the absent committed hash baselines. Its property checks run, but that does
+  not establish a committed exact-image regression gate.
+- [TrustSC Studio](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/tools/trustsc-medui-studio/README.md)
+  and [stream renderer](https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd/adapters/trustsc-vulkan-winit/src/renderer.rs)
+  supply concrete application/authoring comparison targets.
+- [MduX post-merge GCC run](https://github.com/ambroise-leclerc/MduX/actions/runs/34060338888),
+  [Windows run](https://github.com/ambroise-leclerc/MduX/actions/runs/34060339257),
+  [macOS run](https://github.com/ambroise-leclerc/MduX/actions/runs/34060338909),
+  [Linux Clang run](https://github.com/ambroise-leclerc/MduX/actions/runs/34060338848), and
+  [TrustSC CI](https://github.com/ambroise-leclerc/TrustSC/actions/runs/33518269343)
+  are the observed integration evidence. No test-total comparison is used as a measure of parity.
+
+Manual generation is still [TrustSC #6](https://github.com/ambroise-leclerc/TrustSC/issues/6), not a
+delivered sibling feature to copy. An allocation-free startup text join is
+[TrustSC #47](https://github.com/ambroise-leclerc/TrustSC/issues/47). Full Unicode shaping, a native
+Vulkan SC deployment and clinical qualification are not established by this comparison and are
+not silently added to Phase 2. The [MduX text baker](../tools/text/TextBake.cppm) documents and
+enforces its limited LTR repertoire; the TrustSC font baker's code-point walk is not proof of
+general shaping support either.
+
+## Phase 2 — application and authoring parity
+
+These issues are open planning records, including those blocked by design decisions. Creating a
+record does not authorize its implementation to bypass a dependency. This replaces the old
+practice of waiting for an entire predecessor epic to close before recording its successor's
+children: child-level dependencies now make the next executable step explicit.
+
+The first step is #312. Once its relevant decisions are accepted, input design (#315), viewport
+design (#322) and editor API design (#325) can proceed alongside verifier alignment (#313).
+Canonical interfaces land before their consumers. No new version number or release date is assigned
+until a deliverable and its evidence are agreed.
+
+### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
+
+Publish an agreed, versioned compatibility boundary, adopt its verification semantics in MduX, and enforce normalized cross-implementation observations. Preserve intentional differences in language, supported safety classes and resource ownership.
+
+| Child | Deliverable | Prerequisites |
 |---|---|---|
-| UI authoring | Partly closed, and moving. The HTML path is deleted (#127) and `mdux.draw` now describes a frame in governed code. The compiler is complete front to back — lexer, parser, AST, semantic analysis, bounded layout, per-locale text budgets and safety-critical goldens, all host-only and conformance-tested against the shared MedUI spec, then the canonical package, the two C++ emitters, `mdux-meduic` and a committed screen artifact. The governed runtime draws one without allocating. `mdux-medui-check` validates one file without a build, and an authored screen reaches pixels through the governed runtime in `ScreenPixelTests` (#201). A text package is baked, the committed screen carries a `t("STR-KEY")` measured against it (#235), the governed runtime draws it (#242), and the screen is bound to the packages it was compiled against by digest (#244) - so a label authored in `.medui` reaches pixels through every stage, and a substituted translation is refused rather than drawn. What is still ahead is content rather than path: the rest of the components' own geometry (#17). | `.medui` compiled at build time to a `CompiledScreenPackage`. The runtime never parses, never solves layout, never shapes text. |
-| Rendering | Closed (#13). A real Vulkan renderer, an offscreen target with readback, and the project's first pixel test running under lavapipe in CI. | A real Vulkan renderer, plus offscreen verification of rendered truth. |
-| Evidence | Closed (#12). SHA-256, canonical JSON, bake reports and `mdux_bake_artifact()`. Seven artifacts committed under `generated/`, re-derived and byte-compared on all four CI legs - MSVC, GCC 16, macOS/Clang 21 (#222) and Linux/Clang 21 (#246), each of which now also provides a Vulkan device so the screen bundle's rendered `verification.json` is re-derived rather than copied (#254). | Every asset baked by a host tool into committed `package.json` / `report.json`, byte-verified in CI. |
-| ML | Closed (#18). Governed f32 kernels shared by host and device, a fail-closed golden self-test, no heap in `predict` verified three ways, and a committed ECG demonstrator whose weights swap with zero source change. | Zero-SOUP deterministic f32 inference with a golden-vector, fail-closed self-test. |
-| Trust zones | Closed (#11). `MduXCore` is governed and never receives Vulkan's include directories; `mdux_verify_trust_zones()` walks the link graph at configure time, `mdux-governed-lint` rejects the banned construct at source level, and `governed.noThrow.symbolScan` rejects it in the emitted objects (#116). | `crates/` / `adapters/` / `tools/` with enforced dependency rules. |
-| Docs | Closed (#8, #10). Five standards on real clause structure with per-clause indexes and JSON Schemas, plus the documentation architecture — README derived from real targets, a contiguous ADR index, and a CI lint for internal links and retired paths. | Five standards, clause-accurate modules, per-clause index, JSON Schemas, CI-linted. |
-| Copyright | Closed (#7). Reproduced text removed from the tree and from history, with `mdux-docs-lint` in CI to keep it out. | Reproducing normative text is forbidden outright; original prose only. |
-| Tests | Closed. **616 tests, 616 passing** at `develop` @ `bdf539c`, across the in-repository `MduXTest` and SpecLab BDD scenarios — counted from the macOS CI run for that commit, not from a local build (see the note under the table). Labelled suites for cross-toolchain byte identity (`evidence`), FP determinism, no-heap verification, governed-zone no-throw (`governed`, #116, with a negative fixture) and rendered truth (`pixel`), plus an ASan/UBSan leg (#179) that found two use-after-frees a green build had missed. Since #222 a third platform runs the same labelled suites on every push: macOS 15 on Apple Silicon under Clang 21 and libc++, with `pixel` executed through MoltenVK and the job failing if it is skipped. #246 added a fourth lane, Linux under Clang 21 and libc++, which caught a stack-frame guard violation and a standard-library mismatch that the other three had all missed. | Real suites, including cross-toolchain byte-identity and rendered-truth checks. |
-| Packaging | Closed (#11). Install/export restored; MSVC, GCC and Clang presets, with MSVC, GCC 16, macOS arm64 / Clang 21 (#222) and Linux / Clang 21 (#246) all green in CI. | Workspace builds `--locked` on Linux and in containers. |
+| [#312](https://github.com/ambroise-leclerc/MduX/issues/312) | Define the sibling behavior matrix and versioned MedUI decisions | Actionable now |
+| [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
+| [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
 
-> **Why the test count is sourced from CI rather than a local run.** 616/616 is what the macOS lane
-> reports for `bdf539c` (run 33149254738), and the GCC 16, MSVC and Linux/Clang lanes are green on
-> the same commit. A local build of the
-> same commit, with the same preset and the same Clang 21.1.8, fails three `evidence-unit` scenarios
-> — two `SEGFAULT`, one failed assertion — on a host running **macOS 26.5.2 with SDK 26.5**, where
-> the verified lane runs macOS 15. The same three failed at `6124bcb` from a build directory deleted
-> and reconfigured from scratch, so they are not stale incremental state. The generated module's own
-> `static_assert(screen.validate().has_value())` compiles, so the same expression is true at compile
-> time and false at run time on that host. The supported configuration is the one in
-> `cmake/toolchains/macos-arm64-llvm.cmake`, and macOS 26 is not it — but a constexpr/runtime
-> divergence is worth a look before it becomes the supported host.
+### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 
-## Dependency order
+Deliver one interactive monitor whose platform events flow through a bounded governed model into the existing screen bindings and real Vulkan presentation, with a deterministic headless path using the same application logic.
 
-### Six waves
+| Child | Deliverable | Prerequisites |
+|---|---|---|
+| [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
+| [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
+| [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
+| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316), [#317](https://github.com/ambroise-leclerc/MduX/issues/317) |
 
-An epic opens when every epic it depends on has closed. All six waves have shipped
-(v0.2.0 through v0.8.0), one epic per wave closing the dependency it held.
+### [#309](https://github.com/ambroise-leclerc/MduX/issues/309) — Deterministic interaction scenarios and dynamic UI evidence · planned
+
+Replay the actual application's bounded event/update path from compiled scenarios, then verify the resulting dynamic frames and emit complete, traceable evidence.
+
+| Child | Deliverable | Prerequisites |
+|---|---|---|
+| [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
+| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) |
+| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
+
+### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
+
+Add an optional Vulkan adapter path that consumes a caller-owned bounded stream and composes a concrete waterfall visualization inside the compiled viewport rectangle.
+
+| Child | Deliverable | Prerequisites |
+|---|---|---|
+| [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
+| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) |
+| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) |
+
+### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
+
+Expose a stable host-only editing/preview interface and reuse the TrustSC Studio frontend where practical through a MduX backend, ending in a tested proposal workflow.
+
+| Child | Deliverable | Prerequisites |
+|---|---|---|
+| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316), [#323](https://github.com/ambroise-leclerc/MduX/issues/323) |
+| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) |
+
+### Delivery and evidence rules
+
+The issue bodies carry acceptance criteria, source references, impact classifications and precise
+dependencies. Shared-contract changes also need the relevant Compliatory/MedUI decision and a
+linked TrustSC adoption; only MduX issues were created by this planning update. Do not mark a
+cross-implementation claim complete from MduX results alone.
+
+Input, rendering and verification changes need prospective requirement/design decisions and
+maintainer or domain-expert review. Preserve allocation bounds, explicit refusals, package
+authentication and the existing static verification gate. New scenarios must enumerate all
+required captures and locales, so a missing result cannot look like a successful run. The studio
+is host-only and must use the compiler and real renderer; it does not reintroduce runtime HTML/CSS.
+
+Each PR targets `develop` or names its predecessor. After that predecessor merges, rebase onto
+current `develop`, review the final diff and wait for its post-merge integration checks before
+merging dependent work. The detailed policy remains in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+This roadmap change is **potentially safety-relevant planning/documentation**: it changes which
+behavior and evidence will be developed, but changes no device code, compiled artifact or existing
+verification result. The design children identify affected records before implementation rather
+than inventing retrospective clinical requirements.
+
+## Original programme — delivered
+
+The release and epic records below retain the history of #7–#19. Their historical test counts and
+release-time observations are not the current comparison above. All original epics are closed;
+Phase 2 is a separate backlog, not a reopening of their completed acceptance criteria.
+
+### Six delivered waves
+
+The original programme delivered its dependencies through six waves. All six have shipped
+(v0.2.0 through v0.8.0), with dependencies delivered before their consumers.
 Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 shipped in two
 halves: #16 closed at 5/5 in v0.7.0, and #17 closed at 6/6 plus its #297 follow-on in v0.8.0. #19
-spans waves by design; its S3–S6 follow #15, and its own last three children shipped alongside #17.
+spanned waves by design: S4–S6 shipped alongside #17, and PR #306 delivered its S7 guidance
+follow-up before the epic closed.
 
 ```text
 Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 done)
@@ -179,17 +267,10 @@ no ink to check. The last five are #16 itself, in order, each blocked on its pre
 > device path dropped JSON re-serialization entirely instead of hashing fields, and noncanonical
 > package bytes became a *compile* error instead of a test for the divergence they caused.
 
-## The backlog
+## Original epic delivery record
 
-### Thirteen epics
-
-Child issues exist for every actionable epic, and as of 28 August 2026 that is every open epic.
-#16's and #17's children were promoted when #15's closure unblocked them, and #19's remaining
-S4–S6 with them: those had followed #15 and #18, both long closed, so they were actionable under
-this convention and had simply not been promoted. The convention is that a *blocked* epic keeps its
-breakdown as a checklist in its own body until its dependencies close.
-
----
+The thirteen original parity epics are all closed. Their completed children and release context
+are retained below; use the Phase 2 table for actionable work and blockers.
 
 ### Track A · Documentation, governance, regulatory
 
@@ -385,16 +466,13 @@ happened to read.
 - #200 S11 `mdux-medui-check` · _closed (PR #233)_
 - #201 S12 First end-to-end screen · _closed (PR #234)_
 
-**One follow-up outlives the epic.** #219 — *Close `ClockFormat` and `SystemEvent` across the
-compiler and the schema* — is labelled `Part of #15` and is **open**. It is not a thirteenth child:
-#218 tried closing the two sets in the schema alone and withdrew, because the schema is imported by
-the compiler and closing it there alone leaves the canonical type unable to represent a screen the
-implemented pipeline accepts. It stays open against a closed epic on purpose, and it is a parity
-row: TrustSC closes both sets in its governed crate and leaves the third, `charset`, an open name —
-which is where MduX already agrees. Until it lands, #195's clock branch needs a product-supplied
-table for a format that could have been measured.
+**The follow-up is delivered.** #219 closed `ClockFormat` and `SystemEvent` across the compiler
+and schema before #258 and #261 consumed them. #218 had attempted a schema-only closure and was
+withdrawn because that would have made the canonical type unable to represent accepted compiler
+input. The repair landed the shared definitions before consumers. `charset` remains an authored
+name, while #297 carries its resolved ranges to the device and enforces them there.
 
-_Blocks #16, #17_
+_Historical successors: #16 and #17, both now closed._
 
 #### #16 — Rendered-truth verification · **Done v0.7.0**
 
@@ -508,7 +586,7 @@ ML package used to be the one committed artifact a device build still parsed at 
 closed it — `mdux.ml` emits `constexpr` model packages, the same treatment shaders and screens
 already had. It did not reopen #18 and did not block a wave._
 
-#### #19 — Agent & LLM tooling parity · **All children shipped**
+#### #19 — Agent & LLM tooling parity · **Closed 6 September 2026**
 
 A diagnostic envelope of file, line, code, severity and fix hint is what lets an agent
 fix a `.medui` error without parsing prose. With a published grammar, it is the difference
@@ -518,8 +596,8 @@ AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are pr
 JSON diagnostic envelope is landed across the tools, the `.medui` contract is published as
 machine-readable JSON the compiler emits from its own tables, every recipe kind has a committed JSON
 Schema checked against its own reports, and the compiler's resolved IR is dumpable alongside a
-generated host-tool manifest. Nothing named in this epic remains; the issue itself stays open only
-because closing an epic issue is a separate, manual step from closing its last child.
+generated host-tool manifest. PR #306 delivered the S7 guidance follow-up and closed #304;
+#19 itself is now closed. The post-merge build and lint workflows passed at `e68e04b`.
 
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
@@ -537,7 +615,7 @@ because closing an epic issue is a separate, manual step from closing its last c
   CTest configuration whether every documented `-R` example still matches something, wired into
   the GCC 16 build leg since the question needs a build to ask.
 
-_S1–S7 closed. #19 has no open child._
+_S1–S7 closed; #19 closed._
 
 ---
 
@@ -557,7 +635,8 @@ clone-time exposure that a HEAD-only deletion leaves behind.
 Running the evidence tests on MSVC, GCC 16 and Clang 21 with libc++ — the last on both Apple
 Silicon (#222) and Linux (#246) — in the same pull request proves byte-identity across three
 independent toolchains, standard libraries and floating-point code generators, on three operating
-systems. TrustSC gets its determinism from a single `rustc`.
+systems. TrustSC's assessed CI exercises one Rust toolchain on Linux; it does not establish
+the same cross-toolchain/platform byte-identity evidence.
 
 The third leg arrived by a route this document did not predict, and finding that out corrected a
 false claim. ADR-007 decision 6 read "and Clang, now that issue #48 re-enabled that leg" — #48 did
@@ -580,8 +659,9 @@ same compiler and standard library as the macOS lane, on the same OS as the GCC 
 bytes" — two claims the doctrine had been making as one.
 
 And "the host baker uses the same ML kernels as the device runtime" stops being a
-discipline: it is one governed module imported by both. If they ever disagree, it is the
-FPU, not the code — which is exactly what the golden vectors exist to detect.
+discipline: it is one governed module imported by both. That removes duplicated kernel
+implementations; golden vectors still check the actual compiled behavior on each supported
+configuration.
 
 #### One claim it cannot make
 
@@ -595,7 +675,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status re-verified against `develop` @ `8c04087` · 6 September 2026_
-_13 epics · 12 delivered · all six waves shipped (#16 in v0.7.0, #17 in v0.8.0) · no enforcement gaps outstanding_
-_0 standalone open issues · 0 open epic children · `#19` open only as an epic issue, all its children shipped_
-_All epics on GitHub_
+_Original programme: 13 closed epics and six shipped waves. Phase 2: five planned epics and
+sixteen child issues, linked above. Status assessed 6 September 2026._
