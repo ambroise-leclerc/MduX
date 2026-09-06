@@ -1,11 +1,13 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 3 September 2026
-> Epic status re-verified against `develop` @ `51eb779` · 3 September 2026. All thirteen epics were
+> Backlog · ambroise-leclerc/MduX · updated 6 September 2026
+> Epic status re-verified against `develop` @ `455eb2f` · 6 September 2026. All thirteen epics were
 > queried on GitHub: eleven closed, two open (`#17`, `#19`). **#16 closed at 5/5 and ships in
 > v0.7.0**, which half-opens Wave 6 — its other epic, #17, remains.
-> Twelve non-epic issues are open: nine are epic children listed in their epic's section below, and
-> three are standalone follow-ups from #255 — `#280`, `#281` and `#282`.
+> **No non-epic issue is open.** #19's own children (S1–S6) are all shipped and closed, and #297 —
+> `#260`'s follow-on — closed with it; #17's six children and the three standalone #255 follow-ups
+> (`#280`, `#281`, `#282`) were already closed. What is open is exactly the two epic issues
+> themselves, `#17` and `#19`, neither of which GitHub auto-closes on its last child.
 > The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
 > 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
@@ -90,7 +92,7 @@ closed at 5/5 and shipped in v0.7.0, and #17 remains. #19 spans waves by design;
 #15.
 
 ```text
-Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
+Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 done)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
@@ -473,16 +475,18 @@ it is still open: the ML package is the one committed artifact a device build st
 startup, which is the same property #197 gave the compiled screen and #244 has now extended to the
 text it binds. It does not reopen #18 and it does not block a wave._
 
-#### #19 — Agent & LLM tooling parity · **Partly done**
+#### #19 — Agent & LLM tooling parity · **All children shipped**
 
 A diagnostic envelope of file, line, code, severity and fix hint is what lets an agent
 fix a `.medui` error without parsing prose. With a published grammar, it is the difference
 between guessing at the DSL and being handed its contract.
 
 AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are present, the stable
-JSON diagnostic envelope is landed across the tools, and the `.medui` contract is published as
-machine-readable JSON the compiler emits from its own tables. What remains is the recipe schemas and
-the IR dump.
+JSON diagnostic envelope is landed across the tools, the `.medui` contract is published as
+machine-readable JSON the compiler emits from its own tables, every recipe kind has a committed JSON
+Schema checked against its own reports, and the compiler's resolved IR is dumpable alongside a
+generated host-tool manifest. Nothing named in this epic remains; the issue itself stays open only
+because closing an epic issue is a separate, manual step from closing its last child.
 
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
