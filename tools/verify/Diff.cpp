@@ -159,7 +159,12 @@ std::vector<ColorRgba8> composeDiff(std::span<const ColorRgba8> frame, std::uint
     return pixels;
 }
 
-std::string diffImageName(std::string_view screenId, std::string_view scope) {
+namespace {
+
+/// The injective scope encoding both image names are built from. One implementation, because two
+/// would agree until the day a scope needed escaping in only one of them - and the property that
+/// matters here is that no two scopes collide, which a second copy cannot be trusted to keep.
+[[nodiscard]] std::string scopeSlug(std::string_view scope) {
     std::string slug;
     slug.reserve(scope.size());
     for (const char character : scope) {
@@ -173,7 +178,17 @@ std::string diffImageName(std::string_view screenId, std::string_view scope) {
         }
         std::format_to(std::back_inserter(slug), "%{:02X}", byte);
     }
-    return std::format("{}.{}.png", screenId, slug);
+    return slug;
+}
+
+}  // namespace
+
+std::string diffImageName(std::string_view screenId, std::string_view scope) {
+    return std::format("{}.{}.png", screenId, scopeSlug(scope));
+}
+
+std::string frameImageName(std::string_view screenId, std::string_view scope) {
+    return std::format("{}.{}.frame.png", screenId, scopeSlug(scope));
 }
 
 std::vector<std::byte> encodePng(std::span<const ColorRgba8> pixels, std::uint32_t width, std::uint32_t height) {
@@ -196,8 +211,8 @@ std::vector<std::byte> encodePng(std::span<const ColorRgba8> pixels, std::uint32
         }
     }
 
-    std::vector<std::byte> out{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E}, std::byte{0x47},
-                               std::byte{0x0D}, std::byte{0x0A}, std::byte{0x1A}, std::byte{0x0A}};
+    std::vector<std::byte>
+        out{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E}, std::byte{0x47}, std::byte{0x0D}, std::byte{0x0A}, std::byte{0x1A}, std::byte{0x0A}};
 
     std::vector<std::byte> header;
     appendBigEndian(header, width);

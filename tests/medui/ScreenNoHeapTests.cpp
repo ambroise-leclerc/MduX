@@ -467,8 +467,8 @@ const mdux::spec::Register drawingAReadingAllocatesNothing{
                         built.sidecarPath       = "runs.bin";
                         built.sidecarByteLength = records.size();
                         built.sidecarSha256     = mdux::evidence::sha256(records);
-                        built.runs.push_back(mdux::text::TextRun{
-                            .id = "STR-UNUSED", .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
+                        built.runs.push_back(
+                            mdux::text::TextRun{.id = "STR-UNUSED", .byteOffset = 0, .byteLength = records.size(), .sha256 = mdux::evidence::sha256(records)});
                         return built;
                     }();
 
@@ -484,12 +484,14 @@ const mdux::spec::Register drawingAReadingAllocatesNothing{
                                                 .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))}
                     };
 
-                    constexpr ms::NumericDisplaySpec pressure{
-                        .requirement = "REQ-1", .templateId = "TPL-X", .source = "SRC", .colorToken = "Theme.Colors.ScoreDigits"};
-                    constexpr ms::ClockSpec                  wall{.format = ms::ClockFormat::TimeSeconds};
+                    constexpr ms::NumericDisplaySpec                 pressure{.requirement = "REQ-1",
+                                                                              .templateId  = "TPL-X",
+                                                                              .source      = "SRC",
+                                                                              .colorToken  = "Theme.Colors.ScoreDigits"};
+                    constexpr ms::ClockSpec                          wall{.format = ms::ClockFormat::TimeSeconds};
                     static constexpr std::array<ms::CompiledNode, 2> readingNodes{
-                        ms::CompiledNode{.id = "pressure", .bounds = {0, 0, 200, 20}, .payload = pressure},
-                        ms::CompiledNode{   .id = "clock", .bounds = {0, 20, 200, 20}, .payload = wall}
+                        ms::CompiledNode{.id = "pressure",  .bounds = {0, 0, 200, 20}, .payload = pressure},
+                        ms::CompiledNode{   .id = "clock", .bounds = {0, 20, 200, 20},     .payload = wall}
                     };
                     ms::ScreenPackage readingScreen{.id                   = "noheap-reading",
                                                     .schemaVersion        = mdux::evidence::kSchemaVersion,
@@ -510,7 +512,7 @@ const mdux::spec::Register drawingAReadingAllocatesNothing{
 
                     // The value and the time a producer moves between frames. Static so the binding
                     // can point at them, exactly as a device's would.
-                    static ms::CivilTime                 now{.year = 2026, .month = 9, .day = 5, .hour = 8, .minute = 0, .second = 0};
+                    static ms::CivilTime                  now{.year = 2026, .month = 9, .day = 5, .hour = 8, .minute = 0, .second = 0};
                     static std::array<ms::ReadingSlot, 1> slots{
                         ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.#", .value = 0}
                     };
@@ -882,5 +884,94 @@ const mdux::spec::Register drawingAFieldAllocatesNothing{
                     checks.expect(after == before, std::format("no allocation across eight frames, counter went {} to {}", before, after));
                     checks.raise();
                 })
+            .Execute();
+    }};
+
+const mdux::spec::Register drawingAndPressingAButtonAllocatesNothing{
+    "Drawing a button and resolving a press over it allocate nothing",
+    "noheap",
+    [] {
+        return speclab::Test("medui-screen-noheap-button")
+            .Given("a screen carrying a Button and a CriticalButton", [] {})
+            .When("frames are recorded and every pixel of the surface is offered as a press", [] {})
+            .Then("the allocation counter does not move",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // Two paths, one scenario, because they share a screen and neither needs a
+                      // locale: the face #261 draws with nothing bound, and `resolvePress()`, whose
+                      // obvious wrong implementation builds a `std::vector` of candidates or returns a
+                      // `std::string` node id.
+                      //
+                      // The *bound* half - a button's word over its face - is `recordCaptionedField()`,
+                      // which `medui-screen-noheap-render-status` already measures: #261 made the two
+                      // components share that function rather than copy it, so one measurement covers
+                      // both. A second copy of the text fixture here would prove the same thing twice.
+                      static constexpr ms::CriticalButtonSpec halt{.requirement = "REQ-NH-001",
+                                                                   .labelKey    = "STR-HALT",
+                                                                   .colorToken  = "Theme.Colors.Fault",
+                                                                   .onPress     = ms::SystemEvent::TriggerHalt};
+                      static constexpr ms::ButtonSpec         freeze{.labelKey    = "STR-FREEZE",
+                                                                     .colorToken  = "Theme.Colors.PrimaryAction",
+                                                                     .source      = "FREEZE",
+                                                                     .requirement = {}};
+
+                      static constexpr std::array<ms::CompiledNode, 2> buttonNodes{
+                          ms::CompiledNode{  .id = "halt",  .bounds = {0, 0, 200, 40},   .payload = halt},
+                          ms::CompiledNode{.id = "freeze", .bounds = {0, 40, 200, 20}, .payload = freeze}
+                      };
+                      static constexpr ms::ScreenPackage buttonScreen{.id                   = "noheap-button",
+                                                                      .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                                      .surfaceWidth         = 200,
+                                                                      .surfaceHeight        = 60,
+                                                                      .approvedTextPackages = defaultApprovals,
+                                                                      .nodes                = buttonNodes,
+                                                                      .budget               = budget};
+                      static_assert(buttonScreen.validate().has_value(), "the no-heap button screen must be one a device could hold");
+
+                      static std::array<mdux::draw::UiVertex, 512>   vertices{};
+                      static std::array<mdux::draw::Index, 768>      indices{};
+                      static std::array<mdux::draw::DrawCommand, 16> commands{};
+
+                      auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
+                      if (!created.has_value()) {
+                          checks.expect(false, "the storage satisfies the budget");
+                          checks.raise();
+                          return;
+                      }
+                      mdux::draw::DrawList list = std::move(*created);
+
+                      std::uint32_t lastRects   = 0;
+                      std::size_t   resolved    = 0;
+                      bool          allRecorded = true;
+
+                      const std::size_t before = allocations();
+                      for (int frame = 0; frame < 8; ++frame) {
+                          list.reset();
+                          const auto recorded = ms::render(buttonScreen, list);
+                          if (!recorded.has_value()) {
+                              allRecorded = false;
+                              continue;
+                          }
+                          lastRects = recorded->rects;
+                      }
+                      // Every pixel, so the walk is exercised on hits and misses alike rather than on
+                      // one coordinate that might take a short path.
+                      for (std::int32_t y = -1; y <= buttonScreen.surfaceHeight; ++y) {
+                          for (std::int32_t x = -1; x <= buttonScreen.surfaceWidth; ++x) {
+                              const auto press = ms::resolvePress(buttonScreen, x, y);
+                              if (press.has_value() && press->has_value()) {
+                                  ++resolved;
+                              }
+                          }
+                      }
+                      const std::size_t after = allocations();
+
+                      checks.expect(allRecorded, "each frame is recorded");
+                      checks.expect(lastRects == 2, std::format("both faces are drawn, got {}", lastRects));
+                      checks.expect(resolved == 200 * 60, std::format("every pixel of the two controls resolves to one, got {}", resolved));
+                      checks.expect(after == before, std::format("no allocation across eight frames and every press, counter went {} to {}", before, after));
+                      checks.raise();
+                  })
             .Execute();
     }};

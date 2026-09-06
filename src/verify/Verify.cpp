@@ -186,12 +186,26 @@ struct Box {
 /// "Painted" is defined against the ground rather than against the tint deliberately: an
 /// anti-aliased edge is a blend, so it is neither the ground nor the tint, and a scan that looked
 /// only for the tint would measure a box one pixel small on every side.
-[[nodiscard]] Box paintedBox(const FramebufferView& frame, NodeRect region, ColorRgba8 ground) noexcept {
+/// Whether a pixel is the ground, allowing one step per composite that produced that ground.
+///
+/// `composites == 0` is an equality, and is what every ground a driver can name without blending
+/// deserves - a clear colour, or an opaque panel `SRC_ALPHA` reproduces byte for byte. A ground the
+/// device itself composited is a value its blend unit produced at whatever precision it has, so a
+/// last-bit disagreement there is the same one this file already admits for a glyph, arising the
+/// same way. See `TextExpectation::create()` for the measurement that made this necessary.
+///
+/// `withinSteps()` cannot serve: it reads zero steps as one, which is right for a glyph and would
+/// silently give away the exactness this preserves.
+[[nodiscard]] bool isGround(ColorRgba8 pixel, ColorRgba8 ground, std::size_t composites) noexcept {
+    return composites == 0 ? pixel == ground : withinSteps(pixel, ground, composites);
+}
+
+[[nodiscard]] Box paintedBox(const FramebufferView& frame, NodeRect region, ColorRgba8 ground, std::size_t groundComposites = 0) noexcept {
     Box box;
     for (Px y = region.y; y < region.y + region.height; ++y) {
         for (Px x = region.x; x < region.x + region.width; ++x) {
             const std::optional<ColorRgba8> pixel = frame.pixelAt(x, y);
-            if (!pixel.has_value() || *pixel == ground) {
+            if (!pixel.has_value() || isGround(*pixel, ground, groundComposites)) {
                 continue;
             }
             box.add(x, y, 1, 1);
@@ -437,7 +451,8 @@ Result<TextExpectation, VerifyError> TextExpectation::create(const mdux::medui::
                                                              const mdux::medui::TextBinding&   binding,
                                                              std::span<const std::byte>        atlas,
                                                              RenderScope                       scope,
-                                                             ColorRgba8                        ground) noexcept {
+                                                             ColorRgba8                        ground,
+                                                             std::size_t                       groundComposites) noexcept {
     // Everything below is provenance, and it is all this function adds over `createSynthetic()`.
     // `TextBinding::create()` has already proved that the font, the text package, its canonical
     // bytes and its sidecar describe each other; what it cannot know is which screen and which node
@@ -481,7 +496,7 @@ Result<TextExpectation, VerifyError> TextExpectation::create(const mdux::medui::
     }
     const std::span<const std::byte> records = sidecar.subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength));
 
-    return build(node, scope, records, *binding.font(), atlas, ground);
+    return build(node, scope, records, *binding.font(), atlas, ground, groundComposites);
 }
 
 Result<TextExpectation, VerifyError> TextExpectation::createSynthetic(const mdux::medui::CompiledNode& node,
@@ -489,11 +504,12 @@ Result<TextExpectation, VerifyError> TextExpectation::createSynthetic(const mdux
                                                                       std::span<const std::byte>       records,
                                                                       const mdux::font::FontPackage&   font,
                                                                       std::span<const std::byte>       atlas,
-                                                                      ColorRgba8                       ground) noexcept {
+                                                                      ColorRgba8                       ground,
+                                                                      std::size_t                      groundComposites) noexcept {
     if (textKeyOf(node).empty()) {
         return err(VerifyError::NodeCarriesNoTextKey);
     }
-    return build(node, scope, records, font, atlas, ground);
+    return build(node, scope, records, font, atlas, ground, groundComposites);
 }
 
 Result<TextExpectation, VerifyError> TextExpectation::build(const mdux::medui::CompiledNode& node,
@@ -501,7 +517,8 @@ Result<TextExpectation, VerifyError> TextExpectation::build(const mdux::medui::C
                                                             std::span<const std::byte>       records,
                                                             const mdux::font::FontPackage&   font,
                                                             std::span<const std::byte>       atlas,
-                                                            ColorRgba8                       ground) noexcept {
+                                                            ColorRgba8                       ground,
+                                                            std::size_t                      groundComposites) noexcept {
     if (scope.isLocaleFree()) {
         // The locale-free scope exists so a textless screen keeps its geometric obligations, not so
         // a text obligation can lose the only thing that distinguishes one of its two from another.
@@ -574,7 +591,7 @@ Result<TextExpectation, VerifyError> TextExpectation::build(const mdux::medui::C
     const Px       originY = node.bounds.y - ink.top;
     const NodeRect placed{.x = node.bounds.x, .y = node.bounds.y, .width = ink.right - ink.left, .height = ink.bottom - ink.top};
 
-    return TextExpectation{&node, scope, records, &font, atlas, mdux::medui::quantise(*resolved), ground, placed, originX, originY};
+    return TextExpectation{&node, scope, records, &font, atlas, mdux::medui::quantise(*resolved), ground, placed, originX, originY, groundComposites};
 }
 
 std::optional<PlacedGlyph> TextExpectation::glyph(std::size_t index) const noexcept {
@@ -700,7 +717,7 @@ CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation&
         return failed(outcome, Finding::RegionOutsideFrame);
     }
 
-    const Box painted = paintedBox(frame, expectation.bounds(), expectation.ground());
+    const Box painted = paintedBox(frame, expectation.bounds(), expectation.ground(), expectation.groundComposites());
     outcome.expected  = expectation.ink();
     if (!painted.inked) {
         return failed(outcome, Finding::NothingPainted);
@@ -722,9 +739,10 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
         return failed(outcome, Finding::RegionOutsideFrame);
     }
 
-    const NodeRect   region = expectation.bounds();
-    const ColorRgba8 ground = expectation.ground();
-    const ColorRgba8 tint   = expectation.tint();
+    const NodeRect    region           = expectation.bounds();
+    const ColorRgba8  ground           = expectation.ground();
+    const ColorRgba8  tint             = expectation.tint();
+    const std::size_t groundComposites = expectation.groundComposites();
 
     // Every placed glyph has to be somewhere this function can look, before any of them is read.
     for (std::size_t index = 0; index < expectation.glyphCount(); ++index) {
@@ -774,11 +792,11 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
     // screen" from "something is, and it is not this glyph as the baker covered it" - two sentences
     // a reader acts on differently, and a distinction the first disagreeing pixel cannot make: a run
     // in the wrong tint disagrees at its very first pixel having painted plenty.
-    const auto glyphShowsInk = [&frame, ground](const PlacedGlyph& placed) noexcept {
+    const auto glyphShowsInk = [&frame, ground, groundComposites](const PlacedGlyph& placed) noexcept {
         for (Px dy = 0; dy < placed.rect.height; ++dy) {
             for (Px dx = 0; dx < placed.rect.width; ++dx) {
                 const std::optional<ColorRgba8> pixel = frame.pixelAt(placed.rect.x + dx, placed.rect.y + dy);
-                if (pixel.has_value() && *pixel != ground) {
+                if (pixel.has_value() && !isGround(*pixel, ground, groundComposites)) {
                     return true;
                 }
             }
@@ -802,7 +820,7 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
             const bool    reachable = holds(ink, x, y);
             const Painted painted   = reachable ? paintedAt(x, y) : Painted{};
             if (painted.layers == 0) {
-                if (*pixel != ground) {
+                if (!isGround(*pixel, ground, groundComposites)) {
                     // The atlas slot is exactly the glyph's bitmap, so a correct frame paints
                     // nothing here.
                     outcome.found           = atPixel(x, y);
@@ -818,7 +836,7 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
             // quantises back to eight bits at every step, so a pixel two quads deep can differ in
             // the last bit twice. Not a similarity threshold - a wrong shape misses by far more.
             const ColorRgba8 wanted = blend(ground, tint, painted.coverage);
-            if (!withinSteps(*pixel, wanted, painted.layers)) {
+            if (!withinSteps(*pixel, wanted, painted.layers + groundComposites)) {
                 const std::optional<PlacedGlyph> placed = expectation.glyph(painted.first);
                 outcome.glyphIndex                      = painted.first;
                 outcome.expected                        = placed.has_value() ? placed->rect : region;

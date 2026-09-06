@@ -11,7 +11,7 @@
     {
       "locale": "en-US",
       "packageId": "endoscope-monitor-en-us",
-      "packageSha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
+      "packageSha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     }
   ],
   "budget": {
@@ -51,7 +51,7 @@
     {
       "bounds": {
         "height": 72,
-        "width": 640,
+        "width": 480,
         "x": 240,
         "y": 0
       },
@@ -60,6 +60,22 @@
       "spec": {
         "colorToken": "Theme.Colors.Title",
         "textKey": "STR-EM-TITLE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 160,
+        "x": 720,
+        "y": 0
+      },
+      "id": "emergency-halt",
+      "kind": "CriticalButton",
+      "spec": {
+        "colorToken": "Theme.Colors.Fault",
+        "labelKey": "STR-EM-HALT",
+        "onPress": "TriggerHalt",
+        "requirement": "REQ-EM-003"
       }
     },
     {

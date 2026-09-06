@@ -33,12 +33,18 @@
       "byteOffset": 228,
       "id": "STR-EM-CLASS-3",
       "sha256": "7b37fdcfb5c487d1efb21ecc874dd72d5b031741792adb0bd67191f23501407a"
+    },
+    {
+      "byteLength": 24,
+      "byteOffset": 270,
+      "id": "STR-EM-HALT",
+      "sha256": "39671c316e0263692813189dda906b5cd44b816eca3ed13ebca5b4d7a10eb5c4"
     }
   ],
   "schemaVersion": 1,
   "sidecar": {
-    "byteLength": 270,
+    "byteLength": 294,
     "path": "runs.bin",
-    "sha256": "853ddce9c50897631dc3593fff3d1d47e4de79e8ce04a1e520f61663aef71921"
+    "sha256": "bd09d7ab2998ac6fdbe9624129387f3d63358d4bede51f59e37096fceb81001d"
   }
 }

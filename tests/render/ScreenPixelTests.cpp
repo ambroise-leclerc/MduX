@@ -13,10 +13,12 @@
  *
  * ## What is on screen
  *
- * The runtime draws a `Panel`, an authenticated `Image`, a `Label`, and the two fields #255 added. `EndoscopeMonitor`'s Row
+ * The runtime draws a `Panel`, an authenticated `Image`, a `Label`, the two fields #255 added and the
+ * critical control's face #261 added. `EndoscopeMonitor`'s Row
  * declares a background, so the solver synthesised one, and that is what appears first: a 1280x72
  * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
- * text package (#242). Below it the `NumericDisplay` and the `SignalTrace` paint the rectangles they
+ * text package (#242) and its halt control beside them. Below it the `NumericDisplay` and the
+ * `SignalTrace` paint the rectangles they
  * reserve, in the tokens their author gave them. Its video surface is still visited, counted as
  * deferred, and left undrawn because no test supplies a stream. Its status indicator and its text
  * input are drawn only by the scenarios that bind one, which is what keeps the unbound path a tested
@@ -41,7 +43,7 @@
  * annotation is removed, or if a golden's bounds stop matching the node it names.
  *
  * The **rendered** one is the consumer ADR-012 describes, and until #255 it could not exist. Both
- * golden nodes on this screen - a `NumericDisplay` and a `SignalTrace` - were deferred by the
+ * golden nodes this screen then had - a `NumericDisplay` and a `SignalTrace` - were deferred by the
  * runtime, so there were no pixels to check `Bounds` or `ColorHash` against, and the only node that
  * *was* drawn was the Row's synthetic `Panel`, which no golden can ever name: `collectGoldens()`
  * skips synthetic nodes, and a `Row` carries neither `requirement:` nor `position:`. The scenario
@@ -328,13 +330,25 @@ TEST_CASE("The compiled screen is the one the compiler produced", "pixel") {
     CHECK(package.validate().has_value());
     CHECK(package.surfaceWidth == 1280);
     CHECK(package.surfaceHeight == 720);
-    CHECK(package.nodes.size() == 8);
+    CHECK(package.nodes.size() == 9);
 
-    // The safety-critical node #201 asks for, reached through the function a traceability export
-    // walks rather than by index.
+    // The safety-critical nodes #201 and #261 ask for, reached through the function a traceability
+    // export walks rather than by index.
     const medui::CompiledNode* traced = package.find("insufflation-pressure");
     REQUIRE(traced != nullptr);
     CHECK(medui::requirementOf(*traced) == "REQ-EM-001");
+
+    // The critical control, and the two things a compiled screen has to carry for a press to be
+    // both traceable and implementable: the requirement it is traced to, and an action from the set
+    // #219 closed. A compiler that resolved `on_press` into anything outside that set would produce
+    // a screen that still validates and names a behaviour no host implements.
+    const medui::CompiledNode* control = package.find("emergency-halt");
+    REQUIRE(control != nullptr);
+    CHECK(medui::requirementOf(*control) == "REQ-EM-003");
+    const auto* critical = std::get_if<medui::CriticalButtonSpec>(&control->payload);
+    REQUIRE(critical != nullptr);
+    CHECK(critical->onPress == medui::SystemEvent::TriggerHalt);
+    CHECK(critical->labelKey == "STR-EM-HALT");
 
     // The label carries the *key*, never the words. This is ADR-011 (as amended by #203) made
     // checkable at the one place it could be violated without anything else noticing: a compiler
@@ -373,9 +387,10 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     // The governed runtime, doing the only work between a compiled screen and a frame.
     const auto recorded = medui::render(package, *list);
     REQUIRE(recorded.has_value());
-    // The Row's synthetic panel, and the two fields #255 taught the runtime to paint.
-    CHECK(recorded->rects == 3);
-    // Five of eight nodes are visited and left undrawn, and the frame says so rather than looking
+    // The Row's synthetic panel, the two fields #255 taught the runtime to paint, and the critical
+    // button's face, which #261 paints whether or not a locale is bound.
+    CHECK(recorded->rects == 4);
+    // Five of nine nodes are visited and left undrawn, and the frame says so rather than looking
     // complete. See this file's header for which, and why each - the status indicator is among them
     // because no test here binds a state, and an indicator with none is in no state to paint, and so
     // is the text input, which has no value to display and does not draw an empty box for one.
@@ -398,6 +413,7 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     ExpectedImage expected{surface, background};
     for (const auto& [id, tint] : std::initializer_list<std::pair<std::string_view, core::ColorRgba8>>{
              {    "topbar-background", core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255}},
+             {       "emergency-halt",   core::ColorRgba8{.r = 219, .g = 51, .b = 46, .a = 255}},
              {"insufflation-pressure",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
              {          "ecg-lead-ii",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}}
     }) {
@@ -426,9 +442,9 @@ TEST_CASE("The golden sidecar names this screen's safety-critical content", "pix
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->kind() == mdux::evidence::json::Value::Kind::Array);
 
-    // Two entries, one per rule ADR-011 fixes: the annotated node, and the positioned one.
+    // Three entries: the two annotated nodes, and the positioned one.
     const std::span<const mdux::evidence::json::Value> entries = parsed->elements();
-    CHECK(entries.size() == 2);
+    CHECK(entries.size() == 3);
 
     bool sawAnnotated = false;
     for (const mdux::evidence::json::Value& entry : entries) {
@@ -631,9 +647,11 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     // learning to draw cannot make this scenario pass for a reason it does not name. The status
     // indicator is one of the two that remain: this scenario binds text and an image, not a state.
     CHECK(recorded->deferred == 3);
-    // The panel and the two fields, plus one rectangle per inked glyph. "Endoscope Monitor" is 17
-    // characters of which the space paints nothing, so 16 glyphs and three filled rectangles.
-    CHECK(recorded->rects == 20);
+    // The panel, the two fields, the image and the critical button's face, plus one rectangle per
+    // inked glyph of the two runs a bound locale draws. "Endoscope Monitor" is 17 characters of
+    // which the space paints nothing, so 16 glyphs; "HALT" is four more. Five filled rectangles and
+    // twenty glyphs.
+    CHECK(recorded->rects == 25);
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -668,8 +686,7 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     std::size_t mismatchedImagePixels = 0;
     for (std::int32_t y = 0; y < imageNode->bounds.height; ++y) {
         for (std::int32_t x = 0; x < imageNode->bounds.width; ++x) {
-            const std::size_t source =
-                (static_cast<std::size_t>(y) * image.image.width + static_cast<std::size_t>(x)) * 4;
+            const std::size_t      source = (static_cast<std::size_t>(y) * image.image.width + static_cast<std::size_t>(x)) * 4;
             const core::ColorRgba8 expected{std::to_integer<std::uint8_t>(image.pixels[source]),
                                             std::to_integer<std::uint8_t>(image.pixels[source + 1]),
                                             std::to_integer<std::uint8_t>(image.pixels[source + 2]),
@@ -677,11 +694,10 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
             const std::size_t      targetIndex = static_cast<std::size_t>(imageNode->bounds.y + y) * static_cast<std::size_t>(surface.width)
                                             + static_cast<std::size_t>(imageNode->bounds.x + x);
             const core::ColorRgba8 actual = (*pixels)[targetIndex];
-            mismatchedImagePixels += static_cast<std::size_t>(actual != expected);
+            mismatchedImagePixels        += static_cast<std::size_t>(actual != expected);
         }
     }
-    CHECK_MESSAGE(mismatchedImagePixels == 0,
-                  std::format("{} baked image pixels differ from the committed RGBA sidecar", mismatchedImagePixels));
+    CHECK_MESSAGE(mismatchedImagePixels == 0, std::format("{} baked image pixels differ from the committed RGBA sidecar", mismatchedImagePixels));
 }
 
 TEST_CASE("An authored screen's bound status state reaches the pixels", "pixel") {
@@ -969,4 +985,117 @@ TEST_CASE("An authored screen's bound text field reaches the pixels", "pixel") {
     CHECK(glyphsAlone.top == glyphsWithCaret.top);
     CHECK(glyphsAlone.right == glyphsWithCaret.right);
     CHECK(glyphsAlone.bottom == glyphsWithCaret.bottom);
+}
+
+TEST_CASE("An authored screen's critical control reaches the pixels as a face and a word", "pixel") {
+    // The two claims #261 makes about a button, checked against real pixels rather than against the
+    // draw list: its whole rectangle is painted in the token its author gave it, and its label sits
+    // on that face rather than on the topbar.
+    //
+    // The first is what makes the golden entry this node carries dischargeable at all. `Bounds`
+    // reads the rectangle as an equality - the content inside it has to *be* it, edge for edge - so
+    // a button that painted only its word would fail the check its own compiler emitted for it. The
+    // second is what makes the face a face rather than a rectangle that happens to be there.
+    const medui::ScreenPackage package = screen();
+    const core::Extent2D       surface = surfaceOf(package);
+    const BoundText            bound   = loadCommittedText();
+    const BoundImage           image   = loadCommittedImage();
+
+    const medui::CompiledNode* control = package.find("emergency-halt");
+    REQUIRE(control != nullptr);
+
+    const auto& gpu    = sharedDevice();
+    auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
+    REQUIRE(target.has_value());
+
+    VulkanRenderContext context;
+    context.device           = gpu.device();
+    context.physicalDevice   = gpu.physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = gpu.queue();
+    context.queueFamilyIndex = gpu.queueFamilyIndex();
+    context.viewport         = surface;
+
+    auto renderer = UiRenderer::createWithAtlases(context,
+                                                  mdux::shader::generated::mdux_ui::package(),
+                                                  package.budget,
+                                                  bound.atlas,
+                                                  bound.font.atlas.width,
+                                                  bound.font.atlas.height,
+                                                  image.pixels,
+                                                  image.image.width,
+                                                  image.image.height);
+    REQUIRE(renderer.has_value());
+
+    Frame frame;
+    auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
+    REQUIRE(list.has_value());
+
+    const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package));
+    REQUIRE(recorded.has_value());
+
+    RecordContext recording{.renderer = &*renderer, .list = &*list};
+    auto          readback = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
+    REQUIRE(readback.has_value());
+    const std::vector<core::ColorRgba8> pixels{readback->begin(), readback->end()};
+
+    // The topbar panel is what the button is drawn over, so "painted" means "differs from it".
+    constexpr core::ColorRgba8 topbar{.r = 209, .g = 214, .b = 219, .a = 255};
+
+    // Every pixel of the node, not merely some of them. Written as a count rather than as a bounding
+    // box on purpose: a box would be satisfied by a border, and a border is exactly the appearance
+    // this module declined to invent.
+    std::size_t facePixels = 0;
+    for (std::int32_t y = 0; y < control->bounds.height; ++y) {
+        for (std::int32_t x = 0; x < control->bounds.width; ++x) {
+            const auto index = static_cast<std::size_t>(control->bounds.y + y) * static_cast<std::size_t>(surface.width)
+                               + static_cast<std::size_t>(control->bounds.x + x);
+            facePixels += static_cast<std::size_t>(pixels[index] != topbar);
+        }
+    }
+    CHECK(facePixels == static_cast<std::size_t>(control->bounds.width) * static_cast<std::size_t>(control->bounds.height));
+
+    // The word is on the face, and the face is dimmer than the word. `Theme.Colors.Fault` at full
+    // tint is {219, 51, 46, 255}; the field carries the same tint at `boundFieldCoverage` over the
+    // topbar, which is lighter in red and darker in nothing. Asserting the *inequality* rather than
+    // the two exact values keeps this a claim about the composition rather than a second copy of the
+    // blend arithmetic `mdux.verify` already owns and tests.
+    constexpr core::ColorRgba8 fault{.r = 219, .g = 51, .b = 46, .a = 255};
+
+    // Sampled at the node's *far* corner. The near one is where the run's ink box is placed, so a
+    // glyph can and does own it - reading the face there would measure the word and call it the
+    // field.
+    const auto faceIndex = static_cast<std::size_t>(control->bounds.y + control->bounds.height - 1) * static_cast<std::size_t>(surface.width)
+                           + static_cast<std::size_t>(control->bounds.x + control->bounds.width - 1);
+    CHECK(pixels[faceIndex] != fault);
+    CHECK(pixels[faceIndex] != topbar);
+
+    std::size_t fullTintPixels = 0;
+    for (std::int32_t y = 0; y < control->bounds.height; ++y) {
+        for (std::int32_t x = 0; x < control->bounds.width; ++x) {
+            const auto index = static_cast<std::size_t>(control->bounds.y + y) * static_cast<std::size_t>(surface.width)
+                               + static_cast<std::size_t>(control->bounds.x + x);
+            fullTintPixels += static_cast<std::size_t>(pixels[index] == fault);
+        }
+    }
+    // The word's own pixels, and the reason `ColorHash` can hold over a two-coverage composition:
+    // the check needs at least one pixel that is exactly the tint, and only the glyphs supply it.
+    CHECK(fullTintPixels > 0);
+
+    // Where the word is: the ink box the committed run predicts, at the node's corner, which is the
+    // placement rule a `Label` uses and this reuses unchanged.
+    const InkBox derived = inkOfRun(bound, "STR-EM-HALT");
+    REQUIRE(derived.found);
+
+    const InkBox painted = paintedWithin(pixels, surface, control->bounds, pixels[faceIndex]);
+    REQUIRE(painted.found);
+    CHECK(painted.left == control->bounds.x);
+    CHECK(painted.top == control->bounds.y);
+    CHECK(painted.right - painted.left == derived.right - derived.left);
+    CHECK(painted.bottom - painted.top == derived.bottom - derived.top);
+
+    // And the label's own pixels are a press target's, not a neighbour's: the build-time promise
+    // that the widest approved translation fits this face, observable.
+    CHECK(painted.right <= control->bounds.x + control->bounds.width);
+    CHECK(painted.bottom <= control->bounds.y + control->bounds.height);
 }

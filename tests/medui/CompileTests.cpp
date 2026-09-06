@@ -321,21 +321,20 @@ const mdux::spec::Register aTextInputOnlyScreenCompiles{
                                  "}\n";
                       }
 
-                      const std::string recipeText =
-                          "[package]\n"
-                          "id            = \"entry-only\"\n"
-                          "source        = \"recipes/screen/entry-only/EntryOnly.medui\"\n"
-                          "surfaceWidth  = 400\n"
-                          "surfaceHeight = 200\n"
-                          "\n"
-                          "[budget]\n"
-                          "maxVertices = 1024\n"
-                          "maxIndices  = 1536\n"
-                          "maxCommands = 16\n"
-                          "\n"
-                          "[text]\n"
-                          "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
-                          "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+                      const std::string recipeText = "[package]\n"
+                                                     "id            = \"entry-only\"\n"
+                                                     "source        = \"recipes/screen/entry-only/EntryOnly.medui\"\n"
+                                                     "surfaceWidth  = 400\n"
+                                                     "surfaceHeight = 200\n"
+                                                     "\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 1024\n"
+                                                     "maxIndices  = 1536\n"
+                                                     "maxCommands = 16\n"
+                                                     "\n"
+                                                     "[text]\n"
+                                                     "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
 
                       const auto recipe = md::parseRecipe(recipeText, "recipes/screen/entry-only.toml", diagnostics);
                       checks.expect(recipe.has_value(), "the recipe parses");
@@ -345,8 +344,7 @@ const mdux::spec::Register aTextInputOnlyScreenCompiles{
                       }
 
                       const auto outputs = md::run(*recipe, "recipes/screen/entry-only.toml", asBytes(recipeText), root.path(), diagnostics);
-                      checks.expect(outputs.has_value(),
-                                    std::format("the screen compiles, got '{}'", diagnostics.empty() ? "" : diagnostics.front().message));
+                      checks.expect(outputs.has_value(), std::format("the screen compiles, got '{}'", diagnostics.empty() ? "" : diagnostics.front().message));
                       if (!outputs.has_value()) {
                           checks.raise();
                           return;

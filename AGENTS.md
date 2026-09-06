@@ -81,10 +81,12 @@ caller-owned ring buffer into the screen's pre-sized vertex budget; and `#258` h
 `NumericDisplay` its digits and a `Clock` its time, which needed an amendment to
 [ADR-010](docs/adr/ADR-010-no-on-device-text-shaping.md) decision 4 - read it before touching
 `mdux.medui.reading`; `#259` has given a `StatusIndicator` its state, drawn from a list the compiler
-closed, with an index outside that list refused rather than drawn blank; and `#260` has given a
+closed, with an index outside that list refused rather than drawn blank; `#260` has given a
 `TextInput` its value and caret on a fixed-pitch grid, which extended ADR-010 decision 4 a second
-time - read that amendment before touching `mdux.medui.field`. The rest of `#17` - the two buttons -
-is still deferred.
+time - read that amendment before touching `mdux.medui.field`; and `#261` has given `Button` and
+`CriticalButton` a face, a label over it, and `resolvePress()`, which turns a surface coordinate into
+the control under it, the requirement that control is traced to, and an action from the set `#219`
+closed. That closes `#17`: every component in the dictionary now draws.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.

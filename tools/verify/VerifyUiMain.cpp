@@ -21,9 +21,10 @@ int main(int argc, char** argv) {
     // The bundle's own `generated/` is the artifact root, exactly as the single-argument `run()`
     // resolves it. Spelled here because this overload takes the whole option set, and a default that
     // silently disagreed with the one-argument form is the kind of drift #253 kept out of the driver.
-    const std::filesystem::path root = invocation.screenDirectory.parent_path().parent_path();
-    verify::RunResult           result =
-        verify::run(invocation.screenDirectory, verify::RunOptions{.artifactRoot = root, .diffImageDirectory = invocation.diffImageDirectory});
+    const std::filesystem::path root   = invocation.screenDirectory.parent_path().parent_path();
+    verify::RunResult           result = verify::run(
+        invocation.screenDirectory,
+        verify::RunOptions{.artifactRoot = root, .diffImageDirectory = invocation.diffImageDirectory, .frameImageDirectory = invocation.frameImageDirectory});
     const std::string rendered = cli::render(result.diagnostics, invocation.format, verify::toolName);
     if (!rendered.empty()) {
         std::print(std::cout, "{}", rendered);
@@ -31,6 +32,9 @@ int main(int argc, char** argv) {
     // Named on stdout rather than left for the reader to find: a CI log that says a failure was
     // drawn, and where, is what turns an uploaded artifact into one somebody opens.
     if (invocation.format == cli::Format::Text) {
+        for (const std::filesystem::path& image : result.frameImages) {
+            std::println(std::cout, "{}: wrote frame image {}", verify::toolName, image.generic_string());
+        }
         for (const std::filesystem::path& image : result.diffImages) {
             std::println(std::cout, "{}: wrote diff image {}", verify::toolName, image.generic_string());
         }

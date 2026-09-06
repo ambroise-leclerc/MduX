@@ -2,10 +2,12 @@
 //
 // It draws the Row background the solver synthesises, a live video surface, a live waveform, a
 // baked image, an explicitly positioned node whose rectangle a golden reference pins, a label since
-// #235, a status indicator whose closed list of states the ECG demonstrator drives since #259 - and,
-// since #260, a bounded text field whose worst case the compiler measures against its box. The label is what puts the text-budget stage over a committed artifact: its box is
-// measured against the widest translation every approved locale carries, which is a check that had
-// only ever run over packages a test built for itself.
+// #235, a status indicator whose closed list of states the ECG demonstrator drives since #259,
+// since #260 a bounded text field whose worst case the compiler measures against its box, and since
+// #261 a safety-critical control whose action comes from a closed set and whose requirement traces
+// it to the software development file. The label is what puts the text-budget stage over a committed
+// artifact: its box is measured against the widest translation every approved locale carries, which
+// is a check that had only ever run over packages a test built for itself.
 //
 // One property per line, matching TrustSC's own sources: its parser splits a component body line by
 // line, so a fixture written the portable way is evidence about a shared grammar rather than about
@@ -33,10 +35,35 @@ Screen EndoscopeMonitor {
         // approved locale, because a compiled screen is locale-free (ADR-011 as amended by #203).
         Label {
             id: screen-title;
-            width: 640px;
+            width: 480px;
             height: 72px;
             text: t("STR-EM-TITLE");
             color: Theme.Colors.Title;
+        }
+
+        // The screen's safety-critical control (#261), and the second node here carrying a golden
+        // reference. Annotated and traced, so `goldens.json` says where the halt control must appear
+        // and in what tint - which is a stronger claim for a button than for a readout, because a
+        // button's rectangle is also the region a press resolves against. A halt control drawn
+        // somewhere other than where the artifact says it is would be pressed by an operator aiming
+        // at whatever moved into its place.
+        //
+        // `on_press: TriggerHalt` is a member of a set the shared contract closed (#219), so this
+        // screen cannot name an action nothing implements - the failure #17 says is worst discovered
+        // on the press of a critical button. `resolvePress()` refuses rather than reporting NoOp if
+        // one ever reaches a device anyway.
+        //
+        // Nothing in this repository presses it. The host owns the input device and the halt path;
+        // what this screen owns is where the control is, what it says, and what it is traced to.
+        @safety_critical(cv_check: [Bounds, ColorHash])
+        CriticalButton {
+            id: emergency-halt;
+            requirement: "REQ-EM-003";
+            width: 160px;
+            height: 72px;
+            label: t("STR-EM-HALT");
+            color: Theme.Colors.Fault;
+            on_press: TriggerHalt;
         }
 
         // The ECG demonstrator's waiting consumer (#259). `EcgClassifierExample` binds the class its

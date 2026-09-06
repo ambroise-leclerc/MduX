@@ -317,6 +317,50 @@ void writeDiffImage(RunResult&                              result,
     result.diffImages.push_back(path);
 }
 
+/**
+ * @brief Writes one render scope's frame image, and says where it went or why it did not.
+ *
+ * `writeDiffImage()`'s sibling, and deliberately not a mode of it. That one dims the frame and
+ * outlines what failed, which is right for a failure attachment and wrong for the only other
+ * question a person asks of a rendered screen: what does it look like. So this writes the readback
+ * exactly as it came back - no dimming, no outlines, nothing this tool drew on top - and it writes
+ * on a passing run, which is the run whose frame is worth looking at.
+ *
+ * A failure to write is a diagnostic and never a verdict, for `writeDiffImage()`'s reason: the image
+ * is an attachment for a person, and a full disk must not turn a passing verification into a failing
+ * one.
+ */
+void writeFrameImage(RunResult&                              result,
+                     const std::filesystem::path&            directory,
+                     std::string_view                        screenId,
+                     std::string_view                        scope,
+                     std::span<const mdux::core::ColorRgba8> frame,
+                     std::uint32_t                           width,
+                     std::uint32_t                           height) {
+    const std::filesystem::path path = directory / frameImageName(screenId, scope);
+
+    std::error_code created;
+    std::filesystem::create_directories(directory, created);
+    if (created) {
+        warn(result.diagnostics, directory, "VUI009", "cannot create the frame image directory: " + created.message());
+        return;
+    }
+
+    const std::vector<std::byte> encoded = encodePng(frame, width, height);
+    if (encoded.empty()) {
+        warn(result.diagnostics, path, "VUI009", "the readback could not be encoded as a frame image");
+        return;
+    }
+
+    std::ofstream file{path, std::ios::binary | std::ios::trunc};
+    file.write(reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
+    if (!file) {
+        warn(result.diagnostics, path, "VUI009", "cannot write the frame image");
+        return;
+    }
+    result.frameImages.push_back(path);
+}
+
 [[nodiscard]] mdux::core::ColorRgba8 groundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
     mdux::core::ColorRgba8 ground = clearColor;
     for (const mdux::medui::CompiledNode& candidate : screen.nodes) {
@@ -339,6 +383,56 @@ void writeDiffImage(RunResult&                              result,
         }
     }
     return ground;
+}
+
+/// What a node's *run* is composited onto, and how many device composites produced it.
+struct TextGround {
+    mdux::core::ColorRgba8 color{};
+    std::size_t            composites{0};
+};
+
+/**
+ * @brief The ground a text check needs, which is not always the ground a golden check needs.
+ *
+ * `groundFor()` answers what is under the **node**: the surface the driver cleared to, or the panel
+ * a `Row` synthesised beneath it. That is the ground `Bounds` and `ColorHash` want, because they ask
+ * about the node's content as a whole, and a node that painted its own field has painted something.
+ *
+ * The two text checks ask a narrower question - "outside every placed glyph, is every pixel of the
+ * node still the ground" - and for a component that paints a field *before* its word goes over it,
+ * the answer means nothing unless the ground they are given is that field. A `Button` and a
+ * `CriticalButton` are the first components that are both: `textKeyOf()` selects them, because each
+ * carries a single label key, and each paints its whole rectangle (#261). Handing them the panel's
+ * tint reports a correct frame as `InkExtentDiffers`, since every pixel of the field then reads as
+ * ink.
+ *
+ * The composite mirrors `recordCaptionedField()` rather than approximating it: the node's tint, its
+ * alpha replaced by the coverage a captioned field is dimmed to, blended once over what is under the
+ * node. `blend()` with a coverage of 255 applies that alpha unchanged, which is what the draw path
+ * records and the device performs in one composite - hence `composites = 1`, which is what buys the
+ * one-step allowance a blend unit's own precision needs.
+ *
+ * A node whose word turns out to have no ink draws an opaque field rather than a dimmed one, and
+ * this would then name the wrong colour. It is unreachable: `TextExpectation::create()` refuses a
+ * run with no ink outright, so no check is ever raised for such a node.
+ */
+[[nodiscard]] TextGround textGroundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
+    const mdux::core::ColorRgba8 under = groundFor(screen, node);
+
+    const std::optional<mdux::medui::ButtonFace> face = mdux::medui::buttonFace(node.payload);
+    if (!face.has_value()) {
+        return TextGround{.color = under, .composites = 0};
+    }
+    const auto tint = mdux::medui::resolveColorToken(face->colorToken);
+    if (!tint.has_value()) {
+        // A token the governed table does not define. The runtime refuses that frame outright, so
+        // there is no field to be the ground of; leaving it under the node keeps this total and lets
+        // the runtime's refusal be the one a reader is shown.
+        return TextGround{.color = under, .composites = 0};
+    }
+    mdux::core::ColorRgba8 field = mdux::medui::quantise(*tint);
+    field.a                      = mdux::medui::quantise((*tint)[3] * mdux::medui::boundFieldCoverage);
+    return TextGround{.color = mv::blend(under, field, 255), .composites = 1};
 }
 
 struct ShaderAssets {
@@ -865,7 +959,8 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             for (const auto& node : screen.nodes) {
                 if (mv::textKeyOf(node).empty())
                     continue;
-                const auto expectation = mv::TextExpectation::create(screen, node, *binding, assets.atlas, scope, groundFor(screen, node));
+                const TextGround textGround = textGroundFor(screen, node);
+                const auto expectation      = mv::TextExpectation::create(screen, node, *binding, assets.atlas, scope, textGround.color, textGround.composites);
                 if (!expectation.has_value()) {
                     report(result.diagnostics,
                            packagePath,
@@ -1025,7 +1120,8 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             for (const auto& node : screen.nodes) {
                 if (mv::textKeyOf(node).empty())
                     continue;
-                const auto expectation = mv::TextExpectation::create(screen, node, *binding, locale->atlas, scope, groundFor(screen, node));
+                const TextGround textGround = textGroundFor(screen, node);
+                const auto expectation = mv::TextExpectation::create(screen, node, *binding, locale->atlas, scope, textGround.color, textGround.composites);
                 result.outcomes.push_back(own(mv::inkContainment(*framebuffer, *expectation)));
                 result.outcomes.push_back(own(mv::localizedTextPresence(*framebuffer, *expectation)));
             }
@@ -1034,6 +1130,18 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         // Written here rather than after the loop, because `pixels` is the target's own storage and
         // the next scope's render overwrites it. A run that failed in three locales needs the frame
         // that failed in each, not three copies of the last one.
+        // Before the diff image and under the same "pixels is the target's own storage" rule: the
+        // next scope's render overwrites it, so a run over three locales needs each frame written
+        // while it is still the frame.
+        if (!options.frameImageDirectory.empty()) {
+            writeFrameImage(result,
+                            options.frameImageDirectory,
+                            screen.id,
+                            scope.name(),
+                            *pixels,
+                            static_cast<std::uint32_t>(screen.surfaceWidth),
+                            static_cast<std::uint32_t>(screen.surfaceHeight));
+        }
         if (!options.diffImageDirectory.empty()) {
             writeDiffImage(result,
                            options.diffImageDirectory,
@@ -1069,7 +1177,7 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
 }
 
 RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot) {
-    return run(screenDirectory, RunOptions{.artifactRoot = artifactRoot, .diffImageDirectory = {}});
+    return run(screenDirectory, RunOptions{.artifactRoot = artifactRoot, .diffImageDirectory = {}, .frameImageDirectory = {}});
 }
 
 RunResult run(const std::filesystem::path& screenDirectory) {
@@ -1079,12 +1187,16 @@ RunResult run(const std::filesystem::path& screenDirectory) {
 
 std::string usage() {
     return std::format("usage:\n  {} --screen=<generated/screen/id> --locales=all [--format=json|text]\n"
-                       "  {:{}}  [--diff-image-dir=<dir>]\n\n"
+                       "  {:{}}  [--diff-image-dir=<dir>] [--frame-image-dir=<dir>]\n\n"
                        "Verifies every golden check in every render scope and both mandatory text checks\n"
                        "for every approved locale. The locale manifest cannot be narrowed.\n\n"
                        "--diff-image-dir names where to write <screen>.<scope>.png for each render scope\n"
-                       "that fails. It chooses a location, never an expectation: the same checks run and\n"
-                       "the same status is returned whether or not it is given.\n",
+                       "that fails: the frame dimmed, with each failed obligation outlined.\n\n"
+                       "--frame-image-dir names where to write <screen>.<scope>.frame.png for every render\n"
+                       "scope, pass or fail: the readback as it came back, undimmed and unannotated. This\n"
+                       "is how to look at a screen that verifies.\n\n"
+                       "Both choose a location, never an expectation: the same checks run and the same\n"
+                       "status is returned whether or not either is given.\n",
                        toolName,
                        "",
                        toolName.size());
@@ -1095,6 +1207,7 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
     bool       screenSeen  = false;
     bool       localesSeen = false;
     bool       diffSeen    = false;
+    bool       frameSeen   = false;
     for (std::string_view argument : arguments) {
         if (argument == "--help" || argument == "-h")
             throw cli::UsageError{usage()};
@@ -1127,6 +1240,14 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
                 throw cli::UsageError{"--diff-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
             result.diffImageDirectory = std::filesystem::path{argument.substr(flag.size())};
             diffSeen                  = true;
+            continue;
+        }
+        if (argument.starts_with("--frame-image-dir=")) {
+            constexpr std::string_view flag = "--frame-image-dir=";
+            if (frameSeen || argument.size() == flag.size())
+                throw cli::UsageError{"--frame-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
+            result.frameImageDirectory = std::filesystem::path{argument.substr(flag.size())};
+            frameSeen                  = true;
             continue;
         }
         throw cli::UsageError{"unrecognized argument '" + std::string{argument} + "'\n\n" + usage()};

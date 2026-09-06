@@ -246,18 +246,47 @@ Display and caret is the whole of the component. #17 cuts input-method editing a
 reason — an IME needs the platform, graphics and OS headers a governed module is compiled without —
 so the host owns the keystrokes and what crosses the boundary is what to display.
 
+`Button` and `CriticalButton` (#261) close the dictionary, and they are the first components whose
+rectangle is not only where content goes but where a **press lands**. Both draw the same thing — the
+face their single colour token names, with the label's word over it at reduced coverage once a locale
+is bound, which is `StatusIndicator`'s composition reused rather than copied. Two arguments decided
+that a button has a face at all, and only the pair is sufficient: the golden entry an annotated or
+positioned button carries pins its whole rectangle against that token, and `goldenBounds()` reads
+that pairing as an equality; and a control drawn as a word floating on the ground has a pressable
+area an operator must guess at, which on a halt control is a press that did not happen when someone
+believes it did.
+
+The press itself is `resolvePress()` — a pure, allocation-free function from a surface coordinate to
+the control under it. It resolves to the node drawn *last*, because that is the one an operator can
+see, and every node is opaque to a press rather than only the controls. What it returns is the whole
+of what crosses this boundary: the node's id, the **requirement it is traced to**, and either a
+member of the closed `SystemEvent` set (a `CriticalButton`) or the open product action name a
+`Button`'s `source:` carries. Making the safety-relevant control the one with the closed set is the
+point of having two components — #219 closed that set so a screen cannot name an action nothing
+implements, and a critical control naming one anyway refuses the press as `UnimplementedEvent` rather
+than reporting a no-op nothing performs. A critical control with no requirement refuses it as
+`UntracedCriticalControl`, for the same reason at the other end: an action nobody can trace is not one
+this module hands to a host.
+
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
-`position:`** in the golden set, which is why the committed screen has two entries: its
-`NumericDisplay` is safety-critical and its `SignalTrace` is positioned. Both files are reviewable
-as text, which is the point.
+`position:`** in the golden set, which is why the committed screen has three entries: its
+`NumericDisplay` and its `CriticalButton` are safety-critical and its `SignalTrace` is positioned.
+Both files are reviewable as text, which is the point.
 
 `mdux-verify-ui --screen=generated/screen/<id> --locales=all` consumes this bundle without changing
 it. It derives render scopes only from the screen manifest, rejects locale subsets and zero
 obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
-problem made impossible. The committed endoscope screen discharges all five of its obligations since
-#255 — two golden checks on the `NumericDisplay`, one on the `SignalTrace`, and the two mandatory
-text checks on the `Label`.
+problem made impossible. The committed endoscope screen discharges all nine of its obligations — two golden checks on the
+`NumericDisplay`, two on the `CriticalButton`, one on the `SignalTrace`, and the two mandatory text
+checks on each of the `Label` and the `CriticalButton`.
+
+The button is what made those two text checks need a distinction they had never needed: they ask
+whether the pixels a glyph does not cover are still the ground, and it is the first component that
+paints its own field *under* its run. So the driver hands them the field rather than the panel
+beneath the node, together with the number of device composites that produced it — one — and the
+checks allow that many UNORM steps on a ground pixel. Zero keeps the old exactness, which is what
+every other node still passes: a slack granted where none is needed is a wrong tint waved through.
 
 `mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
 committed screen and a new one is gated by being committed. Three legs assert it as a named step —
@@ -266,10 +295,16 @@ matching no screen fails rather than passing over nothing. It has no skip status
 exits 3 for an absent device as for any impossible run, and since #254 made the bake render, a leg
 without a device fails to build long before this test could be reached.
 
-When a check fails, the driver writes `<screen>.<scope>.png` under the build tree — the rendered
-frame dimmed, with each failed obligation's expected rectangle outlined in magenta and what was
-actually found in cyan. The scope is percent-encoded rather than filtered, so two scopes of one
-screen cannot overwrite each other's image. CI uploads it. It is an attachment rather than a
+When a check fails, `--diff-image-dir` makes the driver write `<screen>.<scope>.png` under the build
+tree — the rendered frame dimmed, with each failed obligation's expected rectangle outlined in
+magenta and what was actually found in cyan. The scope is percent-encoded rather than filtered, so
+two scopes of one screen cannot overwrite each other's image. CI uploads it.
+
+`--frame-image-dir` is its counterpart for the run that succeeded, and it exists because until #261
+there was no way to *look at* a screen that verifies: it writes `<screen>.<scope>.frame.png` for
+every render scope, pass or fail, undimmed and unannotated — the readback as it came back. The two
+names differ so that pointing both flags at one directory, which is what a reader naturally types,
+cannot lose either image. Neither flag changes what is checked or what is returned. It is an attachment rather than a
 fifth file in the bundle because it *is* the frame, and ADR-014 decision 4 keeps measurements out of
 a byte-compared artifact.
 
@@ -392,9 +427,9 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, and a `TextInput` (#260) whose bound value and caret reach pixels there too. The two buttons remain under #17 |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, a `TextInput` (#260) whose bound value and caret reach pixels there too, and a `CriticalButton` (#261) whose face and label do, traced to a requirement and pinned by a golden |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `Button` and `CriticalButton` remain. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to, and `TextInput` with #260 — display and caret on a fixed-pitch grid, no input-method editing |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | complete. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to, `TextInput` with #260 — display and caret on a fixed-pitch grid, no input-method editing — and `Button` and `CriticalButton` with #261, which draw a face and resolve a press to a closed action and the requirement it is traced to |
 
 ### The HTML/CSS path is gone, not planned
 

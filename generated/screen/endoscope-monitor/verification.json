@@ -4,12 +4,12 @@
     {
       "id": "endoscope-monitor",
       "role": "screenPackage",
-      "sha256": "0a8dd71f26b78656758a06c7381a699a552492721a8d34eb564468bdec19dce4"
+      "sha256": "7d76632e0750df04370209ae6010ae81777890cc4a8a4015449e421e84260229"
     },
     {
       "id": "endoscope-monitor",
       "role": "goldens",
-      "sha256": "60c555cbeceb4e897e5a4302c0d667aaca84dd72d28ef2c13d96178d86eb1a2a"
+      "sha256": "599552f0948e2c553e31d136d9fc80a5aa88de75e3e4f4d9887013af93266b09"
     },
     {
       "id": "mdux-ui",
@@ -20,7 +20,7 @@
       "id": "endoscope-monitor-en-us",
       "locale": "en-US",
       "role": "textPackage",
-      "sha256": "cb83222204174952046d4d1d2fce714b7aa5cb0162756f7c1b86ea81894b8400"
+      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     },
     {
       "id": "dejavu-ui",
@@ -36,6 +36,18 @@
   ],
   "kind": "screen",
   "outcomes": [
+    {
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
+    {
+      "check": "ColorHash",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
     {
       "check": "Bounds",
       "finding": "Held",
@@ -64,6 +76,18 @@
       "check": "LocalizedTextPresence",
       "finding": "Held",
       "nodeId": "screen-title",
+      "scope": "en-US"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
       "scope": "en-US"
     }
   ],

@@ -478,6 +478,10 @@ std::string_view describe(ScreenError error) noexcept {
             return "a field could not be drawn from the value, caret and length it was given";
         case ScreenError::FieldOverflowsNode:
             return "a drawn field's ink is larger than the node that holds it";
+        case ScreenError::UnimplementedEvent:
+            return "a pressed CriticalButton names no member of the closed system-event set";
+        case ScreenError::UntracedCriticalControl:
+            return "a pressed CriticalButton declares no requirement to trace its action to";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
@@ -527,6 +531,91 @@ namespace {
     // Named rather than defaulted, so a new TraceError is a warning here rather than a frame refused
     // with a reason that names the wrong thing.
     return ScreenError::BudgetExhausted;
+}
+
+/**
+ * @brief Records a captioned field: the node's whole rectangle in `colour`, with one run over it.
+ *
+ * The composition #259 settled for a bound `StatusIndicator` and #261 reuses unchanged for a
+ * `Button` and a `CriticalButton`. One spelling rather than two, because the two components differ
+ * only in where the tint and the key come from - a state's position in a closed list, or the single
+ * token and label key the node carries - and not at all in what is recorded. Two copies of this
+ * would be two places for a `boundFieldCoverage` composition to drift out of agreement with the
+ * golden checks `verify-golden-two-coverage-composition` proves it satisfies.
+ *
+ * `text` may be unbound, which means "no locale joined yet": the field is then drawn opaque and no
+ * word goes over it, which is #255's rule applied to the one tint the node has. `textKey` is read
+ * only when `text` is bound.
+ *
+ * Everything is measured before anything is recorded, deliberately. A refusal from `runFor()` or
+ * `measureInk()` then rolls back a frame that has nothing of this node in it, rather than one
+ * carrying a rectangle whose word was refused - and the field's coverage depends on whether a word
+ * will cover it, so the measurement has to come first in any case.
+ *
+ * Writes `stats.rects` and `stats.steps` and nothing else: which counter a *node* increments is the
+ * caller's, because a bound state and a drawn button are different facts about a frame.
+ */
+[[nodiscard]] mdux::core::ResultVoid<ScreenError> recordCaptionedField(mdux::draw::DrawList&       list,
+                                                                       const TextBinding&          text,
+                                                                       const NodeRect&             bounds,
+                                                                       std::string_view            textKey,
+                                                                       const std::array<float, 4>& colour,
+                                                                       FrameStats&                 stats) noexcept {
+    std::span<const std::byte> records{};
+    InkBox                     ink{};
+    if (text.bound()) {
+        const auto found = runFor(text, textKey);
+        if (!found.has_value()) {
+            return mdux::core::err(found.error());
+        }
+        records = *found;
+
+        const auto measured = measureInk(*text.font(), records);
+        if (!measured.has_value()) {
+            return mdux::core::err(measured.error());
+        }
+        ink = *measured;
+
+        // Payload-proportional work, counted per record for the reason the label path gives:
+        // `maxGlyphsPerRun` bounds it, and `steps` has to say so.
+        stats.steps += static_cast<std::uint32_t>(records.size() / mdux::text::draw::recordSize);
+
+        // The label path's re-measurement, for the label path's reason. #195 proved the widest text
+        // this node can carry fits its box in every approved locale; this proves the text actually
+        // on screen fits it in the package actually bound.
+        if (ink.inked && (ink.width() > static_cast<mdux::core::Px>(bounds.width) || ink.height() > static_cast<mdux::core::Px>(bounds.height))) {
+            return mdux::core::err(ScreenError::TextOverflowsNode);
+        }
+    }
+
+    // #255's opaque field when nothing will cover it, and `boundFieldCoverage`'s two-coverage
+    // composition when a word will. The field dims exactly when there is something over it to be
+    // seen, which is the whole of the rule and is why it is one expression.
+    mdux::core::ColorRgba8 fieldColour = quantise(colour);
+    if (ink.inked) {
+        fieldColour.a = quantise(colour[3] * boundFieldCoverage);
+    }
+    if (const auto recorded = list.addSolidRect(toRect(bounds), fieldColour); !recorded.has_value()) {
+        return mdux::core::err(ScreenError::BudgetExhausted);
+    }
+    ++stats.rects;
+
+    if (ink.inked) {
+        // The ink box's corner on the node's corner, `measureInk()`'s placement rule and the label
+        // path's arithmetic - not a second copy of a decision, the same one.
+        const auto originX = static_cast<mdux::core::Px>(bounds.x) - ink.left;
+        const auto originY = static_cast<mdux::core::Px>(bounds.y) - ink.top;
+
+        const std::size_t verticesBefore = list.vertices().size();
+        if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), records, originX, originY, quantise(colour)); !recorded.has_value()) {
+            // The label path's reasoning about this error: every other way `recordRun()` can fail
+            // here was already refused above, and the list declining a write is the one a caller can
+            // act on.
+            return mdux::core::err(ScreenError::BudgetExhausted);
+        }
+        stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+    }
+    return {};
 }
 
 }  // namespace
@@ -849,70 +938,45 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
                 return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
             }
 
-            // The state's word is measured before anything is recorded, because the field's coverage
-            // depends on whether a word will cover it. Measuring writes nothing, so a refusal here
-            // rolls back a frame rather than a rectangle this node had already put in it.
-            std::span<const std::byte> records{};
-            InkBox                     ink{};
-            if (text.bound()) {
-                const auto found = runFor(text, indicator->stateKeys[slot->state]);
-                if (!found.has_value()) {
-                    return refuse(found.error());
-                }
-                records = *found;
-
-                const auto measured = measureInk(*text.font(), records);
-                if (!measured.has_value()) {
-                    return refuse(measured.error());
-                }
-                ink = *measured;
-
-                // Payload-proportional work, counted per record for the reason the label path gives:
-                // `maxGlyphsPerRun` bounds it, and `steps` has to say so.
-                stats.steps += static_cast<std::uint32_t>(records.size() / mdux::text::draw::recordSize);
-
-                // The label path's re-measurement, for the label path's reason. #195 proved the
-                // *widest* state fits this box in every approved locale; this proves the state
-                // actually on screen fits it in the package actually bound.
-                if (ink.inked
-                    && (ink.width() > static_cast<mdux::core::Px>(node.bounds.width) || ink.height() > static_cast<mdux::core::Px>(node.bounds.height))) {
-                    return refuse(ScreenError::TextOverflowsNode);
-                }
-            }
-
-            // #255's opaque field when nothing will cover it, and `boundFieldCoverage`'s two-coverage
-            // composition when the state's word will. The field dims exactly when there is something
-            // over it to be seen, which is the whole of the rule and is why it is one expression.
-            mdux::core::ColorRgba8 fieldColour = quantise(*colour);
-            if (ink.inked) {
-                fieldColour.a = quantise((*colour)[3] * boundFieldCoverage);
-            }
-            if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
-                return refuse(ScreenError::BudgetExhausted);
-            }
-            ++stats.rects;
-
-            if (ink.inked) {
-                // The ink box's corner on the node's corner, `measureInk()`'s placement rule and the
-                // label path's arithmetic - not a second copy of a decision, the same one.
-                const auto originX = static_cast<mdux::core::Px>(node.bounds.x) - ink.left;
-                const auto originY = static_cast<mdux::core::Px>(node.bounds.y) - ink.top;
-
-                const std::size_t verticesBefore = list.vertices().size();
-                if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), records, originX, originY, quantise(*colour));
-                    !recorded.has_value()) {
-                    // The label path's reasoning about this error: every other way `recordRun()` can
-                    // fail here was already refused above, and the list declining a write is the one
-                    // a caller can act on.
-                    return refuse(ScreenError::BudgetExhausted);
-                }
-                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            // The state's tint with the state's word over it - the composition `recordCaptionedField()`
+            // owns, shared with a button since #261. An unbound text binding means no word, and the
+            // field is then the opaque rectangle #255 draws.
+            if (const auto captioned = recordCaptionedField(list, text, node.bounds, indicator->stateKeys[slot->state], *colour, stats);
+                !captioned.has_value()) {
+                return refuse(captioned.error());
             }
             if (!withinScreenBudget()) {
                 return refuse(ScreenError::BudgetExhausted);
             }
 
             ++stats.states;
+            ++stats.steps;
+            continue;
+        }
+
+        // A `Button` or a `CriticalButton` whose label this caller can draw. Both draw the same
+        // thing - the face their single token names, with their label's word over it - and neither
+        // is ever deferred, for the reason the module comment gives under "Why a button's rectangle
+        // is its face": that rectangle is the control's hit target as well as its golden's, and a
+        // control an operator cannot see is worse than one they cannot read. With no locale bound
+        // this falls through to the field path below and paints the opaque face, exactly as an
+        // unbound `NumericDisplay` paints its field.
+        //
+        // What a press *does* is not asked here. `resolvePress()` owns that, and it is a separate
+        // question from what a frame shows: a screen is drawn many times between presses, and the
+        // press path reads no binding and records nothing.
+        if (const std::optional<ButtonFace> face = buttonFace(node.payload); face.has_value() && text.bound()) {
+            const auto colour = resolveColorToken(face->colorToken);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+            if (const auto captioned = recordCaptionedField(list, text, node.bounds, face->labelKey, *colour, stats); !captioned.has_value()) {
+                return refuse(captioned.error());
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
             ++stats.steps;
             continue;
         }
@@ -992,6 +1056,65 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
     }
 
     return stats;
+}
+
+namespace {
+
+/// Whether a surface coordinate falls inside a node's resolved rectangle, right and bottom exclusive.
+///
+/// 64-bit for `containedBy()`'s reason: `x + width` on two `std::int32_t` at their extremes overflows,
+/// and an overflowed comparison would admit exactly the press this is written to exclude. A
+/// validated screen cannot hold such a rectangle, and `resolvePress()` does not require one to have
+/// been validated.
+[[nodiscard]] constexpr bool covers(const NodeRect& bounds, std::int32_t x, std::int32_t y) noexcept {
+    const std::int64_t left = bounds.x;
+    const std::int64_t top  = bounds.y;
+    return x >= left && y >= top && static_cast<std::int64_t>(x) < left + bounds.width && static_cast<std::int64_t>(y) < top + bounds.height;
+}
+
+}  // namespace
+
+mdux::core::Result<std::optional<PressAction>, ScreenError> resolvePress(const ScreenPackage& screen, std::int32_t x, std::int32_t y) noexcept {
+    // From the end, so the node drawn over its neighbours is the one a press resolves to. See
+    // Screen.cppm for why that is the only answer an operator's eyes agree with.
+    for (std::size_t index = screen.nodes.size(); index > 0; --index) {
+        const CompiledNode& node = screen.nodes[index - 1];
+        if (!covers(node.bounds, x, y)) {
+            continue;
+        }
+
+        // The payload is copied for `validatePayload()`'s documented reason: `std::get_if` over a
+        // subobject of an external `inline` variable is refused during constant evaluation under
+        // GCC 16.1 with `-fsanitize=undefined`, and a generated screen has exactly that storage.
+        const NodePayload payload = node.payload;
+
+        if (const auto* button = std::get_if<ButtonSpec>(&payload); button != nullptr) {
+            return PressAction{.nodeId = node.id, .requirement = button->requirement, .source = button->source, .event = std::nullopt};
+        }
+
+        if (const auto* critical = std::get_if<CriticalButtonSpec>(&payload); critical != nullptr) {
+            // Both of these are already compile errors and neither can reach a device through the
+            // normal path; see Screen.cppm for why a press is nevertheless the wrong place to be
+            // lenient about them. `toWire()` is the membership test the schema uses, so an event
+            // cast from a number the enumeration has no name for is caught here as well as one left
+            // at `Unspecified`.
+            if (critical->onPress == SystemEvent::Unspecified || toWire(critical->onPress).empty()) {
+                return mdux::core::err(ScreenError::UnimplementedEvent);
+            }
+            if (critical->requirement.empty()) {
+                return mdux::core::err(ScreenError::UntracedCriticalControl);
+            }
+            return PressAction{.nodeId = node.id, .requirement = critical->requirement, .source = {}, .event = critical->onPress};
+        }
+
+        // A node that is not a control. It is *not* transparent to a press: a panel, a viewport or a
+        // label drawn over a button covers it, and resolving through to the button underneath would
+        // fire a control the operator cannot see. The press lands on nothing, which is what it looks
+        // like from the operator's side.
+        return std::optional<PressAction>{};
+    }
+
+    return std::optional<PressAction>{};
 }
 
 }  // namespace mdux::medui

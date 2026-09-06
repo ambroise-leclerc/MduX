@@ -108,10 +108,33 @@ know before you write one: a ring past `maxSamplesPerTrace` (256) is **refused r
 truncated**, and a bound trace dims its field so the full-tint stroke over it is visible — an unbound
 one is the opaque field #255 draws, unchanged.
 
-One limit is worth knowing before you write a screen: `Button` and `CriticalButton` are still
-visited, counted in `FrameStats::deferred` and left undrawn. A button is more than its text — it has
-a face nothing in this project has decided — and inventing one here is not this module's call. Both
-are [#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+`Button` and `CriticalButton` draw a **face and a word**, and resolve a **press** (#261). This
+paragraph used to say both were deferred because a button "has a face nothing in this project has
+decided"; what decided it is in `Screen.cppm` under "Why a button's rectangle is its face". Four
+things to know before you write one:
+
+- **The rectangle is the face.** Both fill their whole box with their one `color:` token, with the
+  label's word over it at full tint once a locale is bound - the field dimming to quarter coverage
+  under the word, exactly as a bound `StatusIndicator`'s does. Neither is ever deferred, so a button
+  is drawn on a device that has joined no locale: an unlabelled face is a control an operator can
+  still find, and no face at all is one they cannot.
+- **That rectangle is also the hit target.** `resolvePress(screen, x, y)` is the whole of the press
+  side: it takes a surface coordinate and returns the control under it, the requirement that control
+  is traced to, and either a `SystemEvent` or a `Button`'s `source:`. It resolves to the node drawn
+  **last**, and every node is opaque to a press - a label positioned over a button takes the press
+  and yields nothing, because firing a control the operator cannot see is worse than firing none.
+- **`on_press:` is closed and `requirement:` is mandatory, and both are checked twice.** A name
+  outside `{NoOp, TriggerHalt}` is `MEDUI-E034`, and a `CriticalButton` with no `requirement:` is a
+  missing-required-field error; both are compile time. A screen built by hand at run time met
+  neither check, so `resolvePress()` refuses such a control as `UnimplementedEvent` or
+  `UntracedCriticalControl` rather than reporting a no-op. A press is the wrong place to be lenient.
+- **What a press does not do is press anything.** This module resolves; the host acts. There is no
+  event queue, no focus, no pressed or disabled state, and no appearance for one - those are
+  decisions no artifact names and no golden pins.
+
+Annotate a `CriticalButton` `@safety_critical(cv_check: [Bounds, ColorHash])` when you want its
+position and tint pinned: the face is what makes both dischargeable, since `Bounds` reads the
+rectangle as an equality and only the label's glyphs reach the full tint `ColorHash` requires.
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering

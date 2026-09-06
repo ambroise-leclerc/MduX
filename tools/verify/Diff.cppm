@@ -103,6 +103,17 @@ composeDiff(std::span<const mdux::core::ColorRgba8> frame, std::uint32_t width, 
 [[nodiscard]] std::string diffImageName(std::string_view screenId, std::string_view scope);
 
 /**
+ * @brief The filename one render scope's frame image gets, `<screenId>.<encoded scope>.frame.png`.
+ *
+ * The same encoding as `diffImageName()`, for the same reason, and a **different name** so the two
+ * may be pointed at one directory without either silently overwriting the other. That is not a
+ * hypothetical tidiness: the natural thing to type is the same path for both, and the failure it
+ * would produce is the worst kind available here - a reader opening what they believe is the frame
+ * and seeing the dimmed, outlined one, or the reverse, with nothing to tell them which they have.
+ */
+[[nodiscard]] std::string frameImageName(std::string_view screenId, std::string_view scope);
+
+/**
  * @brief Encodes RGBA pixels as a PNG.
  *
  * Returns an empty vector when `pixels` is not exactly `width * height`, or when either dimension is

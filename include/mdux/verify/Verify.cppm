@@ -652,6 +652,7 @@ public:
      * @param atlas   the coverage sheet the bound font package describes
      * @param scope   the render scope; must name the locale the binding carries
      * @param ground  what this node's rectangle shows where the run paints nothing
+     * @param groundComposites how many device composites produced that ground; see below
      *
      * Refuses an unbound binding, a binding the screen does not approve, a node the screen does not
      * contain, a scope naming a different locale from the bound package's, a node carrying no text
@@ -665,13 +666,33 @@ public:
      * find, so a pass would be indistinguishable from a screen that lost its text. ADR-014 decision
      * 3 says a check this build cannot perform fails, so this refuses rather than passing vacuously,
      * and the screen is what changes.
+     *
+     * ## `groundComposites`, and why zero is not the only honest answer
+     *
+     * Both text checks ask whether the pixels a glyph does not cover are still the ground, and until
+     * #261 that was an **exact** comparison, correctly: every ground this driver could supply was a
+     * value no device had computed - the clear colour, or an opaque panel, which `SRC_ALPHA` blending
+     * reproduces byte for byte.
+     *
+     * A `Button` and a `CriticalButton` paint their own field before their label goes over it, so
+     * the pixels under that label are a composite the *device* produced, and a device is allowed to
+     * produce it in whatever precision its blend unit has. Measured on lavapipe and radv, a field at
+     * `boundFieldCoverage` lands one UNORM step below the integer `blend()` predicts on the channel
+     * whose exact value falls on a half - which is the same last-bit disagreement this file already
+     * admits for a glyph, arising in the same way and for the same reason.
+     *
+     * So the ground carries the number of composites that made it, and the checks allow that many
+     * steps on a ground pixel and add it to the glyph allowance on a painted one. **Zero keeps the
+     * old exactness**, which is what every existing caller passes and what a clear colour or a panel
+     * deserves: a slack granted where none is needed is a wrong tint waved through.
      */
     [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> create(const mdux::medui::ScreenPackage& screen,
                                                                                  const mdux::medui::CompiledNode&  node,
                                                                                  const mdux::medui::TextBinding&   binding,
                                                                                  std::span<const std::byte>        atlas,
                                                                                  RenderScope                       scope,
-                                                                                 mdux::core::ColorRgba8            ground) noexcept;
+                                                                                 mdux::core::ColorRgba8            ground,
+                                                                                 std::size_t                       groundComposites = 0) noexcept;
 
     /**
      * @brief Builds a view over caller-supplied parts, establishing no provenance whatever.
@@ -699,7 +720,8 @@ public:
                                                                                           std::span<const std::byte>       records,
                                                                                           const mdux::font::FontPackage&   font,
                                                                                           std::span<const std::byte>       atlas,
-                                                                                          mdux::core::ColorRgba8           ground) noexcept;
+                                                                                          mdux::core::ColorRgba8           ground,
+                                                                                          std::size_t                      groundComposites = 0) noexcept;
 
     [[nodiscard]] const mdux::medui::CompiledNode& node() const noexcept {
         return *node_;
@@ -736,6 +758,11 @@ public:
     [[nodiscard]] mdux::core::ColorRgba8 ground() const noexcept {
         return ground_;
     }
+    /// How many device composites produced `ground()`. Zero means it was never blended, and a
+    /// ground pixel then has to equal it exactly.
+    [[nodiscard]] std::size_t groundComposites() const noexcept {
+        return groundComposites_;
+    }
     /// How many records the run holds, blanks included.
     [[nodiscard]] std::size_t glyphCount() const noexcept {
         return records_.size() / mdux::text::draw::recordSize;
@@ -765,7 +792,8 @@ private:
                                                                                 std::span<const std::byte>       records,
                                                                                 const mdux::font::FontPackage&   font,
                                                                                 std::span<const std::byte>       atlas,
-                                                                                mdux::core::ColorRgba8           ground) noexcept;
+                                                                                mdux::core::ColorRgba8           ground,
+                                                                                std::size_t                      groundComposites) noexcept;
 
     TextExpectation(const mdux::medui::CompiledNode* node,
                     RenderScope                      scope,
@@ -776,7 +804,8 @@ private:
                     mdux::core::ColorRgba8           ground,
                     mdux::medui::NodeRect            ink,
                     mdux::core::Px                   originX,
-                    mdux::core::Px                   originY) noexcept
+                    mdux::core::Px                   originY,
+                    std::size_t                      groundComposites) noexcept
         : node_{node},
           scope_{scope},
           records_{records},
@@ -786,7 +815,8 @@ private:
           ground_{ground},
           ink_{ink},
           originX_{originX},
-          originY_{originY} {}
+          originY_{originY},
+          groundComposites_{groundComposites} {}
 
     const mdux::medui::CompiledNode* node_{nullptr};
     RenderScope                      scope_{RenderScope::localeFree()};
@@ -798,6 +828,7 @@ private:
     mdux::medui::NodeRect            ink_{};
     mdux::core::Px                   originX_{0};
     mdux::core::Px                   originY_{0};
+    std::size_t                      groundComposites_{0};
 };
 
 static_assert(!std::is_aggregate_v<TextExpectation>, "a TextExpectation must only be obtainable through create()");

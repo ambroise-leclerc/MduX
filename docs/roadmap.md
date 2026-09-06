@@ -420,27 +420,30 @@ further content** — the epic's own note calls them fully exercisable at the so
 shipped in v0.6.0 — but they still follow #251, which fixes the derive-don't-trust rule they
 implement. Content is not the constraint; the governing decision is.
 
-#### #17 — Content components · **Open, unblocked**
+#### #17 — Content components · **Open, all six children shipped**
 
 The rest of the component dictionary. Two deliberate scope cuts: QOI rather than PNG in v1,
 and no IME — input-method editing is a platform concern that does not belong inside a
-governed renderer.
+governed renderer. Both cuts held: #256 baked QOI on the host only, and #260 gave a `TextInput`
+display and caret and nothing else.
 
 - #256 S1 Image baker and the `Image` component
 - #257 S2 `SignalTrace` — shares the demonstrator's sample ring
 - #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
 - #259 S4 `StatusIndicator` — **shipped**; the ECG demonstrator binds its classifier's class to one
 - #260 S5 `TextInput` (display and caret only) — **shipped**; a fixed-pitch grid, measured at compile time
-- #261 S6 Buttons with requirement binding — touches #219
+- #261 S6 Buttons with requirement binding — **shipped**; a face, a closed action, and the requirement it is traced to
 
-Largely independent of one another, unlike #16's. **#256 is the one to start**, depending on nothing
-else here.
+Largely independent of one another, unlike #16's, which is why they landed in that order rather than
+in a forced one.
 
 **#219 orders two of them, and is a prerequisite rather than a nicety.** It closes `ClockFormat` and
 `SystemEvent`. An open format name cannot be *measured*, only looked up, so #258's `Clock` would be
 built against the product-supplied table #195 needs today and then have it removed; and a screen
 that can name any system event can name one nothing implements, which is worst discovered on the
-press of the critical button #261 builds.
+press of the critical button #261 builds. Both held: #258's clock box is measured rather than looked
+up, and #261's `resolvePress()` refuses an action outside the closed set instead of reporting a
+no-op nothing performs.
 
 ---
 

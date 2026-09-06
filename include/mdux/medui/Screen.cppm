@@ -16,10 +16,12 @@
  *
  * It draws a `Panel`: a filled rectangle in the colour its token resolves to. It draws a `Label`
  * too, when the caller supplies the packages a locale-free screen has to be joined to. Since #255 it
- * also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves: the node's whole resolved
- * rectangle, in the single colour token that node carries. Every other component is visited,
- * counted, and left undrawn - and that is a stated limit rather than an omission, so it is worth
- * saying exactly why for each.
+ * also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves - the node's whole resolved
+ * rectangle, in the single colour token that node carries - and since #261 the **face** a `Button`
+ * or a `CriticalButton` carries, on the same rule. What is left visited, counted and undrawn is a
+ * `VulkanViewport`, whose stream this module has no part in, and any component whose live content
+ * the caller has not bound. That is a stated limit rather than an omission, so it is worth saying
+ * exactly why for each.
  *
  * - `Label` draws **text**, and does so through `TextBinding` (#242). A compiled screen carries a
  *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
@@ -35,9 +37,12 @@
  *   what it was after #255: the opaque field it reserves. The expansion itself is
  *   `mdux.medui.trace`'s, split out for the reason `mdux.text.draw` is - geometry that can be tested
  *   against numbers rather than only against a rendered frame.
- * - `Button` and `CriticalButton` carry text keys as well, and are still deferred whole. A button's
- *   text is not the whole of its appearance - it has a face nothing in this project has decided -
- *   and this module will not invent one. They arrive with #17.
+ * - `Button` and `CriticalButton` draw since #261: the face their single token names, and their
+ *   label's word over it when a locale is bound - `StatusIndicator`'s composition, for
+ *   `StatusIndicator`'s reason, since a button's label and its face are the same token and a word in
+ *   the field's own tint over an opaque field of that tint is invisible. This bullet used to say a
+ *   button "has a face nothing in this project has decided"; the two arguments that decided it are
+ *   below, under "Why a button's rectangle is its face".
  * - `TextInput` draws since #260, when the caller supplies a `TextInputBinding` naming that node:
  *   the value's glyphs on the fixed-pitch grid `mdux.medui.field` defines, and a caret when the slot
  *   carries one. Display and caret is the whole of it - #17 cuts input-method editing, and ADR-004
@@ -77,13 +82,36 @@
  * its own compiler emitted, which is the state ADR-014's consequences recorded and #255 closes.
  *
  * What is still deliberately *not* claimed: that a `Label`'s box should be filled with its colour,
- * or that a `Button` has a face in its. Neither has a golden that says so - a `Label`'s token is its
- * *text* colour and its box is text-sized, and no golden can name the synthetic `Panel` a `Row`
- * produces. Those remain per-component appearance decisions this project has not settled, not in the
- * ADRs, which stop at "where each node is and which validated token it draws with", and not in the
- * sibling, whose `render_frame` returns frame statistics rather than geometry
- * (`crates/trustsc-ui/src/lib.rs:539`). So this module still counts what it cannot decide and says
- * so in `FrameStats::deferred`.
+ * or that a `TextInput`'s should. Neither has a golden that says so - their token is the *text*
+ * colour and their box is text-sized. Those remain per-component appearance decisions this project
+ * has not settled, not in the ADRs, which stop at "where each node is and which validated token it
+ * draws with", and not in the sibling, whose `render_frame` returns frame statistics rather than
+ * geometry (`crates/trustsc-ui/src/lib.rs:539`). So this module still counts what it cannot decide
+ * and says so in `FrameStats::deferred`.
+ *
+ * ## Why a button's rectangle is its face
+ *
+ * This paragraph used to put `Button` in the sentence above, beside `Label`, and #261 moved it out.
+ * Two arguments do that, and only the pair is sufficient - the first alone would move a `Label` too.
+ *
+ * The first is the artifact's, and it is #255's verbatim. A `Button` and a `CriticalButton` each
+ * carry exactly one `color:`, `mdux::verify::colorTokenOf()` reads it as the node's tint, and
+ * `collectGoldens()` pairs it with the node's **whole** resolved rectangle for any button an author
+ * annotates `@safety_critical` or positions. `goldenBounds()` reads that rectangle as an equality,
+ * so a button that painted only its word could never discharge the golden its own compiler emitted.
+ *
+ * The second is the component's, and it is what a `Label` has no version of: **a button's rectangle
+ * is its hit target.** `resolvePress()` resolves a coordinate against exactly that rectangle and
+ * against nothing else, so a button drawn as a word floating on the ground is a control whose
+ * pressable area an operator has to guess at - and guessing wrong on a `CriticalButton` is a press
+ * that did not happen when someone believes it did. An unpainted face is not a missing decoration
+ * there; it is the failure that looks most like a working control, which is the same objection
+ * `StatusBinding` raises against an indicator with no per-state tint.
+ *
+ * What that face is *not* is a border, a bevel, a pressed state or a disabled one. Those are
+ * appearances no artifact names and no golden pins, and this module invents none of them. It fills
+ * the rectangle the compiler resolved with the token the author gave it, which is the whole of what
+ * the screen says about how a button looks.
  *
  * One consequence of the field rule is worth stating rather than discovering, because it constrains
  * #257 and #258 rather than being free. `ColorHash` admits only pixels that are a blend of the
@@ -204,10 +232,13 @@ export namespace mdux::medui {
  * A `Panel` is here because a `Row` declared a background and a background *is* a filled box. A
  * `NumericDisplay` and a `SignalTrace` are here because the golden entry their own compiler emits
  * pairs their whole rectangle with their single token, and `goldenBounds()` reads that pairing as an
- * equality - see the module comment. Everything else is deferred: a `Clock` has no token, a
- * `StatusIndicator` has one per state and therefore no single tint until a state is bound - which
- * `render()` settles before it reaches this function - and the rest have an appearance with more
- * than one part that nothing in this project has settled.
+ * equality - see the module comment. A `Button` and a `CriticalButton` are here since #261 for that
+ * same reason and for one of their own, which the module comment states under "Why a button's
+ * rectangle is its face": that rectangle is the control's hit target, so a face is what tells an
+ * operator where the control is rather than how it is decorated. Everything else is deferred: a
+ * `Clock` has no token, a `StatusIndicator` has one per state and therefore no single tint until a
+ * state is bound - which `render()` settles before it reaches this function - and the rest have an
+ * appearance with more than one part that nothing in this project has settled.
  *
  * **`nullopt` and an empty token are different answers**, and collapsing them would lose a refusal.
  * `nullopt` means "this component does not paint a field", which is a deferral. An engaged optional
@@ -226,45 +257,75 @@ export namespace mdux::medui {
     if (const auto* trace = std::get_if<SignalTraceSpec>(&payload); trace != nullptr) {
         return trace->colorToken;
     }
+    if (const auto* button = std::get_if<ButtonSpec>(&payload); button != nullptr) {
+        return button->colorToken;
+    }
+    if (const auto* critical = std::get_if<CriticalButtonSpec>(&payload); critical != nullptr) {
+        return critical->colorToken;
+    }
+    return std::nullopt;
+}
+
+/// The label key and tint a button carries, or `nullopt` for a node that is not one.
+///
+/// `Button` and `CriticalButton` differ in what a press *does* and not at all in what a frame draws,
+/// so the drawing path reads them through one function rather than branching twice on a variant. The
+/// difference they do have belongs to `resolvePress()`, which is where it is asked about.
+struct ButtonFace {
+    std::string_view labelKey{};
+    std::string_view colorToken{};
+
+    [[nodiscard]] constexpr bool operator==(const ButtonFace&) const noexcept = default;
+};
+
+[[nodiscard]] constexpr std::optional<ButtonFace> buttonFace(const NodePayload& payload) noexcept {
+    if (const auto* button = std::get_if<ButtonSpec>(&payload); button != nullptr) {
+        return ButtonFace{.labelKey = button->labelKey, .colorToken = button->colorToken};
+    }
+    if (const auto* critical = std::get_if<CriticalButtonSpec>(&payload); critical != nullptr) {
+        return ButtonFace{.labelKey = critical->labelKey, .colorToken = critical->colorToken};
+    }
     return std::nullopt;
 }
 
 /// Why a frame was refused. Every one leaves the draw list exactly as it was found.
 enum class ScreenError : std::uint8_t {
-    MalformedColorToken,   ///< a node's colour is not of the form `Theme.Colors.<Token>`
-    UnknownColorToken,     ///< well-formed, and the governed table does not define it
-    BudgetExhausted,       ///< a write would exceed a `DrawBudget` this frame is held to
-    UnknownTextKey,        ///< a bound text package carries no run for a node's `textKey`
-    MalformedTextRun,      ///< a run's range leaves the sidecar, or its bytes are not whole records
-    RunTooLong,            ///< a run holds more than `maxGlyphsPerRun` records
-    AtlasMismatch,         ///< the text package was baked against a different font package
-    SidecarMismatch,       ///< the sidecar is not the one the text package describes
-    PackageNotApproved,    ///< the screen was not compiled against this locale/package/digest
-    TextOverflowsNode,     ///< a run's ink is wider or taller than the node that names it
-    ImageSidecarMismatch,  ///< RGBA bytes differ from the baked image package
-    ImageNotApproved,      ///< the screen did not approve this image id/digest/extent
-    UnknownStreamSource,   ///< a signal slot names a stream no `SignalTrace` on this screen carries
-    DuplicateStream,       ///< two signal slots name the same stream
-    MissingSampleRing,     ///< a signal slot carries no ring, so its trace could never draw a sample
-    UnknownReadingNode,    ///< a reading slot names no `NumericDisplay` on this screen
-    DuplicateReading,      ///< two reading slots name the same node
-    MalformedPattern,      ///< a reading slot's rendering is empty or longer than `maxPatternLength`
-    ReadingRefused,        ///< a reading could not be drawn - see `ReadingError` for which way
-    ReadingOverflowsNode,  ///< a drawn reading's ink is wider or taller than the node that holds it
-    UnknownStatusNode,     ///< a status slot names no `StatusIndicator` on this screen
-    DuplicateStatus,       ///< two status slots name the same node
-    StateOutOfRange,       ///< a slot's state is not a position in that node's closed `states` list
-    StatusHasNoTint,       ///< a bound indicator declares no per-state colours, so its states look alike
-    UnknownTextInputNode,  ///< a text-input slot names no `TextInput` on this screen
-    DuplicateTextInput,    ///< two text-input slots name the same node
-    FieldRefused,          ///< a field could not be drawn - see `FieldError` for which way
-    FieldOverflowsNode,    ///< a drawn field's ink is wider or taller than the node that holds it
-    MalformedTraceStyle,   ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
-    MalformedSampleRing,   ///< a bound ring's oldest index or live count is not a position in it
-    NonFiniteSample,       ///< a live sample is a NaN or an infinity
-    TraceTooLong,          ///< a bound ring holds more than `maxSamplesPerTrace` samples
-    TraceBandTooSmall,     ///< a bound trace's node is too small to hold its stroke
-    ScreenNotApproved,     ///< a signal binding built for one screen was offered to another
+    MalformedColorToken,      ///< a node's colour is not of the form `Theme.Colors.<Token>`
+    UnknownColorToken,        ///< well-formed, and the governed table does not define it
+    BudgetExhausted,          ///< a write would exceed a `DrawBudget` this frame is held to
+    UnknownTextKey,           ///< a bound text package carries no run for a node's `textKey`
+    MalformedTextRun,         ///< a run's range leaves the sidecar, or its bytes are not whole records
+    RunTooLong,               ///< a run holds more than `maxGlyphsPerRun` records
+    AtlasMismatch,            ///< the text package was baked against a different font package
+    SidecarMismatch,          ///< the sidecar is not the one the text package describes
+    PackageNotApproved,       ///< the screen was not compiled against this locale/package/digest
+    TextOverflowsNode,        ///< a run's ink is wider or taller than the node that names it
+    ImageSidecarMismatch,     ///< RGBA bytes differ from the baked image package
+    ImageNotApproved,         ///< the screen did not approve this image id/digest/extent
+    UnknownStreamSource,      ///< a signal slot names a stream no `SignalTrace` on this screen carries
+    DuplicateStream,          ///< two signal slots name the same stream
+    MissingSampleRing,        ///< a signal slot carries no ring, so its trace could never draw a sample
+    UnknownReadingNode,       ///< a reading slot names no `NumericDisplay` on this screen
+    DuplicateReading,         ///< two reading slots name the same node
+    MalformedPattern,         ///< a reading slot's rendering is empty or longer than `maxPatternLength`
+    ReadingRefused,           ///< a reading could not be drawn - see `ReadingError` for which way
+    ReadingOverflowsNode,     ///< a drawn reading's ink is wider or taller than the node that holds it
+    UnknownStatusNode,        ///< a status slot names no `StatusIndicator` on this screen
+    DuplicateStatus,          ///< two status slots name the same node
+    StateOutOfRange,          ///< a slot's state is not a position in that node's closed `states` list
+    StatusHasNoTint,          ///< a bound indicator declares no per-state colours, so its states look alike
+    UnknownTextInputNode,     ///< a text-input slot names no `TextInput` on this screen
+    DuplicateTextInput,       ///< two text-input slots name the same node
+    FieldRefused,             ///< a field could not be drawn - see `FieldError` for which way
+    FieldOverflowsNode,       ///< a drawn field's ink is wider or taller than the node that holds it
+    MalformedTraceStyle,      ///< a slot's sample range is empty or not finite, or its stroke is not 1-3px
+    MalformedSampleRing,      ///< a bound ring's oldest index or live count is not a position in it
+    NonFiniteSample,          ///< a live sample is a NaN or an infinity
+    TraceTooLong,             ///< a bound ring holds more than `maxSamplesPerTrace` samples
+    TraceBandTooSmall,        ///< a bound trace's node is too small to hold its stroke
+    ScreenNotApproved,        ///< a signal binding built for one screen was offered to another
+    UnimplementedEvent,       ///< a pressed `CriticalButton` names no member of the closed `SystemEvent` set
+    UntracedCriticalControl,  ///< a pressed `CriticalButton` declares no requirement to trace it to
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a
@@ -946,15 +1007,15 @@ static_assert(!std::is_aggregate_v<TextInputBinding>, "a TextInputBinding must o
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
  * for the reasons the module comment gives one by one. A caller that expects a screen to be fully
- * drawn can assert it is zero; today, on a screen carrying a `VulkanViewport` or any of the three
- * interactive components, it will not be - and on one carrying text, an unbound `Clock`, an unbound
- * `Image` or an unbound `StatusIndicator` it will not be either unless the matching binding was
- * supplied.
+ * drawn can assert it is zero; today, on a screen carrying a `VulkanViewport` or an unbound
+ * `TextInput`, it will not be - and on one carrying text, an unbound `Clock`, an unbound `Image` or
+ * an unbound `StatusIndicator` it will not be either unless the matching binding was supplied.
  *
- * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255: its field is drawn even
- * with nothing bound. That distinction is the point of the counter - a node whose rectangle is
- * painted is a node a golden reference can check, whatever it will later show in it. A `Clock` has
- * no such rectangle, so an unbound one is a deferral in the ordinary sense.
+ * A `NumericDisplay` or `SignalTrace` is **not** counted here since #255, nor a `Button` or a
+ * `CriticalButton` since #261: their field is drawn even with nothing bound. That distinction is the
+ * point of the counter - a node whose rectangle is painted is a node a golden reference can check,
+ * whatever it will later show in it. A `Clock` has no such rectangle, so an unbound one is a
+ * deferral in the ordinary sense.
  *
  * `readings`, `traces`, `states` and `fields` count the nodes whose *live* content was drawn, which
  * is the fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred,
@@ -1008,5 +1069,85 @@ struct FrameStats {
                                                                  const ReadingBinding&   readings = {},
                                                                  const StatusBinding&    status   = {},
                                                                  const TextInputBinding& inputs   = {}) noexcept;
+
+/**
+ * @brief What a press on a control resolves to: which node, what it is traced to, and what to do.
+ *
+ * The whole of what crosses this boundary in the press direction. The host owns the input device,
+ * the gesture, the debounce and the confirmation dialogue if it has one; what it does not own is
+ * *which control is under a coordinate*, because that is the layout the compiler resolved, and a
+ * host that re-derived it would be maintaining a second copy of the screen.
+ *
+ * ## Why two fields for one action, rather than one
+ *
+ * `event` is a `CriticalButton`'s and `source` is a `Button`'s, and exactly one of them is ever set.
+ * They are not the same kind of thing and folding them into one string would say they were. An
+ * `event` is a member of the closed `SystemEvent` set the shared contract fixes (#219), so the host
+ * has a finite, enumerable set of behaviours to implement and a compiler can tell it when it has
+ * missed one. A `source` is an open name a product chose for its own action table - `"FREEZE"` - and
+ * nothing outside that product can say what it means or check that anything implements it. Making
+ * the safety-relevant control the one with the closed set is the point of having two components.
+ *
+ * ## `requirement` travels with the action, and that is the issue's own claim
+ *
+ * A `CriticalButton` must declare a `requirement:` - the dictionary requires it, `validatePayload()`
+ * refuses a compiled node without one, and `resolvePress()` refuses to resolve a press on one that
+ * somehow has none. So a host acting on a critical press is holding, in the same value, the id the
+ * action is traced to in the software development file. That is what makes the action traceable from
+ * the screen rather than by a convention nobody can check: `requirementOf()` reads the same field a
+ * traceability matrix export walks, and this hands it to the code that performs the action.
+ *
+ * A `Button`'s `requirement` is optional in the dictionary and is empty when it declares none.
+ */
+struct PressAction {
+    std::string_view           nodeId{};       ///< the control the press landed on
+    std::string_view           requirement{};  ///< empty only for a `Button` that declares none
+    std::string_view           source{};       ///< a `Button`'s action name; empty on a critical one
+    std::optional<SystemEvent> event{};        ///< a `CriticalButton`'s closed action; `nullopt` on a `Button`
+
+    [[nodiscard]] constexpr bool operator==(const PressAction&) const noexcept = default;
+};
+
+/**
+ * @brief Resolves a surface coordinate to the control it presses, or to nothing.
+ *
+ * @param screen a compiled screen, normally the `constexpr` one a generated translation unit holds
+ * @param x      surface x, in the same pixel space `NodeRect` is resolved in
+ * @param y      surface y
+ *
+ * An engaged optional is a press on a control; `nullopt` is a press that landed on no control, which
+ * is the ordinary case and not an error - most of a screen is not a button.
+ *
+ * ## Refusals, and why a press is the wrong place to be lenient
+ *
+ * `UnimplementedEvent` for a `CriticalButton` whose `on_press` is not a member of the closed
+ * `SystemEvent` set, and `UntracedCriticalControl` for one that declares no requirement. Both are
+ * already compile errors - `MEDUI-E034` and the dictionary's required-field rule at build time,
+ * `validatePayload()` in the `static_assert` a generated screen carries - so neither can reach a
+ * device through the normal path. They are here because a screen assembled by hand at run time never
+ * met that `static_assert`, and #17 names the failure this closes in as many words: a screen that can
+ * name any system event can name one nothing implements, *worst discovered on the press of a critical
+ * button*. Returning `NoOp` for an unrecognised event would be exactly that discovery deferred
+ * forever - the press would be swallowed, the host would report success, and nothing would halt.
+ *
+ * ## Overlap resolves to the control on top
+ *
+ * Nodes are searched from the end of the package, so the last node - the one drawn over its
+ * neighbours - wins. Overlap is possible only through `position:`, since flow layout cannot produce
+ * it, and the rule is the one an operator's eyes already apply: they press what they can see. Any
+ * other answer would resolve a press to a control the frame does not show.
+ *
+ * The same rule makes every node **opaque to a press**, not only the controls. A label, a viewport
+ * or a panel positioned over a button takes the press and yields `nullopt`; the search does not
+ * continue through it to the button underneath. Resolving through would fire a control the operator
+ * cannot see, which is the one outcome worse than a press that did nothing. Note that a `Row`'s
+ * synthetic `Panel` never does this to its own children: the solver emits the panel before them, so
+ * a backward search reaches the children first.
+ *
+ * Bounded, allocation-free and `noexcept`: one pass over the node list, integer comparisons only,
+ * and nothing written anywhere. It reads no binding and records no frame, so a host may call it
+ * between frames or on a thread that never draws.
+ */
+[[nodiscard]] mdux::core::Result<std::optional<PressAction>, ScreenError> resolvePress(const ScreenPackage& screen, std::int32_t x, std::int32_t y) noexcept;
 
 }  // namespace mdux::medui

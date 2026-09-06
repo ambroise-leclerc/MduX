@@ -168,6 +168,29 @@ scopes of one screen can never overwrite each other's image. It is written only 
 a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
 check. CI passes the same flag and uploads the directory when the step fails.
 
+### Looking at a screen that verifies
+
+`--diff-image-dir` only ever writes on a failure, so it cannot answer the other question a rendered
+screen raises: what does it look like. `--frame-image-dir=<dir>` does.
+
+```bash
+./build/tools/mdux-verify-ui \
+  --screen=generated/screen/endoscope-monitor \
+  --locales=all \
+  --frame-image-dir=/tmp/mdux-frames
+```
+
+Every render scope writes `<screen>.<scope>.frame.png` there, pass or fail — the readback exactly as
+it came back, with no dimming and nothing drawn on top, because anything drawn on it would be this
+tool's opinion about the screen rather than the screen. The name carries a `.frame` before the
+extension and encodes the scope the same way, so pointing both flags at one directory keeps both
+images. Like `--diff-image-dir`, it chooses a location and never an expectation: the same
+obligations run in the same scopes, and the same exit status comes back, whether or not you pass it.
+
+This is the shortest path to seeing an authored `.medui` screen. There is no windowed viewer — the
+only target that opens a window is `VulkanSCTriangleExample`, and it draws the baked triangle rather
+than a compiled screen.
+
 You do not have to run it by hand to get it run. `mdux_compile_screen()` registers the same
 invocation as the ctest `verify.screen.<id>`, so:
 
