@@ -62,10 +62,12 @@ Three decisions from that programme apply repository-wide:
    closed) — see `regulatory-citations` in § 7 and [ADR-006](docs/adr/ADR-006-no-reproduction-of-normative-standard-text.md).
    Do not add new material that reproduces or closely paraphrases a standard's wording.
    `mdux-docs-lint` enforces this in CI.
-4. **Evidence is baked and committed** (issue `#12`, closed). Five artifacts live under
-   `generated/`: two shader packages, two ML model packages and one font package. A normal build never writes into
+4. **Evidence is baked and committed** (issue `#12`, closed). Eight artifacts live under
+   `generated/` today — see the `evidence-pipeline` skill's own status line for the current count
+   and kinds rather than a second copy of it here. A normal build never writes into
    the source tree — `mdux-bake-update` is the only path that does, run deliberately by an author
-   who commits the diff. CI asserts byte-identity on both toolchain legs.
+   who commits the diff. CI asserts byte-identity on every toolchain leg that runs the evidence
+   label.
 5. **Zero-SOUP ML inference has landed** (issue `#18`, closed). `mdux.ml.kernels` is imported by
    both the device runtime and the host baker, and `Classifier1D::create()` fails closed on a
    digest or golden-vector mismatch. See [ADR-008](docs/adr/ADR-008-zero-soup-ml-inference.md).
@@ -395,7 +397,7 @@ is one of the things that would have caught that earlier.
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
 | [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. Each kind's **resolved** option set is published as `docs/recipes/<kind>.schema.json` (#264) and checked against every committed report. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
-| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. The machine-readable form of all of it is `docs/medui/grammar.json`, emitted by `mdux-meduic --grammar` from the compiler's own tables (#263) — read that for the *set* of anything, and `mdux-meduic --explain MEDUI-EXXX` for one diagnostic. **Live** — a `.medui` file compiles to a committed artifact, emits `constexpr` C++, and reaches compared pixels; what it cannot yet carry is text (issue `#235`). |
+| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. The machine-readable form of all of it is `docs/medui/grammar.json`, emitted by `mdux-meduic --grammar` from the compiler's own tables (#263) — read that for the *set* of anything, and `mdux-meduic --explain MEDUI-EXXX` for one diagnostic. **Live** — a `.medui` file compiles to a committed artifact, emits `constexpr` C++, and reaches compared pixels; every component the dictionary names draws (epic `#17`, closed). |
 | [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Live** — `software_development_file/` exists with templates and records (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.

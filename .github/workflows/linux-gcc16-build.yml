@@ -92,7 +92,8 @@ jobs:
           libxi-dev \
           xvfb \
           wget \
-          gnupg
+          gnupg \
+          python3
 
     - name: Install latest CMake
       run: |
@@ -202,6 +203,16 @@ jobs:
       shell: bash
       run: ctest --preset ninja-gcc -L verify -V --no-tests=error
 
+    # Issue #304: a documented `ctest -R <selector>` example that matches nothing reads as
+    # verification evidence and produces none - `.agents/skills/mdux-build-and-test/SKILL.md`
+    # recommended one until this found it. Run here rather than in Documentation Lint because the
+    # question needs a *built* CTest configuration to ask (`--show-only=json-v1` against the tree
+    # `mdux_discover_tests()` actually populated); Documentation Lint runs on ubuntu-latest with no
+    # C++ toolchain at all, by design, so a docs-only PR keeps its fast feedback. One leg is
+    # proportionate: the documented names are toolchain-independent, so GCC 16 - the project's
+    # floor and the leg this exact defect was found on - is asked once rather than on all four.
+    - name: Verify documented test selectors are live
+      run: python3 tools/docs-lint/check_documented_test_selectors.py --build-dir build-gcc
 
     - name: Verify no source-tree writes
       run: |

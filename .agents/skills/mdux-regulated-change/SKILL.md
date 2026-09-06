@@ -83,10 +83,16 @@ the fact — flag it for maintainer/domain-expert review instead (see Step 5).
   named standard's requirements for real-world use.
 
 Never let the second or third category be described using language that implies the first. In
-particular, `README.md`'s "Completed" status for the ISO 14971/13485 risk and quality-management
-frameworks is project intent, not implemented evidence (see `AGENTS.md` § 2) — do not cite it as
-proof that a compliance requirement is already satisfied, and do not introduce new claims of that
-kind for the change you are making.
+particular, ADR-014's rendered-truth verification is implemented evidence — `verify.screen.<id>`
+exists, runs in CI, and passes — but it is not a certification claim, and the project's own
+documents say so rather than leaving it implied: `docs/iec62304/03-development-process.md` records
+that MduX has no software *system* in IEC 62304 §5.7's sense, and the CHANGELOG states "no IEC
+62304 §5.7 system claim" beside every release the mechanism ships in. A passing rendered-truth gate
+is evidence a future system-level argument could rest on, not the argument itself — do not cite it
+as proof such an argument is already made, and do not introduce a new claim of that kind for the
+change you are making. (An earlier revision of this skill used README.md's ISO 14971/13485
+"Completed" status for the same point; issue `#111` removed the claim it referred to, and issue
+`#304` replaced the example rather than leave it citing text that no longer exists.)
 
 ## Handoff checklist
 
