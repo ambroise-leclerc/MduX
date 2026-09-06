@@ -92,9 +92,9 @@
     {
       "output": "verification.json",
       "tool": "mdux-verify-bake",
-      "toolVersion": "0.7.0"
+      "toolVersion": "0.8.0"
     }
   ],
   "tool": "mdux-meduic",
-  "toolVersion": "0.7.0"
+  "toolVersion": "0.8.0"
 }
