@@ -23,7 +23,9 @@ import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
+import mdux.font.schema;
 import mdux.tools.medui.package;
+import mdux.tools.medui.textbudget;
 import mdux.tools.medui.parser;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -69,11 +71,24 @@ constexpr std::array fixtureImageApprovals{
     return resolved;
 }
 
+/// The build's charset table. The every-component fixture declares `charset: Ascii`, which the
+/// package builder resolves rather than carries (#297), so a compile without a table naming it is
+/// a compile that cannot produce this screen.
+constexpr std::array everyComponentAscii{
+    mdux::font::CharsetRange{.first = 0x20, .last = 0x7E}
+};
+const std::array everyComponentCharsets{
+    md::DynamicTextRule{.name = "Ascii", .produces = everyComponentAscii}
+};
+
 /// The screen carrying all eleven payloads, compiled.
 [[nodiscard]] md::ScreenDocument everyComponent() {
-    return md::buildPackage(
-        layoutOf(fixture("accepted-every-component.medui"), 800, 700),
-        {.id = "every-component", .budget = testBudget, .approvedTextPackages = fixtureApprovals, .approvedImagePackages = fixtureImageApprovals});
+    return md::buildPackage(layoutOf(fixture("accepted-every-component.medui"), 800, 700),
+                            {.id                    = "every-component",
+                             .budget                = testBudget,
+                             .approvedTextPackages  = fixtureApprovals,
+                             .approvedImagePackages = fixtureImageApprovals,
+                             .charsets              = everyComponentCharsets});
 }
 
 /// One Label on a small surface: the screen the byte-exact scenario spells out.
@@ -212,6 +227,13 @@ const mdux::spec::Register fieldsReachTheirOwnSpecMembers{
                       if (const auto* input = std::get_if<ms::TextInputSpec>(&node(package, "patient-id").payload)) {
                           checks.expect(input->maxLength == 16, std::format("the TextInput's length bound, got {}", input->maxLength));
                           checks.expect(input->charset == "Ascii", std::format("the TextInput's charset, got '{}'", input->charset));
+                          // And what that name resolved to (#297), which is the half a device can
+                          // act on: a name it cannot look up bounds nothing.
+                          checks.expect(input->charsetRanges.size() == 1, std::format("one resolved range, got {}", input->charsetRanges.size()));
+                          if (input->charsetRanges.size() == 1) {
+                              checks.expect(input->charsetRanges[0] == mdux::font::CharsetRange{.first = 0x20, .last = 0x7E},
+                                            "the range the build's table gave that name");
+                          }
                       } else {
                           checks.expect(false, "the patient-id node holds a TextInput spec");
                       }
@@ -372,6 +394,66 @@ const mdux::spec::Register theBytesAreExactlyDetermined{
                       // A screen package holds no float, so ADR-007's `{"bits": N}` encoding - the
                       // one thing that makes a float portable - never appears in one.
                       checks.expect(written.find("\"bits\"") == std::string::npos, "no floating-point value appears in a screen package");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aHandEditedCharsetIsRefusedWhereItCanBeNamed{
+    "A resolved charset edited out of range is refused by the reader, not by the device",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-package-charset-ranges-are-checked")
+            .Given("a committed screen whose TextInput carries its resolved charset", [] {})
+            .When("a code point is edited to something that is not a character", [] {})
+            .Then("the read fails naming the file, rather than the value reaching a char32_t",
+                  [] {
+                      // `char32_t` is unsigned, so a negative code point cast into one arrives as a
+                      // range near the top of the plane: a set the node never declared, silently, in
+                      // the one file that exists to make the set reviewable. `ScreenPackage::
+                      // validate()` would refuse the result, but as a schema failure with no file
+                      // and no member attached - which is the difference this scenario pins.
+                      mdux::spec::Checks checks;
+                      const std::string  written = md::writePackage(everyComponent().package());
+                      checks.expect(written.find("\"charsetRanges\"") != std::string::npos, "the committed bytes carry the resolved set");
+
+                      for (const std::string_view point : {"-1", "1114112"}) {
+                          const std::string           edited = editing(written, "\"first\": 32", std::format("\"first\": {}", point));
+                          const md::PackageReadResult result = md::readPackage(edited, "package.json");
+                          checks.expect(!result.ok(), std::format("'{}' is not a code point and is refused", point));
+                          checks.expect(firstCode(result) == "SCP002",
+                                        std::format("reported as SCP002, a member with a wrong value, got '{}'", firstCode(result)));
+                      }
+
+                      // A surrogate is the other shape, and it fails differently. It survives the
+                      // cast to `char32_t` intact, so nothing is lost quietly - what would be lost
+                      // is the diagnostic: `validate()` refuses it as SCP005, "the screen the file
+                      // describes is not valid", which names neither the member nor the value.
+                      //
+                      // Both a range *inside* the block and one that merely *spans* it, because the
+                      // test is an overlap rather than one on each endpoint: `0..65535` contains the
+                      // whole block while neither of its ends is in it, and an endpoint-wise check
+                      // would wave it through to the weaker diagnostic.
+                      const std::array<std::pair<std::string_view, std::string_view>, 2> surrogates{
+                          std::pair{"55296", "57343"},
+                          std::pair{    "0", "65535"}
+                      };
+                      for (const auto& [first, last] : surrogates) {
+                          const std::string           edited = editing(editing(written, "\"first\": 32", std::format("\"first\": {}", first)),
+                                                             "\"last\": 126",
+                                                             std::format("\"last\": {}", last));
+                          const md::PackageReadResult result = md::readPackage(edited, "package.json");
+                          checks.expect(!result.ok(), std::format("the range {}..{} admits a surrogate and is refused", first, last));
+                          checks.expect(firstCode(result) == "SCP002",
+                                        std::format("named at the member rather than as a schema failure, got '{}'", firstCode(result)));
+                      }
+
+                      // A member inside a range is closed too, for `anUndefinedMemberIsRefused`'s
+                      // reason: a silently ignored `firts` is a range a reviewer believes is pinned.
+                      const std::string           misspelt = editing(written, "\"first\": 32", "\"firts\": 32");
+                      const md::PackageReadResult refused  = md::readPackage(misspelt, "package.json");
+                      checks.expect(!refused.ok(), "a misspelt member inside a range is refused");
+                      checks.expect(firstCode(refused) == "SCP003", std::format("reported as SCP003, an undefined member, got '{}'", firstCode(refused)));
                       checks.raise();
                   })
             .Execute();

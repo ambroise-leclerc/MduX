@@ -348,6 +348,7 @@ class ValidatorTests(unittest.TestCase):
             "type": ({"type": "string"}, 1),
             "enum": ({"enum": ["a"]}, 1),
             "minimum": ({"minimum": 5}, 4),
+            "maximum": ({"maximum": 5}, 6),
             "minLength": ({"minLength": 2}, "a"),
             "minItems": ({"minItems": 2}, ["a"]),
             "pattern": ({"pattern": "^z"}, "a"),

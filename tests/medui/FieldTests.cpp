@@ -322,7 +322,7 @@ const mdux::spec::Register theGridDoesNotMoveWithTheValue{
                       const auto secondCellLeft = [&checks](std::array<char32_t, 2> value) {
                           Scratch    scratch;
                           auto       list     = scratch.list();
-                          const auto recorded = ms::recordField(list, theFont(), node, 4, value, std::nullopt, ink);
+                          const auto recorded = ms::recordField(list, theFont(), {}, node, 4, value, std::nullopt, ink);
                           checks.expect(recorded.has_value(), "the value is recorded");
                           if (!recorded.has_value()) {
                               return mdux::core::Px{0};
@@ -394,7 +394,7 @@ const mdux::spec::Register theEnvelopeBoundsEveryValue{
                           for (const std::optional<std::size_t> caret : {std::optional<std::size_t>{}, std::optional<std::size_t>{4}}) {
                               Scratch    scratch;
                               auto       list     = scratch.list();
-                              const auto recorded = ms::recordField(list, theFont(), node, 4, value, caret, ink);
+                              const auto recorded = ms::recordField(list, theFont(), {}, node, 4, value, caret, ink);
                               checks.expect(recorded.has_value(), "the value is recorded");
                               if (!recorded.has_value()) {
                                   continue;
@@ -437,7 +437,7 @@ const mdux::spec::Register aNegativeBearingStaysInsideTheNode{
 
                       Scratch    scratch;
                       auto       list     = scratch.list();
-                      const auto recorded = ms::recordField(list, theFont(), node, 4, value, std::optional<std::size_t>{2}, ink);
+                      const auto recorded = ms::recordField(list, theFont(), {}, node, 4, value, std::optional<std::size_t>{2}, ink);
                       checks.expect(recorded.has_value(), "the value is recorded");
 
                       const Box box = boxOf(list);
@@ -486,7 +486,7 @@ const mdux::spec::Register anOversizedValueIsRefused{
 
                       Scratch    scratch;
                       auto       list     = scratch.list();
-                      const auto recorded = ms::recordField(list, theFont(), node, 3, tooLong, std::nullopt, ink);
+                      const auto recorded = ms::recordField(list, theFont(), {}, node, 3, tooLong, std::nullopt, ink);
 
                       checks.expect(!recorded.has_value(), "the value is refused");
                       if (!recorded.has_value()) {
@@ -515,7 +515,7 @@ const mdux::spec::Register aGlyphThePackageLacksIsRefused{
 
                       Scratch    scratch;
                       auto       list     = scratch.list();
-                      const auto recorded = ms::recordField(list, theFont(), node, 4, unknown, std::nullopt, ink);
+                      const auto recorded = ms::recordField(list, theFont(), {}, node, 4, unknown, std::nullopt, ink);
 
                       checks.expect(!recorded.has_value(), "the value is refused");
                       if (!recorded.has_value()) {
@@ -559,7 +559,7 @@ const mdux::spec::Register aGlyphOutsideTheCharsetIsRefused{
                       constexpr std::array<char32_t, 1> outside{U'W'};
                       Scratch                           scratch;
                       auto                              list     = scratch.list();
-                      const auto                        recorded = ms::recordField(list, narrowed, node, 4, outside, std::nullopt, ink);
+                      const auto                        recorded = ms::recordField(list, narrowed, {}, node, 4, outside, std::nullopt, ink);
 
                       checks.expect(!recorded.has_value(), "the value is refused");
                       if (!recorded.has_value()) {
@@ -567,6 +567,97 @@ const mdux::spec::Register aGlyphOutsideTheCharsetIsRefused{
                                         std::format("reported as GlyphNotInPackage, got '{}'", ms::describe(recorded.error())));
                       }
                       checks.expect(list.vertices().empty(), "and nothing is left recorded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theNodesOwnCharsetBoundsWhatItDisplays{
+    "A field displays only what its own charset admits, not everything its font can draw",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-node-charset-is-enforced")
+            .Given("a node narrowed to one letter, on a package that draws several", [] {})
+            .When("the declared letter and an undeclared one are each recorded into it", [] {})
+            .Then("the declared one is drawn, the other is refused, and the refusal is not the font's",
+                  [] {
+                      // #297. Before it, a compiled node carried the charset's *name* and not its
+                      // set, so this module had nothing to compare a character against but the font
+                      // package - and a field declared for digits displayed the letter a host sent.
+                      //
+                      // The two bounds are deliberately distinguishable. `W` here is a character the
+                      // package draws perfectly well; what refuses it is the *node*, and a caller
+                      // told `GlyphNotInPackage` would go and re-bake a font that is not the problem.
+                      mdux::spec::Checks checks;
+
+                      static constexpr std::array onlyI{
+                          font::CharsetRange{.first = U'i', .last = U'i'}
+                      };
+                      checks.expect(theFont().permits(U'W') && theFont().find(U'W') != nullptr, "the package can draw the letter the node excludes");
+
+                      const auto record = [&](std::array<char32_t, 1> value, std::span<const font::CharsetRange> narrowed) {
+                          Scratch scratch;
+                          auto    list = scratch.list();
+                          auto    done = ms::recordField(list, theFont(), narrowed, node, 4, value, std::nullopt, ink);
+                          return std::pair{done, list.vertices().empty()};
+                      };
+
+                      const auto [declared, declaredEmpty] = record({U'i'}, onlyI);
+                      checks.expect(declared.has_value(), "the declared letter is inside the set and is drawn");
+                      checks.expect(!declaredEmpty, "and left something recorded");
+
+                      const auto [letter, letterEmpty] = record({U'W'}, onlyI);
+                      checks.expect(!letter.has_value(), "the undeclared one is outside it and is refused");
+                      if (!letter.has_value()) {
+                          checks.expect(letter.error() == ms::FieldError::CharacterOutsideFieldCharset,
+                                        std::format("reported as CharacterOutsideFieldCharset, got '{}'", ms::describe(letter.error())));
+                      }
+                      checks.expect(letterEmpty, "and nothing is left recorded, as every field refusal leaves nothing");
+
+                      // The counterweight, and the half that keeps an empty set from becoming a
+                      // field that displays nothing: a node declaring no `charset:` carries no
+                      // ranges, and that is "narrows nothing" rather than "admits nothing".
+                      const auto [unnarrowed, unnarrowedEmpty] = record({U'W'}, {});
+                      checks.expect(unnarrowed.has_value(), "a node that narrows nothing draws the same letter");
+                      checks.expect(!unnarrowedEmpty, "having recorded it");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theFontsRefusalIsReportedBeforeTheNodes{
+    "A character neither the font nor the node admits is reported as the font's refusal",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-charset-refusals-are-ordered")
+            .Given("a package and a node both narrowed to one letter", [] {})
+            .When("a letter the package no longer draws is recorded", [] {})
+            .Then("it is GlyphNotInPackage, because no re-declaration could make that character drawable",
+                  [] {
+                      // Which of two true refusals a caller is told about is a decision, so it is
+                      // pinned. The font's is the more actionable: widening a node's `charset:`
+                      // cannot conjure a glyph, while re-baking the font can - and a caller told
+                      // "this node never declared it" would edit the screen and see no change.
+                      mdux::spec::Checks checks;
+
+                      font::FontPackage narrowedFont = fixtureFont();
+                      narrowedFont.restrictedCharset = {
+                          {.first = U' ', .last = U' '},
+                          {.first = U'i', .last = U'i'}
+                      };
+                      static constexpr std::array onlyI{
+                          font::CharsetRange{.first = U'i', .last = U'i'}
+                      };
+
+                      constexpr std::array<char32_t, 1> letter{U'W'};
+                      Scratch                           scratch;
+                      auto                              list     = scratch.list();
+                      const auto                        recorded = ms::recordField(list, narrowedFont, onlyI, node, 4, letter, std::nullopt, ink);
+                      checks.expect(!recorded.has_value(), "the value is refused");
+                      if (!recorded.has_value()) {
+                          checks.expect(recorded.error() == ms::FieldError::GlyphNotInPackage,
+                                        std::format("reported as GlyphNotInPackage, got '{}'", ms::describe(recorded.error())));
+                      }
                       checks.raise();
                   })
             .Execute();
@@ -599,7 +690,7 @@ const mdux::spec::Register anInkFreeCharsetIsRefusedByBoth{
                       Scratch                           scratch;
                       auto                              list = scratch.list();
                       constexpr std::array<char32_t, 1> blank{U' '};
-                      const auto                        recorded = ms::recordField(list, blanks, node, 4, blank, std::optional<std::size_t>{1}, ink);
+                      const auto                        recorded = ms::recordField(list, blanks, {}, node, 4, blank, std::optional<std::size_t>{1}, ink);
                       checks.expect(!recorded.has_value() && recorded.error() == ms::FieldError::CharsetHasNoInk,
                                     "and the placement refuses it in the same words");
                       checks.expect(list.vertices().empty(), "with nothing left recorded");
@@ -623,7 +714,7 @@ const mdux::spec::Register theCaretStandsOnACellBoundary{
                       const auto caretLeft = [&](std::size_t caret) {
                           Scratch    scratch;
                           auto       list     = scratch.list();
-                          const auto recorded = ms::recordField(list, theFont(), node, 4, value, caret, ink);
+                          const auto recorded = ms::recordField(list, theFont(), {}, node, 4, value, caret, ink);
                           checks.expect(recorded.has_value(), std::format("a caret at {} is drawn", caret));
                           if (!recorded.has_value()) {
                               return mdux::core::Px{-1};
@@ -655,7 +746,7 @@ const mdux::spec::Register theCaretStandsOnACellBoundary{
 
                       Scratch    scratch;
                       auto       list    = scratch.list();
-                      const auto refused = ms::recordField(list, theFont(), node, 4, value, std::optional<std::size_t>{5}, ink);
+                      const auto refused = ms::recordField(list, theFont(), {}, node, 4, value, std::optional<std::size_t>{5}, ink);
                       checks.expect(!refused.has_value() && refused.error() == ms::FieldError::CaretOutOfRange,
                                     "a caret past the field's end is CaretOutOfRange");
                       checks.expect(list.vertices().empty(), "and nothing is left recorded");
@@ -689,7 +780,7 @@ const mdux::spec::Register aFieldTheRuntimeWillNotDrawIsRefused{
 
                       Scratch    scratch;
                       auto       list  = scratch.list();
-                      const auto drawn = ms::recordField(list, theFont(), node, 0, {}, std::nullopt, ink);
+                      const auto drawn = ms::recordField(list, theFont(), {}, node, 0, {}, std::nullopt, ink);
                       checks.expect(!drawn.has_value() && drawn.error() == ms::FieldError::NoCells, "recordField() refuses zero cells");
                       checks.raise();
                   })
@@ -765,6 +856,72 @@ const mdux::spec::Register slotsAreCheckedAgainstTheScreen{
                           ms::TextInputSlot{.nodeId = "entry", .text = value, .caret = std::optional<std::size_t>{5}}
                       };
                       checks.expect(refusalOf(inputScreen, caretPastEnd) == ms::ScreenError::FieldRefused, "a caret past the field is FieldRefused");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aValueOutsideTheNodesCharsetIsRefusedAtTheJoin{
+    "A value carrying a character the node's charset excludes is refused when it is bound",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-field-charset-is-checked-at-the-join")
+            .Given("a screen whose input is narrowed to one letter", [] {})
+            .When("a value carrying another letter is offered to create()", [] {})
+            .Then("it is refused there, so no frame ever has to be rolled back for it",
+                  [] {
+                      // The first of the two lines #297 adds, and the one that matters in practice.
+                      // `recordField()` asks the same question per frame and rolls the whole screen
+                      // back when the answer is no; a blank display tells an operator less than a
+                      // stale one does, so a value that could never be displayed is much better
+                      // refused where a host still has somewhere to put the error.
+                      mdux::spec::Checks checks;
+
+                      static constexpr std::array onlyI{
+                          font::CharsetRange{.first = U'i', .last = U'i'}
+                      };
+                      static constexpr ms::TextInputSpec               narrowedEntry{.source        = "PATIENT_ID",
+                                                                                     .colorToken    = "Theme.Colors.Title",
+                                                                                     .maxLength     = 4,
+                                                                                     .charset       = "OnlyI",
+                                                                                     .requirement   = {},
+                                                                                     .charsetRanges = onlyI};
+                      static constexpr std::array<ms::CompiledNode, 2> narrowedNodes{
+                          ms::CompiledNode{.id = "ground",  .bounds = {0, 0, 200, 100},        .payload = ground},
+                          ms::CompiledNode{ .id = "entry", .bounds = {20, 30, 100, 40}, .payload = narrowedEntry}
+                      };
+                      static constexpr ms::ScreenPackage narrowedScreen{.id                   = "field",
+                                                                        .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                                                        .surfaceWidth         = 200,
+                                                                        .surfaceHeight        = 100,
+                                                                        .approvedTextPackages = placeholderApprovals,
+                                                                        .nodes                = narrowedNodes,
+                                                                        .budget               = testBudget};
+                      static_assert(narrowedScreen.validate().has_value(), "a node carrying a charset and its resolved set is a valid screen");
+
+                      constexpr std::array<char32_t, 1> inside{U'i'};
+                      const std::array                  accepted{
+                          ms::TextInputSlot{.nodeId = "entry", .text = inside, .caret = std::nullopt}
+                      };
+                      checks.expect(!refusalOf(narrowedScreen, accepted).has_value(), "a value inside the declared set binds");
+
+                      constexpr std::array<char32_t, 2> outside{U'i', U'W'};
+                      const std::array                  refused{
+                          ms::TextInputSlot{.nodeId = "entry", .text = outside, .caret = std::nullopt}
+                      };
+                      checks.expect(refusalOf(narrowedScreen, refused) == ms::ScreenError::CharacterOutsideFieldCharset,
+                                    "and one carrying a character it excludes is CharacterOutsideFieldCharset");
+
+                      // Named rather than folded into `FieldRefused`, because it is the one refusal
+                      // here that says the *value* is wrong rather than the screen or the font - and
+                      // an integrator reading `FieldRefused` would go looking at `max_length`.
+                      checks.expect(refusalOf(narrowedScreen, refused) != ms::ScreenError::FieldRefused, "and distinguishable from a length or caret refusal");
+
+                      // The same node's set does not travel: the unnarrowed screen still takes `W`.
+                      const std::array wide{
+                          ms::TextInputSlot{.nodeId = "entry", .text = outside, .caret = std::nullopt}
+                      };
+                      checks.expect(!refusalOf(inputScreen, wide).has_value(), "a screen whose input narrows nothing accepts the same value");
                       checks.raise();
                   })
             .Execute();

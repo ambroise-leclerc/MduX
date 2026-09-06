@@ -320,7 +320,8 @@ def validate(value, schema: dict, where: str) -> list[str]:
     Deliberately a subset, and deliberately written here rather than taken as a dependency - the
     same reasoning ADR-007 applies to SHA-256 and canonical JSON, and ADR-009 to the test framework.
     What the recipe schemas use is `type`, `required`, `properties`, `additionalProperties`, `items`,
-    `enum`, `minimum`, `minLength`, `minItems`, `pattern` and `uniqueItems`, and a validator for that
+    `enum`, `minimum`, `maximum`, `minLength`, `minItems`, `pattern` and `uniqueItems`, and a
+    validator for that
     is fifty lines. `pattern` and `uniqueItems` were in the supported set before they were
     implemented, which is exactly the hole `check_recipe_schema_keywords` exists to close and which
     it could not close about itself - a schema could claim either and the checker would accept a
@@ -343,6 +344,8 @@ def validate(value, schema: dict, where: str) -> list[str]:
         problems.append(f"{where}: {value!r} is not one of {schema['enum']}")
     if "minimum" in schema and isinstance(value, (int, float)) and value < schema["minimum"]:
         problems.append(f"{where}: {value} is below the minimum {schema['minimum']}")
+    if "maximum" in schema and isinstance(value, (int, float)) and value > schema["maximum"]:
+        problems.append(f"{where}: {value} is above the maximum {schema['maximum']}")
     if "minLength" in schema and isinstance(value, str) and len(value) < schema["minLength"]:
         problems.append(f"{where}: shorter than minLength {schema['minLength']}")
     if "minItems" in schema and isinstance(value, list) and len(value) < schema["minItems"]:
@@ -380,7 +383,7 @@ def validate(value, schema: dict, where: str) -> list[str]:
 
 SUPPORTED_KEYWORDS = {
     "$schema", "$id", "title", "description", "type", "required", "properties",
-    "additionalProperties", "items", "enum", "minimum", "minLength", "minItems",
+    "additionalProperties", "items", "enum", "minimum", "maximum", "minLength", "minItems",
     "uniqueItems", "pattern", "examples",
 }
 

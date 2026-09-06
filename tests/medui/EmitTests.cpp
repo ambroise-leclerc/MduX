@@ -21,7 +21,9 @@ import mdux.medui.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.emit;
 import mdux.tools.medui.layout;
+import mdux.font.schema;
 import mdux.tools.medui.package;
+import mdux.tools.medui.textbudget;
 import mdux.tools.medui.parser;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -42,6 +44,20 @@ constexpr std::array fixtureImageApprovals{
 
 /// The budget the fixture package declares, and therefore the one a rebuild must reproduce.
 constexpr mdux::draw::DrawBudget fixtureBudget{.maxVertices = 4096, .maxIndices = 6144, .maxCommands = 256};
+
+/// The build's dynamic-text table, as a compile has one. The fixture's `TextInput` declares
+/// `charset: Ascii`, and since #297 the compiler resolves that name into the node rather than
+/// carrying it - so a package builder without this table cannot compile the fixture at all, which
+/// is the fail-closed direction and the point of the change.
+///
+/// U+0020..U+007E, the same range the committed `dejavu-ui` package declares, because a charset that
+/// escaped its font is what `MEDUI-E053` refuses upstream of here.
+constexpr std::array fixtureAscii{
+    mdux::font::CharsetRange{.first = 0x20, .last = 0x7E}
+};
+const std::array fixtureCharsets{
+    md::DynamicTextRule{.name = "Ascii", .produces = fixtureAscii}
+};
 
 [[nodiscard]] std::filesystem::path fixturePath(std::string_view name) {
     return std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
@@ -102,7 +118,8 @@ const mdux::spec::Register theEmittedFixtureIsWhatTheCompilerProduces{
                                                                                      {.id                    = "every-component",
                                                                                       .budget                = fixtureBudget,
                                                                                       .approvedTextPackages  = fixtureApprovals,
-                                                                                      .approvedImagePackages = fixtureImageApprovals})
+                                                                                      .approvedImagePackages = fixtureImageApprovals,
+                                                                                      .charsets              = fixtureCharsets})
                                                                         .package());
                       checks.expect(produced == fixture("every-component-package.json"), std::format("the committed package is current, got:\n{}", produced));
                       checks.raise();
@@ -352,7 +369,9 @@ const mdux::spec::Register aDecodedControlCharacterCannotEndTheLiteral{
                       }
 
                       const std::string json = md::writePackage(
-                          md::buildPackage(layout, {.id = "escapes", .budget = fixtureBudget, .approvedTextPackages = fixtureApprovals}).package());
+                          md::buildPackage(layout,
+                                           {.id = "escapes", .budget = fixtureBudget, .approvedTextPackages = fixtureApprovals, .charsets = fixtureCharsets})
+                              .package());
                       const std::filesystem::path path = scratch.path() / "package.json";
                       std::ofstream               out{path, std::ios::binary | std::ios::trunc};
                       out.write(json.data(), static_cast<std::streamsize>(json.size()));

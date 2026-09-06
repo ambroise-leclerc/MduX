@@ -256,6 +256,23 @@ deliberately does not check" in `TextBudget.cppm`. And a value longer than its f
 the package cannot draw, refuses the frame rather than truncating or substituting: a shortened
 patient identifier is a different identifier that looks like a whole one.
 
+#297 added the second bound. A `TextInput`'s `charset:` used to reach the compiler and stop there:
+the compiled node carried the charset's *name*, so a device had nothing to compare a character
+against but the font package, and a field declared for digits displayed the letter a host sent it.
+The node now carries the code points that name resolved to, and the two bounds stay distinguishable —
+`GlyphNotInPackage` is a character the package cannot draw, `CharacterOutsideFieldCharset` is one it
+draws perfectly well that this node never declared.
+
+`charsetRanges` is the **only** place a compiled screen carries a resolved value where it could have
+carried a name, and the contrast with its neighbours is the point rather than an exception to it. A
+`colorToken` and a `textKey` stay names: ADR-011 fixes that boundary and the device resolves each by
+a bounded lookup in a governed table it already holds, which is also what keeps the package readable
+in a diff. A `templateId` stays a name for a stronger reason — what it stands for is a *rendering the
+host supplies at run time*, so resolving it would mean shipping a product table beside the screen.
+What a charset stands for is neither: a set the compiler has already resolved and already checked the
+font against, with nothing left for a device to look up. ADR-012 names the three cases and says why
+this one is carrying a resolved value rather than baking configuration.
+
 Display and caret is the whole of the component. #17 cuts input-method editing and ADR-004 is the
 reason — an IME needs the platform, graphics and OS headers a governed module is compiled without —
 so the host owns the keystrokes and what crosses the boundary is what to display.

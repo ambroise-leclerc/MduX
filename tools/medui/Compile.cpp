@@ -415,10 +415,43 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        "an inverted range checks nothing, so it is refused rather than read as empty");
                 return std::nullopt;
             }
-            DynamicText rule;
-            rule.name = names[index];
+            // A name repeated across entries **accumulates** its ranges rather than starting a
+            // second rule, which is how a charset says more than one run of code points: a patient
+            // identifier is digits *and* uppercase letters, and one entry can only carry one run.
+            //
+            // Accumulating is also the fail-closed direction, and the reason is a hole this closes.
+            // `checkDynamicText()` resolves a name with `std::ranges::find`, which stops at the
+            // first match - so two rules of one name meant the budget stage checked one range and
+            // ignored the other, and a screen could produce a character the font cannot draw while
+            // the compile stayed green. Two entries are now one set, and the set is what is checked.
+            const auto   existing = std::ranges::find(recipe.dynamicText, names[index], &DynamicText::name);
+            DynamicText& rule     = existing != recipe.dynamicText.end() ? *existing
+                                                                         : recipe.dynamicText.emplace_back(DynamicText{.name = names[index], .produces = {}});
             rule.produces.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
-            recipe.dynamicText.push_back(std::move(rule));
+        }
+
+        // Sorted and disjoint, checked here where a recipe line can be named. The compiled screen's
+        // own `validate()` requires both of a `TextInput`'s `charsetRanges` - a set two readers could
+        // enumerate differently is not a set - but it would report them as a schema failure with no
+        // recipe and no entry attached, which tells an author nothing about the table they wrote.
+        for (DynamicText& rule : recipe.dynamicText) {
+            std::ranges::sort(rule.produces, {}, &mdux::font::CharsetRange::first);
+            for (std::size_t index = 1; index < rule.produces.size(); ++index) {
+                if (rule.produces[index].first <= rule.produces[index - 1].last) {
+                    report(diagnostics,
+                           Code::RecipeMissingMember,
+                           std::string{recipePath},
+                           namesLine,
+                           std::format("[dynamicText] entry '{}' names overlapping ranges U+{:04X}..U+{:04X} and U+{:04X}..U+{:04X}",
+                                       rule.name,
+                                       static_cast<std::uint32_t>(rule.produces[index - 1].first),
+                                       static_cast<std::uint32_t>(rule.produces[index - 1].last),
+                                       static_cast<std::uint32_t>(rule.produces[index].first),
+                                       static_cast<std::uint32_t>(rule.produces[index].last)),
+                           "one name may be repeated to add a range to its set, and the ranges must not overlap");
+                    return std::nullopt;
+                }
+            }
         }
     }
 
@@ -950,18 +983,22 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
         return std::nullopt;
     }
 
+    // The build's charset table, as views. Hoisted out of the budget block below because the package
+    // builder resolves the same names through the same table (#297): the compile-time check that a
+    // charset cannot escape the font and the run-time bound the artifact carries are two readings of
+    // one table, and two tables is precisely how they would come to disagree.
+    std::vector<DynamicTextRule> dynamicRules;
+    dynamicRules.reserve(recipe.dynamicText.size());
+    for (const DynamicText& rule : recipe.dynamicText) {
+        dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
+    }
+
     // 5. Text budgets, when there is anything to measure.
     if (measurable) {
         std::vector<LocaleText> localeTexts;
         localeTexts.reserve(locales.size());
         for (const LoadedLocale& locale : locales) {
             localeTexts.push_back(LocaleText{.package = &locale.package, .sidecar = locale.sidecar});
-        }
-
-        std::vector<DynamicTextRule> dynamicRules;
-        dynamicRules.reserve(recipe.dynamicText.size());
-        for (const DynamicText& rule : recipe.dynamicText) {
-            dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
         }
 
         std::vector<NumericTemplateRule> templateRules;
@@ -1005,7 +1042,7 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     // 7. The compiled screen and its bytes.
     const ScreenDocument document = buildPackage(
         layout,
-        {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals, .approvedImagePackages = imageApprovals});
+        {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals, .approvedImagePackages = imageApprovals, .charsets = dynamicRules});
     const ms::ScreenPackage package = document.package();
 
     CompileOutputs outputs;

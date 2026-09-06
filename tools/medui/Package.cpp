@@ -10,6 +10,7 @@ module mdux.tools.medui.package;
 import std;
 import mdux.draw;
 import mdux.evidence.digest;
+import mdux.font.schema;
 import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.medui.schema;
@@ -17,6 +18,7 @@ import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
+import mdux.tools.medui.textbudget;
 
 namespace mdux::tools::medui {
 
@@ -111,6 +113,33 @@ constexpr std::string_view schemaRefused = "SCP005";
 }
 
 /**
+ * @brief The code points a `TextInput`'s `charset:` name stands for (#297).
+ *
+ * Resolved here rather than carried as a name, which is the whole of what #297 changes: a device
+ * handed a name has nothing to compare a character against, while a device handed the ranges needs
+ * no table shipped beside the screen.
+ *
+ * An unresolvable name **throws**, as every other bypassed gate in this file does. The budget stage
+ * refuses one with `MEDUI-E053` - "'{}' is not in the governed dynamic-text table, so what '{}' can
+ * produce is not bounded" - and a screen carrying a `TextInput` always reaches that stage, because
+ * `needsTextBudget()` includes the component. So a name arriving here unresolved means the compile
+ * ran without its gates, and the one thing this must not do is quietly emit an empty set: that is a
+ * node whose narrowing is silently gone, which is the state before #297 rather than a diagnostic.
+ */
+[[nodiscard]] std::span<const mdux::font::CharsetRange>
+resolveCharset(std::string_view declared, std::span<const DynamicTextRule> charsets, std::string_view nodeId) {
+    if (declared.empty()) {
+        return {};
+    }
+    const auto found = std::ranges::find(charsets, declared, &DynamicTextRule::name);
+    if (found == charsets.end()) {
+        throw std::logic_error(
+            std::format("'{}' names charset '{}', which the dynamic-text table does not define: the text-budget stage is a required gate", nodeId, declared));
+    }
+    return found->produces;
+}
+
+/**
  * @brief The typed payload for one resolved node.
  *
  * The mapping from a dictionary field to a spec member is the whole content of this function, and
@@ -118,7 +147,7 @@ constexpr std::string_view schemaRefused = "SCP005";
  * `Button` are both a `textKey`, while `source` means a data stream on one component and an image
  * package on another. A table keyed by field name could not express that.
  */
-[[nodiscard]] ms::NodePayload payloadFor(const ResolvedNode& resolved, ScreenDocument& document) {
+[[nodiscard]] ms::NodePayload payloadFor(const ResolvedNode& resolved, ScreenDocument& document, std::span<const DynamicTextRule> charsets) {
     const ast::Node& source = resolved.source;
     const auto       name   = [&](std::string_view field) {
         return document.intern(textOf(source, field));
@@ -175,11 +204,13 @@ constexpr std::string_view schemaRefused = "SCP005";
                                        .colorTokens = document.internList(listOf(source, "colors"))};
     }
     if (resolved.component == "TextInput") {
-        return ms::TextInputSpec{.source      = name("source"),
-                                 .colorToken  = name("color"),
-                                 .maxLength   = numberOf(source, "max_length"),
-                                 .charset     = name("charset"),
-                                 .requirement = name("requirement")};
+        const std::string_view declared = name("charset");
+        return ms::TextInputSpec{.source        = name("source"),
+                                 .colorToken    = name("color"),
+                                 .maxLength     = numberOf(source, "max_length"),
+                                 .charset       = declared,
+                                 .requirement   = name("requirement"),
+                                 .charsetRanges = document.internRanges(resolveCharset(declared, charsets, resolved.id))};
     }
     // `Row` reaches here only if the solver stopped flattening: a Row contributes its children and
     // at most one synthetic background, never itself. Anything else is a component semantic
@@ -239,6 +270,21 @@ template <typename Rect>
     elements.reserve(names.size());
     for (const std::string_view name : names) {
         elements.push_back(json::Value::string(std::string{name}));
+    }
+    return json::Value::array(std::move(elements));
+}
+
+/// A resolved charset, as the font package's own `restrictedCharset` is written: `first` and `last`
+/// per range, and the ranges in the order the set is read in. One spelling for one shape, so a
+/// reader of either file needs one reader.
+[[nodiscard]] json::Value writeRanges(std::span<const mdux::font::CharsetRange> ranges) {
+    std::vector<json::Value> elements;
+    elements.reserve(ranges.size());
+    for (const mdux::font::CharsetRange& range : ranges) {
+        json::Value entry = json::Value::emptyObject();
+        put(entry, "first", json::Value::unsignedInteger(static_cast<std::uint64_t>(range.first)));
+        put(entry, "last", json::Value::unsignedInteger(static_cast<std::uint64_t>(range.last)));
+        elements.push_back(std::move(entry));
     }
     return json::Value::array(std::move(elements));
 }
@@ -317,6 +363,12 @@ template <typename Rect>
         put(spec, "stateKeys", writeNames(status->stateKeys));
     } else if (const auto* input = std::get_if<ms::TextInputSpec>(&payload)) {
         putName(spec, "charset", input->charset);
+        // Omitted with the name rather than written empty, for `putName()`'s reason and one more:
+        // `validate()` refuses a node carrying one of the pair without the other, so an artifact in
+        // which they could disagree is one this writer must not be able to produce.
+        if (!input->charsetRanges.empty()) {
+            put(spec, "charsetRanges", writeRanges(input->charsetRanges));
+        }
         putName(spec, "colorToken", input->colorToken);
         put(spec, "maxLength", json::Value::integer(input->maxLength));
         putName(spec, "requirement", input->requirement);
@@ -340,6 +392,17 @@ std::string_view ScreenDocument::intern(std::string_view text) {
         return {};
     }
     return text_.emplace_back(text);
+}
+
+std::span<const mdux::font::CharsetRange> ScreenDocument::internRanges(std::span<const mdux::font::CharsetRange> ranges) {
+    if (ranges.empty()) {
+        // A node that narrows nothing owns no set, exactly as `intern()` stores nothing for an
+        // absent name. `admits()` reads the empty span as "this node declared no charset", which is
+        // the reading `ScreenPackage::validate()` keeps honest.
+        return {};
+    }
+    std::vector<mdux::font::CharsetRange>& stored = charsets_.emplace_back(ranges.begin(), ranges.end());
+    return stored;
 }
 
 std::span<const std::string_view> ScreenDocument::internList(std::span<const std::string> items) {
@@ -420,7 +483,7 @@ ScreenDocument buildPackage(const LayoutResult& layout, PackageInputs inputs) {
                                     .y      = narrow(resolved.bounds.y, "node y"),
                                     .width  = narrow(resolved.bounds.width, "node width"),
                                     .height = narrow(resolved.bounds.height, "node height")},
-            .payload = payloadFor(resolved, document)
+            .payload = payloadFor(resolved, document, inputs.charsets)
         });
     }
 
@@ -624,6 +687,61 @@ private:
 }
 
 /// A list-valued spec member, absent meaning empty.
+/// Reads a resolved charset back, or nothing when the member is absent - which is a node that
+/// narrowed nothing, exactly as an absent name is a name it does not have.
+///
+/// Every range is checked against what a code point *is*, before one becomes a `char32_t`. Two
+/// shapes, and they fail differently:
+///
+/// - A value outside 0..U+10FFFF. `char32_t` is unsigned, so a negative `first` cast into one would
+///   arrive as a range near the top of the plane - a set the node never declared, silently, in the
+///   one file that is supposed to make the set reviewable.
+/// - A range admitting a surrogate. Those survive the cast intact, so nothing is lost quietly; what
+///   is lost is the diagnostic. `ScreenPackage::validate()` refuses both shapes, but as `SCP005`
+///   "the screen the file describes is not valid" - which names neither the member nor the value,
+///   and this function's whole reason for existing is that it can name both.
+///
+/// The surrogate test is the *overlap* `validate()` uses rather than a test on each endpoint, and
+/// the difference is not pedantic: `0..65535` contains the whole block while neither end is in it.
+[[nodiscard]] std::optional<std::vector<mdux::font::CharsetRange>>
+readRanges(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
+    const json::Value* member = object.find(key);
+    if (member == nullptr) {
+        return std::vector<mdux::font::CharsetRange>{};
+    }
+    if (member->kind() != json::Value::Kind::Array) {
+        sink.fail(memberWrong, std::format("{} member '{}' is not an array", what, key));
+        return std::nullopt;
+    }
+    std::vector<mdux::font::CharsetRange> ranges;
+    ranges.reserve(member->elements().size());
+    for (const json::Value& element : member->elements()) {
+        static constexpr std::array<std::string_view, 2> allowed{"first", "last"};
+        if (!expectObject(element, std::format("{} member '{}'", what, key), allowed, sink)) {
+            return std::nullopt;
+        }
+        const auto first = readInteger(element, "first", what, sink);
+        const auto last  = readInteger(element, "last", what, sink);
+        if (!first.has_value() || !last.has_value()) {
+            return std::nullopt;
+        }
+        for (const std::int64_t point : {*first, *last}) {
+            if (point < 0 || point > static_cast<std::int64_t>(mdux::font::maxCodePoint)) {
+                sink.fail(memberWrong, std::format("{} member '{}' names {}, which is past the last Unicode scalar value", what, key, point));
+                return std::nullopt;
+            }
+        }
+        if (*first <= static_cast<std::int64_t>(mdux::font::surrogateLast) && *last >= static_cast<std::int64_t>(mdux::font::surrogateFirst)) {
+            sink.fail(
+                memberWrong,
+                std::format("{} member '{}' names the range {}..{}, which admits a surrogate and so is not a set of characters", what, key, *first, *last));
+            return std::nullopt;
+        }
+        ranges.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(*first), .last = static_cast<char32_t>(*last)});
+    }
+    return ranges;
+}
+
 [[nodiscard]] std::optional<std::vector<std::string>> readNames(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
     const json::Value* member = object.find(key);
     if (member == nullptr) {
@@ -695,7 +813,7 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
     static constexpr std::array<std::string_view, 4> criticalMembers{"colorToken", "labelKey", "onPress", "requirement"};
     static constexpr std::array<std::string_view, 4> numericMembers{"colorToken", "requirement", "source", "templateId"};
     static constexpr std::array<std::string_view, 4> statusMembers{"colorTokens", "requirement", "source", "stateKeys"};
-    static constexpr std::array<std::string_view, 5> inputMembers{"charset", "colorToken", "maxLength", "requirement", "source"};
+    static constexpr std::array<std::string_view, 6> inputMembers{"charset", "charsetRanges", "colorToken", "maxLength", "requirement", "source"};
 
     // Interns one spec name. The member set has already been checked by `expectObject()` on the
     // branch that calls this, so what remains is reading the names the kind admits.
@@ -854,10 +972,17 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         const auto maxLength   = readInteger(*spec, "maxLength", where, sink);
         const auto charset     = name("charset");
         const auto requirement = name("requirement");
-        if (!source.has_value() || !colorToken.has_value() || !maxLength.has_value() || !charset.has_value() || !requirement.has_value()) {
+        const auto ranges      = readRanges(*spec, "charsetRanges", where, sink);
+        if (!source.has_value() || !colorToken.has_value() || !maxLength.has_value() || !charset.has_value() || !requirement.has_value()
+            || !ranges.has_value()) {
             return false;
         }
-        payload = ms::TextInputSpec{.source = *source, .colorToken = *colorToken, .maxLength = *maxLength, .charset = *charset, .requirement = *requirement};
+        payload = ms::TextInputSpec{.source        = *source,
+                                    .colorToken    = *colorToken,
+                                    .maxLength     = *maxLength,
+                                    .charset       = *charset,
+                                    .requirement   = *requirement,
+                                    .charsetRanges = document.internRanges(*ranges)};
         return true;
     }
     return sink.fail(kindUnknown,

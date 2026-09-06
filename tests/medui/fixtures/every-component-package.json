@@ -183,6 +183,12 @@
       "kind": "TextInput",
       "spec": {
         "charset": "Ascii",
+        "charsetRanges": [
+          {
+            "first": 32,
+            "last": 126
+          }
+        ],
         "colorToken": "Theme.Colors.Neutral",
         "maxLength": 16,
         "requirement": "REQ-EC-005",
