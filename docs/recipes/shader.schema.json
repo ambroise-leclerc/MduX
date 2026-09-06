@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/shader.schema.json",
+  "title": "Resolved shader recipe options",
+  "description": "What `mdux-shaderbake` was asked to do: an artifact id, the sidecar the SPIR-V is written to, and the modules that make up the package. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why: a silently changed default must not leave every report looking unchanged, so the report records what the bake actually did, and this documents that. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "sidecar",
+    "moduleIds",
+    "moduleSources"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The artifact id, which names the directory under `generated/shader/`.",
+      "minLength": 1
+    },
+    "sidecar": {
+      "type": "string",
+      "description": "The file the concatenated SPIR-V is written to, beside `package.json`.",
+      "minLength": 1
+    },
+    "moduleIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "description": "A module id, unique within the package.",
+        "minLength": 1
+      },
+      "description": "The recipe's `[modules] ids`, in recipe order. Paired with `moduleSources` by index rather than as an array of tables, because the TOML subset this project implements does not have that syntax (tools/common/Toml.cppm)."
+    },
+    "moduleSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "description": "A repository-relative path to compiled SPIR-V.",
+        "minLength": 1
+      },
+      "description": "The recipe's `[modules] sources`, in the same order and of the same length as `moduleIds`; the parser refuses a mismatch."
+    }
+  },
+  "examples": [
+    {
+      "id": "triangle",
+      "sidecar": "shaders.spv",
+      "moduleIds": [
+        "triangle.vert",
+        "triangle.frag"
+      ],
+      "moduleSources": [
+        "build/shaders/triangle.vert.spv",
+        "build/shaders/triangle.frag.spv"
+      ]
+    }
+  ]
+}

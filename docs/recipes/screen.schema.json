@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/screen.schema.json",
+  "title": "Resolved screen recipe options",
+  "description": "What `mdux-meduic` was asked to do: the source, the panel it is drawn for, the budget it may draw within, and every table the compile was checked against. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why: a silently changed default must not leave every report looking unchanged, so the report records what the bake actually did, and this documents that. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "surfaceWidth",
+    "surfaceHeight",
+    "budget",
+    "fontPackage",
+    "textPackages",
+    "imagePackages",
+    "dynamicText",
+    "numericTemplates",
+    "verification"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The artifact id. A screen's name in the grammar is CamelCase and an artifact id is lowercase; the recipe records the pairing rather than the compiler deriving it, because a slug cannot be derived injectively from a name.",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Repository-relative path to the `.medui` source.",
+      "minLength": 1
+    },
+    "surfaceWidth": {
+      "type": "integer",
+      "description": "The panel width the screen is compiled for. Declared by the product rather than taken from the source, so a screen drawn for another panel is a diagnostic rather than a silently rescaled frame.",
+      "minimum": 1
+    },
+    "surfaceHeight": {
+      "type": "integer",
+      "description": "The panel height, under the same rule as `surfaceWidth`.",
+      "minimum": 1
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxVertices",
+        "maxIndices",
+        "maxCommands"
+      ],
+      "description": "What the runtime may draw for this screen. Declared rather than computed: the cost model that would let a compiler compute it belongs to the runtime, and until then a declared ceiling is the honest form. `DrawList` fails closed against these numbers.",
+      "properties": {
+        "maxVertices": {
+          "type": "integer",
+          "description": "Vertices the frame may record.",
+          "minimum": 0
+        },
+        "maxIndices": {
+          "type": "integer",
+          "description": "Indices the frame may record.",
+          "minimum": 0
+        },
+        "maxCommands": {
+          "type": "integer",
+          "description": "Draw commands the frame may record.",
+          "minimum": 0
+        }
+      }
+    },
+    "fontPackage": {
+      "type": "string",
+      "description": "Repository-relative path to the committed font package every box is measured with."
+    },
+    "textPackages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Repository-relative path to a committed text package.",
+        "minLength": 1
+      },
+      "description": "One package per locale the font approves. A locale approved with no package listed here is a build error rather than a narrower guarantee."
+    },
+    "imagePackages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Repository-relative path to a committed image package.",
+        "minLength": 1
+      },
+      "description": "The baked images this screen may name with `img(\"id\")`."
+    },
+    "dynamicText": {
+      "type": "array",
+      "description": "The product's governed dynamic-text table, resolved. A report that named a table without recording its contents would say which table a screen was checked against and not what that check was of.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "produces"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The dynamic-text source's name, as a component's `source:` field names it."
+          },
+          "produces": {
+            "type": "array",
+            "description": "The code points this source can produce, as closed ranges. The compiler checks the font package can draw all of them.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "first",
+                "last"
+              ],
+              "properties": {
+                "first": {
+                  "type": "integer",
+                  "description": "First code point, inclusive.",
+                  "minimum": 0
+                },
+                "last": {
+                  "type": "integer",
+                  "description": "Last code point, inclusive.",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "numericTemplates": {
+      "type": "array",
+      "description": "What each `template:` a NumericDisplay names renders as, resolved. `#` is a digit slot and every other character is a literal, which is why the slot character is not a letter.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "rendering"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The template id a component names."
+          },
+          "rendering": {
+            "type": "string",
+            "description": "What it renders as, for example `##.# mmHg`."
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "locales"
+      ],
+      "description": "What the rendered-truth stage was asked to cover.",
+      "properties": {
+        "locales": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "A locale tag rendered and checked.",
+            "minLength": 1
+          },
+          "description": "The render scopes. Derived from the screen's own approval manifest rather than supplied, so a run cannot narrow what it reports on."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "endoscope-monitor",
+      "source": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
+      "surfaceWidth": 1280,
+      "surfaceHeight": 720,
+      "budget": {
+        "maxVertices": 4096,
+        "maxIndices": 6144,
+        "maxCommands": 64
+      },
+      "fontPackage": "generated/font/dejavu-ui/package.json",
+      "textPackages": [
+        "generated/text/endoscope-monitor-en-us/package.json"
+      ],
+      "imagePackages": [
+        "generated/image/brand-mark/package.json"
+      ],
+      "dynamicText": [],
+      "numericTemplates": [
+        {
+          "name": "TPL-PRESSURE-MMHG",
+          "rendering": "##.# mmHg"
+        }
+      ],
+      "verification": {
+        "locales": [
+          "en-US"
+        ]
+      }
+    }
+  ]
+}

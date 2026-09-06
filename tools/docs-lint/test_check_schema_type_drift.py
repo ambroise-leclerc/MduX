@@ -293,6 +293,78 @@ class MainTests(unittest.TestCase):
             self.assertEqual(1, drift.main(["--repo-root", tmp]))
 
 
+class ValidatorTests(unittest.TestCase):
+    """The JSON Schema subset the recipe schemas are checked with.
+
+    Written out because a hand-written validator that quietly accepts everything is worse than no
+    validator: the check would go green while documenting nothing.
+    """
+
+    def test_type_mismatches_are_reported_with_the_path(self):
+        problems = drift.validate({"id": 7}, {"type": "object", "properties": {"id": {"type": "string"}}}, "o")
+        self.assertEqual(["o.id: expected string, found int"], problems)
+
+    def test_a_boolean_is_not_an_integer(self):
+        # `bool` is a subclass of `int` in Python and is not an integer in JSON, so a validator
+        # that used isinstance() alone would accept `true` where a count belongs.
+        self.assertTrue(drift.validate(True, {"type": "integer"}, "v"))
+        self.assertFalse(drift.validate(True, {"type": "boolean"}, "v"))
+
+    def test_required_and_undeclared_properties_are_both_drift(self):
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["id"],
+            "properties": {"id": {"type": "string"}},
+        }
+        self.assertIn("required property 'id' is absent", drift.validate({}, schema, "o")[0])
+        self.assertIn("carries 'extra'", drift.validate({"id": "a", "extra": 1}, schema, "o")[0])
+
+    def test_items_are_validated_by_index(self):
+        schema = {"type": "array", "items": {"type": "string"}}
+        self.assertEqual(["a[1]: expected string, found int"], drift.validate(["x", 2], schema, "a"))
+
+    def test_enum_and_bounds(self):
+        self.assertTrue(drift.validate("qoi", {"enum": ["png"]}, "v"))
+        self.assertTrue(drift.validate(0, {"type": "integer", "minimum": 1}, "v"))
+        self.assertTrue(drift.validate("", {"type": "string", "minLength": 1}, "v"))
+        self.assertTrue(drift.validate([], {"type": "array", "minItems": 1}, "v"))
+
+    def test_an_unimplemented_keyword_is_refused_rather_than_ignored(self):
+        # The failure mode a subset validator actually has: a keyword it does not know constrains
+        # nothing, and the schema reads as though it does.
+        problems = drift.check_recipe_schema_keywords(
+            {"type": "object", "properties": {"id": {"type": "string", "maxLength": 3}}}, "s"
+        )
+        self.assertEqual(1, len(problems))
+        self.assertIn("maxLength", problems[0])
+
+
+class RecipeSchemaTests(unittest.TestCase):
+    """Every committed report's resolved options, against the schema for its kind."""
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[2]
+
+    def test_every_recipe_kind_has_a_schema_that_parses(self):
+        for kind, relative, _ in drift.RECIPE_SCHEMAS:
+            with self.subTest(kind=kind):
+                path = self.root / relative
+                self.assertTrue(path.is_file(), f"{relative} is bound but missing")
+                json.loads(path.read_text(encoding="utf-8"))
+
+    def test_every_recipe_directory_has_a_schema(self):
+        # The acceptance is "one schema per recipe kind", so a kind added under recipes/ with no
+        # schema is the gap this catches - the check cannot notice a kind it was never told about.
+        kinds = {p.name for p in (self.root / "recipes").iterdir() if p.is_dir()}
+        self.assertEqual(kinds, {kind for kind, _, _ in drift.RECIPE_SCHEMAS})
+
+    def test_the_committed_reports_validate(self):
+        findings, checked = drift.check_recipe_schemas(self.root)
+        self.assertEqual([], findings)
+        self.assertGreater(checked, 0, "the check passed without reading a single report")
+
+
 class RealRepositoryTests(unittest.TestCase):
     """The bindings must name files that exist, whatever branch this is checked out on."""
 

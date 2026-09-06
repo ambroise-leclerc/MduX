@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/text.schema.json",
+  "title": "Resolved text recipe options",
+  "description": "What `mdux-textbake` was asked to do when baking one locale's text package: the font its runs were positioned against, the locale, and how many strings it carries. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why: a silently changed default must not leave every report looking unchanged, so the report records what the bake actually did, and this documents that. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "font",
+    "atlas",
+    "locale",
+    "sidecar",
+    "strings"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The artifact id, which names the directory under `generated/text/`.",
+      "minLength": 1
+    },
+    "font": {
+      "type": "string",
+      "description": "Repository-relative path to the committed font package the runs were measured against.",
+      "minLength": 1
+    },
+    "atlas": {
+      "type": "string",
+      "description": "The font package id the runs index glyphs in. Checked against `font`: an id alone could not be read, and a path alone could be swapped for another package without the recipe saying so.",
+      "minLength": 1
+    },
+    "locale": {
+      "type": "string",
+      "description": "The BCP 47 tag this package is the text for. Must be one the font approves.",
+      "minLength": 1
+    },
+    "sidecar": {
+      "type": "string",
+      "description": "The file the positioned glyph runs are written to, beside `package.json`.",
+      "minLength": 1
+    },
+    "strings": {
+      "type": "integer",
+      "description": "How many keys the package carries. A count rather than the keys themselves: the keys are in the package, and a report records what the bake did rather than duplicating its output.",
+      "minimum": 0
+    }
+  },
+  "examples": [
+    {
+      "id": "endoscope-monitor-en-us",
+      "font": "generated/font/dejavu-ui/package.json",
+      "atlas": "dejavu-ui",
+      "locale": "en-US",
+      "sidecar": "runs.bin",
+      "strings": 6
+    }
+  ]
+}

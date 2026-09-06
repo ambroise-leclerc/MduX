@@ -134,6 +134,35 @@ DESCRIBE_SEVERITY_RE = re.compile(
     r"std::string_view describe\(Severity[^)]*\)[^{]*\{(?P<body>.*?)^\}", re.DOTALL | re.MULTILINE
 )
 
+# The recipe schemas (issue #264), one per baked kind. Each documents the **resolved** option set -
+# defaults expanded - which ADR-007 decision 4 already requires `report.json` to record, and which is
+# therefore a different thing from the literal TOML a recipe file carries.
+#
+# ## Why these bind to the committed reports rather than to a C++ struct
+#
+# The bindings above parse a struct and match its fields. That works where a schema documents a
+# record; it does not work here, because a baker's resolved options are a *projection* rather than a
+# struct: `ShaderBake`'s `Recipe` holds `modules`, and `toOptions()` flattens it into `moduleIds` and
+# `moduleSources`. Binding to the struct would leave the flattened names unchecked, and extracting
+# the keys from five `toOptions()` bodies by regex would be a fragile check nobody trusts.
+#
+# What every baker does produce is a committed `generated/<kind>/<id>/report.json`, whose `options`
+# member is exactly the resolved set - and `ctest -L evidence` byte-compares that file against a
+# fresh bake on four toolchains. So a schema checked against those reports is a schema checked
+# against the bakers, transitively and exactly, with no C++ parsing at all. A baker that adds an
+# option and not the schema fails here, which is the drift this exists to catch.
+#
+# `optional` names properties no committed recipe happens to exercise. Listing one is a decision
+# somebody made here rather than a gap nobody noticed - the same role `schema_only` plays above.
+RECIPE_SCHEMAS = (
+    ("shader", "docs/recipes/shader.schema.json", ()),
+    ("font", "docs/recipes/font.schema.json", ()),
+    ("text", "docs/recipes/text.schema.json", ()),
+    ("image", "docs/recipes/image.schema.json", ()),
+    ("model", "docs/recipes/model.schema.json", ()),
+    ("screen", "docs/recipes/screen.schema.json", ()),
+)
+
 # Each entry: the schema, the property carrying a closed vocabulary, and the C++ array that
 # defines it. Order matters - the C++ enumerator's numeric value is its index in that array.
 ENUM_BINDINGS = (
@@ -274,6 +303,138 @@ def check_enum(schema: dict, module_text: str, prop: str, array_name: str) -> li
     return []
 
 
+JSON_TYPES = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "null": type(None),
+}
+
+
+def validate(value, schema: dict, where: str) -> list[str]:
+    """Validates `value` against the JSON Schema subset these schemas use.
+
+    Deliberately a subset, and deliberately written here rather than taken as a dependency - the
+    same reasoning ADR-007 applies to SHA-256 and canonical JSON, and ADR-009 to the test framework.
+    What the recipe schemas use is `type`, `required`, `properties`, `additionalProperties`, `items`,
+    `enum`, `minimum`, `minLength` and `minItems`, and a validator for that is forty lines.
+
+    A keyword a schema uses and this does not implement would be silently ignored, which is the one
+    failure mode worth naming: `check_recipe_schema_keywords` covers it by refusing a schema that
+    uses a keyword outside the supported set.
+    """
+    problems: list[str] = []
+
+    expected = schema.get("type")
+    if expected is not None:
+        wanted = JSON_TYPES[expected]
+        # `bool` is an `int` in Python and is not an integer in JSON.
+        if isinstance(value, bool) != (expected == "boolean") or not isinstance(value, wanted):
+            return [f"{where}: expected {expected}, found {type(value).__name__}"]
+
+    if "enum" in schema and value not in schema["enum"]:
+        problems.append(f"{where}: {value!r} is not one of {schema['enum']}")
+    if "minimum" in schema and isinstance(value, (int, float)) and value < schema["minimum"]:
+        problems.append(f"{where}: {value} is below the minimum {schema['minimum']}")
+    if "minLength" in schema and isinstance(value, str) and len(value) < schema["minLength"]:
+        problems.append(f"{where}: shorter than minLength {schema['minLength']}")
+    if "minItems" in schema and isinstance(value, list) and len(value) < schema["minItems"]:
+        problems.append(f"{where}: has {len(value)} items, minItems is {schema['minItems']}")
+
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for name in schema.get("required", []):
+            if name not in value:
+                problems.append(f"{where}: required property '{name}' is absent")
+        if schema.get("additionalProperties") is False:
+            for name in sorted(set(value) - set(properties)):
+                problems.append(
+                    f"{where}: carries '{name}', which the schema does not declare - a baker "
+                    f"records an option this document does not describe"
+                )
+        for name, child in sorted(value.items()):
+            if name in properties:
+                problems.extend(validate(child, properties[name], f"{where}.{name}"))
+    elif isinstance(value, list) and "items" in schema:
+        for index, child in enumerate(value):
+            problems.extend(validate(child, schema["items"], f"{where}[{index}]"))
+
+    return problems
+
+
+SUPPORTED_KEYWORDS = {
+    "$schema", "$id", "title", "description", "type", "required", "properties",
+    "additionalProperties", "items", "enum", "minimum", "minLength", "minItems",
+    "uniqueItems", "pattern", "examples",
+}
+
+
+def check_recipe_schema_keywords(schema: dict, where: str) -> list[str]:
+    """Refuses a keyword the validator above does not implement.
+
+    Without this the validator would ignore it in silence, and a schema would appear to constrain
+    something it does not - which is the failure a hand-written subset validator actually has.
+    """
+    problems = []
+    for key in sorted(set(schema) - SUPPORTED_KEYWORDS):
+        problems.append(
+            f"{where}: uses '{key}', which this checker does not implement - implement it in "
+            f"validate() or remove it, rather than leaving a keyword that constrains nothing"
+        )
+    for name, child in sorted(schema.get("properties", {}).items()):
+        problems.extend(check_recipe_schema_keywords(child, f"{where}.{name}"))
+    if isinstance(schema.get("items"), dict):
+        problems.extend(check_recipe_schema_keywords(schema["items"], f"{where}[]"))
+    return problems
+
+
+def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
+    """Every committed report's resolved options, against the schema for its kind."""
+    findings: list[str] = []
+    checked = 0
+
+    for kind, relative, optional in RECIPE_SCHEMAS:
+        path = root / relative
+        if not path.is_file():
+            findings.append(f"{relative}: no schema for recipe kind '{kind}'")
+            continue
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        findings.extend(check_recipe_schema_keywords(schema, relative))
+
+        reports = sorted((root / "generated" / kind).glob("*/report.json"))
+        if not reports:
+            findings.append(
+                f"{relative}: no committed report under generated/{kind}/ to check it against, so "
+                f"this schema is documentation nothing verifies"
+            )
+            continue
+
+        declared = set(schema.get("properties", {}))
+        for report_path in reports:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            options = report.get("options")
+            shown = report_path.relative_to(root).as_posix()
+            if not isinstance(options, dict):
+                findings.append(f"{shown}: has no 'options' object to check")
+                continue
+            checked += 1
+            for problem in validate(options, schema, f"{shown} options"):
+                findings.append(problem)
+            # The other direction: a property the schema declares that no report carries and that
+            # nobody listed as optional is a schema describing an option no baker resolves.
+            for name in sorted(declared - set(options) - set(optional)):
+                findings.append(
+                    f"{shown}: the schema declares '{name}', which this report does not carry. "
+                    f"Either the baker stopped resolving it, or it belongs in this kind's "
+                    f"optional list in RECIPE_SCHEMAS"
+                )
+
+    return findings, checked
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -361,6 +522,9 @@ def main(argv: list[str]) -> int:
                     f"actually carries, so the schema is the one that is wrong"
                 )
 
+    recipe_findings, recipe_reports = check_recipe_schemas(root)
+    findings.extend(recipe_findings)
+
     if findings:
         for finding in findings:
             print(f"mdux-schema-drift: {finding}", file=sys.stderr)
@@ -369,7 +533,8 @@ def main(argv: list[str]) -> int:
 
     print(
         f"mdux-schema-drift: OK ({checked} schemas checked against "
-        f"{len(STRUCT_BINDINGS)} bindings, {len(ENUM_BINDINGS)} closed vocabularies)"
+        f"{len(STRUCT_BINDINGS)} bindings, {len(ENUM_BINDINGS)} closed vocabularies, "
+        f"{len(RECIPE_SCHEMAS)} recipe schemas against {recipe_reports} committed reports)"
     )
     return 0
 
