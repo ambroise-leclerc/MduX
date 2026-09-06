@@ -690,11 +690,19 @@ private:
 /// Reads a resolved charset back, or nothing when the member is absent - which is a node that
 /// narrowed nothing, exactly as an absent name is a name it does not have.
 ///
-/// Every code point is checked against the type that will hold it *before* it becomes one. `char32_t`
-/// is unsigned, so a negative `first` cast into it would arrive as a range near the top of the plane
-/// - a set the node never declared, silently, in the one file that is supposed to make the set
-/// reviewable. `ScreenPackage::validate()` would then refuse it as `CodePointOutOfRange`, but with no
-/// file name and no member attached; caught here it names both.
+/// Every range is checked against what a code point *is*, before one becomes a `char32_t`. Two
+/// shapes, and they fail differently:
+///
+/// - A value outside 0..U+10FFFF. `char32_t` is unsigned, so a negative `first` cast into one would
+///   arrive as a range near the top of the plane - a set the node never declared, silently, in the
+///   one file that is supposed to make the set reviewable.
+/// - A range admitting a surrogate. Those survive the cast intact, so nothing is lost quietly; what
+///   is lost is the diagnostic. `ScreenPackage::validate()` refuses both shapes, but as `SCP005`
+///   "the screen the file describes is not valid" - which names neither the member nor the value,
+///   and this function's whole reason for existing is that it can name both.
+///
+/// The surrogate test is the *overlap* `validate()` uses rather than a test on each endpoint, and
+/// the difference is not pedantic: `0..65535` contains the whole block while neither end is in it.
 [[nodiscard]] std::optional<std::vector<mdux::font::CharsetRange>>
 readRanges(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
     const json::Value* member = object.find(key);
@@ -719,9 +727,15 @@ readRanges(const json::Value& object, std::string_view key, std::string_view wha
         }
         for (const std::int64_t point : {*first, *last}) {
             if (point < 0 || point > static_cast<std::int64_t>(mdux::font::maxCodePoint)) {
-                sink.fail(memberWrong, std::format("{} member '{}' names {}, which is not a Unicode scalar value", what, key, point));
+                sink.fail(memberWrong, std::format("{} member '{}' names {}, which is past the last Unicode scalar value", what, key, point));
                 return std::nullopt;
             }
+        }
+        if (*first <= static_cast<std::int64_t>(mdux::font::surrogateLast) && *last >= static_cast<std::int64_t>(mdux::font::surrogateFirst)) {
+            sink.fail(
+                memberWrong,
+                std::format("{} member '{}' names the range {}..{}, which admits a surrogate and so is not a set of characters", what, key, *first, *last));
+            return std::nullopt;
         }
         ranges.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(*first), .last = static_cast<char32_t>(*last)});
     }

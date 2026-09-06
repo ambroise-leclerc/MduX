@@ -425,6 +425,29 @@ const mdux::spec::Register aHandEditedCharsetIsRefusedWhereItCanBeNamed{
                                         std::format("reported as SCP002, a member with a wrong value, got '{}'", firstCode(result)));
                       }
 
+                      // A surrogate is the other shape, and it fails differently. It survives the
+                      // cast to `char32_t` intact, so nothing is lost quietly - what would be lost
+                      // is the diagnostic: `validate()` refuses it as SCP005, "the screen the file
+                      // describes is not valid", which names neither the member nor the value.
+                      //
+                      // Both a range *inside* the block and one that merely *spans* it, because the
+                      // test is an overlap rather than one on each endpoint: `0..65535` contains the
+                      // whole block while neither of its ends is in it, and an endpoint-wise check
+                      // would wave it through to the weaker diagnostic.
+                      const std::array<std::pair<std::string_view, std::string_view>, 2> surrogates{
+                          std::pair{"55296", "57343"},
+                          std::pair{    "0", "65535"}
+                      };
+                      for (const auto& [first, last] : surrogates) {
+                          const std::string           edited = editing(editing(written, "\"first\": 32", std::format("\"first\": {}", first)),
+                                                             "\"last\": 126",
+                                                             std::format("\"last\": {}", last));
+                          const md::PackageReadResult result = md::readPackage(edited, "package.json");
+                          checks.expect(!result.ok(), std::format("the range {}..{} admits a surrogate and is refused", first, last));
+                          checks.expect(firstCode(result) == "SCP002",
+                                        std::format("named at the member rather than as a schema failure, got '{}'", firstCode(result)));
+                      }
+
                       // A member inside a range is closed too, for `anUndefinedMemberIsRefused`'s
                       // reason: a silently ignored `firts` is a range a reviewer believes is pinned.
                       const std::string           misspelt = editing(written, "\"first\": 32", "\"firts\": 32");
