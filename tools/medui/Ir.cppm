@@ -23,7 +23,7 @@
  * `MEDUI-E050` - "this box is too small for its widest approved translation" - can read the extent
  * that failed and the locale that produced it rather than inferring them.
  *
- * ## Floats are bit patterns, for the reason baked artifacts' are
+ * ## Floats are bit patterns, for the same reason baked artifacts are
  *
  * A resolved colour is four `float`s, and ADR-007 decision 2 is why they are emitted as `u32` bit
  * patterns through `json::Value::float32()` rather than as decimal text: a decimal rendering has a

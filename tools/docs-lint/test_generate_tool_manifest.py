@@ -108,6 +108,29 @@ class RealRepositoryTests(unittest.TestCase):
         for option in ("--format", "--help", "--dump-ir", "--explain", "--grammar"):
             self.assertIn(option, meduic["options"])
 
+    def test_a_tool_whose_parser_lives_elsewhere_still_lists_its_options(self):
+        # `mdux-verify-ui` hands its command line to `parseArguments()` in `Driver.cpp`, so reading
+        # only the entry point reported a tool with no options at all - checked here against the
+        # flags its own `usage()` prints.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        ui = by_name["mdux-verify-ui"]
+        for option in ("--screen", "--locales", "--format", "--diff-image-dir", "--frame-image-dir"):
+            self.assertIn(option, ui["options"])
+
+        # And the half that keeps the fix from over-reaching. `VerifyBakeMain.cpp` *imports* the same
+        # driver and parses inline, accepting `--help` alone - so a rule that followed imports rather
+        # than the call would credit it with flags it rejects.
+        self.assertEqual(["--help"], by_name["mdux-verify-bake"]["options"])
+
+    def test_no_tool_is_credited_with_a_sibling_tools_options(self):
+        # Three tools share `tools/medui/`, and only one of them takes `--dump-ir`. A directory-wide
+        # scan would give it to all three, which is the shortcut this generator deliberately avoids
+        # for options even though it uses one for diagnostic codes.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        self.assertIn("--dump-ir", by_name["mdux-meduic"]["options"])
+        self.assertNotIn("--dump-ir", by_name["mdux-medui-check"]["options"])
+        self.assertNotIn("--dump-ir", by_name["mdux-screenemit"]["options"])
+
     def test_diagnostic_codes_are_found_and_well_formed(self):
         for tool in self.manifest["tools"]:
             with self.subTest(tool=tool["name"]):

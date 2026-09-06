@@ -499,7 +499,14 @@
         "MduX::VerifyUiLib"
       ],
       "name": "mdux-verify-ui",
-      "options": [],
+      "options": [
+        "--diff-image-dir",
+        "--format",
+        "--frame-image-dir",
+        "--help",
+        "--locales",
+        "--screen"
+      ],
       "sourceDirectory": "tools/verify"
     }
   ]

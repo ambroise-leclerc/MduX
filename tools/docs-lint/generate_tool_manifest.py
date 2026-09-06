@@ -27,8 +27,10 @@ verifying a list is *complete* - a manifest missing a tool mentions nothing that
   table and the other tools spell them at the call site, which its own header comment records - so
   scanning the directory finds both arrangements without needing to know which a tool uses.
 - **The command grammar** is read from the entry point: a tool calling `cli::parse()` speaks the
-  shared `bake`/`verify` grammar, and one that does not has its own. Extra long options are the
-  `--flag` literals in that file.
+  shared `bake`/`verify` grammar, and one that does not has its own. Its options are the `--flag`
+  literals in that file, plus the shared grammar's when it speaks it, plus those of a parser it
+  delegates to - following the *call* rather than the import, because two tools may import one
+  driver and only one of them hand it the command line.
 
 ## What it deliberately does not record
 
@@ -187,17 +189,51 @@ def diagnostic_codes(directory: Path) -> list[str]:
     return sorted(codes)
 
 
+# `invocation = verify::parseArguments(argc, argv);` - a tool delegating its command line to a
+# parser that lives in another translation unit.
+DELEGATED_PARSER_RE = re.compile(r"\b(?:\w+::)?parseArguments\s*\(")
+PARSER_DEFINITION_RE = re.compile(r"^\w[\w:<>, ]*\s+parseArguments\(", re.MULTILINE)
+
+
+def delegated_options(entry_point: Path) -> set[str]:
+    """The options of the parser this tool delegates to, when it delegates to one.
+
+    Following the *call* rather than the import, which is the distinction that makes this exact.
+    `VerifyUiMain.cpp` and `VerifyBakeMain.cpp` both import `mdux.tools.verify.driver`, and only the
+    first hands it the command line - the second parses inline and accepts `--help` alone. An
+    import-following rule would have credited `mdux-verify-bake` with `--screen` and `--locales`,
+    which it rejects.
+
+    The search is the tool's own directory: a parser a tool calls and a tool that calls it are in
+    one family by construction, and widening it further would start attributing a sibling tool's
+    flags.
+    """
+    text = entry_point.read_text(encoding="utf-8")
+    if not DELEGATED_PARSER_RE.search(text):
+        return set()
+    found: set[str] = set()
+    for path in sorted(entry_point.parent.rglob("*.cpp")):
+        if path == entry_point:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if PARSER_DEFINITION_RE.search(source):
+            found.update(OPTION_RE.findall(source))
+    return found
+
+
 def options(entry_point: Path, shared: list[str]) -> list[str]:
-    """The long options this tool accepts: its own, plus the shared grammar's when it speaks it.
+    """The long options this tool accepts: its own, its delegated parser's, and the shared grammar's.
 
     A tool calling `cli::parse()` accepts `--format` and `--help` without naming either in its own
     source, because both are spelled in `tools/common/Cli.cpp`. A manifest listing `--dump-ir` for
-    `mdux-meduic` and not `--format` would be accurate about the file and wrong about the tool.
+    `mdux-meduic` and not `--format` would be accurate about the file and wrong about the tool - and
+    a tool whose whole command line is parsed elsewhere, as `mdux-verify-ui`'s is in `Driver.cpp`,
+    would come out with no options at all.
     """
     if not entry_point.is_file():
         return []
     own = set(OPTION_RE.findall(entry_point.read_text(encoding="utf-8")))
-    return sorted(own | set(shared))
+    return sorted(own | delegated_options(entry_point) | set(shared))
 
 
 def build_manifest(root: Path) -> dict:
