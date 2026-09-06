@@ -365,6 +365,24 @@ class ValidatorTests(unittest.TestCase):
         structural = {"$schema", "$id", "title", "description", "properties", "items", "examples"}
         self.assertEqual(drift.SUPPORTED_KEYWORDS, set(probes) | structural)
 
+    def test_only_the_false_spelling_of_additional_properties_is_accepted(self):
+        # The schema-valued form constrains the properties a schema does not name, and validate()
+        # reads anything that is not False as "do not check" - so a schema using it would let an
+        # undeclared property of any type through in silence. Refused at the guard instead.
+        schema_valued = {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {"type": "integer"},
+        }
+        problems = drift.check_recipe_schema_keywords(schema_valued, "s")
+        self.assertEqual(1, len(problems))
+        self.assertIn("implements the `false` spelling only", problems[0])
+        # And the reason it must be refused: validate() finds nothing wrong with a string there.
+        self.assertEqual([], drift.validate({"anything": "a string"}, schema_valued, "o"))
+
+        self.assertEqual([], drift.check_recipe_schema_keywords(
+            {"type": "object", "properties": {}, "additionalProperties": False}, "s"))
+
     def test_an_unimplemented_keyword_is_refused_rather_than_ignored(self):
         # The failure mode a subset validator actually has: a keyword it does not know constrains
         # nothing, and the schema reads as though it does.
@@ -405,6 +423,31 @@ class RecipeSchemaTests(unittest.TestCase):
                 self.assertTrue(schema.get("examples"), f"{relative} carries no example to check")
                 for index, example in enumerate(schema["examples"]):
                     self.assertEqual([], drift.validate(example, schema, f"examples[{index}]"))
+
+    def test_the_forms_a_baker_emits_with_an_empty_path_validate(self):
+        """The recipe shapes that legitimately carry an empty string where a path usually goes.
+
+        Three of these have now been wrong at some point in review, each the same mistake: a
+        `minLength` on a member the baker deliberately leaves empty. They are asserted together so
+        the next one is a failing test rather than a third round.
+        """
+        root = self.root
+
+        # A text package positioning nothing: `parseStrings()` accepts `font` and `[strings]`
+        # together or neither, so an empty path means "this package positions nothing".
+        text = json.loads((root / "docs/recipes/text.schema.json").read_text(encoding="utf-8"))
+        stringless = {"id": "empty-en-us", "font": "", "atlas": "dejavu-ui", "locale": "en-US",
+                      "sidecar": "runs.bin", "strings": 0}
+        self.assertEqual([], drift.validate(stringless, text, "options"))
+
+        # A font recipe leaves both of the text-only members on the shared Recipe empty.
+        font = json.loads((root / "docs/recipes/font.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual([""], font["properties"]["atlas"]["enum"])
+        self.assertEqual([""], font["properties"]["locale"]["enum"])
+
+        # A screen with no text approves no locale and needs no font to measure against.
+        screen = json.loads((root / "docs/recipes/screen.schema.json").read_text(encoding="utf-8"))
+        self.assertNotIn("minLength", screen["properties"]["fontPackage"])
 
     def test_the_cross_property_invariants_are_checked(self):
         # What no JSON Schema keyword can state: a constraint relating two properties, or reading a

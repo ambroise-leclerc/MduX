@@ -21,8 +21,7 @@
     },
     "font": {
       "type": "string",
-      "description": "Repository-relative path to the committed font package the runs were measured against.",
-      "minLength": 1
+      "description": "Repository-relative path to the committed font package the runs were measured against. **Deliberately without a `minLength`**: it is the empty string for a recipe carrying no `[strings]` table, which `parseStrings()` accepts as one of two forms - both `font` and `[strings]`, or neither - so an empty path always means 'this package positions nothing'. `strings` is `0` in the same report, and the pair is emitted unconditionally rather than omitted so that every text report has one shape."
     },
     "atlas": {
       "type": "string",
@@ -53,6 +52,14 @@
       "locale": "en-US",
       "sidecar": "runs.bin",
       "strings": 6
+    },
+    {
+      "id": "empty-en-us",
+      "font": "",
+      "atlas": "dejavu-ui",
+      "locale": "en-US",
+      "sidecar": "runs.bin",
+      "strings": 0
     }
   ]
 }

@@ -397,6 +397,18 @@ def check_recipe_schema_keywords(schema: dict, where: str) -> list[str]:
             f"{where}: uses '{key}', which this checker does not implement - implement it in "
             f"validate() or remove it, rather than leaving a keyword that constrains nothing"
         )
+    # `additionalProperties` is supported in one spelling only. The schema-valued form -
+    # `{"type": "integer"}`, constraining the properties a schema does not name - is a different
+    # keyword wearing the same name, and `validate()` reads anything that is not `False` as "do not
+    # check", so a schema using it would let an undeclared property of any type through in silence.
+    # Refused rather than implemented: no recipe schema needs it, and a form nothing exercises is a
+    # form nothing keeps honest.
+    if "additionalProperties" in schema and schema["additionalProperties"] is not False:
+        problems.append(
+            f"{where}: 'additionalProperties' is {schema['additionalProperties']!r}; this checker "
+            f"implements the `false` spelling only. The schema-valued form constrains the "
+            f"properties a schema does not name, and validate() would ignore it"
+        )
     for name, child in sorted(schema.get("properties", {}).items()):
         problems.extend(check_recipe_schema_keywords(child, f"{where}.{name}"))
     if isinstance(schema.get("items"), dict):

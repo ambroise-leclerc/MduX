@@ -45,7 +45,10 @@
     },
     "locale": {
       "type": "string",
-      "description": "The locale the package is primarily baked for."
+      "description": "Always the empty string for a font recipe, for `atlas`'s reason: it is a *text* recipe's member on the shared `Recipe`, and `parseRecipe()` reads it only on the `!isFontRecipe` branch. The locales a font actually approves are `locales`, which comes from its own `[charset]` spec. Found by auditing every path-like property against its baker after review caught the same mistake on `text.font`, not by reading.",
+      "enum": [
+        ""
+      ]
     },
     "locales": {
       "type": "array",
@@ -95,7 +98,7 @@
       "atlas": "",
       "sidecar": "atlas.bin",
       "pixelSize": 18,
-      "locale": "en-US",
+      "locale": "",
       "locales": [
         "en-US"
       ],
