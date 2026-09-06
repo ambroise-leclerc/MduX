@@ -13,10 +13,22 @@
  * It speaks the shared `bake`/`verify` grammar, so `mdux_bake_artifact()` registers a screen the
  * same way it registers a font or a shader, and `--format=json` produces the same envelope every
  * other MduX tool produces.
+ *
+ * ## Two informational modes that produce no artifact
+ *
+ * `--grammar` and `--explain` (#263) are handled here, *before* `cli::parse()`, rather than by
+ * widening the shared grammar. That placement is the decision worth recording: `cli::Mode` is
+ * `Bake` or `Verify` for six other bakers, and neither of these is either - they read no recipe,
+ * write no file and produce no diagnostic. Adding them upstream would have put two modes that mean
+ * nothing for a font or a shader into every one of those tools' usage text.
+ *
+ * Both answer from `mdux.tools.medui.grammar`, which reads the compiler's own tables. This file
+ * holds only the argument shapes and the exit statuses.
  */
 import std;
 import mdux.tools.cli;
 import mdux.tools.medui.compile;
+import mdux.tools.medui.grammar;
 
 namespace {
 
@@ -100,14 +112,85 @@ namespace medui = mdux::tools::medui;
     }
 }
 
+/// The value after `--explain`, whether it was written joined or separate, or nothing.
+[[nodiscard]] std::optional<std::string_view> explainArgument(std::span<const std::string_view> arguments) {
+    constexpr std::string_view joined = "--explain=";
+    if (arguments[0].starts_with(joined)) {
+        return arguments[0].substr(joined.size());
+    }
+    return arguments.size() >= 2 ? std::optional{arguments[1]} : std::nullopt;
+}
+
+/**
+ * @brief Handles `--grammar` and `--explain`, or reports that this was neither.
+ *
+ * Returns the exit status when it took the invocation, and nothing when the caller should carry on
+ * to the shared bake/verify grammar.
+ *
+ * An unregistered code exits 2 - the shared usage status - rather than 0 with an empty line. That is
+ * #263's own acceptance and the whole reason a registry exists: a tool that answered every input
+ * with something would tell an agent that `MEDUI-E999` is a real code with nothing to say about it.
+ */
+[[nodiscard]] std::optional<int> informational(std::span<const std::string_view> arguments) {
+    if (arguments.empty()) {
+        return std::nullopt;
+    }
+
+    if (arguments[0] == "--grammar") {
+        if (arguments.size() != 1) {
+            std::println(std::cerr, "{}: --grammar takes no further arguments", medui::compilerToolName);
+            return 2;
+        }
+        // Canonical JSON on stdout and nothing else, so `mdux-meduic --grammar > grammar.json` is
+        // the whole publication step and the file it writes is the file this repository commits.
+        std::print(std::cout, "{}", medui::grammarJson());
+        return 0;
+    }
+
+    if (arguments[0] == "--explain" || arguments[0].starts_with("--explain=")) {
+        const std::optional<std::string_view> code = explainArgument(arguments);
+        if (!code.has_value() || code->empty() || (arguments[0] == "--explain" && arguments.size() != 2)) {
+            std::println(std::cerr, "{}: --explain takes exactly one diagnostic code, for example MEDUI-E030", medui::compilerToolName);
+            return 2;
+        }
+        const std::optional<std::string> explanation = medui::explain(*code);
+        if (!explanation.has_value()) {
+            std::println(std::cerr, "{}: '{}' is not a diagnostic code this compiler publishes", medui::compilerToolName, *code);
+            return 2;
+        }
+        std::println(std::cout, "{}", *explanation);
+        return 0;
+    }
+
+    return std::nullopt;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+    std::vector<std::string_view> arguments;
+    arguments.reserve(argc > 1 ? static_cast<std::size_t>(argc - 1) : 0U);
+    for (int index = 1; index < argc; ++index) {
+        arguments.emplace_back(argv[index]);
+    }
+    if (const std::optional<int> status = informational(arguments); status.has_value()) {
+        return *status;
+    }
+
     cli::Invocation invocation;
     try {
         invocation = cli::parse(medui::compilerToolName, argc, argv);
     } catch (const cli::UsageError& error) {
+        // The shared text plus this tool's own two modes. `cli::usage()` is six other bakers' as
+        // well, so `--grammar` and `--explain` are appended here rather than added there - and they
+        // are appended rather than left undocumented, because a flag an agent cannot discover from
+        // `--help` is a flag that does not exist for the reader it was built for.
         std::println(std::cerr, "{}", error.what());
+        std::println(std::cerr,
+                     "\n{0} also answers two questions about the language itself:\n"
+                     "  {0} --grammar              the .medui contract as canonical JSON\n"
+                     "  {0} --explain <MEDUI-EXXX> what one diagnostic code means, and how to fix it",
+                     medui::compilerToolName);
         return 2;
     }
 

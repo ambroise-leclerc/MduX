@@ -256,6 +256,34 @@ verifier checks against. Rules:
   `ColorHash` is refused for it and only its bounds can be pinned — the golden reference says **where** critical content
   must appear and in what tint, not what the live number is.
 
+## The contract as a file, rather than as this document
+
+`mdux-meduic --grammar` writes the whole language as canonical JSON, and
+[`docs/medui/grammar.json`](../../../docs/medui/grammar.json) is that output committed. Read it
+rather than this skill when you want the *set* of something — every component, every field a
+component admits and whether it is required, every field domain and its written form, both closed
+named-value sets, every theme token, and every diagnostic with its summary and fix hint.
+
+Every one of those sections is **read off the compiler's own tables**, so it cannot be stale: adding
+a component or a theme token changes that file without anybody editing it. The one written section
+is `productions`, the EBNF, and it carries executable examples — sources the compiler accepts, and
+sources it rejects with the code each rejection must produce — which a test runs through the real
+front end. What that buys is worth knowing precisely: the examples are verified, the EBNF prose is
+checked only as far as they reach.
+
+`mdux-meduic --explain MEDUI-E034` answers for one code:
+
+```console
+$ mdux-meduic --explain MEDUI-E034
+MEDUI-E034 [error] a named value is outside the closed set its field admits
+  fix: use one of the members the shared component model lists for this field. This is not
+  MEDUI-E033: the value is a well-formed identifier, so its kind is right and only its
+  membership is wrong
+```
+
+A code no row names exits 2 and says so, rather than printing an empty explanation — so a script can
+tell "this code means nothing here" from "this code means nothing".
+
 ## Checking a file without a full build
 
 ```console

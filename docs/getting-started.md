@@ -168,6 +168,23 @@ scopes of one screen can never overwrite each other's image. It is written only 
 a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
 check. CI passes the same flag and uploads the directory when the step fails.
 
+### Asking the compiler what the language is
+
+Two questions `mdux-meduic` answers without a recipe:
+
+```bash
+./build/tools/mdux-meduic --grammar > /tmp/medui-grammar.json
+./build/tools/mdux-meduic --explain MEDUI-E034
+```
+
+`--grammar` writes the whole contract as canonical JSON — tokens, productions with worked examples,
+every component and the fields it admits, field domains, the closed `format:` and `on_press:` sets,
+the governed theme tokens, and every diagnostic with its fix hint. `docs/medui/grammar.json` is that
+output committed, so an agent can read it without building anything; a test fails if the two drift.
+
+`--explain` answers for one code. A code the compiler does not publish exits 2 and says so, which is
+what lets a script tell "this code means nothing here" from "this code means nothing".
+
 ### Looking at a screen that verifies
 
 `--diff-image-dir` only ever writes on a failure, so it cannot answer the other question a rendered

@@ -991,6 +991,7 @@ add_executable(medui_tools_spec
     medui/EmitTests.cpp
     medui/CompileTests.cpp
     medui/CheckTests.cpp
+    medui/GrammarTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
