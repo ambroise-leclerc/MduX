@@ -53,12 +53,25 @@
  * derive the same number.
  *
  * A `TextInput`'s `charset:` field could in principle narrow it - a field restricted to digits would
- * fit in a tighter grid than one that admits `@` - and that is deliberately *not* done. The
- * compiled node carries `charset` as a validated name rather than as a set (ADR-011), so a runtime
- * that wanted the narrower pitch would need a product table shipped beside the screen, which is the
- * exposure `ReadingSlot` documents at length for a `templateId`. The conservative direction is free
- * here: a box sized for the font's widest glyph holds every narrower one, so an author who narrows
- * the charset gets a box larger than they strictly need and never one too small.
+ * fit in a tighter grid than one that admits `@` - and that is deliberately *not* done.
+ *
+ * The reason changed with #297 and the decision did not, which is worth separating because the old
+ * reason is now false. It used to be that a runtime *could not*: the compiled node carried the
+ * charset's name and nothing else, so a narrower pitch would have needed a product table shipped
+ * beside the screen. The node now carries the resolved set, so this function could take it. It does
+ * not, because narrowing buys nothing and costs a dependency:
+ *
+ * - **The direction is safe as it stands.** The node's set is proved a subset of the font's at
+ *   compile time (`MEDUI-E053`), so the font-wide pitch is never *smaller* than a node-wide one
+ *   would be. An author who narrows a charset gets a box larger than they strictly need and never
+ *   one too small.
+ * - **A pitch is a property of one artifact both sides hold.** `cellWidth(font)` has one answer per
+ *   font package, derived from the same bytes on the host and on the device, and neither can be told
+ *   a different one. Adding the node as a second input gives it an answer per *node* and a way for
+ *   two callers to disagree, for a few pixels.
+ * - **It would couple what a field may show to where its ink lands.** Widening a `charset:` reads as
+ *   a permissions edit; under a narrowed pitch it would move every cell of that field, changing
+ *   measured extents and pinned pixels. Those are two independent facts and they stay independent.
  *
  * ## What is bounded, and by what
  *
