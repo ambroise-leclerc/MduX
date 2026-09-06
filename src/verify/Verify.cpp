@@ -203,11 +203,6 @@ struct Box {
     return static_cast<std::uint8_t>(255 - (remaining + 127) / 255);
 }
 
-/// The bounding box of every pixel of `region` that is not `ground`.
-///
-/// "Painted" is defined against the ground rather than against the tint deliberately: an
-/// anti-aliased edge is a blend, so it is neither the ground nor the tint, and a scan that looked
-/// only for the tint would measure a box one pixel small on every side.
 /// Whether a pixel is the ground, allowing one step per composite that produced that ground.
 ///
 /// `composites == 0` is an equality, and is what every ground a driver can name without blending
@@ -222,6 +217,14 @@ struct Box {
     return composites == 0 ? pixel == ground : withinSteps(pixel, ground, composites);
 }
 
+/// The bounding box of every pixel of `region` that is not `ground`.
+///
+/// "Painted" is defined against the ground rather than against the tint deliberately: an
+/// anti-aliased edge is a blend, so it is neither the ground nor the tint, and a scan that looked
+/// only for the tint would measure a box one pixel small on every side.
+///
+/// `groundComposites` is `isGround()`'s, and zero keeps the exact comparison every caller had before
+/// #261 - see that function for which ground needs the slack and why.
 [[nodiscard]] Box paintedBox(const FramebufferView& frame, NodeRect region, ColorRgba8 ground, std::size_t groundComposites = 0) noexcept {
     Box box;
     for (Px y = region.y; y < region.y + region.height; ++y) {

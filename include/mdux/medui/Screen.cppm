@@ -266,11 +266,8 @@ export namespace mdux::medui {
     return std::nullopt;
 }
 
-/// The label key and tint a button carries, or `nullopt` for a node that is not one.
-///
-/// `Button` and `CriticalButton` differ in what a press *does* and not at all in what a frame draws,
-/// so the drawing path reads them through one function rather than branching twice on a variant. The
-/// difference they do have belongs to `resolvePress()`, which is where it is asked about.
+/// Everything a frame needs from a button: the key of the word it shows, and the one token it draws
+/// both that word and its face in.
 struct ButtonFace {
     std::string_view labelKey{};
     std::string_view colorToken{};
@@ -278,6 +275,11 @@ struct ButtonFace {
     [[nodiscard]] constexpr bool operator==(const ButtonFace&) const noexcept = default;
 };
 
+/// The label key and tint a button carries, or `nullopt` for a node that is not one.
+///
+/// `Button` and `CriticalButton` differ in what a press *does* and not at all in what a frame draws,
+/// so the drawing path reads them through one function rather than branching twice on a variant. The
+/// difference they do have belongs to `resolvePress()`, which is where it is asked about.
 [[nodiscard]] constexpr std::optional<ButtonFace> buttonFace(const NodePayload& payload) noexcept {
     if (const auto* button = std::get_if<ButtonSpec>(&payload); button != nullptr) {
         return ButtonFace{.labelKey = button->labelKey, .colorToken = button->colorToken};
