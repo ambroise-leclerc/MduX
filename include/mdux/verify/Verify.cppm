@@ -990,12 +990,21 @@ struct CheckOutcome {
  * the box the artifacts predicted, which is what a clipped, moved or partially drawn run looks like.
  *
  * An **extent** claim, deliberately and only. It says the run's ink occupies the box the artifacts
- * predict and no more; it does not say the glyphs in that box are the approved locale's, and a few
+ * predict, to the precision the frame can distinguish - see the note under the declaration for the
+ * band it cannot - and no more; it does not say the glyphs in that box are the approved locale's, and a few
  * pixels at the box's corners would preserve the extent while saying nothing about what is between
  * them. Establishing the run's shape is `localizedTextPresence()`'s job, which is why that one
  * carries the coverage sheet and this one does not.
  */
 [[nodiscard]] CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
+
+// The rendered half is a containment rather than an equality whenever the ground carries composites,
+// and the reason is a limit rather than a preference: over a field the device itself composited, a
+// glyph texel at coverage 1 or 2 lands within one UNORM step of that field, so it cannot be told
+// from a field pixel the device rounded. The check therefore measures what was *certainly* painted
+// and what was *possibly* painted and asks that the prediction sit between them. With an
+// uncomposited ground the two coincide and the equality is unchanged.
+
 
 /**
  * @brief `LocalizedTextPresence`: the approved locale's bound run is the one on screen.

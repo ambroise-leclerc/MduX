@@ -747,14 +747,35 @@ CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation&
         return failed(outcome, Finding::RegionOutsideFrame);
     }
 
-    const Box painted = paintedBox(frame, expectation.bounds(), expectation.ground(), expectation.groundComposites());
-    outcome.expected  = expectation.ink();
-    if (!painted.inked) {
+    // Two boxes, because over a ground the device itself composited the measurement is genuinely
+    // uncertain and an equality would be claiming it is not.
+    //
+    // `certain` is what the frame definitely painted: pixels that differ from the ground by more
+    // than the ground's own rounding could explain. `possible` is what it may have painted: pixels
+    // that differ from the ground at all. Between them lies the band this check cannot resolve - a
+    // glyph texel at coverage 1 or 2 over a dimmed field composites to within one step of that
+    // field, so it is indistinguishable from a field pixel the device rounded, and no ground the
+    // driver may supply can separate them. (Reading the ground back out of the frame would, and is
+    // exactly what ADR-014 decision 2 forbids.)
+    //
+    // So the claim is a containment rather than an equality: everything certainly painted lies
+    // inside the predicted box, and the predicted box lies inside everything possibly painted. That
+    // still fails on every defect the equality caught - a run displaced by a pixel puts certain ink
+    // outside the prediction, and a clipped or lost one leaves the prediction outside the possible
+    // box - while a correct frame whose outermost glyph column is too faint to tell from its own
+    // background now holds, which it did not before.
+    const Box certain  = paintedBox(frame, expectation.bounds(), expectation.ground(), expectation.groundComposites());
+    const Box possible = paintedBox(frame, expectation.bounds(), expectation.ground(), 0);
+    outcome.expected   = expectation.ink();
+    if (!certain.inked) {
         return failed(outcome, Finding::NothingPainted);
     }
-    outcome.found      = asRect(painted);
+    outcome.found      = asRect(certain);
     outcome.foundValid = true;
-    if (outcome.found != expectation.ink()) {
+
+    // With no composites in the ground the two boxes are the same box, so this is the equality it
+    // has always been - which is what keeps every existing expectation checked exactly as before.
+    if (!inside(outcome.found, expectation.ink()) || !possible.inked || !inside(expectation.ink(), asRect(possible))) {
         // The rendered half. A run that was clipped at the node's edge, displaced, or drawn from a
         // different package leaves ink whose extent is not the one the committed records predict.
         return failed(outcome, Finding::InkExtentDiffers);
