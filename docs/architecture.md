@@ -70,6 +70,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.governance` | `include/mdux/governance/Governance.cppm` | `src/governance/{Governance,Justification,Program}.cpp` |
 | `mdux.governance.compliance` | `include/mdux/governance/Compliance.cppm` | `src/governance/Compliance.cpp` |
 | `mdux.shader.schema` | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.image.schema` | `include/mdux/image/Schema.cppm` | `src/image/Schema.cpp` |
 | `mdux.text.schema` | `include/mdux/text/Schema.cppm` | `src/text/Schema.cpp` |
 | `mdux.font.schema` | `include/mdux/font/Schema.cppm` | `src/font/Schema.cpp` |
 | `mdux.text.draw` | `include/mdux/text/Draw.cppm` | `src/text/Draw.cpp` |
@@ -78,7 +79,9 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
+| `mdux.medui.reading` | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
+| `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
 | `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 
 `mdux.core.result` is a naming alias over `std::expected`, not a reimplementation
@@ -110,7 +113,8 @@ performs no checking and confers no compliance.
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
-| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197) and the compiler driver behind `mdux-meduic` (#198) |
+| `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
+| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
@@ -148,7 +152,21 @@ recipes/<kind>/<id>.toml  ──[ mdux-<kind>bake ]──▶  generated/<kind>/<
                                                       <payload>.bin
 ```
 
-Seven artifacts are committed today:
+Each kind's **resolved** option set — every default expanded, which is what ADR-007 decision 4
+requires `report.json` to record — is published as `docs/recipes/<kind>.schema.json` (#264). Those
+schemas document what a report's `options` carries rather than the literal TOML, because a schema
+describing only the recipe would document a different thing from what the report names.
+
+They are checked rather than written and left: `tools/docs-lint/check_schema_type_drift.py` validates
+every committed `generated/<kind>/<id>/report.json` against the schema for its kind, in both
+directions — an option a baker records that the schema does not declare, and a property the schema
+declares that no report carries, are both drift. Binding to the reports rather than to a C++ struct
+is deliberate: a baker's options are a *projection* (`ShaderBake`'s `Recipe` holds `modules`, and
+`toOptions()` flattens it into `moduleIds` and `moduleSources`), and the reports are byte-compared
+against a fresh bake on four toolchains, so checking against them is checking against the bakers
+exactly.
+
+Eight artifacts are committed today:
 
 | Artifact | Baker | Payload |
 |---|---|---|
@@ -158,32 +176,193 @@ Seven artifacts are committed today:
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
 | `generated/text/endoscope-monitor-en-us/` | `mdux-textbake` | `runs.bin` |
+| `generated/image/brand-mark/` | `mdux-imagebake` | `pixels.rgba` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
-cannot bake vertices, because four of the eleven components in the dictionary — `NumericDisplay`,
-`SignalTrace`, `StatusIndicator` and `Clock` — draw from live data, and the *reading* they show does
-not exist until the frame does. What `package.json` carries instead is layout: where each node is,
+cannot bake vertices, because five of the eleven components in the dictionary — `NumericDisplay`,
+`SignalTrace`, `StatusIndicator`, `Clock` and `TextInput` — draw from live data, and the *reading*
+they show does not exist until the frame does. What `package.json` carries instead is layout: where each node is,
 how much it may draw, and which validated token and key it draws with.
+
+An `Image` joins that screen to one approved `mdux.image.schema` package by id, canonical-package
+digest and intrinsic extent. The QOI decoder runs only in `mdux-imagebake`; neither compressed bytes
+nor decoder code enter `MduXCore` or `MduX`. At startup the runtime authenticates the committed RGBA8
+sidecar, and each frame records one full-sheet `SampledRgba` rectangle. The UI shader keeps coverage
+and RGBA textures on distinct fixed descriptor bindings, so a frame can render text and an image
+without changing its descriptor shape or allocating.
 
 Two of those four have one part that *is* in the artifact, and since #255 the runtime paints it: a
 `NumericDisplay` and a `SignalTrace` carry a single colour token over a single rectangle, which is
 exactly the pair their golden entry pins. ADR-014 decision 5 is why that is read off the golden
 sidecar rather than invented in the renderer, and why a `Clock` (no token) and a `StatusIndicator`
-(one per state) are not in it.
+(one per state) are not in it. A `StatusIndicator` acquires one the moment a state is bound, which is
+what #259 draws — the plural was the obstacle, not the absence.
+
+Both now draw the live part as well. `mdux.medui.trace` expands a **caller-owned ring
+buffer** into stroke quads — segments as quads with square joint caps rather than mitred joins, which
+have no unbounded spike as an angle closes — and `SignalBinding` is what joins a stream name the
+screen carries to the samples and the scale only the host knows. The samples never enter the
+artifact and never could: what a sample of `ECG_LEAD_II` means in millivolts is a property of the
+amplifier, not of the layout.
+
+Three properties are worth naming because they are what makes that safe rather than merely working.
+The expansion writes into the vertex budget the screen already declares, sized once and never grown.
+A ring past `maxSamplesPerTrace` is **refused**, not truncated — a waveform silently showing a
+different window is indistinguishable on a monitor from a correct reading of different data. And a
+bound trace paints its field at reduced coverage under a full-tint stroke, which is the one
+composition an additive draw list and a `ColorHash` golden both admit; an *unbound* trace is
+unchanged, which is why the committed screen's pixel and `verify` legs are unchanged too — both
+render it without signals.
+
+`mdux.medui.reading` (#258) does the same for a `NumericDisplay`'s digits and a `Clock`'s time, and
+it needed an **amendment to ADR-010** to exist at all. That ADR's decision 4 forbade "on-device code
+that advances a pen by a runtime-computed width", while its decision 3 permitted dynamic text — a
+contradiction nobody had to resolve while no component drew a live value. The amendment resolves it
+narrowly: a reading is drawn from a *pattern* (`HH:MM:SS`, `###.# mmHg`) whose literals, slot
+positions and glyph count are build-time constants, whose worst-case ink envelope the compiler
+measures against the node that will hold it, and whose pen arithmetic has one implementation the
+host budget stage imports rather than copies. Only which digit stands in each slot varies.
+
+What a `template:` renders as is a **product table**, supplied by the screen recipe rather than
+resolved into the artifact — so the compiled screen still carries a validated name and the shared
+contract's compiled-screen semantics are untouched. The obvious exposure of that split is closed the
+way a `Label`'s is: the runtime measures what it actually drew against the node and refuses the frame
+if it does not fit, so a device holding a table the compiler never saw cannot put digits over a
+neighbour.
+
+`mdux.medui.screen`'s `StatusBinding` (#259) is the third join, and the smallest: a slot names a node
+and a **position in that node's own `states:` list**. The list is closed in the artifact — every key
+validated against every approved locale, the widest of them measured against the node's box — so an
+index outside it is refused at `create()` and again in the frame, never clamped, wrapped or drawn as
+a blank box, each of which would show a state the device is not in. A bound indicator paints its
+field in that state's tint, with the state's word over it when a locale is bound; unbound it is
+deferred, because a default state is a reading nobody supplied. One refusal there is about appearance
+rather than names: a node that declares no `colors:` cannot be bound at all, since with no per-state
+tint its states are told apart by nothing a frame carries unless a locale happens to be bound.
+
+`mdux.medui.field` (#260) is the fourth join and the one that needed ADR-010 extended a second time.
+A `TextInput`'s value is characters from an open-ended charset, so the pattern form #258 admitted
+does not describe it — no fixed string of literals describes what an operator types. What does hold
+is the clause that amendment turns on, *slot positions are build-time constants*, applied to a
+**fixed-pitch grid**: cell *k* sits at `k * cellWidth(font)`, where `cellWidth()` is the widest
+advance the font package's restricted charset admits. A proportional pen was the alternative and is
+precisely what decision 4 forbids, since cell 5 would then sit where characters 0 to 4 put it.
+
+Two consequences are worth naming. The compiler and the device derive the pitch from the *same
+committed package* through the same function, so a `max_length` is measurable at build time —
+`measureField()` is what the budget stage checks a box against, closing the last "this stage
+deliberately does not check" in `TextBudget.cppm`. And a value longer than its field, or a character
+the package cannot draw, refuses the frame rather than truncating or substituting: a shortened
+patient identifier is a different identifier that looks like a whole one.
+
+#297 added the second bound. A `TextInput`'s `charset:` used to reach the compiler and stop there:
+the compiled node carried the charset's *name*, so a device had nothing to compare a character
+against but the font package, and a field declared for digits displayed the letter a host sent it.
+The node now carries the code points that name resolved to, and the two bounds stay distinguishable —
+`GlyphNotInPackage` is a character the package cannot draw, `CharacterOutsideFieldCharset` is one it
+draws perfectly well that this node never declared.
+
+`charsetRanges` is the **only** place a compiled screen carries a resolved value where it could have
+carried a name, and the contrast with its neighbours is the point rather than an exception to it. A
+`colorToken` and a `textKey` stay names: ADR-011 fixes that boundary and the device resolves each by
+a bounded lookup in a governed table it already holds, which is also what keeps the package readable
+in a diff. A `templateId` stays a name for a stronger reason — what it stands for is a *rendering the
+host supplies at run time*, so resolving it would mean shipping a product table beside the screen.
+What a charset stands for is neither: a set the compiler has already resolved and already checked the
+font against, with nothing left for a device to look up. ADR-012 names the three cases and says why
+this one is carrying a resolved value rather than baking configuration.
+
+Display and caret is the whole of the component. #17 cuts input-method editing and ADR-004 is the
+reason — an IME needs the platform, graphics and OS headers a governed module is compiled without —
+so the host owns the keystrokes and what crosses the boundary is what to display.
+
+`Button` and `CriticalButton` (#261) close the dictionary, and they are the first components whose
+rectangle is not only where content goes but where a **press lands**. Both draw the same thing — the
+face their single colour token names, with the label's word over it at reduced coverage once a locale
+is bound, which is `StatusIndicator`'s composition reused rather than copied. Two arguments decided
+that a button has a face at all, and only the pair is sufficient: the golden entry an annotated or
+positioned button carries pins its whole rectangle against that token, and `goldenBounds()` reads
+that pairing as an equality; and a control drawn as a word floating on the ground has a pressable
+area an operator must guess at, which on a halt control is a press that did not happen when someone
+believes it did.
+
+The press itself is `resolvePress()` — a pure, allocation-free function from a surface coordinate to
+the control under it. It resolves to the node drawn *last*, because that is the one an operator can
+see, and every node is opaque to a press rather than only the controls. What it returns is the whole
+of what crosses this boundary: the node's id, the **requirement it is traced to**, and either a
+member of the closed `SystemEvent` set (a `CriticalButton`) or the open product action name a
+`Button`'s `source:` carries. Making the safety-relevant control the one with the closed set is the
+point of having two components — #219 closed that set so a screen cannot name an action nothing
+implements, and a critical control naming one anyway refuses the press as `UnimplementedEvent` rather
+than reporting a no-op nothing performs. A critical control with no requirement refuses it as
+`UntracedCriticalControl`, for the same reason at the other end: an action nobody can trace is not one
+this module hands to a host.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
-`position:`** in the golden set, which is why the committed screen has two entries: its
-`NumericDisplay` is safety-critical and its `SignalTrace` is positioned. Both files are reviewable
-as text, which is the point.
+`position:`** in the golden set, which is why the committed screen has three entries: its
+`NumericDisplay` and its `CriticalButton` are safety-critical and its `SignalTrace` is positioned.
+Both files are reviewable as text, which is the point.
 
 `mdux-verify-ui --screen=generated/screen/<id> --locales=all` consumes this bundle without changing
 it. It derives render scopes only from the screen manifest, rejects locale subsets and zero
 obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
-problem made impossible. The committed endoscope screen discharges all five of its obligations since
-#255 — two golden checks on the `NumericDisplay`, one on the `SignalTrace`, and the two mandatory
-text checks on the `Label`.
+problem made impossible. The committed endoscope screen discharges all nine of its obligations — two golden checks on the
+`NumericDisplay`, two on the `CriticalButton`, one on the `SignalTrace`, and the two mandatory text
+checks on each of the `Label` and the `CriticalButton`.
+
+The button is what made those two text checks need a distinction they had never needed: they ask
+whether the pixels a glyph does not cover are still the ground, and it is the first component that
+paints its own field *under* its run. So the driver hands them the field rather than the panel
+beneath the node, together with the number of device composites that produced it — one — and the
+checks allow that many UNORM steps on a ground pixel. Zero keeps the old exactness, which is what
+every other node still passes: a slack granted where none is needed is a wrong tint waved through.
+
+### The toolchain as a file an agent can read
+
+`docs/tools/manifest.json` lists every host tool: its entry point, whether it speaks the shared
+`bake`/`verify` grammar or its own, the long options it accepts, the library it links, the
+diagnostic-code family that library publishes, and the artifacts it bakes with their recipes,
+sources and outputs.
+
+It is **generated** — from `add_executable()` in `tools/CMakeLists.txt` and the
+`mdux_bake_artifact()` and `mdux_compile_screen()` call sites — and `generate_tool_manifest.py
+--check` gates it on the docs-only CI job. That derivation is the point rather than a convenience:
+a hand-written manifest is a present-tense claim about what exists, true until somebody adds a tool,
+and `mdux-named-mechanisms` would not catch the lapse because it resolves the names a document
+mentions rather than verifying a list is complete. A manifest missing a tool mentions nothing that
+fails to resolve.
+
+`mdux-meduic --dump-ir <recipe>` answers the question no published document can: what *this* compile
+resolved. It prints the bounded box tree the layout solver produced, each node's authored fields with
+their values as the source wrote them, the RGBA every `Theme.Colors.<Token>` resolves to, and the
+text measurement each budgeted node was checked against — so an author handed `MEDUI-E050` can read
+the extent that failed and the locale that produced it instead of inferring them. Colours are `u32`
+bit patterns for ADR-007 decision 2's reason, and the IR is built on every compile rather than on
+demand, so a dump cannot describe a different compile from the artifact beside it.
+
+### The language as a file an agent can read
+
+`mdux-meduic --grammar` emits the whole `.medui` contract as canonical JSON, committed as
+`docs/medui/grammar.json`: tokens, productions, the component dictionary with each field's
+requiredness and domain, the field domains themselves, both closed named-value sets, the governed
+theme tokens, and every diagnostic with its summary and fix hint. `--explain MEDUI-EXXX` answers for
+one code and exits 2 on one no row names, rather than printing an empty explanation.
+
+This is the other half of #118. A stable diagnostic envelope says *what went wrong* in a form an
+agent need not parse prose to read; this says *what the language is* in the same form.
+
+Every section but one is **read off the compiler's own tables** — `componentDictionary()`,
+`registry()`, `themeColors`, the schema's `toWire()` sets — so it cannot drift from the
+implementation without the implementation moving with it. The exception is the EBNF, which the
+hand-written recursive-descent parser gives no table to emit from; it is held honest instead by
+carrying executable examples, accepted and rejected with the code each rejection must produce, which
+`GrammarTests.cpp` runs through the real front end. The limit that leaves is stated rather than
+implied: the examples are verified, the EBNF prose only as far as they reach.
+
+The upstream pin is deliberately not embedded. `medui-conformance.toml` is already machine-readable,
+and a second copy compiled into a tool is the drift the issue exists to prevent.
 
 `mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
 committed screen and a new one is gated by being committed. Three legs assert it as a named step —
@@ -192,10 +371,16 @@ matching no screen fails rather than passing over nothing. It has no skip status
 exits 3 for an absent device as for any impossible run, and since #254 made the bake render, a leg
 without a device fails to build long before this test could be reached.
 
-When a check fails, the driver writes `<screen>.<scope>.png` under the build tree — the rendered
-frame dimmed, with each failed obligation's expected rectangle outlined in magenta and what was
-actually found in cyan. The scope is percent-encoded rather than filtered, so two scopes of one
-screen cannot overwrite each other's image. CI uploads it. It is an attachment rather than a
+When a check fails, `--diff-image-dir` makes the driver write `<screen>.<scope>.png` under the build
+tree — the rendered frame dimmed, with each failed obligation's expected rectangle outlined in
+magenta and what was actually found in cyan. The scope is percent-encoded rather than filtered, so
+two scopes of one screen cannot overwrite each other's image. CI uploads it.
+
+`--frame-image-dir` is its counterpart for the run that succeeded, and it exists because until #261
+there was no way to *look at* a screen that verifies: it writes `<screen>.<scope>.frame.png` for
+every render scope, pass or fail, undimmed and unannotated — the readback as it came back. The two
+names differ so that pointing both flags at one directory, which is what a reader naturally types,
+cannot lose either image. Neither flag changes what is checked or what is returned. It is an attachment rather than a
 fifth file in the bundle because it *is* the frame, and ADR-014 decision 4 keeps measurements out of
 a byte-compared artifact.
 
@@ -254,7 +439,7 @@ from anywhere — including through a dependency's interface options.
 ## Tests
 
 Two frameworks, one discovery contract ([ADR-009](adr/ADR-009-in-repository-test-framework.md)):
-the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across fifteen.
+the in-repository `MduXTest` across nine executables, and SpecLab for Given/When/Then across seventeen.
 One additional dedicated executable runs the production verification driver against Vulkan and can
 report CTest skip status when no implementation is present.
 `mdux_discover_tests()` registers one CTest entry per case, so a failure names the scenario rather
@@ -318,9 +503,9 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying a text key measured against a committed text package (#235) and drawn from it by the governed runtime (#242); what remains is the other components' own geometry (#17) |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, a `TextInput` (#260) whose bound value and caret reach pixels there too, and a `CriticalButton` (#261) whose face and label do, traced to a requirement and pinned by a golden |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
-| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | `SignalTrace`, `StatusIndicator`, `NumericDisplay` and the rest |
+| Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | complete. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to, `TextInput` with #260 — display and caret on a fixed-pitch grid, no input-method editing — and `Button` and `CriticalButton` with #261, which draw a face and resolve a press to a closed action and the requirement it is traced to |
 
 ### The HTML/CSS path is gone, not planned
 

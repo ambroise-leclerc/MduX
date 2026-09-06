@@ -4,33 +4,50 @@
     {
       "id": "endoscope-monitor",
       "role": "screenPackage",
-      "sha256": "79bb460bbf10e51b69eeddde9782e3ef99c464a2c8d9e71cc0601623703fde07"
+      "sha256": "6be56d5be1c7bcb11570bb4cedc170458d0b0c2e7a8e0f4d21ff1e7c051a2d74"
     },
     {
       "id": "endoscope-monitor",
       "role": "goldens",
-      "sha256": "60c555cbeceb4e897e5a4302c0d667aaca84dd72d28ef2c13d96178d86eb1a2a"
+      "sha256": "599552f0948e2c553e31d136d9fc80a5aa88de75e3e4f4d9887013af93266b09"
     },
     {
       "id": "mdux-ui",
       "role": "shaderPackage",
-      "sha256": "d3a6531a26084f559fe514b190ce3b06bdfb7452be90a45a1b5b7fd35464c105"
+      "sha256": "5389d2cdffeff9f971b925607a9be82d18cec559336fd420d8a440bd993cfb71"
     },
     {
       "id": "endoscope-monitor-en-us",
       "locale": "en-US",
       "role": "textPackage",
-      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     },
     {
       "id": "dejavu-ui",
       "locale": "en-US",
       "role": "fontPackage",
       "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+    },
+    {
+      "id": "brand-mark",
+      "role": "imagePackage",
+      "sha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22"
     }
   ],
   "kind": "screen",
   "outcomes": [
+    {
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
+    {
+      "check": "ColorHash",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
     {
       "check": "Bounds",
       "finding": "Held",
@@ -59,6 +76,18 @@
       "check": "LocalizedTextPresence",
       "finding": "Held",
       "nodeId": "screen-title",
+      "scope": "en-US"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "scope": "en-US"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
       "scope": "en-US"
     }
   ],

@@ -3,7 +3,9 @@
  * @brief End-to-end rendered-truth execution through the production driver.
  *
  * Two fixtures, one device. `textless` passes and proves the locale-free render scope ADR-014
- * decision 3 requires; `overdrawn` fails and proves the diff image #255 attaches on a failure.
+ * decision 3 requires, and the frame image #261 attaches on a *passing* run; `overdrawn` fails and
+ * proves the diff image #255 attaches on a failure. The two images are asserted on opposite outcomes
+ * deliberately: each is the run the other one cannot describe.
  *
  * `overdrawn` is a screen whose `Panel` is listed after the `SignalTrace` it covers half of, so the
  * trace's field is painted and then partly painted over. Its golden opts into both checks: `Bounds`
@@ -30,7 +32,7 @@ void printDiagnostics(const mdux::tools::verify::RunResult& result, std::ostream
 
 /// Whether `path` begins with the eight bytes every PNG begins with.
 [[nodiscard]] bool looksLikePng(const std::filesystem::path& path) {
-    std::ifstream file{path, std::ios::binary};
+    std::ifstream       file{path, std::ios::binary};
     std::array<char, 8> head{};
     if (!file.read(head.data(), head.size()))
         return false;
@@ -49,7 +51,32 @@ int main() {
     const std::filesystem::path root{MDUX_REPO_ROOT};
     const std::filesystem::path generated = root / "generated";
 
-    const vu::RunResult passing = vu::run(root / "tests/verify_ui/fixtures/textless", generated);
+    // Outside the source tree, because these images are measurements of a frame rather than
+    // properties of a screen - ADR-014 decision 4 keeps them out of `generated/`, and the "no
+    // source-tree writes" gate on every CI leg would catch it if this drifted.
+    //
+    // Checked rather than assumed: `temp_directory_path()` returns an empty path on failure, and
+    // appending to that yields a *relative* directory, so the one thing this scenario is careful to
+    // avoid - writing next to the checkout - is exactly what a silent failure here would do.
+    std::error_code             ignored;
+    const std::filesystem::path temporary = std::filesystem::temp_directory_path(ignored);
+    if (temporary.empty()) {
+        std::println(std::cerr, "no temporary directory on this host, so an attached image would land in the working directory");
+        return 1;
+    }
+    // A unique token keeps two concurrent runs - a `ctest -j` on one machine, or two developers on a
+    // shared one - from removing each other's directory mid-run. `std::random_device` rather than a
+    // process id because this test runs on the Windows leg too, and `getpid()`/`_getpid()` would
+    // need a platform header in a translation unit that otherwise has none.
+    std::random_device          entropy;
+    const std::filesystem::path imageDirectory = temporary / std::format("mdux-verify-ui-images-{:08x}", entropy());
+    std::filesystem::remove_all(imageDirectory, ignored);
+
+    // Both destinations, one directory, which is the arrangement a person actually types - and the
+    // one that would silently lose an image if the two filenames were not distinct.
+    const vu::RunResult passing = vu::run(
+        root / "tests/verify_ui/fixtures/textless",
+        vu::RunOptions{.artifactRoot = generated, .diffImageDirectory = imageDirectory, .frameImageDirectory = imageDirectory});
     // 77 is CTest's skip status and must mean exactly one thing: this host has no Vulkan device.
     // Every other impossibility -- unreadable artifacts, digest drift, a renderer that refused the
     // fixture -- is a failure, and reporting it as a skip would let CI pass on a broken driver.
@@ -61,35 +88,33 @@ int main() {
         printDiagnostics(passing, std::cerr);
         return 1;
     }
+    // The claim #255 made and #261 must not have broken: a run with nothing to mark writes no diff
+    // image *even with a destination configured*, because a dimmed frame with no outlines on it says
+    // a failure happened somewhere the reader cannot see.
     if (!passing.diffImages.empty()) {
-        std::println(std::cerr, "a passing run wrote {} diff image(s) with no destination configured", passing.diffImages.size());
+        std::println(std::cerr, "a passing run wrote {} diff image(s) with nothing to mark", passing.diffImages.size());
         return 1;
     }
-    std::println(std::cout, "mdux-verify-ui textless fixture: 2 obligations discharged in 1 render");
-
-    // Outside the source tree, because the diff image is a measurement of the frame rather than a
-    // property of the screen - ADR-014 decision 4 keeps it out of `generated/`, and the "no
-    // source-tree writes" gate on every CI leg would catch it if this drifted.
-    //
-    // Checked rather than assumed: `temp_directory_path()` returns an empty path on failure, and
-    // appending to that yields a *relative* directory, so the one thing this scenario is careful to
-    // avoid - writing next to the checkout - is exactly what a silent failure here would do.
-    std::error_code             ignored;
-    const std::filesystem::path temporary = std::filesystem::temp_directory_path(ignored);
-    if (temporary.empty()) {
-        std::println(std::cerr, "no temporary directory on this host, so the diff image would land in the working directory");
+    // ...and the frame image is written on exactly that run, which is the one whose frame is worth
+    // looking at. Its name differs from the diff image's, so pointing both at one directory - which
+    // this scenario does - cannot lose either.
+    if (passing.frameImages.size() != 1) {
+        std::println(std::cerr, "expected one frame image for one render scope, got {}", passing.frameImages.size());
+        printDiagnostics(passing, std::cerr);
         return 1;
     }
-    // A unique token keeps two concurrent runs - a `ctest -j` on one machine, or two developers on a
-    // shared one - from removing each other's directory mid-run. `std::random_device` rather than a
-    // process id because this test runs on the Windows leg too, and `getpid()`/`_getpid()` would
-    // need a platform header in a translation unit that otherwise has none.
-    std::random_device          entropy;
-    const std::filesystem::path diffDirectory = temporary / std::format("mdux-verify-ui-diff-{:08x}", entropy());
-    std::filesystem::remove_all(diffDirectory, ignored);
+    if (passing.frameImages[0] != imageDirectory / "textless.%28locale-free%29.frame.png") {
+        std::println(std::cerr, "frame image written to unexpected path {}", passing.frameImages[0].generic_string());
+        return 1;
+    }
+    if (!looksLikePng(passing.frameImages[0])) {
+        std::println(std::cerr, "{} is not a PNG", passing.frameImages[0].generic_string());
+        return 1;
+    }
+    std::println(std::cout, "mdux-verify-ui textless fixture: 2 obligations discharged in 1 render, frame image attached");
 
-    const vu::RunResult failing =
-        vu::run(root / "tests/verify_ui/fixtures/overdrawn", vu::RunOptions{.artifactRoot = generated, .diffImageDirectory = diffDirectory});
+    const vu::RunResult failing = vu::run(root / "tests/verify_ui/fixtures/overdrawn",
+                                          vu::RunOptions{.artifactRoot = generated, .diffImageDirectory = imageDirectory, .frameImageDirectory = {}});
     if (failing.state != vu::RunState::ChecksFailed) {
         std::println(std::cerr, "the overdrawn fixture must fail its ColorHash obligation, not be impossible to run");
         printDiagnostics(failing, std::cerr);
@@ -104,7 +129,7 @@ int main() {
     // two scopes of one screen from overwriting each other's image. The locale-free scope spells
     // itself `(locale-free)`, so its parentheses are escaped and nothing else is - which is exactly
     // the property that lets a locale literally named `locale-free` coexist with it.
-    if (failing.diffImages[0] != diffDirectory / "overdrawn.%28locale-free%29.png") {
+    if (failing.diffImages[0] != imageDirectory / "overdrawn.%28locale-free%29.png") {
         std::println(std::cerr, "diff image written to unexpected path {}", failing.diffImages[0].generic_string());
         return 1;
     }
@@ -130,7 +155,7 @@ int main() {
         printDiagnostics(failing, std::cerr);
         return 1;
     }
-    std::filesystem::remove_all(diffDirectory, ignored);
+    std::filesystem::remove_all(imageDirectory, ignored);
     std::println(std::cout, "mdux-verify-ui overdrawn fixture: failure reported and drawn");
     return 0;
 }

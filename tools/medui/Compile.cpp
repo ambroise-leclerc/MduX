@@ -13,12 +13,15 @@ import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.font.schema;
+import mdux.image.schema;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.goldens;
+import mdux.tools.medui.ir;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.package;
 import mdux.tools.medui.parser;
@@ -148,6 +151,11 @@ evidence::json::Value Recipe::toOptions() const {
     for (const std::string& package : textPackages) {
         packages.push_back(Value::string(package));
     }
+    std::vector<Value> images;
+    images.reserve(imagePackages.size());
+    for (const std::string& package : imagePackages) {
+        images.push_back(Value::string(package));
+    }
 
     // The table as resolved, so a report shows what a compile was actually checked against rather
     // than the name of a table whose contents nobody can see.
@@ -168,14 +176,28 @@ evidence::json::Value Recipe::toOptions() const {
         dynamic.push_back(std::move(named));
     }
 
+    // Likewise, and for the same reason: a report that named `TPL-PRESSURE-MMHG` without recording
+    // what it renders as would say which template a screen was measured against and not what that
+    // measurement was of.
+    std::vector<Value> templates;
+    templates.reserve(numericTemplates.size());
+    for (const NumericTemplate& rule : numericTemplates) {
+        Value named = Value::emptyObject();
+        put(named, "name", Value::string(rule.name));
+        put(named, "rendering", Value::string(rule.rendering));
+        templates.push_back(std::move(named));
+    }
+
     Value options = Value::emptyObject();
     put(options, "budget", std::move(budgetValue));
     put(options, "dynamicText", Value::array(std::move(dynamic)));
+    put(options, "numericTemplates", Value::array(std::move(templates)));
     // The id belongs in the report for the reason every other resolved knob does: it names the
     // directory the artifact lives in, and a report that did not record it would describe a compile
     // without saying which screen it produced.
     put(options, "id", Value::string(id));
     put(options, "fontPackage", Value::string(fontPackage));
+    put(options, "imagePackages", Value::array(std::move(images)));
     put(options, "source", Value::string(source));
     put(options, "surfaceHeight", Value::integer(surfaceHeight));
     put(options, "surfaceWidth", Value::integer(surfaceWidth));
@@ -312,6 +334,20 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
         }
     }
 
+    if (const toml::Table* imageTable = document.table("images"); imageTable != nullptr) {
+        try {
+            recipe.imagePackages = imageTable->require("packages").asStringArray();
+        } catch (const toml::TomlError& error) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   error.line(),
+                   error.what(),
+                   "[images] needs a 'packages' array of committed image package.json files");
+            return std::nullopt;
+        }
+    }
+
     // The governed dynamic-text table. Optional as a table for the same reason [text] is: a screen
     // with no `charset:` has no open name to resolve, and the budget stage refuses an unknown name
     // rather than accepting one, so an absent table is fail-closed. A Clock's closed `format:` is
@@ -379,10 +415,119 @@ std::optional<Recipe> parseRecipe(std::string_view text, std::string_view recipe
                        "an inverted range checks nothing, so it is refused rather than read as empty");
                 return std::nullopt;
             }
-            DynamicText rule;
-            rule.name = names[index];
+            // A name repeated across entries **accumulates** its ranges rather than starting a
+            // second rule, which is how a charset says more than one run of code points: a patient
+            // identifier is digits *and* uppercase letters, and one entry can only carry one run.
+            //
+            // Accumulating is also the fail-closed direction, and the reason is a hole this closes.
+            // `checkDynamicText()` resolves a name with `std::ranges::find`, which stops at the
+            // first match - so two rules of one name meant the budget stage checked one range and
+            // ignored the other, and a screen could produce a character the font cannot draw while
+            // the compile stayed green. Two entries are now one set, and the set is what is checked.
+            const auto   existing = std::ranges::find(recipe.dynamicText, names[index], &DynamicText::name);
+            DynamicText& rule     = existing != recipe.dynamicText.end() ? *existing
+                                                                         : recipe.dynamicText.emplace_back(DynamicText{.name = names[index], .produces = {}});
             rule.produces.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
-            recipe.dynamicText.push_back(std::move(rule));
+        }
+
+        // Sorted and disjoint, checked here where a recipe line can be named. The compiled screen's
+        // own `validate()` requires both of a `TextInput`'s `charsetRanges` - a set two readers could
+        // enumerate differently is not a set - but it would report them as a schema failure with no
+        // recipe and no entry attached, which tells an author nothing about the table they wrote.
+        for (DynamicText& rule : recipe.dynamicText) {
+            std::ranges::sort(rule.produces, {}, &mdux::font::CharsetRange::first);
+            for (std::size_t index = 1; index < rule.produces.size(); ++index) {
+                if (rule.produces[index].first <= rule.produces[index - 1].last) {
+                    report(diagnostics,
+                           Code::RecipeMissingMember,
+                           std::string{recipePath},
+                           namesLine,
+                           std::format("[dynamicText] entry '{}' names overlapping ranges U+{:04X}..U+{:04X} and U+{:04X}..U+{:04X}",
+                                       rule.name,
+                                       static_cast<std::uint32_t>(rule.produces[index - 1].first),
+                                       static_cast<std::uint32_t>(rule.produces[index - 1].last),
+                                       static_cast<std::uint32_t>(rule.produces[index].first),
+                                       static_cast<std::uint32_t>(rule.produces[index].last)),
+                           "one name may be repeated to add a range to its set, and the ranges must not overlap");
+                    return std::nullopt;
+                }
+            }
+        }
+    }
+
+    // The product's numeric-template table (#258). Optional as a table for [dynamicText]'s reason: a
+    // screen with no `NumericDisplay` names no template, and the budget stage refuses an unknown
+    // name rather than accepting one, so an absent table is fail-closed rather than permissive.
+    if (const toml::Table* templateTable = document.table("numericTemplates"); templateTable != nullptr) {
+        std::vector<std::string> names;
+        std::vector<std::string> renderings;
+        std::size_t              namesLine = 0;
+        try {
+            const toml::Value& namesValue = templateTable->require("names");
+            namesLine                     = namesValue.line();
+            names                         = namesValue.asStringArray();
+            renderings                    = templateTable->require("renderings").asStringArray();
+        } catch (const toml::TomlError& error) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   error.line(),
+                   error.what(),
+                   "[numericTemplates] needs parallel 'names' and 'renderings' arrays");
+            return std::nullopt;
+        }
+
+        if (names.size() != renderings.size()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   namesLine,
+                   std::format("[numericTemplates] names has {} entries and renderings {}", names.size(), renderings.size()),
+                   "the arrays are positional: entry N of each describes template N");
+            return std::nullopt;
+        }
+
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            // Both bounds are checked here rather than left to the budget stage, so a recipe error
+            // names the entry an author wrote instead of the glyph a walk stopped at. An empty
+            // rendering is the fail-open one: it measures as zero and would fit any box.
+            if (renderings[index].empty()) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] entry '{}' renders as nothing", names[index]),
+                       "an empty rendering measures as zero width and would fit any node, so it is refused");
+                return std::nullopt;
+            }
+            if (renderings[index].size() > mdux::medui::maxPatternLength) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] entry '{}' renders as {} characters, and the runtime draws at most {}",
+                                   names[index],
+                                   renderings[index].size(),
+                                   mdux::medui::maxPatternLength),
+                       "the cap is mdux::medui::maxPatternLength, which bounds per-node work on a device");
+                return std::nullopt;
+            }
+            // A name is a lookup key, and the budget stage resolves it with a find-first. Two
+            // entries sharing one name therefore make the mapping ambiguous in the quietest way
+            // available: the second rendering is simply never measured, so an author who edited the
+            // wrong duplicate would see a template that compiles and draws the other one's shape.
+            // Refused rather than de-duplicated, because which entry was meant is not knowable here.
+            const auto duplicate = std::ranges::find(recipe.numericTemplates, names[index], &NumericTemplate::name);
+            if (duplicate != recipe.numericTemplates.end()) {
+                report(diagnostics,
+                       Code::RecipeMissingMember,
+                       std::string{recipePath},
+                       namesLine,
+                       std::format("[numericTemplates] declares '{}' twice, rendering '{}' and '{}'", names[index], duplicate->rendering, renderings[index]),
+                       "a template name is a lookup key, so only the first entry would ever be measured");
+                return std::nullopt;
+            }
+            recipe.numericTemplates.push_back(NumericTemplate{.name = names[index], .rendering = renderings[index]});
         }
     }
 
@@ -402,6 +547,60 @@ struct LoadedLocale {
     std::vector<std::byte>  sidecar;
     evidence::Digest        packageSha256{};
 };
+
+struct LoadedImage {
+    mdux::image::ImagePackage package;
+    evidence::Digest          packageSha256{};
+};
+
+[[nodiscard]] std::optional<std::vector<LoadedImage>>
+loadImages(const Recipe& recipe, const std::filesystem::path& root, std::vector<evidence::FileRecord>& inputs, std::vector<cli::Diagnostic>& diagnostics) {
+    std::vector<LoadedImage> images;
+    images.reserve(recipe.imagePackages.size());
+    for (const std::string& relative : recipe.imagePackages) {
+        const auto bytes = readInput(root, relative, diagnostics);
+        if (!bytes.has_value()) {
+            return std::nullopt;
+        }
+        const evidence::FileRecord packageRecord = fileRecord(relative, *bytes);
+        inputs.push_back(packageRecord);
+        auto package = mdux::image::ImagePackage::parse(textOf(*bytes));
+        if (!package.has_value()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   std::format("the image package is not valid: {}", mdux::image::describe(package.error())));
+            return std::nullopt;
+        }
+        const auto canonical = package->write();
+        if (!canonical.has_value() || *canonical != textOf(*bytes)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   relative,
+                   0,
+                   "the image package is valid but its package.json is not canonical",
+                   "re-bake the image package instead of editing package.json by hand");
+            return std::nullopt;
+        }
+        const std::filesystem::path sidecarRelative = std::filesystem::path{relative}.parent_path() / package->sidecarPath;
+        const auto                  sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics);
+        if (!sidecar.has_value()) {
+            return std::nullopt;
+        }
+        inputs.push_back(fileRecord(sidecarRelative.generic_string(), *sidecar));
+        if (sidecar->size() != package->sidecarByteLength || evidence::sha256(*sidecar) != package->sidecarSha256) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   sidecarRelative.generic_string(),
+                   0,
+                   "the image sidecar does not match its package length and digest");
+            return std::nullopt;
+        }
+        images.push_back(LoadedImage{.package = std::move(*package), .packageSha256 = packageRecord.sha256});
+    }
+    return images;
+}
 
 /// Reads the font package the recipe names, or reports why it could not.
 [[nodiscard]] std::optional<mdux::font::FontPackage>
@@ -555,7 +754,8 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
                                   std::string_view              recipePath,
                                   std::span<const std::byte>    recipeBytes,
                                   const std::filesystem::path&  root,
-                                  std::vector<cli::Diagnostic>& diagnostics) {
+                                  std::vector<cli::Diagnostic>& diagnostics,
+                                  std::string*                  diagnosticIr) {
     std::vector<evidence::FileRecord> inputs;
 
     const std::optional<std::vector<std::byte>> sourceBytes = readFile(root / recipe.source);
@@ -652,6 +852,40 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             ms::TextPackageApproval{.locale = locale.package.locale, .packageId = locale.package.header.id, .packageSha256 = locale.packageSha256});
     }
 
+    const auto loadedImages = loadImages(recipe, root, inputs, diagnostics);
+    if (!loadedImages.has_value()) {
+        return std::nullopt;
+    }
+    if (loadedImages->size() > 1) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "S1 supports one RGBA image package per screen",
+               "compose artwork into one QOI atlas, or wait for the multi-image atlas follow-up");
+        return std::nullopt;
+    }
+    std::vector<ms::ImagePackageApproval> imageApprovals;
+    imageApprovals.reserve(loadedImages->size());
+    for (const LoadedImage& image : *loadedImages) {
+        if (std::ranges::find_if(imageApprovals,
+                                 [&](const ms::ImagePackageApproval& approval) {
+                                     return approval.packageId == image.package.header.id;
+                                 })
+            != imageApprovals.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("the image package '{}' is listed twice", image.package.header.id));
+            return std::nullopt;
+        }
+        imageApprovals.push_back(ms::ImagePackageApproval{.packageId     = image.package.header.id,
+                                                          .packageSha256 = image.packageSha256,
+                                                          .width         = image.package.width,
+                                                          .height        = image.package.height});
+    }
+
     // 2. Semantic analysis. The theme tokens are the governed table the schema publishes, not a
     //    second list: `resolveColorToken()` on a device and this check on the host then agree by
     //    construction rather than by review.
@@ -679,9 +913,84 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     //    `surface:` against it, so a screen drawn for another panel is a diagnostic rather than a
     //    silently rescaled frame.
     const LayoutResult layout = resolveLayout(screen, recipe.source, {.surfaceWidth = recipe.surfaceWidth, .surfaceHeight = recipe.surfaceHeight});
+
+    // Filled by the budget stage below when this screen carries text, and left empty when it does
+    // not - which is a screen with no measurement rather than a screen whose measurement is unknown.
+    std::vector<TextMeasurement> measurements;
+
+    // The working, as soon as there is any. A stage after this one may still refuse the screen, and
+    // the box tree is exactly what an author needs to see when it does - so the IR is handed over
+    // here rather than only on the success path, and refreshed below once the budgets are in.
+    const auto captureIr = [&] {
+        if (diagnosticIr != nullptr && layout.ok()) {
+            *diagnosticIr = screenIrJson(recipe.id, *parsed.screen, layout, measurements);
+        }
+    };
+    captureIr();
     if (!layout.ok()) {
         diagnostics.insert(diagnostics.end(), layout.diagnostics.begin(), layout.diagnostics.end());
         return std::nullopt;
+    }
+
+    for (const ResolvedNode& node : layout.nodes) {
+        if (node.component != "Image") {
+            continue;
+        }
+        const auto sourceField = std::ranges::find_if(node.source.fields, [](const ast::Field& field) {
+            return field.name == "source";
+        });
+        if (sourceField == node.source.fields.end() || sourceField->value == nullptr) {
+            report(diagnostics, Code::RecipeMissingMember, std::string{recipePath}, 0, std::format("Image '{}' reached layout without a source", node.id));
+            return std::nullopt;
+        }
+        const std::string_view source   = sourceField->value->text;
+        const auto             approval = std::ranges::find_if(imageApprovals, [&](const ms::ImagePackageApproval& candidate) {
+            return candidate.packageId == source;
+        });
+        if (approval == imageApprovals.end()) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("Image '{}' names '{}', which [images] does not approve", node.id, source));
+            return std::nullopt;
+        }
+        if (node.bounds.width != static_cast<std::int64_t>(approval->width) || node.bounds.height != static_cast<std::int64_t>(approval->height)) {
+            report(diagnostics,
+                   Code::RecipeMissingMember,
+                   std::string{recipePath},
+                   0,
+                   std::format("Image '{}' resolves to {}x{}, but package '{}' is intrinsically {}x{}",
+                               node.id,
+                               node.bounds.width,
+                               node.bounds.height,
+                               source,
+                               approval->width,
+                               approval->height),
+                   "export the QOI at the exact component size; S1 performs no runtime scaling");
+            return std::nullopt;
+        }
+    }
+    const bool hasImage = std::ranges::any_of(layout.nodes, [](const ResolvedNode& node) {
+        return node.component == "Image";
+    });
+    if (!hasImage && !imageApprovals.empty()) {
+        report(diagnostics,
+               Code::RecipeMissingMember,
+               std::string{recipePath},
+               0,
+               "this screen carries no Image, so its recipe must not declare an [images] table");
+        return std::nullopt;
+    }
+
+    // The build's charset table, as views. Hoisted out of the budget block below because the package
+    // builder resolves the same names through the same table (#297): the compile-time check that a
+    // charset cannot escape the font and the run-time bound the artifact carries are two readings of
+    // one table, and two tables is precisely how they would come to disagree.
+    std::vector<DynamicTextRule> dynamicRules;
+    dynamicRules.reserve(recipe.dynamicText.size());
+    for (const DynamicText& rule : recipe.dynamicText) {
+        dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
     }
 
     // 5. Text budgets, when there is anything to measure.
@@ -692,17 +1001,23 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             localeTexts.push_back(LocaleText{.package = &locale.package, .sidecar = locale.sidecar});
         }
 
-        std::vector<DynamicTextRule> dynamicRules;
-        dynamicRules.reserve(recipe.dynamicText.size());
-        for (const DynamicText& rule : recipe.dynamicText) {
-            dynamicRules.push_back(DynamicTextRule{.name = rule.name, .produces = rule.produces});
+        std::vector<NumericTemplateRule> templateRules;
+        templateRules.reserve(recipe.numericTemplates.size());
+        for (const NumericTemplate& rule : recipe.numericTemplates) {
+            templateRules.push_back(NumericTemplateRule{.name = rule.name, .rendering = rule.rendering});
         }
 
-        const TextBudgetResult budgets = checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts, .dynamicText = dynamicRules});
+        const TextBudgetResult budgets =
+            checkTextBudgets(layout, recipe.source, {.font = &*font, .locales = localeTexts, .dynamicText = dynamicRules, .numericTemplates = templateRules});
         if (!budgets.diagnostics.empty()) {
             diagnostics.insert(diagnostics.end(), budgets.diagnostics.begin(), budgets.diagnostics.end());
             return std::nullopt;
         }
+        // Kept for the IR (#265). `TextBudgetResult::measurements` is what a `MEDUI-E050` was
+        // measured against, and a compiler that discarded it would leave an author inferring the
+        // extent that failed from the diagnostic's prose.
+        measurements = budgets.measurements;
+        captureIr();
     }
 
     // The budget the recipe declared has to be usable for the screen that came out of the solver.
@@ -725,8 +1040,10 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     const std::vector<GoldenReference> goldens = collectGoldens(layout);
 
     // 7. The compiled screen and its bytes.
-    const ScreenDocument    document = buildPackage(layout, {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals});
-    const ms::ScreenPackage package  = document.package();
+    const ScreenDocument document = buildPackage(
+        layout,
+        {.id = recipe.id, .budget = recipe.budget, .approvedTextPackages = approvals, .approvedImagePackages = imageApprovals, .charsets = dynamicRules});
+    const ms::ScreenPackage package = document.package();
 
     CompileOutputs outputs;
     outputs.packageJson = writePackage(package);
@@ -734,6 +1051,10 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     outputs.screenId    = recipe.id;
     outputs.nodeCount   = package.nodes.size();
     outputs.goldenCount = goldens.size();
+    // Built on every compile rather than only when `--dump-ir` asks, so a dump describes *this*
+    // compile rather than what a second one would - see `Ir.cppm`. It costs one JSON document per
+    // screen and is not written anywhere unless a caller asks for it.
+    outputs.irJson = screenIrJson(recipe.id, *parsed.screen, layout, measurements);
 
     evidence::BakeReport bakeReport;
     bakeReport.tool        = std::string{compilerToolName};

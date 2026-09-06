@@ -181,21 +181,43 @@ The byte-identity claim survives the addition because the artifact records outco
 samples: four drivers agreeing that a check held produce identical bytes, which is exactly the
 property decision 4 of ADR-014 protects by keeping measurements out of the file.
 
-**#255 added a second, differently-scoped verification, and the leg count is deliberately not four.**
+**#255 added a second, differently-scoped verification, and #282 made its leg count four as well.**
 The bake above re-derives `verification.json` on all four legs and byte-compares it. The
 `verify.screen.<id>` gate runs `mdux-verify-ui` over the **committed** bundle, and it is asserted as
-a named step on **three** of them: Linux/GCC 16 and Linux/Clang 21 under lavapipe, macOS/Clang 21
-under MoltenVK. Windows/MSVC runs it too - it is an ordinary ctest and that leg's full suite executes
-it - but no step there asserts it separately, so a Windows runner that lost its ICD would report the
-test as skipped and the leg would stay green on that one check. The three legs above fail on a skip.
+a named step on all four: Linux/GCC 16 and Linux/Clang 21 under lavapipe, macOS/Clang 21 under
+MoltenVK, and Windows/MSVC under Mesa's Windows lavapipe build. None of the four sets
+`SKIP_RETURN_CODE` - `mdux-verify-ui` has no 77 status and an absent device exits 3 - so a runner
+that lost its ICD fails its step as itself rather than reporting a skip.
 
-That asymmetry is a statement about what each leg is for rather than an oversight. The four-leg claim
-is about *bytes*: identical artifacts from unrelated toolchains, and Windows carries its full weight
-there. This gate is about *pixels*, and the render legs are the ones this repository already treats
-as owning that question - ADR-013 makes skipping the pixel suite a failure on macOS, and the two
-Linux legs guard theirs the same way. Adding a fourth assertion would mean adopting Mesa's Windows
-build as a gate-critical dependency rather than a build one; that is a change worth making
-deliberately, in a diff of its own, if the Windows ICD proves as stable as the distribution ones.
+**The asymmetry #255 left, and what #282 actually closed.** #255 asserted the gate on three legs
+and said so deliberately: the four-leg claim is about *bytes*, where Windows carries its full
+weight, while this gate is about *pixels*, which ADR-013 and the two Linux legs already treat as the
+render legs' question. What Windows lacked was a *named step*, not the check: the leg's unfiltered
+`ctest --preset ninja-msvc` has always run `verify.screen.<id>` along with everything else, and that
+test sets no `SKIP_RETURN_CODE`, so a lost ICD or a misrendered frame already failed the full-suite
+step and took the leg red with it.
+
+That distinction matters for what #282 costs, because the answer is nothing. Mesa's Windows build
+(pinned by release tag and SHA-256, registered in the SOUP register by #254) was **already**
+gate-critical: from the moment #255 registered `verify.screen.<id>` as an ordinary test, a green
+Windows CI depended on that third-party rasterizer producing a correct frame, not merely a device.
+#282 does not promote the dependency; it makes an existing one legible.
+
+What the named step buys is therefore diagnostic rather than protective, and it is worth having on
+its own terms:
+
+- **The gate is named in the job.** A rendered-truth failure appears as its own red step instead of
+  one line inside a full-suite log, which is what the other three legs already give a reviewer.
+- **`--no-tests=error` guards the selection.** If the `verify` label ever selects nothing - a
+  renamed label, a screen dropped from the bake - the step fails. The unfiltered full-suite run
+  cannot notice that, because a test that no longer exists is not a test that failed. This is the
+  one case the named step catches that the old arrangement genuinely did not.
+- **Diff images are uploaded on failure.** A gate that fails on pixels needs its picture attached,
+  and that artifact was not collected on this leg before.
+
+A future reversal would give back those three, and only those three. The rendered check itself would
+survive inside the full suite, which is the point of recording the distinction here rather than
+letting a later reader infer that removing the step removes the coverage.
 
 **A correction, kept rather than silently overwritten.** This paragraph previously read "Windows/MSVC
 **and** Linux/GCC (and Clang, now that issue #48 re-enabled that leg)". Issue #48 did not re-enable
@@ -267,9 +289,12 @@ byte-compared, committed artifacts.
   host-specific dependencies.
 - Since #254, every leg must also *render*, which turned a Vulkan device from an accident of two legs
   into an obligation of four and put a software rasterizer in the dependency set of two of them. And
-  since #255 three of the four assert a second, non-byte-compared check on top of that, so a leg is
-  no longer either "runs the evidence suite" or not — decision 6 now records two different scopes,
-  and a future reduction has to say which one it is giving up.
+  since #255 the legs assert a second, non-byte-compared check on top of that, so a leg is no longer
+  either "runs the evidence suite" or not — decision 6 records two different scopes, and a future
+  reduction has to say which one it is giving up. #282 brought the second scope to all four legs,
+  which removes the leg-count asymmetry and adds a dependency in its place: Mesa's Windows build is
+  now gate-critical rather than build-critical, so a defect in a third-party redistribution can turn
+  CI red on a commit that changed nothing.
 
 ### Risks and Mitigations
 - **A baker introduces nondeterminism** (hash-map iteration order, a timestamp, an absolute path, a
@@ -279,13 +304,19 @@ byte-compared, committed artifacts.
 - **Someone hand-edits a file under `generated/`.** *Mitigation*: the strict reader rejects
   permissive JSON, and re-baking overwrites the edit while the byte-comparison fails the PR.
 - **CI is reduced to fewer legs for speed.** *Mitigation*: Decision 6 records what each leg buys,
-  now including which three assert the `verify.screen.<id>` gate and why Windows is not among them;
-  removing one is then a documented reversal rather than an unnoticed regression.
+  including what asserting the `verify.screen.<id>` gate on all four costs; removing one is then a
+  documented reversal rather than an unnoticed regression.
 - **The two scopes in decision 6 drift apart again.** That paragraph has already stated a leg set its
   own decision did not support once (#246), and #255 added a second set beside the first, which is
   exactly the shape that produced the earlier drift. *Mitigation*: none mechanical. The rule for a
   reviewer is that a change to which legs run what is a change to decision 6 and to the consequences
-  above in the same diff, and that #255's acceptance criteria asked for precisely this pairing.
+  above in the same diff — #255's acceptance criteria asked for precisely this pairing, and #282
+  applied it while reversing #255's own leg count.
+- **A defect in Mesa's Windows redistribution turns CI red on an unchanged commit.** Since #282 that
+  binary is gate-critical, not merely build-critical. *Mitigation*: it is pinned by release tag and
+  by SHA-256 of the exact asset, so it cannot change under a run; and the same screen is verified
+  under three other drivers, so a lavapipe-Windows-specific failure is distinguishable from a real
+  regression by looking at whether the other three agree.
 - **`generated/` is swallowed by `.gitignore` again.** *Mitigation*: the `git status --porcelain`
   assertion that follows the evidence tests catches both an uncommitted artifact and a build that
   wrote into the source tree.

@@ -2,7 +2,7 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "f56a09470f5dca3ac72d7dd010549ea53a267ab18a8dac375be9fb3213b8b99d"
+      "sha256": "1af81df848711c180b6bf09d91372b616d90e92b4ebf07d5c654c04658bff448"
     },
     {
       "path": "generated/font/dejavu-ui/package.json",
@@ -10,11 +10,19 @@
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/package.json",
-      "sha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/runs.bin",
-      "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+      "sha256": "bd09d7ab2998ac6fdbe9624129387f3d63358d4bede51f59e37096fceb81001d"
+    },
+    {
+      "path": "generated/image/brand-mark/package.json",
+      "sha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22"
+    },
+    {
+      "path": "generated/image/brand-mark/pixels.rgba",
+      "sha256": "f94113d65f2c6ee6e4c101b025ce60b69db3553152f1ca34048f85c25c8bdb9e"
     }
   ],
   "options": {
@@ -23,9 +31,32 @@
       "maxIndices": 6144,
       "maxVertices": 4096
     },
-    "dynamicText": [],
+    "dynamicText": [
+      {
+        "name": "PATIENT-ID",
+        "produces": [
+          {
+            "first": 48,
+            "last": 57
+          },
+          {
+            "first": 65,
+            "last": 90
+          }
+        ]
+      }
+    ],
     "fontPackage": "generated/font/dejavu-ui/package.json",
     "id": "endoscope-monitor",
+    "imagePackages": [
+      "generated/image/brand-mark/package.json"
+    ],
+    "numericTemplates": [
+      {
+        "name": "TPL-PRESSURE-MMHG",
+        "rendering": "##.# mmHg"
+      }
+    ],
     "source": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
     "surfaceHeight": 720,
     "surfaceWidth": 1280,
@@ -41,29 +72,29 @@
   "outputs": [
     {
       "path": "goldens.json",
-      "sha256": "60c555cbeceb4e897e5a4302c0d667aaca84dd72d28ef2c13d96178d86eb1a2a"
+      "sha256": "599552f0948e2c553e31d136d9fc80a5aa88de75e3e4f4d9887013af93266b09"
     },
     {
       "path": "package.json",
-      "sha256": "79bb460bbf10e51b69eeddde9782e3ef99c464a2c8d9e71cc0601623703fde07"
+      "sha256": "6be56d5be1c7bcb11570bb4cedc170458d0b0c2e7a8e0f4d21ff1e7c051a2d74"
     },
     {
       "path": "verification.json",
-      "sha256": "f9a5eca249aa6698ea594e718ae3f9a0ee84818961d66e06013d12a553d35f75"
+      "sha256": "e4ebf65e4384e7dd8c12679de5d24d2223d442bd0fd673a7b448f332800c02c7"
     }
   ],
   "recipe": {
     "path": "recipes/screen/endoscope-monitor.toml",
-    "sha256": "ce8676090fb3355b9d16b4ef2b7dadaa640593997b54141eaa0b55e945bac328"
+    "sha256": "7207c95d4cf45a57179886e9f2e86a9ab89493f2ff9678406bda38e9da2ca26a"
   },
   "schemaVersion": 1,
   "stages": [
     {
       "output": "verification.json",
       "tool": "mdux-verify-bake",
-      "toolVersion": "0.7.0"
+      "toolVersion": "0.8.0"
     }
   ],
   "tool": "mdux-meduic",
-  "toolVersion": "0.7.0"
+  "toolVersion": "0.8.0"
 }

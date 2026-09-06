@@ -76,8 +76,17 @@ twelve of its children have landed: a screen goes from source to a bounded, budg
 golden-annotated set of rectangles, to a committed byte-compared artifact, to `constexpr` C++, to
 draw commands recorded without allocating, to a pixel compared under lavapipe. What the wave leaves
 behind is component content rather than path: a baked text package now lets the governed runtime
-draw a `Label`, while live-data and composite components such as `NumericDisplay` and `SignalTrace`
-remain deferred (`#17`).
+draw a `Label`; `#257` has since given a `SignalTrace` its waveform, expanded on the device from a
+caller-owned ring buffer into the screen's pre-sized vertex budget; and `#258` has given a
+`NumericDisplay` its digits and a `Clock` its time, which needed an amendment to
+[ADR-010](docs/adr/ADR-010-no-on-device-text-shaping.md) decision 4 - read it before touching
+`mdux.medui.reading`; `#259` has given a `StatusIndicator` its state, drawn from a list the compiler
+closed, with an index outside that list refused rather than drawn blank; `#260` has given a
+`TextInput` its value and caret on a fixed-pitch grid, which extended ADR-010 decision 4 a second
+time - read that amendment before touching `mdux.medui.field`; and `#261` has given `Button` and
+`CriticalButton` a face, a label over it, and `resolvePress()`, which turns a surface coordinate into
+the control under it, the requirement that control is traced to, and an action from the set `#219`
+closed. That closes `#17`: every component in the dictionary now draws.
 
 Treat any AGENTS.md section below that describes current architecture as authoritative for *today's
 code*; treat this subsection as the direction that code is moving in.
@@ -93,10 +102,16 @@ code*; treat this subsection as the direction that code is moving in.
 | `mdux.evidence.digest`, `.json`, `.report` | `include/mdux/evidence/` | `src/evidence/` |
 | `mdux.governance`, `mdux.governance.compliance` | `include/mdux/governance/` | `src/governance/` |
 | `mdux.shader.schema` (governed) | `include/mdux/shader/Schema.cppm` | `src/shader/Schema.cpp` |
+| `mdux.image.schema` (governed) | `include/mdux/image/Schema.cppm` | `src/image/Schema.cpp` |
 | `mdux.ml.schema` (governed) | `include/mdux/ml/Schema.cppm` | header-only |
 | `mdux.ml.kernels` (governed) | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` (governed) | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.draw` (governed) | `include/mdux/draw/Draw.cppm` | `src/draw/Draw.cpp` |
+| `mdux.medui.schema` (governed) | `include/mdux/medui/Schema.cppm` | header-only |
+| `mdux.medui.screen` (governed) | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
+| `mdux.medui.reading` (governed) | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
+| `mdux.medui.trace` (governed) | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
+| `mdux.medui.field` (governed) | `include/mdux/medui/Field.cppm` | `src/medui/Field.cpp` |
 | `mdux.verify` (governed) | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 | `mdux.render.vulkan`, `mdux.render.offscreen` (adapter) | `include/mdux/render/` | `src/render/` |
 | `mdux.vulkansc.memory` | `include/mdux/vulkansc/MemoryPoolManager.cppm` | `src/vulkansc/MemoryPoolManager.cpp` |
@@ -231,17 +246,17 @@ look-alike command line; they are not needed to build by hand, and each uses its
   PUBLIC-links `MduXCore`)
 - Host-tool libraries and executables: `MduX::ToolsCommon`, `MduX::ShaderBakeLib`,
   `MduX::MlBakeLib`, `MduX::TextBakeLib`, `MduX::MeduiLib`, `MduX::VerifyUiLib`;
-  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`,
+  `mdux-shaderbake`, `mdux-shaderemit`, `mdux-mlbake`, `mdux-mlemit`, `mdux-textbake`, `mdux-imagebake`,
   `mdux-meduic`, `mdux-medui-check`, `mdux-screenemit`, `mdux-verify-ui`, and `mdux-verify-bake`.
   Not exported.
 - Examples: `MedicalUiExample`; `VulkanSCTriangleExample` (built on every supported compiler; the
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
-- Tests: twenty-five executables. Nine on the in-repository MduXTest framework (`core_tests`,
+- Tests: twenty-seven executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and fifteen on SpecLab
-  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seventeen on SpecLab
+  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`, `image_spec`, `image_tools_spec`,
   `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
   `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`) — see ADR-009 — plus the
   dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest entry per case, so
@@ -249,8 +264,8 @@ look-alike command line; they are not needed to build by hand, and each uses its
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
   `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
-  screen by `mdux_compile_screen()`; asserted on the three render legs, and distinct from `evidence`
-  because it compares a frame to a screen rather than bytes to bytes).
+  screen by `mdux_compile_screen()`; asserted as a named step on all four CI legs since `#282`, and
+  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:
@@ -276,23 +291,51 @@ issue number, a dash, then the slugified issue title.
 14-text-schema
 ```
 
-This is not cosmetic. Every workflow filters `pull_request` on the pattern `[0-9]+-*`, and
+This is not cosmetic. Every workflow that runs on pull requests filters them on the pattern
+`[0-9]+-*` — Scorecard is the one exception, triggering only on pushes and a schedule — and
 **those filters match a pull request's base branch, not its head**. A PR whose base matches no
 listed pattern reports no checks at all — not failures, *nothing* — which is the failure mode
 easiest to miss on review. So:
 
 - Create branches from the issue, with that button or by writing the same name by hand.
+- Target `develop`, or the predecessor branch for a stack. The only branches that target `master`
+  are same-repository `release/vX.Y.Z` branches; the `Branch Topology` check rejects every other
+  source.
 - A stacked PR (one targeting its predecessor rather than `develop`, so a reviewer sees one
   issue's diff instead of the cumulative one) is covered automatically, because its base is
   itself an issue branch.
-- `main`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
+- `master`, `develop` and the older `feat/**` prefix also match. `feat/**` predates this
   convention and is kept only for branches already in flight.
 - A branch named anything else (`fix-typo`, `wip`, `my-feature`) gets **no CI on a PR based on
   it**. If you need one, add its pattern to the `branches:` list of every workflow under
-  `.github/workflows/` that has a `pull_request:` trigger.
+  `.github/workflows/` that has a `pull_request:` or `pull_request_target:` trigger.
 
-`push:` triggers stay limited to `main` and `develop` deliberately: an open PR already covers its
+`branch-topology.yml` is the one workflow on `pull_request_target`, because it is the one that
+polices the pull request it runs on: `pull_request` evaluates the head branch's copy of the
+definition, so a PR targeting `master` could delete the rule in the same diff the rule exists to
+reject. `pull_request_target` is evaluated from the repository's **default branch** — `develop`
+here — and not from the pull request's base, so a release PR to `master` and a stacked PR to an
+issue branch are both checked by `develop`'s copy rather than by a branch their author controls.
+Two things follow. **An edit to that file is checked by `develop`'s version, not yours**, and takes
+effect only once merged — which is why the trigger arrived in two stages, `pull_request` retained
+alongside it until the trusted definition was on `develop` and could check its own removal. And the
+job must never check out or execute a pull request's code, since a privileged trigger is only as
+safe as that restraint: do not add a `ref:` to its checkout.
+
+`push:` triggers stay limited to `master` and `develop` deliberately: an open PR already covers its
 own branch, and adding work branches there would run every workflow twice per commit.
+
+**An unmergeable PR does not run GitHub's `pull_request` workflows.** It can therefore show a green
+review-bot check while every build, test and lint check is absent. Treat missing checks as missing
+evidence, never as a pass. Branch protection on `master` requires status checks, so an absent
+required check remains pending and blocks the merge. Resolve the conflict and wait for every
+required check to report success.
+
+`Branch Topology` is not evidence either, and for the opposite reason: `pull_request_target` needs
+no merge commit, so it runs and passes on an unmergeable PR exactly as it does on a healthy one. It
+is also required on `master`, which makes it the one required check that can report green while the
+other eleven sit pending — the most visible reassurance on precisely the PR that has earned none. It
+says the base branch is legitimate, and nothing whatever about whether the build ran.
 
 ### Stacked delivery
 
@@ -351,11 +394,19 @@ is one of the things that would have caught that earlier.
 | [`mdux-cpp23-vulkan-development`](.agents/skills/mdux-cpp23-vulkan-development/SKILL.md) | Changing module interfaces/implementations, Vulkan or Vulkan SC integration, rendering resources, examples, or public APIs. | Module file placement and CMake registration, import/export conventions, the Vulkan/Vulkan SC resource-ownership model, windowing policy, required test/doc updates. |
 | [`mdux-regulated-change`](.agents/skills/mdux-regulated-change/SKILL.md) | A change can affect safety behavior, risk controls, compliance metadata, traceability, auditability, lifecycle documents, or claims about medical-device standards. | Impact classification, affected-artifact identification, proportionate documentation updates, traceability, review/escalation triggers, evidence-vs-intent-vs-certification distinctions. |
 | [`regulatory-citations`](.agents/skills/regulatory-citations/SKILL.md) | Writing or reviewing anything that claims alignment with IEC 62304, ISO 13485, ISO 14971, IEC 62366-1, or IEC 81001-5-1. | Citation-key format, the `Justification` object, the prohibition on reproducing normative text. **Target convention** — see § 2's parity-programme note. |
-| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
-| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. **Live** — a `.medui` file compiles to a committed artifact, emits `constexpr` C++, and reaches compared pixels; what it cannot yet carry is text (issue `#235`). |
+| [`evidence-pipeline`](.agents/skills/evidence-pipeline/SKILL.md) | Adding or modifying a baked asset (font, shader, image, `.medui` screen, ML model) or anything under `generated/`. | Recipe→baker→committed-artifact doctrine, canonical-JSON rules, why `generated/` is never hand-edited. Each kind's **resolved** option set is published as `docs/recipes/<kind>.schema.json` (#264) and checked against every committed report. **Live** — `mdux-shaderbake` and `mdux-mlbake` both register through `mdux_bake_artifact()`, and `generated/shader/` and `generated/model/` are committed and byte-verified. |
+| [`medui-authoring`](.agents/skills/medui-authoring/SKILL.md) | Authoring or discussing a `.medui` screen. | Grammar, component dictionary, theme tokens, text budgets, `@safety_critical`. The machine-readable form of all of it is `docs/medui/grammar.json`, emitted by `mdux-meduic --grammar` from the compiler's own tables (#263) — read that for the *set* of anything, and `mdux-meduic --explain MEDUI-EXXX` for one diagnostic. **Live** — a `.medui` file compiles to a committed artifact, emits `constexpr` C++, and reaches compared pixels; what it cannot yet carry is text (issue `#235`). |
 | [`sdf-documents`](.agents/skills/sdf-documents/SKILL.md) | Filling in or reviewing a `software_development_file/` document. | Structure, the summarize-don't-duplicate rule, citing into the corpus. **Live** — `software_development_file/` exists with templates and records (issue `#9`). |
 
 Detailed procedures live in the skill files, not here — this table only routes.
+
+Three machine-readable documents answer "what is here" without reading prose, and each is generated
+from the tree rather than written about it: [`docs/tools/manifest.json`](docs/tools/manifest.json)
+(every host tool, its grammar, options, diagnostic-code family and the artifacts it bakes),
+[`docs/medui/grammar.json`](docs/medui/grammar.json) (the `.medui` contract) and
+[`docs/recipes/`](docs/recipes/) (each baker's resolved option set). All three are gated by
+`docs-lint`, so one that stops describing the tree fails a build rather than misleading a reader.
+`mdux-meduic --dump-ir <recipe>` answers the fourth question — what one compile actually resolved.
 
 ## 8. Definition of done
 

@@ -44,9 +44,48 @@ maxVertices = 4096
 maxIndices  = 6144
 maxCommands = 64
 
+# What each `template:` a NumericDisplay names actually renders as (#258). The product's table, not
+# the language's: `TPL-PRESSURE-MMHG` is this device's name for an insufflation-pressure readout, and
+# the compiler measures the widest reading that shape can ever produce against the node holding it.
+#
+# `#` is a digit slot and every other character is a literal, which is why the slot character is not
+# a letter: `mmHg` contains an H, and a clock's alphabet would read it as an hour.
+#
+# `##.# mmHg` is therefore 0.0 to 99.9 mmHg - the range an insufflator works in - with the reading
+# carried to the device as a fixed-point integer in tenths, so nothing formats a float on a device.
+# Widening this to `###.# mmHg` is a re-bake and a review of the diff, and the budget stage is what
+# tells you if the node stopped being wide enough.
+[numericTemplates]
+names      = ["TPL-PRESSURE-MMHG"]
+renderings = ["##.# mmHg"]
+
+# What each `charset:` a TextInput names actually admits (#297). The product's table, exactly as
+# `[numericTemplates]` is: `PATIENT-ID` is this device's rule for what a patient identifier may
+# contain, not the language's.
+#
+# The arrays are positional, and a name repeated across entries adds a range to its set - which is
+# how `PATIENT-ID` is digits *and* uppercase letters rather than one contiguous run. Lowercase,
+# punctuation and space are all drawable by the committed font and none of them is here, which is the
+# whole point: the compiler proves the set cannot escape the font, and the device refuses a character
+# the set does not contain.
+#
+# Widening this is a re-bake and a review of the diff: the resolved ranges are in the committed
+# `package.json`, so what a field will display changes visibly rather than in a table nobody reads.
+[dynamicText]
+names           = ["PATIENT-ID", "PATIENT-ID"]
+# Decimal, as `recipes/font/dejavu-ui.toml` says and for its reason: mdux.tools.toml's subset has no
+# hexadecimal literals. 48..57 is U+0030..U+0039, the digits; 65..90 is U+0041..U+005A, A to Z.
+firstCodePoints = [48, 65]
+lastCodePoints  = [57, 90]
+
 # The packages this screen's text is validated against (#235). `fontPackage` supplies the glyph
 # metrics every box is measured with; `packages` lists one committed text package per locale the
 # font approves, which today is `en-US` alone.
 [text]
 fontPackage = "generated/font/dejavu-ui/package.json"
 packages    = ["generated/text/endoscope-monitor-en-us/package.json"]
+
+# QOI is decoded only by the host baker. The screen approves the canonical package identity and
+# intrinsic extent; the device receives only committed RGBA8 bytes.
+[images]
+packages = ["generated/image/brand-mark/package.json"]

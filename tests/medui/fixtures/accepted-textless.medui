@@ -1,7 +1,8 @@
 // A screen that draws no text, for the compiler driver's happy path (#198).
 //
 // Every node here is a component that paints pixels rather than characters: a Row background, an
-// Image, a VulkanViewport and a SignalTrace. That is what makes it compilable without a font
+// Image, a VulkanViewport and a SignalTrace. The image is approved separately from text; that is
+// what makes it compilable without a font
 // package and without an approved locale - `needsTextBudget()` answers false for it, so the recipe
 // needs no [text] table and the budget stage has nothing to measure.
 //
@@ -14,21 +15,21 @@ Screen TextlessScreen {
 
     Row {
         id: topbar;
-        height: 40px;
+        height: 72px;
         background: Theme.Colors.TopbarBackground;
 
         Image {
             id: logo;
-            width: 120px;
-            height: 40px;
-            source: img("IMG-LOGO");
+            width: 240px;
+            height: 72px;
+            source: img("brand-mark");
         }
     }
 
     VulkanViewport {
         id: scope;
         width: 400px;
-        height: 160px;
+        height: 128px;
         stream_source: "ENDOSCOPE";
     }
 

@@ -8,6 +8,15 @@
       "stages": [
         "fragment"
       ]
+    },
+    {
+      "binding": 1,
+      "count": 1,
+      "kind": "combinedImageSampler",
+      "set": 0,
+      "stages": [
+        "fragment"
+      ]
     }
   ],
   "id": "mdux-ui",
@@ -22,11 +31,11 @@
       "stage": "vertex"
     },
     {
-      "byteLength": 1368,
+      "byteLength": 1448,
       "byteOffset": 1664,
       "entryPoint": "main",
       "id": "ui.frag",
-      "sha256": "29f386f9815cf1ee2d41382c1a6a4f212a8c26acf7e56920ef8fa32c92823fcb",
+      "sha256": "b4779d610db79960f286c0e9db544ef903d4ebc92d9b9cc8ac6fde2ba5cd91bb",
       "stage": "fragment"
     }
   ],
@@ -41,8 +50,8 @@
   ],
   "schemaVersion": 1,
   "sidecar": {
-    "byteLength": 3032,
+    "byteLength": 3112,
     "path": "shaders.spv",
-    "sha256": "4e22a2a65402e2facea95332b24773c52b72b20ec3bf7a800af3b1752dccb3b8"
+    "sha256": "70a7b88ac12cb4126f67d3c31082fea13caffa0c393da352c532ad527434f1a5"
   }
 }

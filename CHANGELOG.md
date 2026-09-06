@@ -23,6 +23,97 @@ because the history is unavailable.
 
 ---
 
+## 0.8.0 — 6 September 2026
+
+The rest of the component dictionary (#17, all six children and one follow-on), and the rest of
+agent/LLM tooling parity (#19, its last three children). Every component ADR-011 names now draws,
+and the `.medui` contract is machine-readable end to end: grammar, per-recipe schemas, and a resolved
+IR a compiler can dump.
+
+**This release closes the two biggest limits 0.7.0 published.** 0.7.0 said "seven of eleven
+components are still undrawn" and "what remains is the recipe schemas and the IR dump" — both
+epics behind those sentences are now closed on GitHub, not merely merged.
+
+### The component dictionary, complete (#17, all six children + #297)
+
+- **`Image`, from a QOI-decoded package** — a host-only decoder (~200 lines, lossless, public
+  domain; PNG was cut deliberately, since a hand-written DEFLATE inflater is ~400 lines of much
+  subtler code for a format designers can export out of), baked into a committed RGBA8 sidecar the
+  device never parses (#256).
+- **`SignalTrace` draws its waveform** — expanded on the device from a caller-owned ring buffer into
+  the vertex budget the compiled screen already declares, each segment a quad with round-cap
+  overdraw rather than mitred joins (#257).
+- **`NumericDisplay` and `Clock` draw live values**, through a pattern whose slot positions are
+  build-time constants — the bounded exception ADR-010 decision 4 admits, extended from a reading's
+  fixed literals to a reading's fixed *shape* (#258).
+- **`StatusIndicator` draws its state**, one tint per member of a closed `states:` list; a bound
+  indicator without per-state colours is refused at start-up rather than left looking the same in
+  every state (#259).
+- **`TextInput` draws its value and caret**, on a fixed-pitch grid — cell *k* at `k * cellWidth(font)`
+  — because its value is characters from an open-ended charset and no fixed pattern describes what
+  an operator types. Display and caret only: no IME, which is a platform concern ADR-004's trust
+  boundary excludes (#260).
+  - **Follow-on: `charset:` now bounds what the *device* displays, not only what the compiler
+    accepts (#297).** A compiled node used to carry the charset's name and nothing else, so a field
+    declared for digits displayed a letter a host handed it. The node now carries the resolved
+    code-point ranges, checked when a value is bound and again when a frame is drawn — a portability
+    difference from any implementation that does not carry them, recorded in ADR-012 rather than
+    left to be discovered.
+- **`Button` and `CriticalButton` draw a face and resolve a press** — a rectangle is the face,
+  since nothing in this project had decided otherwise; a press on a `CriticalButton` resolves to a
+  closed `SystemEvent` and the requirement it is traced to, refusing an action outside the set
+  #219 closed rather than performing a no-op (#261).
+
+This is the last child of #17: every component the component dictionary names now draws. The epic is
+closed.
+
+### Agent & LLM tooling parity, complete (#19, its last three children)
+
+- **A published, machine-readable `.medui` grammar** — `docs/medui/grammar.json`, walked out of the
+  compiler's own tables (the closed-set enums, the component dictionary) rather than hand-transcribed,
+  so the contract and the parser cannot drift apart. `--grammar` prints it; `--explain <CODE>` answers
+  for any registered diagnostic (#263).
+- **A committed JSON Schema for every recipe kind** — `docs/recipes/*.schema.json`, validated against
+  every committed bake report on every push, so a schema and the reports it describes cannot diverge
+  silently (#264).
+- **`--dump-ir` and a generated host-tool manifest.** The compiler's resolved intermediate
+  representation — the bounded box tree, resolved colours as float bit patterns, text budgets — is
+  dumpable as canonical JSON, including for a screen a later stage refused, so an author debugging
+  `MEDUI-E050` sees the box that failed rather than nothing. `docs/tools/manifest.json` is generated
+  from the build's own tool registration — `add_executable`, `mdux_bake_artifact`, the parser each
+  tool actually calls — so a tool cannot go undocumented by existing (#265).
+
+`#19` has no open child left either.
+
+### Two things closed along the way
+
+- **An approved locale tag now has a grammar.** `isLocaleTag()` closes a hole `en/US`,
+  `(locale-free)` and a kilobyte of text were all falling through, as a `constexpr` check in the
+  artifact schema a generated screen's own `static_assert` enforces (#281).
+- **The rendered-truth gate is asserted as a named step on the Windows leg**, matching the other
+  three render legs, with the failure-diff image uploaded there too (#282).
+- **`ccache` is BMI-aware for Clang modules**, closing the local-build corruption 0.7.0 warned about;
+  `-DENABLE_CACHE=OFF` is no longer needed as a workaround (#280).
+- **Release-branch topology is guarded mechanically** rather than by habit: a check enforced from a
+  trusted workflow definition, run on every push to `master` or `develop` and once a day, catches a
+  `master` that carries commits `develop` lacks before a release compounds the drift (#284).
+
+### Known limits, stated because they are easy to mistake for defects
+
+- **Verification is still internal consistency, not truth.** Unchanged since 0.7.0: the expectation
+  and the frame come from one source, so no amount of checking shows the screen is the *right*
+  screen.
+- **No IEC 62304 §5.7 system claim.** This release supplies a complete component dictionary and a
+  machine-readable contract; it does not supply the system, the requirements it would be tested
+  against, or a representative environment.
+- **`charsetRanges` is a portability difference from an implementation that does not carry them
+  (#297).** The same `.medui` source would display a character on such an implementation that this
+  one refuses. MEDUI-DEC-006 delegates the character sets themselves to the implementation, so this
+  is not a contract violation — it is recorded in ADR-012 as the kind of divergence upstream should
+  decide on, not papered over here.
+
+---
+
 ## 0.7.0 — 3 September 2026
 
 Rendered-truth verification (#16, all five children), and the text path it needed. A committed screen

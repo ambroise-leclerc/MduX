@@ -329,9 +329,8 @@ TEST_CASE("A blank glyph occupies no pixels but does not fail the run", "pixel")
 }
 
 TEST_CASE("A coverage renderer refuses a frame that samples RGBA", "pixel") {
-    // An R8 image sampled as RGBA returns (coverage, 0, 0, 1) - a picture in the wrong colours,
-    // which survives review in a way a black frame or a crash would not. The refusal is what makes
-    // "this renderer draws text and solids, not images" checkable rather than a comment.
+    // The neutral RGBA texture keeps the fixed descriptor set valid; it is not authored image
+    // content. Refusal prevents an unbound Image from becoming a plausible white rectangle.
     const auto& gpu = sharedDevice();
     auto target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
     REQUIRE(target.has_value());
@@ -362,9 +361,6 @@ TEST_CASE("A coverage renderer refuses a frame that samples RGBA", "pixel") {
     // pass still completes - it just draws nothing.
     Outcome    outcome{.renderer = &*renderer, .list = &*list, .result = {}};
     const auto rejected = target->renderAndRead(gpu.queue(), background, captureRecord, &outcome);
-    // The pass itself must still succeed - record() refusing means the frame draws nothing, not
-    // that submission failed. Checking it is what stops a readback failure from passing this test
-    // for the wrong reason.
     REQUIRE_MESSAGE(rejected.has_value(), rejected.has_value() ? std::string{} : std::string{describe(rejected.error())});
     REQUIRE(!outcome.result.has_value());
     CHECK(outcome.result.error() == RenderError::SampledRgbaWithCoverageAtlas);

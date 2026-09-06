@@ -14,6 +14,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.font.schema;
+import mdux.image.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.render.offscreen;
@@ -279,11 +280,8 @@ void writeDiffImage(RunResult&                              result,
         if (outcome.held()) {
             continue;
         }
-        marks.push_back(DiffMark{.nodeId     = outcome.nodeId,
-                                 .check      = outcome.check,
-                                 .expected   = outcome.expected,
-                                 .found      = outcome.found,
-                                 .foundValid = outcome.foundValid});
+        marks.push_back(
+            DiffMark{.nodeId = outcome.nodeId, .check = outcome.check, .expected = outcome.expected, .found = outcome.found, .foundValid = outcome.foundValid});
     }
     if (marks.empty()) {
         return;
@@ -319,6 +317,50 @@ void writeDiffImage(RunResult&                              result,
     result.diffImages.push_back(path);
 }
 
+/**
+ * @brief Writes one render scope's frame image, and says where it went or why it did not.
+ *
+ * `writeDiffImage()`'s sibling, and deliberately not a mode of it. That one dims the frame and
+ * outlines what failed, which is right for a failure attachment and wrong for the only other
+ * question a person asks of a rendered screen: what does it look like. So this writes the readback
+ * exactly as it came back - no dimming, no outlines, nothing this tool drew on top - and it writes
+ * on a passing run, which is the run whose frame is worth looking at.
+ *
+ * A failure to write is a diagnostic and never a verdict, for `writeDiffImage()`'s reason: the image
+ * is an attachment for a person, and a full disk must not turn a passing verification into a failing
+ * one.
+ */
+void writeFrameImage(RunResult&                              result,
+                     const std::filesystem::path&            directory,
+                     std::string_view                        screenId,
+                     std::string_view                        scope,
+                     std::span<const mdux::core::ColorRgba8> frame,
+                     std::uint32_t                           width,
+                     std::uint32_t                           height) {
+    const std::filesystem::path path = directory / frameImageName(screenId, scope);
+
+    std::error_code created;
+    std::filesystem::create_directories(directory, created);
+    if (created) {
+        warn(result.diagnostics, directory, "VUI009", "cannot create the frame image directory: " + created.message());
+        return;
+    }
+
+    const std::vector<std::byte> encoded = encodePng(frame, width, height);
+    if (encoded.empty()) {
+        warn(result.diagnostics, path, "VUI009", "the readback could not be encoded as a frame image");
+        return;
+    }
+
+    std::ofstream file{path, std::ios::binary | std::ios::trunc};
+    file.write(reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
+    if (!file) {
+        warn(result.diagnostics, path, "VUI009", "cannot write the frame image");
+        return;
+    }
+    result.frameImages.push_back(path);
+}
+
 [[nodiscard]] mdux::core::ColorRgba8 groundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
     mdux::core::ColorRgba8 ground = clearColor;
     for (const mdux::medui::CompiledNode& candidate : screen.nodes) {
@@ -341,6 +383,86 @@ void writeDiffImage(RunResult&                              result,
         }
     }
     return ground;
+}
+
+/**
+ * @brief How many layers the runtime paints over the ground for this node, in this scope.
+ *
+ * `colorHash()` allows one UNORM step of device rounding per composite, so this is the number that
+ * keeps a correct frame from reading as a `ForeignColour`. One everywhere except the node that made
+ * the distinction necessary: a `Button` or a `CriticalButton` that paints its field and then its
+ * word, which is two.
+ *
+ * ## All three conditions, because two of them were not enough
+ *
+ * Being a button is not sufficient, and neither is the scope having a locale. `hasText` is a
+ * property of the *screen* - some node on it carries a key - so a button that names none would take
+ * two composites from a neighbour's text, while painting only its face. That is slack granted where
+ * none is needed, and one extra UNORM step on a face is exactly enough to admit a tint that is
+ * wrong. `textKeyOf()` is the third condition, and it is the node's own.
+ *
+ * A validated screen cannot hold such a button - `validatePayload()` requires a non-empty `labelKey`
+ * for both - but this driver deliberately never calls `validate()`, so the case is reachable from a
+ * bundle assembled by hand, which is the kind of input ADR-014 decision 2 expects it to fail closed
+ * on rather than trust.
+ *
+ * The fourth case does not need a condition: a node whose key names a run with **no ink** paints one
+ * layer, not two, and never reaches a golden check at all, because `TextExpectation::create()`
+ * refuses an inkless run and the run stops at VUI007 before any check is raised.
+ */
+[[nodiscard]] std::size_t goldenCompositesFor(const mdux::medui::CompiledNode& node, bool hasText) {
+    const bool paintsAWordOverItsFace = hasText && mdux::medui::buttonFace(node.payload).has_value() && !mv::textKeyOf(node).empty();
+    return paintsAWordOverItsFace ? 2U : 1U;
+}
+
+/// What a node's *run* is composited onto, and how many device composites produced it.
+struct TextGround {
+    mdux::core::ColorRgba8 color{};
+    std::size_t            composites{0};
+};
+
+/**
+ * @brief The ground a text check needs, which is not always the ground a golden check needs.
+ *
+ * `groundFor()` answers what is under the **node**: the surface the driver cleared to, or the panel
+ * a `Row` synthesised beneath it. That is the ground `Bounds` and `ColorHash` want, because they ask
+ * about the node's content as a whole, and a node that painted its own field has painted something.
+ *
+ * The two text checks ask a narrower question - "outside every placed glyph, is every pixel of the
+ * node still the ground" - and for a component that paints a field *before* its word goes over it,
+ * the answer means nothing unless the ground they are given is that field. A `Button` and a
+ * `CriticalButton` are the first components that are both: `textKeyOf()` selects them, because each
+ * carries a single label key, and each paints its whole rectangle (#261). Handing them the panel's
+ * tint reports a correct frame as `InkExtentDiffers`, since every pixel of the field then reads as
+ * ink.
+ *
+ * The composite mirrors `recordCaptionedField()` rather than approximating it: the node's tint, its
+ * alpha replaced by the coverage a captioned field is dimmed to, blended once over what is under the
+ * node. `blend()` with a coverage of 255 applies that alpha unchanged, which is what the draw path
+ * records and the device performs in one composite - hence `composites = 1`, which is what buys the
+ * one-step allowance a blend unit's own precision needs.
+ *
+ * A node whose word turns out to have no ink draws an opaque field rather than a dimmed one, and
+ * this would then name the wrong colour. It is unreachable: `TextExpectation::create()` refuses a
+ * run with no ink outright, so no check is ever raised for such a node.
+ */
+[[nodiscard]] TextGround textGroundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
+    const mdux::core::ColorRgba8 under = groundFor(screen, node);
+
+    const std::optional<mdux::medui::ButtonFace> face = mdux::medui::buttonFace(node.payload);
+    if (!face.has_value()) {
+        return TextGround{.color = under, .composites = 0};
+    }
+    const auto tint = mdux::medui::resolveColorToken(face->colorToken);
+    if (!tint.has_value()) {
+        // A token the governed table does not define. The runtime refuses that frame outright, so
+        // there is no field to be the ground of; leaving it under the node keeps this total and lets
+        // the runtime's refusal be the one a reader is shown.
+        return TextGround{.color = under, .composites = 0};
+    }
+    mdux::core::ColorRgba8 field = mdux::medui::quantise(*tint);
+    field.a                      = mdux::medui::quantise((*tint)[3] * mdux::medui::boundFieldCoverage);
+    return TextGround{.color = mv::blend(under, field, 255), .composites = 1};
 }
 
 struct ShaderAssets {
@@ -402,6 +524,40 @@ struct LocaleAssets {
     mdux::font::FontPackage font;
     std::vector<std::byte>  atlas;
 };
+
+struct ImageAssets {
+    std::string               imageJson;
+    mdux::image::ImagePackage image;
+    std::vector<std::byte>    pixels;
+};
+
+[[nodiscard]] std::optional<ImageAssets>
+loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
+    const auto packagePath = artifactRoot / "image" / approval.packageId / "package.json";
+    auto       imageJson   = readText(packagePath);
+    if (!imageJson) {
+        report(diagnostics, packagePath, "VUI006", "cannot read approved image package");
+        return std::nullopt;
+    }
+    auto image = mdux::image::ImagePackage::parse(*imageJson);
+    if (!image.has_value()) {
+        report(diagnostics, packagePath, "VUI006", "invalid approved image package: " + std::string{mdux::image::describe(image.error())});
+        return std::nullopt;
+    }
+    const auto canonical = image->write();
+    if (!canonical.has_value() || *canonical != *imageJson || image->header.id != approval.packageId || image->width != approval.width
+        || image->height != approval.height || mdux::evidence::sha256(std::as_bytes(std::span{*imageJson})) != approval.packageSha256) {
+        report(diagnostics, packagePath, "VUI006", "approved image identity, extent, digest, or canonical bytes disagree with the screen manifest");
+        return std::nullopt;
+    }
+    const auto pixelsPath = packagePath.parent_path() / image->sidecarPath;
+    auto       pixels     = readBytes(pixelsPath);
+    if (!pixels || pixels->size() != image->sidecarByteLength || mdux::evidence::sha256(*pixels) != image->sidecarSha256) {
+        report(diagnostics, pixelsPath, "VUI006", "image sidecar does not match its package");
+        return std::nullopt;
+    }
+    return ImageAssets{.imageJson = std::move(*imageJson), .image = std::move(*image), .pixels = std::move(*pixels)};
+}
 
 [[nodiscard]] std::optional<LocaleAssets>
 loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
@@ -721,10 +877,10 @@ PlanResult enumerate(const mdux::medui::ScreenPackage& screen, std::span<const m
 
 RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOptions& options) {
     const std::filesystem::path& artifactRoot = options.artifactRoot;
-    RunResult                   result;
-    const std::filesystem::path screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
-    const auto                  packagePath     = screenDirectory / "package.json";
-    const auto                  packageText     = readText(packagePath);
+    RunResult                    result;
+    const std::filesystem::path  screenDirectory = normalizeScreenDirectory(requestedScreenDirectory);
+    const auto                   packagePath     = screenDirectory / "package.json";
+    const auto                   packageText     = readText(packagePath);
     if (!packageText) {
         report(result.diagnostics, packagePath, "VUI001", "cannot read screen package.json");
         return result;
@@ -792,12 +948,28 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         }
     }
 
+    std::optional<ImageAssets> imageAssets;
+    if (!screen.approvedImagePackages.empty()) {
+        if (screen.approvedImagePackages.size() != 1) {
+            report(result.diagnostics, packagePath, "VUI006", "S1 supports exactly one approved image package per screen");
+            return result;
+        }
+        imageAssets = loadImage(screen.approvedImagePackages.front(), artifactRoot, result.diagnostics);
+        if (!imageAssets.has_value())
+            return result;
+        result.inputs.push_back({.role = "imagePackage", .id = imageAssets->image.header.id, .locale = {}, .sha256 = hexDigest(imageAssets->imageJson)});
+    }
+
     // Validate every artifact-derived expectation before creating a device or rendering a frame.
     for (std::size_t scopeIndex = 0; scopeIndex < (hasText ? locales.size() : 1U); ++scopeIndex) {
         const mv::RenderScope scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
         for (const mv::GoldenEntry& golden : goldens) {
             const auto* node        = screen.find(golden.nodeId);
-            const auto  expectation = mv::GoldenExpectation::create(golden, screen, scope, node == nullptr ? clearColor : groundFor(screen, *node));
+            const auto  expectation = mv::GoldenExpectation::create(golden,
+                                                                   screen,
+                                                                   scope,
+                                                                   node == nullptr ? clearColor : groundFor(screen, *node),
+                                                                   node == nullptr ? 1U : goldenCompositesFor(*node, hasText));
             if (!expectation.has_value()) {
                 report(result.diagnostics,
                        screenDirectory / "goldens.json",
@@ -821,7 +993,8 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             for (const auto& node : screen.nodes) {
                 if (mv::textKeyOf(node).empty())
                     continue;
-                const auto expectation = mv::TextExpectation::create(screen, node, *binding, assets.atlas, scope, groundFor(screen, node));
+                const TextGround textGround = textGroundFor(screen, node);
+                const auto expectation      = mv::TextExpectation::create(screen, node, *binding, assets.atlas, scope, textGround.color, textGround.composites);
                 if (!expectation.has_value()) {
                     report(result.diagnostics,
                            packagePath,
@@ -869,9 +1042,10 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
     }
 
     for (std::size_t scopeIndex = 0; scopeIndex < (hasText ? locales.size() : 1U); ++scopeIndex) {
-        const mv::RenderScope                   scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
-        std::optional<mdux::medui::TextBinding> binding;
-        LocaleAssets*                           locale = hasText ? &locales[scopeIndex] : nullptr;
+        const mv::RenderScope                    scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
+        std::optional<mdux::medui::TextBinding>  binding;
+        std::optional<mdux::medui::ImageBinding> imageBinding;
+        LocaleAssets*                            locale = hasText ? &locales[scopeIndex] : nullptr;
         if (hasText) {
             auto made = mdux::medui::TextBinding::create(screen, locale->font, locale->text, std::as_bytes(std::span{locale->textJson}), locale->runs);
             if (!made.has_value()) {
@@ -880,8 +1054,19 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             }
             binding.emplace(std::move(*made));
         }
+        if (imageAssets.has_value()) {
+            auto made = mdux::medui::ImageBinding::create(screen, imageAssets->image, std::as_bytes(std::span{imageAssets->imageJson}), imageAssets->pixels);
+            if (!made.has_value()) {
+                report(result.diagnostics, packagePath, "VUI008", "authenticated image binding became unavailable before render");
+                return result;
+            }
+            imageBinding.emplace(std::move(*made));
+        }
         drawList->reset();
-        const auto frame = hasText ? mdux::medui::render(screen, *drawList, *binding) : mdux::medui::render(screen, *drawList);
+        const auto frame = mdux::medui::render(screen,
+                                               *drawList,
+                                               hasText ? *binding : mdux::medui::TextBinding{},
+                                               imageBinding.has_value() ? *imageBinding : mdux::medui::ImageBinding{});
         if (!frame.has_value()) {
             report(result.diagnostics,
                    packagePath,
@@ -896,13 +1081,28 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
                                                         .queue            = device.queue(),
                                                         .queueFamilyIndex = device.family(),
                                                         .viewport         = extent};
-        auto                                    renderer = hasText ? mdux::render::UiRenderer::createWithCoverageAtlas(context,
-                                                                                    shader->view(),
-                                                                                    screen.budget,
-                                                                                    locale->atlas,
-                                                                                    locale->font.atlas.width,
-                                                                                    locale->font.atlas.height)
-                                                                   : mdux::render::UiRenderer::create(context, shader->view(), screen.budget);
+        auto                                    renderer = hasText && imageAssets.has_value() ? mdux::render::UiRenderer::createWithAtlases(context,
+                                                                                                         shader->view(),
+                                                                                                         screen.budget,
+                                                                                                         locale->atlas,
+                                                                                                         locale->font.atlas.width,
+                                                                                                         locale->font.atlas.height,
+                                                                                                         imageAssets->pixels,
+                                                                                                         imageAssets->image.width,
+                                                                                                         imageAssets->image.height)
+                                                           : hasText                          ? mdux::render::UiRenderer::createWithCoverageAtlas(context,
+                                                                                      shader->view(),
+                                                                                      screen.budget,
+                                                                                      locale->atlas,
+                                                                                      locale->font.atlas.width,
+                                                                                      locale->font.atlas.height)
+                                                           : imageAssets.has_value()          ? mdux::render::UiRenderer::createWithImageAtlas(context,
+                                                                                                   shader->view(),
+                                                                                                   screen.budget,
+                                                                                                   imageAssets->pixels,
+                                                                                                   imageAssets->image.width,
+                                                                                                   imageAssets->image.height)
+                                                                                     : mdux::render::UiRenderer::create(context, shader->view(), screen.budget);
         if (!renderer.has_value()) {
             report(result.diagnostics,
                    packagePath,
@@ -936,7 +1136,7 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
                 report(result.diagnostics, packagePath, "VUI008", "validated golden node '" + std::string{golden.nodeId} + "' vanished before render");
                 return result;
             }
-            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node));
+            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node), goldenCompositesFor(*node, hasText));
             if (!expectation.has_value()) {
                 report(result.diagnostics,
                        packagePath,
@@ -954,7 +1154,8 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
             for (const auto& node : screen.nodes) {
                 if (mv::textKeyOf(node).empty())
                     continue;
-                const auto expectation = mv::TextExpectation::create(screen, node, *binding, locale->atlas, scope, groundFor(screen, node));
+                const TextGround textGround = textGroundFor(screen, node);
+                const auto expectation = mv::TextExpectation::create(screen, node, *binding, locale->atlas, scope, textGround.color, textGround.composites);
                 result.outcomes.push_back(own(mv::inkContainment(*framebuffer, *expectation)));
                 result.outcomes.push_back(own(mv::localizedTextPresence(*framebuffer, *expectation)));
             }
@@ -963,6 +1164,18 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         // Written here rather than after the loop, because `pixels` is the target's own storage and
         // the next scope's render overwrites it. A run that failed in three locales needs the frame
         // that failed in each, not three copies of the last one.
+        // Before the diff image and under the same "pixels is the target's own storage" rule: the
+        // next scope's render overwrites it, so a run over three locales needs each frame written
+        // while it is still the frame.
+        if (!options.frameImageDirectory.empty()) {
+            writeFrameImage(result,
+                            options.frameImageDirectory,
+                            screen.id,
+                            scope.name(),
+                            *pixels,
+                            static_cast<std::uint32_t>(screen.surfaceWidth),
+                            static_cast<std::uint32_t>(screen.surfaceHeight));
+        }
         if (!options.diffImageDirectory.empty()) {
             writeDiffImage(result,
                            options.diffImageDirectory,
@@ -998,7 +1211,7 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
 }
 
 RunResult run(const std::filesystem::path& screenDirectory, const std::filesystem::path& artifactRoot) {
-    return run(screenDirectory, RunOptions{.artifactRoot = artifactRoot, .diffImageDirectory = {}});
+    return run(screenDirectory, RunOptions{.artifactRoot = artifactRoot, .diffImageDirectory = {}, .frameImageDirectory = {}});
 }
 
 RunResult run(const std::filesystem::path& screenDirectory) {
@@ -1008,12 +1221,16 @@ RunResult run(const std::filesystem::path& screenDirectory) {
 
 std::string usage() {
     return std::format("usage:\n  {} --screen=<generated/screen/id> --locales=all [--format=json|text]\n"
-                       "  {:{}}  [--diff-image-dir=<dir>]\n\n"
+                       "  {:{}}  [--diff-image-dir=<dir>] [--frame-image-dir=<dir>]\n\n"
                        "Verifies every golden check in every render scope and both mandatory text checks\n"
                        "for every approved locale. The locale manifest cannot be narrowed.\n\n"
                        "--diff-image-dir names where to write <screen>.<scope>.png for each render scope\n"
-                       "that fails. It chooses a location, never an expectation: the same checks run and\n"
-                       "the same status is returned whether or not it is given.\n",
+                       "that fails: the frame dimmed, with each failed obligation outlined.\n\n"
+                       "--frame-image-dir names where to write <screen>.<scope>.frame.png for every render\n"
+                       "scope, pass or fail: the readback as it came back, undimmed and unannotated. This\n"
+                       "is how to look at a screen that verifies.\n\n"
+                       "Both choose a location, never an expectation: the same checks run and the same\n"
+                       "status is returned whether or not either is given.\n",
                        toolName,
                        "",
                        toolName.size());
@@ -1024,6 +1241,7 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
     bool       screenSeen  = false;
     bool       localesSeen = false;
     bool       diffSeen    = false;
+    bool       frameSeen   = false;
     for (std::string_view argument : arguments) {
         if (argument == "--help" || argument == "-h")
             throw cli::UsageError{usage()};
@@ -1056,6 +1274,14 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
                 throw cli::UsageError{"--diff-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
             result.diffImageDirectory = std::filesystem::path{argument.substr(flag.size())};
             diffSeen                  = true;
+            continue;
+        }
+        if (argument.starts_with("--frame-image-dir=")) {
+            constexpr std::string_view flag = "--frame-image-dir=";
+            if (frameSeen || argument.size() == flag.size())
+                throw cli::UsageError{"--frame-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
+            result.frameImageDirectory = std::filesystem::path{argument.substr(flag.size())};
+            frameSeen                  = true;
             continue;
         }
         throw cli::UsageError{"unrecognized argument '" + std::string{argument} + "'\n\n" + usage()};

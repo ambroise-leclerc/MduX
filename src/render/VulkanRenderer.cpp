@@ -391,9 +391,9 @@ std::string_view describe(RenderError error) noexcept {
         return "vkAllocateCommandBuffers failed for the atlas upload";
     case RenderError::AtlasUploadFailed:      return "uploading the atlas failed";
     case RenderError::AtlasExtentMismatch:
-        return "the coverage atlas has a zero extent, or its byte count is not width * height";
+        return "an atlas has a zero extent, or its byte count disagrees with its format and extent";
     case RenderError::SampledRgbaWithCoverageAtlas:
-        return "the frame samples an RGBA atlas, but this renderer holds an R8 coverage sheet";
+        return "the frame samples RGBA, but this renderer has no authored image atlas";
     case RenderError::NullCommandBuffer:      return "command buffer is null";
     case RenderError::FrameExceedsBudget:
         return "draw list is larger than the renderer's budget";
@@ -402,7 +402,7 @@ std::string_view describe(RenderError error) noexcept {
     case RenderError::DuplicateDescriptorBinding:
         return "package declares two descriptors with the same binding number";
     case RenderError::UnsupportedDescriptorContract:
-        return "package must declare exactly one non-array combined image sampler";
+        return "package must declare coverage at set 0 binding 0 and image RGBA at binding 1";
     case RenderError::UnsupportedPushConstantContract:
         return "package must declare one vertex-visible push constant range matching "
                "UiPushConstants";
@@ -443,6 +443,11 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     atlasMemory_ = std::exchange(other.atlasMemory_, VK_NULL_HANDLE);
     atlasView_ = std::exchange(other.atlasView_, VK_NULL_HANDLE);
     atlasSampler_ = std::exchange(other.atlasSampler_, VK_NULL_HANDLE);
+    imageAtlasImage      = std::exchange(other.imageAtlasImage, VK_NULL_HANDLE);
+    imageAtlasMemory     = std::exchange(other.imageAtlasMemory, VK_NULL_HANDLE);
+    imageAtlasView       = std::exchange(other.imageAtlasView, VK_NULL_HANDLE);
+    imageAtlasSampler    = std::exchange(other.imageAtlasSampler, VK_NULL_HANDLE);
+    hasImageAtlas         = std::exchange(other.hasImageAtlas, false);
     descriptorPool_ = std::exchange(other.descriptorPool_, VK_NULL_HANDLE);
     // The set is owned by the pool and freed with it, so it is carried but never freed directly.
     descriptorSet_ = std::exchange(other.descriptorSet_, VK_NULL_HANDLE);
@@ -457,14 +462,10 @@ UiRenderer& UiRenderer::operator=(UiRenderer&& other) noexcept {
     // nothing and every vertex reads a zero viewport. create() returns by value, so *every*
     // renderer is a moved one - this list is not an edge case.
     atlasBinding_ = std::exchange(other.atlasBinding_, 0);
+    imageAtlasBinding = std::exchange(other.imageAtlasBinding, 1);
     pushStages_ = std::exchange(other.pushStages_, 0);
     pushOffset_ = std::exchange(other.pushOffset_, 0);
     pushSize_ = std::exchange(other.pushSize_, 0);
-    // Left out of this list on the first attempt, and the guard then silently never fired: create()
-    // returns by value, so the flag was set on a renderer that was immediately moved from. Exactly
-    // what the note above describes, which is why the test that exercises the guard is what caught
-    // it rather than review.
-    atlasIsCoverageOnly_ = std::exchange(other.atlasIsCoverageOnly_, false);
     return *this;
 }
 
@@ -503,7 +504,23 @@ void UiRenderer::destroy() noexcept {
         // without VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT.
         vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
         descriptorPool_ = VK_NULL_HANDLE;
-        descriptorSet_ = VK_NULL_HANDLE;
+        descriptorSet_  = VK_NULL_HANDLE;
+    }
+    if (imageAtlasSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, imageAtlasSampler, nullptr);
+        imageAtlasSampler = VK_NULL_HANDLE;
+    }
+    if (imageAtlasView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, imageAtlasView, nullptr);
+        imageAtlasView = VK_NULL_HANDLE;
+    }
+    if (imageAtlasImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, imageAtlasImage, nullptr);
+        imageAtlasImage = VK_NULL_HANDLE;
+    }
+    if (imageAtlasMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, imageAtlasMemory, nullptr);
+        imageAtlasMemory = VK_NULL_HANDLE;
     }
     if (atlasSampler_ != VK_NULL_HANDLE) {
         vkDestroySampler(device_, atlasSampler_, nullptr);
@@ -551,11 +568,9 @@ void UiRenderer::destroy() noexcept {
 Result<UiRenderer, RenderError> UiRenderer::create(const VulkanRenderContext& context,
                                                    const shader::PackageView& package,
                                                    const draw::DrawBudget& budget) noexcept {
-    // The 1x1 white default. White is the neutral value: it is the identity for the sampled-RGBA
-    // path and full coverage for the R8 one, so a renderer with no atlas yet behaves correctly
-    // rather than approximately.
-    static constexpr std::array<std::byte, 4> white{std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}};
-    return createInternal(context, package, budget, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, white);
+    static constexpr std::array<std::byte, 1> coverageWhite{std::byte{255}};
+    static constexpr std::array<std::byte, 4> imageWhite{std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}};
+    return createInternal(context, package, budget, coverageWhite, 1, 1, imageWhite, 1, 1, false);
 }
 
 Result<UiRenderer, RenderError> UiRenderer::createWithCoverageAtlas(const VulkanRenderContext& context,
@@ -571,14 +586,51 @@ Result<UiRenderer, RenderError> UiRenderer::createWithCoverageAtlas(const Vulkan
         || atlas.size() != static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
         return err(RenderError::AtlasExtentMismatch);
     }
-    return createInternal(context, package, budget, VK_FORMAT_R8_UNORM, width, height, atlas);
+    static constexpr std::array<std::byte, 4> imageWhite{std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}};
+    return createInternal(context, package, budget, atlas, width, height, imageWhite, 1, 1, false);
+}
+
+Result<UiRenderer, RenderError> UiRenderer::createWithImageAtlas(const VulkanRenderContext& context,
+                                                                 const shader::PackageView& package,
+                                                                 const draw::DrawBudget&    budget,
+                                                                 std::span<const std::byte> pixels,
+                                                                 std::uint32_t              width,
+                                                                 std::uint32_t              height) noexcept {
+    const std::uint64_t expected = static_cast<std::uint64_t>(width) * height * 4u;
+    if (width == 0 || height == 0 || expected != pixels.size()) {
+        return err(RenderError::AtlasExtentMismatch);
+    }
+    static constexpr std::array<std::byte, 1> coverageWhite{std::byte{255}};
+    return createInternal(context, package, budget, coverageWhite, 1, 1, pixels, width, height, true);
+}
+
+Result<UiRenderer, RenderError> UiRenderer::createWithAtlases(const VulkanRenderContext& context,
+                                                              const shader::PackageView& package,
+                                                              const draw::DrawBudget&    budget,
+                                                              std::span<const std::byte> coverage,
+                                                              std::uint32_t              coverageWidth,
+                                                              std::uint32_t              coverageHeight,
+                                                              std::span<const std::byte> image,
+                                                              std::uint32_t              imageWidth,
+                                                              std::uint32_t              imageHeight) noexcept {
+    const std::uint64_t expectedCoverage = static_cast<std::uint64_t>(coverageWidth) * coverageHeight;
+    const std::uint64_t expectedImage    = static_cast<std::uint64_t>(imageWidth) * imageHeight * 4u;
+    if (coverageWidth == 0 || coverageHeight == 0 || imageWidth == 0 || imageHeight == 0 || expectedCoverage != coverage.size()
+        || expectedImage != image.size()) {
+        return err(RenderError::AtlasExtentMismatch);
+    }
+    return createInternal(context, package, budget, coverage, coverageWidth, coverageHeight, image, imageWidth, imageHeight, true);
 }
 
 Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderContext& context,
                                                            const shader::PackageView& package,
-                                                           const draw::DrawBudget& budget, VkFormat atlasFormat,
-                                                           std::uint32_t atlasWidth, std::uint32_t atlasHeight,
-                                                           std::span<const std::byte> atlasPixels) noexcept {
+                                                           const draw::DrawBudget& budget,
+                                                           std::span<const std::byte> coverage,
+                                                           std::uint32_t              coverageWidth, std::uint32_t              coverageHeight,
+                                                           std::span<const std::byte> image,
+                                                           std::uint32_t              imageWidth,
+                                                           std::uint32_t              imageHeight,
+                                                           bool                       imageAtlasProvided) noexcept {
     // Context and budget first: both are cheap to check and neither needs a device call, so a
     // caller's mistake is reported before anything is created.
     if (context.device == VK_NULL_HANDLE) {
@@ -623,7 +675,7 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
     // translated into Vulkan objects.
     //
     // The layout below is built from `package.descriptors`, but everything downstream of it - one
-    // set layout, a pool sized for one combined image sampler, a write to one binding, a push
+    // set layout, a pool sized for two combined image samplers, writes to two bindings, a push
     // constant recorded with a fixed stage and size - assumes a specific shape. Where the package
     // could disagree, it has to be refused here: `vkCreateDescriptorSetLayout` reports duplicate
     // bindings as a validation message far from this code, and a descriptor in set 1 would
@@ -644,15 +696,21 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
         }
     }
 
-    // Exactly one combined image sampler, not an array: that is what the atlas write below
-    // performs and what the pool is sized for. Its binding number comes from the package rather
-    // than being assumed to be 0.
-    if (package.descriptors.size() != 1 ||
-        package.descriptors.front().kind != shader::DescriptorKind::CombinedImageSampler ||
-        package.descriptors.front().count != 1) {
+    // Fixed two-binding contract: R8 coverage at binding 0 and RGBA images at binding 1. The
+    // DrawMode value selects between them in one pipeline, so the per-frame command stream remains
+    // independent of content.
+    if (package.descriptors.size() != 2) {
         return err(RenderError::UnsupportedDescriptorContract);
     }
-    const std::uint32_t atlasBinding = package.descriptors.front().binding;
+    const auto descriptorAt = [&]( std::uint32_t binding) {
+        return std::ranges::find_if(package.descriptors, [binding](const shader::DescriptorBinding& value) {
+            return value.set == 0 && value.binding == binding && value.kind == shader::DescriptorKind::CombinedImageSampler && value.count == 1
+                   && value.stages == shader::fragmentBit;
+        });
+    };
+    if (descriptorAt(0) == package.descriptors.end() || descriptorAt(1) == package.descriptors.end()) {
+        return err(RenderError::UnsupportedDescriptorContract);
+    }
 
     // One push-constant range, matching UiPushConstants exactly and visible to the vertex stage,
     // because record() writes that struct. A range of a different size would have record()
@@ -676,10 +734,9 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
     renderer.device_ = context.device;
     renderer.budget_ = budget;
     renderer.viewport_ = context.viewport;
-    // Derived from the format rather than passed as a flag, so the two cannot disagree: whatever
-    // image this renderer ends up holding is what record() judges a frame against.
-    renderer.atlasIsCoverageOnly_ = (atlasFormat == VK_FORMAT_R8_UNORM);
-    renderer.atlasBinding_ = atlasBinding;
+    renderer.atlasBinding_ = 0;
+    renderer.imageAtlasBinding = 1;
+    renderer.hasImageAtlas = imageAtlasProvided;
     renderer.pushStages_ = pushStages;
     renderer.pushOffset_ = pushOffset;
     renderer.pushSize_ = pushSize;
@@ -906,15 +963,27 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
     renderer.indexMemory_ = indexBuffer->memory;
     renderer.indexMapped_ = indexBuffer->mapped;
 
-    // The default atlas, and the descriptor set that binds it. Without these a draw is undefined
-    // behaviour whatever mode its vertices carry, because the pipeline layout declares a sampler.
-    auto atlas = createAtlasImage(context, atlasFormat, atlasWidth, atlasHeight, atlasPixels);
+    // Both immutable atlases. Keeping independent formats preserves the four-fold R8 text saving
+    // while allowing correct straight-alpha RGBA image sampling in the same frame.
+    auto atlas = createAtlasImage(context, VK_FORMAT_R8_UNORM, coverageWidth, coverageHeight, coverage);
     if (!atlas.has_value()) {
         return err(atlas.error());
     }
     renderer.atlasImage_ = atlas->image;
     renderer.atlasMemory_ = atlas->memory;
     renderer.atlasView_ = atlas->view;
+
+    // Keep authored image bytes in the same UNORM colour space as vertex colours and the current
+    // offscreen/swapchain contract. Decoding only this input as sRGB while writing to an UNORM
+    // target darkens images relative to equally authored solid colours. A future linear-light
+    // pipeline must change every input and output surface together, not only this image view.
+    auto imageAtlas = createAtlasImage(context, VK_FORMAT_R8G8B8A8_UNORM, imageWidth, imageHeight, image);
+    if (!imageAtlas.has_value()) {
+        return err(imageAtlas.error());
+    }
+    renderer.imageAtlasImage  = imageAtlas->image;
+    renderer.imageAtlasMemory = imageAtlas->memory;
+    renderer.imageAtlasView   = imageAtlas->view;
 
     const VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -941,14 +1010,17 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
         VK_SUCCESS) {
         return err(RenderError::SamplerCreationFailed);
     }
+    if (vkCreateSampler(context.device, &samplerInfo, nullptr, &renderer.imageAtlasSampler) != VK_SUCCESS) {
+        return err(RenderError::SamplerCreationFailed);
+    }
 
     // Sized from the package rather than from a literal. The contract check above already
-    // guarantees this is one combined image sampler with count 1, so today these agree - but a
+    // guarantees these are two combined image samplers with count 1, so today these agree - but a
     // package that changes descriptor type is then refused by that check instead of allocating a
     // pool of the wrong type here and failing at vkAllocateDescriptorSets.
     const VkDescriptorPoolSize poolSize{
-        .type = toVulkan(package.descriptors.front().kind),
-        .descriptorCount = package.descriptors.front().count};
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 2};
     const VkDescriptorPoolCreateInfo descriptorPoolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
@@ -975,21 +1047,33 @@ Result<UiRenderer, RenderError> UiRenderer::createInternal(const VulkanRenderCon
         return err(RenderError::DescriptorSetAllocationFailed);
     }
 
-    const VkDescriptorImageInfo imageInfo{
+    const VkDescriptorImageInfo               coverageInfo{
         .sampler = renderer.atlasSampler_,
         .imageView = renderer.atlasView_,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    const VkDescriptorImageInfo               imageInfo{.sampler     = renderer.imageAtlasSampler,
+                                                        .imageView   = renderer.imageAtlasView,
+                                                        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const std::array< VkWriteDescriptorSet, 2> writes{
+        VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                      .pNext = nullptr,
                                      .dstSet = renderer.descriptorSet_,
                                      .dstBinding = renderer.atlasBinding_,
                                      .dstArrayElement = 0,
-                                     .descriptorCount = package.descriptors.front().count,
-                                     .descriptorType = toVulkan(package.descriptors.front().kind),
+                                     .descriptorCount = 1,
+                                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo       = &coverageInfo,.pBufferInfo      = nullptr,.pTexelBufferView = nullptr},
+        VkWriteDescriptorSet{.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .pNext            = nullptr,
+                             .dstSet           = renderer.descriptorSet_,
+                             .dstBinding       = renderer.imageAtlasBinding,
+                             .dstArrayElement  = 0,
+                             .descriptorCount  = 1,
+                             .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                      .pImageInfo = &imageInfo,
                                      .pBufferInfo = nullptr,
-                                     .pTexelBufferView = nullptr};
-    vkUpdateDescriptorSets(context.device, 1, &write, 0, nullptr);
+                                     .pTexelBufferView = nullptr}
+    };
+    vkUpdateDescriptorSets(context.device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     return renderer;
 }
@@ -1010,14 +1094,10 @@ ResultVoid<RenderError> UiRenderer::record(VkCommandBuffer commandBuffer,
         list.commands().size() > budget_.maxCommands) {
         return err(RenderError::FrameExceedsBudget);
     }
-    if (atlasIsCoverageOnly_) {
-        // An R8 image sampled as RGBA returns (coverage, 0, 0, 1): a picture in the wrong colours
-        // rather than a black frame or a crash, so it survives review. Refused here instead.
-        //
-        // The scan is per frame because the mode is per vertex, and there is nowhere earlier to
-        // put it - the list is rebuilt every frame. It is a pass over the same vertices the memcpy
-        // below already touches, so it costs the frame nothing measurable, and it buys a refusal
-        // in place of a screenshot nobody questions.
+    if (!hasImageAtlas) {
+        // The neutral white RGBA texture exists only to keep the fixed descriptor set valid. It
+        // must not turn an unbound Image into a plausible white rectangle, so reject before any
+        // mapped-buffer write or Vulkan command is emitted.
         const auto samplesRgba = [](const draw::UiVertex& vertex) noexcept {
             return vertex.mode == static_cast<std::uint32_t>(draw::DrawMode::SampledRgba);
         };

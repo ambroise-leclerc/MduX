@@ -1,6 +1,21 @@
 [
   {
     "bounds": {
+      "height": 72,
+      "width": 160,
+      "x": 720,
+      "y": 0
+    },
+    "colorToken": "Theme.Colors.Fault",
+    "cvChecks": [
+      "Bounds",
+      "ColorHash"
+    ],
+    "nodeId": "emergency-halt",
+    "textKey": "STR-EM-HALT"
+  },
+  {
+    "bounds": {
       "height": 96,
       "width": 1280,
       "x": 0,

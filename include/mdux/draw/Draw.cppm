@@ -77,6 +77,27 @@ struct UvRect {
     constexpr bool operator==(const UvRect&) const = default;
 };
 
+/**
+ * @brief A position in surface pixels, with a fractional part.
+ *
+ * `core::Rect` is integer, which is the right choice everywhere a rectangle is axis-aligned: an
+ * integer coordinate cannot be rounded two ways by two toolchains. A polyline segment is the first
+ * primitive in this project that is *not* axis-aligned - its quad's corners are the segment's
+ * endpoints displaced along a normal, and that displacement is irrational for all but a handful of
+ * slopes. Rounding it to whole pixels would make a 1px stroke jump between one and two pixels wide
+ * as the slope changed, which is exactly the artefact a stroke width exists to prevent.
+ *
+ * So this type exists to carry the one quantity that cannot be integral, and nothing else. It is
+ * deliberately not a general "float point": no arithmetic operators, because every computation that
+ * produces one belongs to the module that knows what the numbers mean.
+ */
+struct Point2F {
+    float x{0.0F};
+    float y{0.0F};
+
+    constexpr bool operator==(const Point2F&) const = default;
+};
+
 struct UiVertex {
     float x{0.0F};              ///< offset 0
     float y{0.0F};              ///< offset 4
@@ -138,6 +159,7 @@ enum class DrawError : std::uint8_t {
     CommandBudgetExceeded,
     DegenerateRect,          ///< zero or negative width or height
     WrongList,               ///< a rollback marker names a position in a different list, or none
+    DegenerateQuad,          ///< a quad's corners enclose no area, or one of them is not finite
 };
 
 [[nodiscard]] std::string_view describe(DrawError error) noexcept;
@@ -202,6 +224,28 @@ public:
     /// Records an untextured rectangle. The common case, and the only one #124 needs.
     [[nodiscard]] mdux::core::ResultVoid<DrawError> addSolidRect(
         const mdux::core::Rect& rect, mdux::core::ColorRgba8 color) noexcept;
+
+    /**
+     * @brief Records an untextured quadrilateral from four corners, in order.
+     *
+     * The primitive `addSolidRect()` cannot express: a stroke segment between two arbitrary points
+     * is a rectangle rotated by the segment's slope, and an axis-aligned type has no way to say so.
+     * Added for `mdux.medui.trace` (#257) and kept as narrow as that need - `Solid` only, uv zero,
+     * because a *textured* rotated quad would additionally have to decide how the atlas maps onto a
+     * shape whose edges are not axis-aligned, and nothing asks that question yet.
+     *
+     * `corners` are joined in the order given and split into two triangles across the 0-2 diagonal,
+     * exactly as a rectangle is - so a caller must pass them in ring order (each adjacent to the
+     * next), not in a diagonal-first order that would fold the shape into a bowtie.
+     *
+     * Refused as `DegenerateQuad` when any coordinate is not finite, or when the corners enclose no
+     * area. Both are the same defect from a frame's point of view - nothing is drawn - and both are
+     * worth refusing rather than recording: a NaN vertex is undefined behaviour in a rasteriser
+     * rather than an invisible primitive, and it reaches this call the moment a caller normalises a
+     * sample against a zero-width range.
+     */
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> addSolidQuad(
+        const std::array<Point2F, 4>& corners, mdux::core::ColorRgba8 color) noexcept;
 
     /// Sets the clip rectangle applied to subsequent primitives. A change starts a new command.
     void setClip(const mdux::core::Rect& clip) noexcept;
@@ -274,6 +318,15 @@ public:
 
 private:
     DrawList() noexcept = default;
+
+    /// Appends four already-computed vertices as two triangles, or refuses on a budget.
+    ///
+    /// Everything `addRect()` and `addSolidQuad()` do once their own geometry is settled: the three
+    /// budget checks, the fixed 0-1-2 / 0-2-3 split, and extending the current command or starting a
+    /// new one. Shared rather than written twice because the property that matters here is "past the
+    /// checks nothing can fail, so the list never holds a half-recorded primitive" - and a second
+    /// copy of it would be a second place for that to stop being true.
+    [[nodiscard]] mdux::core::ResultVoid<DrawError> appendQuad(const std::array<UiVertex, 4>& corners) noexcept;
 
     std::span<UiVertex> vertices_;
     std::span<Index> indices_;

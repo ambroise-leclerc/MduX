@@ -10,12 +10,13 @@
 // bind and one draw per budget, with no pipeline switching whose cost depends on what the screen
 // happens to contain. The branch is uniform across a primitive because `mode` is flat-qualified.
 //
-// The atlas is bound even for a draw that is entirely solid. A descriptor set that changed shape
+// Both atlases are bound even for a draw that is entirely solid. A descriptor set that changed shape
 // with the content would put a conditional into the renderer's hot path and into its budget,
 // which is the opposite of fixed.
 #version 450
 
-layout(set = 0, binding = 0) uniform sampler2D uAtlas;
+layout(set = 0, binding = 0) uniform sampler2D uCoverageAtlas;
+layout(set = 0, binding = 1) uniform sampler2D uImageAtlas;
 
 layout(location = 0) in vec4 fragColor;
 layout(location = 1) in vec2 fragUv;
@@ -33,8 +34,8 @@ void main() {
         // Coverage modulates alpha only, so a glyph takes its colour from the vertex and its
         // shape from the atlas. Storing coverage in R8 rather than RGBA8 is a four-fold saving
         // on the atlas, which on a device is the difference that matters.
-        outColor = vec4(fragColor.rgb, fragColor.a * texture(uAtlas, fragUv).r);
+        outColor = vec4(fragColor.rgb, fragColor.a * texture(uCoverageAtlas, fragUv).r);
     } else {
-        outColor = fragColor * texture(uAtlas, fragUv);
+        outColor = fragColor * texture(uImageAtlas, fragUv);
     }
 }

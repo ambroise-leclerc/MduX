@@ -1,21 +1,23 @@
 # MduX → TrustSC parity roadmap
 
-> Backlog · ambroise-leclerc/MduX · updated 3 September 2026
-> Epic status re-verified against `develop` @ `51eb779` · 3 September 2026. All thirteen epics were
-> queried on GitHub: eleven closed, two open (`#17`, `#19`). **#16 closed at 5/5 and ships in
-> v0.7.0**, which half-opens Wave 6 — its other epic, #17, remains.
-> Twelve non-epic issues are open: nine are epic children listed in their epic's section below, and
-> three are standalone follow-ups from #255 — `#280`, `#281` and `#282`.
+> Backlog · ambroise-leclerc/MduX · updated 6 September 2026
+> Epic status re-verified against `develop` @ `8c04087` · 6 September 2026. All thirteen epics were
+> queried on GitHub: twelve closed, one open (`#19`). **#17 closed at 6/6 plus its #297 follow-on and
+> ships in v0.8.0**, which closes Wave 6 — #16 shipped in v0.7.0, and #17 is what it was waiting on.
+> **No non-epic issue is open, and no epic child is open.** `#19`'s own children (S1–S6) are all
+> shipped and closed too; the issue itself stays open only because closing an epic is a manual step
+> GitHub does not take on its last child.
 > The divergence table below has its *UI authoring*, *Tests* and *Packaging* rows re-verified on
 > 26 August 2026; the other five date from 17 August 2026 and are not re-checked here.
 
 MduX (C++23 / Vulkan) and TrustSC (Rust) target the same problem — a medical-device UI
 SDK with IEC 62304 Class B/C compliance modelling built in. This is the dependency-ordered
-backlog that closes the gap. Five waves have shipped and a sixth is half-shipped — the renderer
+backlog that closes the gap. All six waves have shipped — the renderer
 draws its first pixel, zero-SOUP ML inference is in the tree, the documentation has been rebuilt from
 what the build actually produces, #14 closed Wave 4 with the font and text pipeline, v0.6.0 closes
-Wave 5 with #15, the compiler that generates the screens it draws, and v0.7.0 adds #16, which checks
-that what the compiler produced is what reaches the screen.
+Wave 5 with #15, the compiler that generates the screens it draws, v0.7.0 adds #16, which checks
+that what the compiler produced is what reaches the screen, and v0.8.0 closes Wave 6 with #17, which
+fills out the rest of the component dictionary that #16's verification checks.
 All twelve of its children have landed — the ADRs,
 the diagnostic registry, the front end, semantic analysis, bounded layout, per-locale text budgets,
 golden references, the canonical package with its C++ emitters, and the `mdux-meduic` compiler with
@@ -32,20 +34,21 @@ screen carries a `t("STR-KEY")` measured against it, #242 has since drawn it —
 runtime joins the compiled screen to a text package and the title reaches the display — and #244 has
 since made that join *authenticated* rather than conventional: a screen carries the digests of the
 text packages it was compiled against, `TextBinding::create()` refuses one it was not, and
-`render()` refuses a binding that another screen approved. What is left
-is the rest of the dictionary, still counted as deferred (#17) - less the two fields #255 taught the
-runtime to paint. The golden sidecar has both consumers it was written for: the static one in
+`render()` refuses a binding that another screen approved. What was left
+was the rest of the dictionary, and #17 has since filled it in end to end: every component the
+dictionary names now draws, and #297 closed the one gap its own last child exposed - a `TextInput`'s
+`charset:` narrowing the source without narrowing the device. The golden sidecar has both consumers it was written for: the static one in
 `ScreenPixelTests` that checks it against the compiled screen, and, since #255, the rendered one
 ADR-012 describes.
 
 | Metric | Count |
 |---|---|
 | Epics | 13 |
-| Delivered | 11 |
-| Remaining | 2 |
-| Waves shipped | 5, plus half of Wave 6 (#16 in v0.7.0; #17 open) |
-| Standalone open issues | 3 (#280, #281, #282) |
-| Open epic children | 9 (#256–#261, #263–#265) |
+| Delivered | 12 |
+| Remaining | 1 (`#19`, all children shipped — see below) |
+| Waves shipped | 6 (#16 in v0.7.0, #17 in v0.8.0) |
+| Standalone open issues | 0 |
+| Open epic children | 0 |
 
 ## The thesis
 
@@ -83,19 +86,19 @@ the whole of Track C.
 
 ### Six waves
 
-An epic opens when every epic it depends on has closed. Five waves have shipped
-(v0.2.0, v0.3.0, v0.4.0, v0.5.0, v0.6.0), one epic per wave closing the dependency it held.
-Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 is half done: #16
-closed at 5/5 and shipped in v0.7.0, and #17 remains. #19 spans waves by design; its S3–S6 follow
-#15.
+An epic opens when every epic it depends on has closed. All six waves have shipped
+(v0.2.0 through v0.8.0), one epic per wave closing the dependency it held.
+Wave 5 was #15, the largest epic of the programme, and it closed at 12/12. Wave 6 shipped in two
+halves: #16 closed at 5/5 in v0.7.0, and #17 closed at 6/6 plus its #297 follow-on in v0.8.0. #19
+spans waves by design; its S3–S6 follow #15, and its own last three children shipped alongside #17.
 
 ```text
-Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 open)
+Wave 1 · shipped v0.2.0     #7 (done)   #11 (done)  #19 (S4–S6 done)
 Wave 2 · shipped v0.3.0     #8 (done)   #9 (done)   #12 (done)
 Wave 3 · shipped v0.4.0     #10 (done)  #13 (done)  #18 (done)
 Wave 4 · shipped v0.5.0     #14 (done)
 Wave 5 · shipped v0.6.0     #15 (done)
-Wave 6 · half-shipped v0.7.0  #16 (done)  #17
+Wave 6 · shipped v0.7.0/v0.8.0  #16 (done, v0.7.0)  #17 (done, v0.8.0)
 ```
 
 #### When v0.6.0 gets cut
@@ -409,7 +412,7 @@ and colour checks are exercisable before a single glyph exists.
 screen's two golden nodes were deferred by the runtime, so the gate this child exists to add would
 have been red on the day it was added. ADR-014 decision 5 is the answer - a `NumericDisplay` and a
 `SignalTrace` paint the field they reserve, in the token their own golden entry names, while the
-reading inside it still waits on #257 and #258. The three cheaper answers (delete the goldens, weaken
+reading inside it waited on #257 and #258 — both shipped since, in v0.8.0. The three cheaper answers (delete the goldens, weaken
 their checks, verify a different screen) are the three #255 forbids by name.
 
 Sequential: each child is blocked by its predecessor. Two things landed after the epic was written
@@ -420,27 +423,64 @@ further content** — the epic's own note calls them fully exercisable at the so
 shipped in v0.6.0 — but they still follow #251, which fixes the derive-don't-trust rule they
 implement. Content is not the constraint; the governing decision is.
 
-#### #17 — Content components · **Open, unblocked**
+#### #17 — Content components · **Done v0.8.0**
 
 The rest of the component dictionary. Two deliberate scope cuts: QOI rather than PNG in v1,
 and no IME — input-method editing is a platform concern that does not belong inside a
-governed renderer.
+governed renderer. Both cuts held: #256 baked QOI on the host only, and #260 gave a `TextInput`
+display and caret and nothing else.
 
-- #256 S1 Image baker and the `Image` component
-- #257 S2 `SignalTrace` — shares the demonstrator's sample ring
-- #258 S3 `NumericDisplay` and `Clock` — **blocked by #219**
-- #259 S4 `StatusIndicator` — has a waiting consumer in the ECG demonstrator
-- #260 S5 `TextInput` (display and caret only)
-- #261 S6 Buttons with requirement binding — touches #219
+- #256 S1 Image baker and the `Image` component — **shipped**; a host-only QOI decoder, RGBA8 the device never parses
+- #257 S2 `SignalTrace` — **shipped**; a waveform expanded on device from a caller-owned ring into the pre-sized vertex budget
+- #258 S3 `NumericDisplay` and `Clock` — **shipped**; live values through a pattern whose slot positions are compile-time constants
+- #259 S4 `StatusIndicator` — **shipped**; the ECG demonstrator binds its classifier's class to one
+- #260 S5 `TextInput` (display and caret only) — **shipped**; a fixed-pitch grid, measured at compile time
+  - #297 — **shipped**; the follow-on that made `charset:` a bound on what the *device* displays and
+    not only a claim about the source, by carrying the resolved code-point ranges in the compiled node
+- #261 S6 Buttons with requirement binding — **shipped**; a face, a closed action, and the requirement it is traced to
 
-Largely independent of one another, unlike #16's. **#256 is the one to start**, depending on nothing
-else here.
+Largely independent of one another, unlike #16's, which is why they landed in that order rather than
+in a forced one.
 
-**#219 orders two of them, and is a prerequisite rather than a nicety.** It closes `ClockFormat` and
+**#219 ordered two of them, and was a prerequisite rather than a nicety.** It closed `ClockFormat` and
 `SystemEvent`. An open format name cannot be *measured*, only looked up, so #258's `Clock` would be
 built against the product-supplied table #195 needs today and then have it removed; and a screen
 that can name any system event can name one nothing implements, which is worst discovered on the
-press of the critical button #261 builds.
+press of the critical button #261 builds. Both held: #258's clock box is measured rather than looked
+up, and #261's `resolvePress()` refuses an action outside the closed set instead of reporting a
+no-op nothing performs.
+
+**#261 closed the epic at 6/6, and #297 — the one gap its last child exposed — shipped alongside it
+in v0.8.0.** Every component the dictionary names now draws: `Panel`, `Label`, `Clock`, `Image`,
+`VulkanViewport`, `SignalTrace`, `Button`, `CriticalButton`, `NumericDisplay`, `StatusIndicator` and
+`TextInput` — eleven of eleven. #16's rendered-truth verification, which shipped a wave earlier
+checking two components that painted only the field they reserved, now has a real reading to check
+in both of them.
+
+#### What v0.8.0 ships
+
+Nineteen commits separate this tag from `v0.7.0`'s back-merge, four of them a governance mechanism
+(#284) with no product row below, alongside the version bump and its re-baked artifacts.
+
+| Merged | PR | Issue | What it changed |
+|---|---|---|---|
+| 4 Sep | #289 | #280 | `ccache` is BMI-aware for Clang modules, closing a local-build corruption path. |
+| 5 Sep | #290 | #281 | An approved locale tag gets a grammar — `en/US` and worse no longer pass. |
+| 5 Sep | #291 | #282 | The rendered-truth gate is asserted as a named step on the Windows leg too. |
+| 5 Sep | #292 | #257 | `SignalTrace` draws its waveform, expanded on device from a caller-owned ring. |
+| 5 Sep | #293 | #256 | `Image`, from a host-only QOI decoder — the first new component since #16 shipped. |
+| 5 Sep | #294 | #258 | `NumericDisplay` and `Clock` draw live values through a compile-time-measured pattern. |
+| 5 Sep | #295 | #259 | `StatusIndicator` draws its state; a bound indicator with no per-state tint is refused. |
+| 5 Sep | #296 | #260 | `TextInput` draws its value and caret on a fixed-pitch grid. |
+| 6 Sep | #298 | #261 | `Button` and `CriticalButton` draw a face and resolve a press — #17's last child. |
+| 6 Sep | #300 | #263 | A machine-readable `.medui` grammar, emitted from the compiler's own tables. |
+| 6 Sep | #301 | #264 | A committed JSON Schema for every recipe kind, checked against every report. |
+| 6 Sep | #302 | #265 | `--dump-ir`, and a generated host-tool manifest — #19's last two children. |
+| 6 Sep | #303 | #297 | A `TextInput`'s `charset:` bounds the device, not only the compiler. |
+
+The first nine are #17 in dependency order — mostly independent, with #219 ordering #258 and #261 as
+noted above. The last four are #19's remaining children plus #297, landing alongside rather than
+blocking on #17: neither epic depends on the other.
 
 ---
 
@@ -461,33 +501,34 @@ application source change. Runs in parallel with all of Track C.
 - #62 `Classifier1D`, fail-closed
 - #63 No heap in `predict`, verified three ways
 - #64 ECG demonstrator and weight-swap test
-- #153 Follow-up: `constexpr` package emitter · **open**
+- #153 Follow-up: `constexpr` package emitter · **closed v0.7.0**
 
-_The nine children closed · 360/360 on `develop`. #153 is a follow-up rather than a tenth child, and
-it is still open: the ML package is the one committed artifact a device build still parses at
-startup, which is the same property #197 gave the compiled screen and #244 has now extended to the
-text it binds. It does not reopen #18 and it does not block a wave._
+_The nine children closed · 360/360 on `develop`. #153 was a follow-up rather than a tenth child: the
+ML package used to be the one committed artifact a device build still parsed at startup, and #271
+closed it — `mdux.ml` emits `constexpr` model packages, the same treatment shaders and screens
+already had. It did not reopen #18 and did not block a wave._
 
-#### #19 — Agent & LLM tooling parity · **Partly done**
+#### #19 — Agent & LLM tooling parity · **All children shipped**
 
 A diagnostic envelope of file, line, code, severity and fix hint is what lets an agent
 fix a `.medui` error without parsing prose. With a published grammar, it is the difference
 between guessing at the DSL and being handed its contract.
 
-AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are present, and
-the stable JSON diagnostic envelope is landed across the tools. What remains is the
-machine-readable contract side, which follows the surfaces it describes.
+AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are present, the stable
+JSON diagnostic envelope is landed across the tools, the `.medui` contract is published as
+machine-readable JSON the compiler emits from its own tables, every recipe kind has a committed JSON
+Schema checked against its own reports, and the compiler's resolved IR is dumpable alongside a
+generated host-tool manifest. Nothing named in this epic remains; the issue itself stays open only
+because closing an epic issue is a separate, manual step from closing its last child.
 
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
 - #118 Stable JSON diagnostic envelope across all tools · _closed_
-- #263 S4 Machine-readable `.medui` grammar and `--explain`
-- #264 S5 JSON Schemas for every recipe kind
-- #265 S6 `--dump-ir` JSON and a generated tool manifest
+- #263 S4 Machine-readable `.medui` grammar and `--explain` — **shipped**; `docs/medui/grammar.json`, emitted from the compiler's own tables
+- #264 S5 JSON Schemas for every recipe kind — **shipped**; `docs/recipes/*.schema.json`, checked against every committed report
+- #265 S6 `--dump-ir` JSON and a generated tool manifest — **shipped**; the resolved IR, and a manifest generated from the build's own registration
 
-_S1–S3 closed. S4–S6 followed #15 and #18 — closed on 23 August and 3 August — so they are
-actionable and were promoted on 28 August 2026. They are independent of one another; #264 needs no
-compiler work and is the cheapest of the three._
+_S1–S6 closed. #19 has no open child._
 
 ---
 
@@ -545,7 +586,7 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Epic status re-verified against `develop` @ `51eb779` · 3 September 2026_
-_13 epics · 11 delivered · Waves 1–5 shipped · Wave 6 half-shipped in v0.7.0 (#16 done, #17 open) · no enforcement gaps outstanding_
-_3 standalone open issues: #280, #281, #282 (all from #255) · 9 open epic children (#256–#261, #263–#265)_
+_Epic status re-verified against `develop` @ `8c04087` · 6 September 2026_
+_13 epics · 12 delivered · all six waves shipped (#16 in v0.7.0, #17 in v0.8.0) · no enforcement gaps outstanding_
+_0 standalone open issues · 0 open epic children · `#19` open only as an epic issue, all its children shipped_
 _All epics on GitHub_

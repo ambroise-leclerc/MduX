@@ -28,16 +28,9 @@ using mdux::core::ResultVoid;
 
 namespace {
 
-constexpr char32_t surrogateFirst = 0xD800;
-constexpr char32_t surrogateLast  = 0xDFFF;
-
 [[nodiscard]] bool isPowerOfTwo(std::uint32_t value) noexcept {
     return value != 0 && (value & (value - 1)) == 0;
 }
-
-/// The largest Unicode scalar value. Above this is not a character at all, so a package naming
-/// one is describing a glyph for something no text can contain.
-constexpr char32_t maxCodePoint = 0x10FFFF;
 
 /// Reads a required integer member, or fails with the error the caller names.
 [[nodiscard]] Result<std::int64_t, SchemaError> requireInt(const json::Value& object, std::string_view key) noexcept {

@@ -400,3 +400,78 @@ const mdux::spec::Register theLocalePolicyIsAskedForNotInferred{
                   })
             .Execute();
     }};
+
+// The two compile-time claims #261 rests on. Both are properties the dictionary and #219 already
+// give this compiler; neither had a scenario naming the component the issue is about, and an
+// unnamed property is one a later edit can take away without a test noticing.
+
+const mdux::spec::Register aCriticalButtonMustDeclareItsRequirement{
+    "A CriticalButton with no requirement: is refused, and the same button with one is accepted",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-critical-button-needs-requirement")
+            .Given("two CriticalButtons differing only in whether they declare a requirement", [] {})
+            .When("the component dictionary is applied to each", [] {})
+            .Then("the untraced one is MEDUI-E012 naming the field, and the traced one is accepted",
+                  [] {
+                      constexpr std::string_view untraced = R"(Screen Halt {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    CriticalButton { id: stop; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: TriggerHalt; }
+})";
+                      constexpr std::string_view traced   = R"(Screen Halt {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    CriticalButton { id: stop; requirement: "REQ-1"; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: TriggerHalt; }
+})";
+
+                      const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
+
+                      const md::SemanticResult missing = analyze(untraced, themes, packages);
+                      const cli::Diagnostic*   found   = find(missing, md::Code::MissingRequiredField);
+                      mdux::spec::Checks       checks;
+                      checks.expect(!missing.ok(), "a critical control with nothing to trace it to is not a screen this compiler emits");
+                      checks.expect(count(missing, md::Code::MissingRequiredField) == 1, "the omission is reported once");
+                      checks.expect(found != nullptr && found->message.find("requirement") != std::string::npos,
+                                    "and the diagnostic names the field rather than the component alone");
+
+                      // The other half of the claim: nothing about a CriticalButton is refused in
+                      // general, so the scenario cannot pass because the component stopped
+                      // compiling for some unrelated reason.
+                      checks.expect(analyze(traced, themes, packages).ok(), "the same button with a requirement compiles");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aPressActionMustBeOneTheContractCloses{
+    "A CriticalButton's on_press must name a member of the closed system-event set",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-on-press-is-closed")
+            .Given("a CriticalButton whose on_press is a well-formed name outside the set", [] {})
+            .When("the closed-set membership check runs", [] {})
+            .Then("it is MEDUI-E034 and not MEDUI-E033, and the members are named in the message",
+                  [] {
+                      // The distinction is the fix. E033 means the *kind* is wrong - `on_press: 42`
+                      // - and sends an author to re-read the grammar; E034 means the kind is right
+                      // and only the membership is wrong, which is a screen naming an action nothing
+                      // implements. #17 says where that is otherwise discovered: on the press.
+                      constexpr std::string_view                   source = R"(Screen Halt {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    CriticalButton { id: stop; requirement: "REQ-1"; width: 80px; height: 24px; label: t("STR-STOP"); color: Theme.Colors.Title; on_press: HaltNow; }
+})";
+                      const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                      const std::array<mdux::text::TextPackage, 1> packages{package("en-US", {"STR-STOP"})};
+                      const md::SemanticResult                     result  = analyze(source, themes, packages);
+                      const cli::Diagnostic*                       outside = find(result, md::Code::NamedValueOutsideSet);
+
+                      mdux::spec::Checks checks;
+                      checks.expect(result.diagnostics.size() == 1, "one finding, not a kind diagnostic as well");
+                      checks.expect(count(result, md::Code::NamedValueOutsideSet) == 1, "the unimplemented action reports E034");
+                      checks.expect(count(result, md::Code::FieldValueKind) == 0, "and not E033, which would send the author to the wrong fix");
+                      checks.expect(outside != nullptr && outside->message.find("TriggerHalt") != std::string::npos,
+                                    "the message lists the members, so the fix needs no second document");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

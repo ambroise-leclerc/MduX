@@ -511,6 +511,7 @@ public:
      * @param screen the compiled screen the sidecar was emitted beside
      * @param scope  the render scope this obligation is discharged in
      * @param ground what this node's rectangle shows when the node paints nothing
+     * @param composites how many layers the runtime paints over that ground for this node; see below
      *
      * Refuses a dangling node id, a rectangle or a duplicated name that disagrees with the node, an
      * empty or non-canonical `cvChecks`, a `ColorHash` with no colour token to compare against, and
@@ -519,9 +520,26 @@ public:
      * `ground` is the driver's resolved value - its fixed clear colour, or the tint of the compiled
      * panel beneath this node - and never a colour read back out of the frame under test. See this
      * file's header for why a check needs it as well as the tint.
+     *
+     * ## `composites`, and why one was the wrong constant
+     *
+     * `colorHash()` allows one UNORM step per composite the device performed, because a device blends
+     * in floating point and quantises back to eight bits at every one of them. Until #261 that number
+     * was fixed at one, which was right while every node a golden pinned was painted in a single
+     * composite - and a bound `Button` is the first that is not, painting its field and then its word
+     * as one tint over one ground at two coverages.
+     *
+     * **One is still the default, and still exact enough**, because a wide-span channel loses almost
+     * nothing to the slack: what makes the second step necessary is a channel whose ground and tint
+     * are close, where one step of rounding implies a wide interval of coverage. `couldBeBlend()`
+     * carries the worked example. A caller that does not know the depth should pass nothing rather
+     * than guess high: slack granted where none is needed is a wrong tint waved through.
      */
-    [[nodiscard]] static mdux::core::Result<GoldenExpectation, VerifyError>
-    create(const GoldenEntry& entry, const mdux::medui::ScreenPackage& screen, RenderScope scope, mdux::core::ColorRgba8 ground) noexcept;
+    [[nodiscard]] static mdux::core::Result<GoldenExpectation, VerifyError> create(const GoldenEntry&                entry,
+                                                                                   const mdux::medui::ScreenPackage& screen,
+                                                                                   RenderScope                       scope,
+                                                                                   mdux::core::ColorRgba8            ground,
+                                                                                   std::size_t                       composites = 1) noexcept;
 
     /// The compiled node the golden names. Never null for an expectation that exists.
     [[nodiscard]] const mdux::medui::CompiledNode& node() const noexcept {
@@ -552,6 +570,11 @@ public:
     [[nodiscard]] std::span<const CvCheck> checks() const noexcept {
         return checks_;
     }
+    /// How many layers the runtime paints over the ground for this node, and therefore how many
+    /// UNORM steps of device rounding `colorHash()` allows. Never zero.
+    [[nodiscard]] std::size_t composites() const noexcept {
+        return composites_;
+    }
     /// Whether the author opted this node into `check`.
     [[nodiscard]] bool declares(CvCheck check) const noexcept {
         return std::ranges::find(checks_, check) != checks_.end();
@@ -563,8 +586,9 @@ private:
                       std::span<const CvCheck>         checks,
                       mdux::core::ColorRgba8           ground,
                       bool                             hasTint,
-                      mdux::core::ColorRgba8           tint) noexcept
-        : node_{node}, scope_{scope}, checks_{checks}, ground_{ground}, tint_{tint}, hasTint_{hasTint} {}
+                      mdux::core::ColorRgba8           tint,
+                      std::size_t                      composites) noexcept
+        : node_{node}, scope_{scope}, checks_{checks}, ground_{ground}, tint_{tint}, hasTint_{hasTint}, composites_{composites} {}
 
     const mdux::medui::CompiledNode* node_{nullptr};
     RenderScope                      scope_{RenderScope::localeFree()};
@@ -572,6 +596,7 @@ private:
     mdux::core::ColorRgba8           ground_{};
     mdux::core::ColorRgba8           tint_{};
     bool                             hasTint_{false};
+    std::size_t                      composites_{1};
 };
 
 static_assert(!std::is_aggregate_v<GoldenExpectation>, "a GoldenExpectation must only be obtainable through create()");
@@ -652,6 +677,7 @@ public:
      * @param atlas   the coverage sheet the bound font package describes
      * @param scope   the render scope; must name the locale the binding carries
      * @param ground  what this node's rectangle shows where the run paints nothing
+     * @param groundComposites how many device composites produced that ground; see below
      *
      * Refuses an unbound binding, a binding the screen does not approve, a node the screen does not
      * contain, a scope naming a different locale from the bound package's, a node carrying no text
@@ -665,13 +691,33 @@ public:
      * find, so a pass would be indistinguishable from a screen that lost its text. ADR-014 decision
      * 3 says a check this build cannot perform fails, so this refuses rather than passing vacuously,
      * and the screen is what changes.
+     *
+     * ## `groundComposites`, and why zero is not the only honest answer
+     *
+     * Both text checks ask whether the pixels a glyph does not cover are still the ground, and until
+     * #261 that was an **exact** comparison, correctly: every ground this driver could supply was a
+     * value no device had computed - the clear colour, or an opaque panel, which `SRC_ALPHA` blending
+     * reproduces byte for byte.
+     *
+     * A `Button` and a `CriticalButton` paint their own field before their label goes over it, so
+     * the pixels under that label are a composite the *device* produced, and a device is allowed to
+     * produce it in whatever precision its blend unit has. Measured on lavapipe and radv, a field at
+     * `boundFieldCoverage` lands one UNORM step below the integer `blend()` predicts on the channel
+     * whose exact value falls on a half - which is the same last-bit disagreement this file already
+     * admits for a glyph, arising in the same way and for the same reason.
+     *
+     * So the ground carries the number of composites that made it, and the checks allow that many
+     * steps on a ground pixel and add it to the glyph allowance on a painted one. **Zero keeps the
+     * old exactness**, which is what every existing caller passes and what a clear colour or a panel
+     * deserves: a slack granted where none is needed is a wrong tint waved through.
      */
     [[nodiscard]] static mdux::core::Result<TextExpectation, VerifyError> create(const mdux::medui::ScreenPackage& screen,
                                                                                  const mdux::medui::CompiledNode&  node,
                                                                                  const mdux::medui::TextBinding&   binding,
                                                                                  std::span<const std::byte>        atlas,
                                                                                  RenderScope                       scope,
-                                                                                 mdux::core::ColorRgba8            ground) noexcept;
+                                                                                 mdux::core::ColorRgba8            ground,
+                                                                                 std::size_t                       groundComposites = 0) noexcept;
 
     /**
      * @brief Builds a view over caller-supplied parts, establishing no provenance whatever.
@@ -699,7 +745,8 @@ public:
                                                                                           std::span<const std::byte>       records,
                                                                                           const mdux::font::FontPackage&   font,
                                                                                           std::span<const std::byte>       atlas,
-                                                                                          mdux::core::ColorRgba8           ground) noexcept;
+                                                                                          mdux::core::ColorRgba8           ground,
+                                                                                          std::size_t                      groundComposites = 0) noexcept;
 
     [[nodiscard]] const mdux::medui::CompiledNode& node() const noexcept {
         return *node_;
@@ -736,6 +783,11 @@ public:
     [[nodiscard]] mdux::core::ColorRgba8 ground() const noexcept {
         return ground_;
     }
+    /// How many device composites produced `ground()`. Zero means it was never blended, and a
+    /// ground pixel then has to equal it exactly.
+    [[nodiscard]] std::size_t groundComposites() const noexcept {
+        return groundComposites_;
+    }
     /// How many records the run holds, blanks included.
     [[nodiscard]] std::size_t glyphCount() const noexcept {
         return records_.size() / mdux::text::draw::recordSize;
@@ -765,7 +817,8 @@ private:
                                                                                 std::span<const std::byte>       records,
                                                                                 const mdux::font::FontPackage&   font,
                                                                                 std::span<const std::byte>       atlas,
-                                                                                mdux::core::ColorRgba8           ground) noexcept;
+                                                                                mdux::core::ColorRgba8           ground,
+                                                                                std::size_t                      groundComposites) noexcept;
 
     TextExpectation(const mdux::medui::CompiledNode* node,
                     RenderScope                      scope,
@@ -776,7 +829,8 @@ private:
                     mdux::core::ColorRgba8           ground,
                     mdux::medui::NodeRect            ink,
                     mdux::core::Px                   originX,
-                    mdux::core::Px                   originY) noexcept
+                    mdux::core::Px                   originY,
+                    std::size_t                      groundComposites) noexcept
         : node_{node},
           scope_{scope},
           records_{records},
@@ -786,7 +840,8 @@ private:
           ground_{ground},
           ink_{ink},
           originX_{originX},
-          originY_{originY} {}
+          originY_{originY},
+          groundComposites_{groundComposites} {}
 
     const mdux::medui::CompiledNode* node_{nullptr};
     RenderScope                      scope_{RenderScope::localeFree()};
@@ -798,6 +853,7 @@ private:
     mdux::medui::NodeRect            ink_{};
     mdux::core::Px                   originX_{0};
     mdux::core::Px                   originY_{0};
+    std::size_t                      groundComposites_{0};
 };
 
 static_assert(!std::is_aggregate_v<TextExpectation>, "a TextExpectation must only be obtainable through create()");
@@ -934,12 +990,21 @@ struct CheckOutcome {
  * the box the artifacts predicted, which is what a clipped, moved or partially drawn run looks like.
  *
  * An **extent** claim, deliberately and only. It says the run's ink occupies the box the artifacts
- * predict and no more; it does not say the glyphs in that box are the approved locale's, and a few
+ * predict, to the precision the frame can distinguish - see the note under the declaration for the
+ * band it cannot - and no more; it does not say the glyphs in that box are the approved locale's, and a few
  * pixels at the box's corners would preserve the extent while saying nothing about what is between
  * them. Establishing the run's shape is `localizedTextPresence()`'s job, which is why that one
  * carries the coverage sheet and this one does not.
  */
 [[nodiscard]] CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
+
+// The rendered half is a containment rather than an equality whenever the ground carries composites,
+// and the reason is a limit rather than a preference: over a field the device itself composited, a
+// glyph texel at coverage 1 or 2 lands within one UNORM step of that field, so it cannot be told
+// from a field pixel the device rounded. The check therefore measures what was *certainly* painted
+// and what was *possibly* painted and asks that the prediction sit between them. With an
+// uncomposited ground the two coincide and the equality is unchanged.
+
 
 /**
  * @brief `LocalizedTextPresence`: the approved locale's bound run is the one on screen.

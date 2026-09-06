@@ -10,6 +10,7 @@ module mdux.tools.medui.package;
 import std;
 import mdux.draw;
 import mdux.evidence.digest;
+import mdux.font.schema;
 import mdux.evidence.json;
 import mdux.evidence.report;
 import mdux.medui.schema;
@@ -17,6 +18,7 @@ import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
+import mdux.tools.medui.textbudget;
 
 namespace mdux::tools::medui {
 
@@ -111,6 +113,33 @@ constexpr std::string_view schemaRefused = "SCP005";
 }
 
 /**
+ * @brief The code points a `TextInput`'s `charset:` name stands for (#297).
+ *
+ * Resolved here rather than carried as a name, which is the whole of what #297 changes: a device
+ * handed a name has nothing to compare a character against, while a device handed the ranges needs
+ * no table shipped beside the screen.
+ *
+ * An unresolvable name **throws**, as every other bypassed gate in this file does. The budget stage
+ * refuses one with `MEDUI-E053` - "'{}' is not in the governed dynamic-text table, so what '{}' can
+ * produce is not bounded" - and a screen carrying a `TextInput` always reaches that stage, because
+ * `needsTextBudget()` includes the component. So a name arriving here unresolved means the compile
+ * ran without its gates, and the one thing this must not do is quietly emit an empty set: that is a
+ * node whose narrowing is silently gone, which is the state before #297 rather than a diagnostic.
+ */
+[[nodiscard]] std::span<const mdux::font::CharsetRange>
+resolveCharset(std::string_view declared, std::span<const DynamicTextRule> charsets, std::string_view nodeId) {
+    if (declared.empty()) {
+        return {};
+    }
+    const auto found = std::ranges::find(charsets, declared, &DynamicTextRule::name);
+    if (found == charsets.end()) {
+        throw std::logic_error(
+            std::format("'{}' names charset '{}', which the dynamic-text table does not define: the text-budget stage is a required gate", nodeId, declared));
+    }
+    return found->produces;
+}
+
+/**
  * @brief The typed payload for one resolved node.
  *
  * The mapping from a dictionary field to a spec member is the whole content of this function, and
@@ -118,7 +147,7 @@ constexpr std::string_view schemaRefused = "SCP005";
  * `Button` are both a `textKey`, while `source` means a data stream on one component and an image
  * package on another. A table keyed by field name could not express that.
  */
-[[nodiscard]] ms::NodePayload payloadFor(const ResolvedNode& resolved, ScreenDocument& document) {
+[[nodiscard]] ms::NodePayload payloadFor(const ResolvedNode& resolved, ScreenDocument& document, std::span<const DynamicTextRule> charsets) {
     const ast::Node& source = resolved.source;
     const auto       name   = [&](std::string_view field) {
         return document.intern(textOf(source, field));
@@ -175,11 +204,13 @@ constexpr std::string_view schemaRefused = "SCP005";
                                        .colorTokens = document.internList(listOf(source, "colors"))};
     }
     if (resolved.component == "TextInput") {
-        return ms::TextInputSpec{.source      = name("source"),
-                                 .colorToken  = name("color"),
-                                 .maxLength   = numberOf(source, "max_length"),
-                                 .charset     = name("charset"),
-                                 .requirement = name("requirement")};
+        const std::string_view declared = name("charset");
+        return ms::TextInputSpec{.source        = name("source"),
+                                 .colorToken    = name("color"),
+                                 .maxLength     = numberOf(source, "max_length"),
+                                 .charset       = declared,
+                                 .requirement   = name("requirement"),
+                                 .charsetRanges = document.internRanges(resolveCharset(declared, charsets, resolved.id))};
     }
     // `Row` reaches here only if the solver stopped flattening: a Row contributes its children and
     // at most one synthetic background, never itself. Anything else is a component semantic
@@ -243,6 +274,21 @@ template <typename Rect>
     return json::Value::array(std::move(elements));
 }
 
+/// A resolved charset, as the font package's own `restrictedCharset` is written: `first` and `last`
+/// per range, and the ranges in the order the set is read in. One spelling for one shape, so a
+/// reader of either file needs one reader.
+[[nodiscard]] json::Value writeRanges(std::span<const mdux::font::CharsetRange> ranges) {
+    std::vector<json::Value> elements;
+    elements.reserve(ranges.size());
+    for (const mdux::font::CharsetRange& range : ranges) {
+        json::Value entry = json::Value::emptyObject();
+        put(entry, "first", json::Value::unsignedInteger(static_cast<std::uint64_t>(range.first)));
+        put(entry, "last", json::Value::unsignedInteger(static_cast<std::uint64_t>(range.last)));
+        elements.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(elements));
+}
+
 [[nodiscard]] std::string hexOf(const mdux::evidence::Digest& digest) {
     const std::array<char, 64> hex = mdux::evidence::toHex(digest);
     return {hex.data(), hex.size()};
@@ -256,6 +302,20 @@ template <typename Rect>
         put(entry, "locale", json::Value::string(std::string{approval.locale}));
         put(entry, "packageId", json::Value::string(std::string{approval.packageId}));
         put(entry, "packageSha256", json::Value::string(hexOf(approval.packageSha256)));
+        entries.push_back(std::move(entry));
+    }
+    return json::Value::array(std::move(entries));
+}
+
+[[nodiscard]] json::Value writeImageApprovals(std::span<const ms::ImagePackageApproval> approvals) {
+    std::vector<json::Value> entries;
+    entries.reserve(approvals.size());
+    for (const ms::ImagePackageApproval& approval : approvals) {
+        json::Value entry = json::Value::emptyObject();
+        put(entry, "height", json::Value::unsignedInteger(approval.height));
+        put(entry, "packageId", json::Value::string(std::string{approval.packageId}));
+        put(entry, "packageSha256", json::Value::string(hexOf(approval.packageSha256)));
+        put(entry, "width", json::Value::unsignedInteger(approval.width));
         entries.push_back(std::move(entry));
     }
     return json::Value::array(std::move(entries));
@@ -303,6 +363,12 @@ template <typename Rect>
         put(spec, "stateKeys", writeNames(status->stateKeys));
     } else if (const auto* input = std::get_if<ms::TextInputSpec>(&payload)) {
         putName(spec, "charset", input->charset);
+        // Omitted with the name rather than written empty, for `putName()`'s reason and one more:
+        // `validate()` refuses a node carrying one of the pair without the other, so an artifact in
+        // which they could disagree is one this writer must not be able to produce.
+        if (!input->charsetRanges.empty()) {
+            put(spec, "charsetRanges", writeRanges(input->charsetRanges));
+        }
         putName(spec, "colorToken", input->colorToken);
         put(spec, "maxLength", json::Value::integer(input->maxLength));
         putName(spec, "requirement", input->requirement);
@@ -328,6 +394,17 @@ std::string_view ScreenDocument::intern(std::string_view text) {
     return text_.emplace_back(text);
 }
 
+std::span<const mdux::font::CharsetRange> ScreenDocument::internRanges(std::span<const mdux::font::CharsetRange> ranges) {
+    if (ranges.empty()) {
+        // A node that narrows nothing owns no set, exactly as `intern()` stores nothing for an
+        // absent name. `admits()` reads the empty span as "this node declared no charset", which is
+        // the reading `ScreenPackage::validate()` keeps honest.
+        return {};
+    }
+    std::vector<mdux::font::CharsetRange>& stored = charsets_.emplace_back(ranges.begin(), ranges.end());
+    return stored;
+}
+
 std::span<const std::string_view> ScreenDocument::internList(std::span<const std::string> items) {
     std::vector<std::string_view>& views = lists_.emplace_back();
     views.reserve(items.size());
@@ -337,11 +414,12 @@ std::span<const std::string_view> ScreenDocument::internList(std::span<const std
     return views;
 }
 
-void ScreenDocument::setHeader(std::string_view                         id,
-                               std::int32_t                             surfaceWidth,
-                               std::int32_t                             surfaceHeight,
-                               mdux::draw::DrawBudget                   budget,
-                               std::span<const ms::TextPackageApproval> approvedTextPackages) {
+void ScreenDocument::setHeader(std::string_view                          id,
+                               std::int32_t                              surfaceWidth,
+                               std::int32_t                              surfaceHeight,
+                               mdux::draw::DrawBudget                    budget,
+                               std::span<const ms::TextPackageApproval>  approvedTextPackages,
+                               std::span<const ms::ImagePackageApproval> approvedImagePackages) {
     id_            = intern(id);
     surfaceWidth_  = surfaceWidth;
     surfaceHeight_ = surfaceHeight;
@@ -355,6 +433,15 @@ void ScreenDocument::setHeader(std::string_view                         id,
             ms::TextPackageApproval{.locale = intern(approval.locale), .packageId = intern(approval.packageId), .packageSha256 = approval.packageSha256});
     }
     approvedTextPackages_ = std::move(replacements);
+    std::vector<ms::ImagePackageApproval> imageReplacements;
+    imageReplacements.reserve(approvedImagePackages.size());
+    for (const ms::ImagePackageApproval& approval : approvedImagePackages) {
+        imageReplacements.push_back(ms::ImagePackageApproval{.packageId     = intern(approval.packageId),
+                                                             .packageSha256 = approval.packageSha256,
+                                                             .width         = approval.width,
+                                                             .height        = approval.height});
+    }
+    storedImagePackages = std::move(imageReplacements);
 }
 
 void ScreenDocument::addNode(ms::CompiledNode node) {
@@ -362,13 +449,14 @@ void ScreenDocument::addNode(ms::CompiledNode node) {
 }
 
 ms::ScreenPackage ScreenDocument::package() const noexcept {
-    return ms::ScreenPackage{.id                   = id_,
-                             .schemaVersion        = mdux::evidence::kSchemaVersion,
-                             .surfaceWidth         = surfaceWidth_,
-                             .surfaceHeight        = surfaceHeight_,
-                             .approvedTextPackages = approvedTextPackages_,
-                             .nodes                = nodes_,
-                             .budget               = budget_};
+    return ms::ScreenPackage{.id                    = id_,
+                             .schemaVersion         = mdux::evidence::kSchemaVersion,
+                             .surfaceWidth          = surfaceWidth_,
+                             .surfaceHeight         = surfaceHeight_,
+                             .approvedTextPackages  = approvedTextPackages_,
+                             .approvedImagePackages = storedImagePackages,
+                             .nodes                 = nodes_,
+                             .budget                = budget_};
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +473,8 @@ ScreenDocument buildPackage(const LayoutResult& layout, PackageInputs inputs) {
                        narrow(layout.surfaceWidth, "surface width"),
                        narrow(layout.surfaceHeight, "surface height"),
                        inputs.budget,
-                       inputs.approvedTextPackages);
+                       inputs.approvedTextPackages,
+                       inputs.approvedImagePackages);
 
     for (const ResolvedNode& resolved : layout.nodes) {
         document.addNode(ms::CompiledNode{
@@ -394,7 +483,7 @@ ScreenDocument buildPackage(const LayoutResult& layout, PackageInputs inputs) {
                                     .y      = narrow(resolved.bounds.y, "node y"),
                                     .width  = narrow(resolved.bounds.width, "node width"),
                                     .height = narrow(resolved.bounds.height, "node height")},
-            .payload = payloadFor(resolved, document)
+            .payload = payloadFor(resolved, document, inputs.charsets)
         });
     }
 
@@ -431,6 +520,7 @@ std::string writePackage(const ms::ScreenPackage& package) {
 
     json::Value root = json::Value::emptyObject();
     put(root, "approvedTextPackages", writeApprovals(package.approvedTextPackages));
+    put(root, "approvedImagePackages", writeImageApprovals(package.approvedImagePackages));
     put(root, "budget", std::move(budget));
     put(root, "id", json::Value::string(std::string{package.id}));
     put(root, "kind", json::Value::string(std::string{ms::packageKind}));
@@ -597,6 +687,61 @@ private:
 }
 
 /// A list-valued spec member, absent meaning empty.
+/// Reads a resolved charset back, or nothing when the member is absent - which is a node that
+/// narrowed nothing, exactly as an absent name is a name it does not have.
+///
+/// Every range is checked against what a code point *is*, before one becomes a `char32_t`. Two
+/// shapes, and they fail differently:
+///
+/// - A value outside 0..U+10FFFF. `char32_t` is unsigned, so a negative `first` cast into one would
+///   arrive as a range near the top of the plane - a set the node never declared, silently, in the
+///   one file that is supposed to make the set reviewable.
+/// - A range admitting a surrogate. Those survive the cast intact, so nothing is lost quietly; what
+///   is lost is the diagnostic. `ScreenPackage::validate()` refuses both shapes, but as `SCP005`
+///   "the screen the file describes is not valid" - which names neither the member nor the value,
+///   and this function's whole reason for existing is that it can name both.
+///
+/// The surrogate test is the *overlap* `validate()` uses rather than a test on each endpoint, and
+/// the difference is not pedantic: `0..65535` contains the whole block while neither end is in it.
+[[nodiscard]] std::optional<std::vector<mdux::font::CharsetRange>>
+readRanges(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
+    const json::Value* member = object.find(key);
+    if (member == nullptr) {
+        return std::vector<mdux::font::CharsetRange>{};
+    }
+    if (member->kind() != json::Value::Kind::Array) {
+        sink.fail(memberWrong, std::format("{} member '{}' is not an array", what, key));
+        return std::nullopt;
+    }
+    std::vector<mdux::font::CharsetRange> ranges;
+    ranges.reserve(member->elements().size());
+    for (const json::Value& element : member->elements()) {
+        static constexpr std::array<std::string_view, 2> allowed{"first", "last"};
+        if (!expectObject(element, std::format("{} member '{}'", what, key), allowed, sink)) {
+            return std::nullopt;
+        }
+        const auto first = readInteger(element, "first", what, sink);
+        const auto last  = readInteger(element, "last", what, sink);
+        if (!first.has_value() || !last.has_value()) {
+            return std::nullopt;
+        }
+        for (const std::int64_t point : {*first, *last}) {
+            if (point < 0 || point > static_cast<std::int64_t>(mdux::font::maxCodePoint)) {
+                sink.fail(memberWrong, std::format("{} member '{}' names {}, which is past the last Unicode scalar value", what, key, point));
+                return std::nullopt;
+            }
+        }
+        if (*first <= static_cast<std::int64_t>(mdux::font::surrogateLast) && *last >= static_cast<std::int64_t>(mdux::font::surrogateFirst)) {
+            sink.fail(
+                memberWrong,
+                std::format("{} member '{}' names the range {}..{}, which admits a surrogate and so is not a set of characters", what, key, *first, *last));
+            return std::nullopt;
+        }
+        ranges.push_back(mdux::font::CharsetRange{.first = static_cast<char32_t>(*first), .last = static_cast<char32_t>(*last)});
+    }
+    return ranges;
+}
+
 [[nodiscard]] std::optional<std::vector<std::string>> readNames(const json::Value& object, std::string_view key, std::string_view what, const Sink& sink) {
     const json::Value* member = object.find(key);
     if (member == nullptr) {
@@ -668,7 +813,7 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
     static constexpr std::array<std::string_view, 4> criticalMembers{"colorToken", "labelKey", "onPress", "requirement"};
     static constexpr std::array<std::string_view, 4> numericMembers{"colorToken", "requirement", "source", "templateId"};
     static constexpr std::array<std::string_view, 4> statusMembers{"colorTokens", "requirement", "source", "stateKeys"};
-    static constexpr std::array<std::string_view, 5> inputMembers{"charset", "colorToken", "maxLength", "requirement", "source"};
+    static constexpr std::array<std::string_view, 6> inputMembers{"charset", "charsetRanges", "colorToken", "maxLength", "requirement", "source"};
 
     // Interns one spec name. The member set has already been checked by `expectObject()` on the
     // branch that calls this, so what remains is reading the names the kind admits.
@@ -827,10 +972,17 @@ readSpec(const json::Value& node, std::string_view kind, std::string_view what, 
         const auto maxLength   = readInteger(*spec, "maxLength", where, sink);
         const auto charset     = name("charset");
         const auto requirement = name("requirement");
-        if (!source.has_value() || !colorToken.has_value() || !maxLength.has_value() || !charset.has_value() || !requirement.has_value()) {
+        const auto ranges      = readRanges(*spec, "charsetRanges", where, sink);
+        if (!source.has_value() || !colorToken.has_value() || !maxLength.has_value() || !charset.has_value() || !requirement.has_value()
+            || !ranges.has_value()) {
             return false;
         }
-        payload = ms::TextInputSpec{.source = *source, .colorToken = *colorToken, .maxLength = *maxLength, .charset = *charset, .requirement = *requirement};
+        payload = ms::TextInputSpec{.source        = *source,
+                                    .colorToken    = *colorToken,
+                                    .maxLength     = *maxLength,
+                                    .charset       = *charset,
+                                    .requirement   = *requirement,
+                                    .charsetRanges = document.internRanges(*ranges)};
         return true;
     }
     return sink.fail(kindUnknown,
@@ -852,11 +1004,12 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         return result;
     }
 
-    static constexpr std::array<std::string_view, 8>
-        rootMembers{"approvedTextPackages", "budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
+    static constexpr std::array<std::string_view, 9>
+        rootMembers{"approvedImagePackages", "approvedTextPackages", "budget", "id", "kind", "nodes", "schemaVersion", "surfaceHeight", "surfaceWidth"};
     static constexpr std::array<std::string_view, 3> budgetMembers{"maxCommands", "maxIndices", "maxVertices"};
     static constexpr std::array<std::string_view, 4> nodeMembers{"bounds", "id", "kind", "spec"};
     static constexpr std::array<std::string_view, 3> approvalMembers{"locale", "packageId", "packageSha256"};
+    static constexpr std::array<std::string_view, 4> imageApprovalMembers{"height", "packageId", "packageSha256", "width"};
 
     const json::Value& root = *parsed;
     if (!expectObject(root, "the package", rootMembers, sink)) {
@@ -924,12 +1077,42 @@ PackageReadResult readPackage(std::string_view text, std::string file) {
         approvals.push_back(ms::TextPackageApproval{.locale = approvalLocales.back(), .packageId = approvalPackageIds.back(), .packageSha256 = *packageSha256});
     }
 
+    const json::Value* imageApprovalsValue = root.find("approvedImagePackages");
+    if (imageApprovalsValue != nullptr && imageApprovalsValue->kind() != json::Value::Kind::Array) {
+        sink.fail(memberWrong, "the package member 'approvedImagePackages' is not an array");
+        return result;
+    }
+    std::vector<ms::ImagePackageApproval> imageApprovals;
+    std::vector<std::string>              imageApprovalPackageIds;
+    const std::span<const json::Value>    imageApprovalElements = imageApprovalsValue == nullptr ? std::span<const json::Value>{}
+                                                                                                 : imageApprovalsValue->elements();
+    imageApprovals.reserve(imageApprovalElements.size());
+    imageApprovalPackageIds.reserve(imageApprovalElements.size());
+    for (std::size_t index = 0; index < imageApprovalElements.size(); ++index) {
+        const json::Value& entry = imageApprovalElements[index];
+        const std::string  what  = std::format("approved image package {}", index);
+        if (!expectObject(entry, what, imageApprovalMembers, sink)) {
+            return result;
+        }
+        const auto packageId     = readName(entry, "packageId", what, sink);
+        const auto packageSha256 = readDigest(entry, "packageSha256", what, sink);
+        const auto width         = readUInt32(entry, "width", what, sink);
+        const auto height        = readUInt32(entry, "height", what, sink);
+        if (!packageId.has_value() || !packageSha256.has_value() || !width.has_value() || !height.has_value()) {
+            return result;
+        }
+        imageApprovalPackageIds.push_back(*packageId);
+        imageApprovals.push_back(
+            ms::ImagePackageApproval{.packageId = imageApprovalPackageIds.back(), .packageSha256 = *packageSha256, .width = *width, .height = *height});
+    }
+
     ScreenDocument document;
     document.setHeader(*id,
                        *surfaceWidth,
                        *surfaceHeight,
                        mdux::draw::DrawBudget{.maxVertices = *maxVertices, .maxIndices = *maxIndices, .maxCommands = *maxCommands},
-                       approvals);
+                       approvals,
+                       imageApprovals);
 
     const json::Value* nodes = root.find("nodes");
     if (nodes == nullptr || nodes->kind() != json::Value::Kind::Array) {

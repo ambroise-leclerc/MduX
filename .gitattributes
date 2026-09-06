@@ -18,6 +18,23 @@ generated/** -text
 # alone - which is exactly how this was found.
 tests/medui/fixtures/** -text
 
+# The published `.medui` contract is emitted as canonical JSON - LF line endings, by definition -
+# and `medui-grammar-committed-copy-is-current` compares the committed file against what the
+# compiler emits, byte for byte. Same rule for the same reason, and found the same way: the MSVC leg
+# alone reported 24041 bytes committed against 23235 emitted, which is one carriage return per line.
+docs/medui/** -text
+
+# The generated tool manifest is compared byte for byte by `generate_tool_manifest.py --check`, so
+# it needs the rule for the same reason `docs/medui/` does. Added with the file rather than after the
+# MSVC leg found it, which is how the two entries above this one were arrived at.
+#
+# The rule and the comparison are one mechanism, and this line was true before its other half was:
+# the gate read the file in text mode, which translates CRLF to LF on every platform, so it would
+# have passed over a manifest this rule had faithfully preserved carriage returns in. `-text` and a
+# byte comparison go together - a generated file that is *not* given `-text` is normalised by git
+# instead, and reading it in text mode is then the correct thing to do (`generate_ai_reference.py`).
+docs/tools/** -text
+
 # Rendered-truth fixtures are also parsed and byte-compared as canonical JSON. Keep their bytes
 # identical when Windows checks them out, including fixtures that deliberately contain no golden.
 tests/verify_ui/fixtures/** -text

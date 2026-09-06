@@ -17,7 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
-project(MduX VERSION 0.7.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
+project(MduX VERSION 0.8.0 DESCRIPTION "Modern C++23 Modules UI Library for Medical Devices" HOMEPAGE_URL "https://github.com/ambroise-leclerc/MduX" LANGUAGES CXX)
 
 message(STATUS "CMAKE_EXPERIMENTAL_CXX_IMPORT_STD: ${CMAKE_EXPERIMENTAL_CXX_IMPORT_STD}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
@@ -262,11 +262,15 @@ target_sources(MduXCore
             include/mdux/ml/Kernels.cppm
             include/mdux/ml/Runtime.cppm
             include/mdux/draw/Draw.cppm
+            include/mdux/image/Schema.cppm
             include/mdux/font/Schema.cppm
             include/mdux/text/Draw.cppm
             include/mdux/text/Schema.cppm
             include/mdux/medui/Schema.cppm
+            include/mdux/medui/Field.cppm
+            include/mdux/medui/Reading.cppm
             include/mdux/medui/Screen.cppm
+            include/mdux/medui/Trace.cppm
             include/mdux/verify/Verify.cppm
     PRIVATE
         src/evidence/Digest.cpp
@@ -276,10 +280,14 @@ target_sources(MduXCore
         src/ml/Kernels.cpp
         src/ml/Runtime.cpp
         src/draw/Draw.cpp
+        src/image/Schema.cpp
         src/font/Schema.cpp
         src/text/Draw.cpp
         src/text/Schema.cpp
+        src/medui/Field.cpp
+        src/medui/Reading.cpp
         src/medui/Screen.cpp
+        src/medui/Trace.cpp
         src/verify/Verify.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
@@ -503,6 +511,23 @@ mdux_bake_artifact(
         atlas.bin
 )
 
+# The first governed raster image (#256). QOI decoding exists only in MduXImageBakeLib; the
+# device-facing libraries consume this committed package and raw RGBA8 sidecar and never link the
+# decoder. The small source generator beside the asset makes the demonstrator reproducible, while
+# the QOI file remains the baker's reviewed input.
+mdux_bake_artifact(
+    KIND image
+    ID brand-mark
+    TOOL mdux-imagebake
+    RECIPE recipes/image/brand-mark.toml
+    SOURCES
+        recipes/image/brand-mark/brand-mark.qoi
+    OUTPUTS
+        package.json
+        report.json
+        pixels.rgba
+)
+
 # The first committed text package (#235), and the artifact that lets a screen carry text at all.
 #
 # `SOURCES` names a file under generated/ deliberately. The input is the *committed* font package,
@@ -566,6 +591,8 @@ mdux_compile_screen(
         # but every file a custom command reads is a dependency in its own right; otherwise an
         # independently changed or damaged sidecar would not even ask the screen bake to validate it.
         generated/text/endoscope-monitor-en-us/runs.bin
+        generated/image/brand-mark/package.json
+        generated/image/brand-mark/pixels.rgba
         # The atlas, for the same reason applied to the second stage (#254): `loadLocale()` reads
         # the file the font package names and checks its digest, so the glyphs the verification
         # renders come from these bytes. Without the edge, an atlas changed on its own leaves all

@@ -22,10 +22,12 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.font.schema;
+import mdux.medui.field;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.text.schema;
 import mdux.tools.cli;
+import mdux.evidence.json;
 import mdux.tools.medui.compile;
 import mdux.tools.medui.package;
 import mdux.tools.medui.parser;
@@ -201,7 +203,8 @@ const mdux::spec::Register aCompileProducesThreeArtifacts{
                           // Two outputs, not three: a file cannot carry its own digest, which is the
                           // same reason ADR-007 gives for there being no commit SHA in a report.
                           checks.expect(report->outputs.size() == 2, std::format("package.json and goldens.json are recorded, got {}", report->outputs.size()));
-                          checks.expect(report->inputs.size() == 1, std::format("the .medui source is the only input, got {}", report->inputs.size()));
+                          checks.expect(report->inputs.size() == 3,
+                                        std::format("the .medui source plus image package and sidecar are recorded, got {}", report->inputs.size()));
                           checks.expect(report->validate().has_value(), "the report satisfies its own schema");
                       }
                       checks.raise();
@@ -261,6 +264,467 @@ const mdux::spec::Register compileCarriesApprovedPackageIdentity{
                               }
                           }
                       }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theIrDescribesTheCompileThatProducedIt{
+    "The IR carries the resolved boxes, the colours they resolve to, and the budgets they were checked against",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-ir-dump")
+            .Given("the committed endoscope screen recipe", [] {})
+            .When("the compiler runs and its intermediate representation is read back", [] {})
+            .Then("every resolved node is there, colours are float bit patterns, and text budgets name their locale",
+                  [] {
+                      // #265's IR. What `package.json` records is the compile's *conclusion*; this
+                      // is the working, and the scenario checks the three things the issue names -
+                      // the bounded box tree, resolved colour tokens, and text budgets.
+                      mdux::spec::Checks           checks;
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const std::string            recipeText = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto                   recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, std::format("the committed recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, std::format("the committed screen compiles, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto parsed = mdux::evidence::json::parse(outputs->irJson);
+                      if (!parsed.has_value()) {
+                          checks.expect(false, "the IR is canonical JSON a reader accepts");
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto* nodes = parsed->find("nodes");
+                      checks.expect(nodes != nullptr && nodes->elements().size() == outputs->nodeCount,
+                                    std::format("one IR node per compiled node, got {} against {}",
+                                                nodes == nullptr ? 0U : nodes->elements().size(),
+                                                outputs->nodeCount));
+
+                      // The bounded box tree: the halt control's rectangle, as the solver placed it.
+                      // Read out of the IR rather than recomputed, so this compares the document
+                      // against the screen rather than against a second opinion about it.
+                      bool sawControl = false;
+                      bool sawColour  = false;
+                      if (nodes != nullptr) {
+                          for (const auto& node : nodes->elements()) {
+                              const auto* id = node.find("id");
+                              if (id == nullptr || id->asString().value_or("") != "emergency-halt") {
+                                  continue;
+                              }
+                              sawControl              = true;
+                              const auto* bounds      = node.find("bounds");
+                              const auto* annotations = node.find("annotations");
+                              checks.expect(bounds != nullptr && bounds->find("width") != nullptr && bounds->find("width")->asInt().value_or(0) == 160,
+                                            "the control's resolved width is in the IR");
+                              checks.expect(annotations != nullptr && annotations->elements().size() == 1, "and the annotation the author wrote on it");
+
+                              const auto* fields = node.find("fields");
+                              if (fields == nullptr) {
+                                  continue;
+                              }
+                              for (const auto& field : fields->elements()) {
+                                  const auto* kind = field.find("kind");
+                                  if (kind == nullptr || kind->asString().value_or("") != "ColorToken") {
+                                      continue;
+                                  }
+                                  sawColour            = true;
+                                  const auto* resolved = field.find("resolved");
+                                  checks.expect(resolved != nullptr, "a colour token carries what it resolves to");
+                                  if (resolved != nullptr) {
+                                      // Bit patterns, not decimal text: ADR-007 decision 2's rule, so
+                                      // two runs of one commit are diffable. `Theme.Colors.Fault`'s
+                                      // alpha is 1.0, whose IEEE-754 bit pattern is 0x3F800000.
+                                      const auto* alpha = resolved->find("a");
+                                      checks.expect(alpha != nullptr && alpha->asFloat32().value_or(0.0F) == 1.0F,
+                                                    "as a float this reader decodes from its bits");
+                                  }
+                              }
+                          }
+                      }
+                      checks.expect(sawControl, "the IR names the screen's critical control");
+                      checks.expect(sawColour, "and carries a resolved colour token");
+
+                      // The text budgets: one per authored text value, each naming the locale whose
+                      // translation was widest - which is what an author needs when MEDUI-E050 says
+                      // a box is too small.
+                      const auto* budgets = parsed->find("textBudgets");
+                      checks.expect(budgets != nullptr && !budgets->elements().empty(), "the IR carries the text budgets");
+                      if (budgets != nullptr && !budgets->elements().empty()) {
+                          const auto& first = budgets->elements().front();
+                          checks.expect(first.find("widestLocale") != nullptr && first.find("widestLocale")->asString().value_or("") == "en-US",
+                                        "naming the locale that produced the widest width");
+                          const auto* extent = first.find("extent");
+                          checks.expect(extent != nullptr && extent->find("width") != nullptr && extent->find("width")->asInt().value_or(0) > 0,
+                                        "and the extent it was measured at");
+                      }
+
+                      // Two compiles of one recipe produce one document. A dump that moved between
+                      // runs could not be diffed, which is the whole reason floats are bit patterns.
+                      std::vector<cli::Diagnostic> second;
+                      const auto                   again = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), second);
+                      checks.expect(again.has_value() && again->irJson == outputs->irJson, "two compiles of one recipe produce one IR");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aCharsetNameIsResolvedIntoTheCompiledNode{
+    "A TextInput's charset is compiled into the node as a set, from a table one name may repeat in",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-charset-is-resolved")
+            .Given("a recipe naming one charset over two entries, and a screen that uses it", [] {})
+            .When("the screen is compiled", [] {})
+            .Then("the node carries both ranges, sorted, and an overlapping table is refused instead",
+                  [] {
+                      // #297. The compiled node used to carry the charset's *name*, which a device
+                      // could only look up in a table shipped beside the screen - so the narrowing
+                      // stopped at the compiler and a field declared for digits displayed the letter
+                      // a host sent it. This is the resolution that closes it, checked end to end
+                      // from the recipe rather than from a hand-built spec.
+                      //
+                      // The repeated name is the other half: one entry carries one contiguous run,
+                      // and a patient identifier is digits *and* uppercase letters. Repeating a name
+                      // used to create a second rule that `checkDynamicText()`'s `find` never
+                      // reached, so the budget stage checked one range and ignored the rest - a
+                      // charset could escape its font while the compile stayed green.
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-charset"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/badge/Badge.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen Badge {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: badge;\n"
+                                 "        width: 240px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"BADGE\";\n"
+                                 "        max_length: 6;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "        charset: BADGE-ID;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      // 48..57 is U+0030..U+0039 and 65..90 is U+0041..U+005A. Decimal because
+                      // mdux.tools.toml's subset has no hexadecimal literals.
+                      const auto recipeWith = [](std::string_view firsts, std::string_view lasts) {
+                          return std::format("[package]\n"
+                                             "id            = \"badge\"\n"
+                                             "source        = \"recipes/screen/badge/Badge.medui\"\n"
+                                             "surfaceWidth  = 400\n"
+                                             "surfaceHeight = 200\n"
+                                             "\n"
+                                             "[budget]\n"
+                                             "maxVertices = 1024\n"
+                                             "maxIndices  = 1536\n"
+                                             "maxCommands = 16\n"
+                                             "\n"
+                                             "[dynamicText]\n"
+                                             "names           = [\"BADGE-ID\", \"BADGE-ID\"]\n"
+                                             "firstCodePoints = [{}]\n"
+                                             "lastCodePoints  = [{}]\n"
+                                             "\n"
+                                             "[text]\n"
+                                             "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                             "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n",
+                                             firsts,
+                                             lasts);
+                      };
+
+                      // Deliberately given out of order, so the sort is exercised rather than
+                      // agreed with: the compiled set has to be sorted whatever order it was written
+                      // in, because `ScreenPackage::validate()` refuses one that is not.
+                      const std::string            recipeText = recipeWith("65, 48", "90, 57");
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   recipe = md::parseRecipe(recipeText, "recipes/screen/badge.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, std::format("the recipe parses, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/badge.toml", asBytes(recipeText), root.path(), diagnostics);
+                      if (!outputs.has_value()) {
+                          checks.expect(false, std::format("the screen compiles, first diagnostic '{}'", firstCode(diagnostics)));
+                          checks.raise();
+                          return;
+                      }
+
+                      const md::PackageReadResult reread = md::readPackage(outputs->packageJson, "package.json");
+                      checks.expect(reread.ok(), "the compiled package reads back");
+                      if (!reread.ok()) {
+                          checks.raise();
+                          return;
+                      }
+                      const ms::ScreenPackage  package = reread.document.package();
+                      const ms::CompiledNode*  node    = package.find("badge");
+                      const ms::TextInputSpec* input   = node == nullptr ? nullptr : std::get_if<ms::TextInputSpec>(&node->payload);
+                      checks.expect(input != nullptr, "the compiled screen carries the TextInput");
+                      if (input != nullptr) {
+                          checks.expect(input->charset == "BADGE-ID", std::format("the name the source wrote, got '{}'", input->charset));
+                          const std::array expected{
+                              mdux::font::CharsetRange{.first = U'0', .last = U'9'},
+                              mdux::font::CharsetRange{.first = U'A', .last = U'Z'}
+                          };
+                          checks.expect(std::ranges::equal(input->charsetRanges, expected),
+                                        std::format("both ranges, in order, got {}", input->charsetRanges.size()));
+                          // The set is the narrower of the two by construction, which is what makes
+                          // `recordField()`'s second question worth asking at all.
+                          checks.expect(!ms::admits(input->charsetRanges, U'a'), "a lowercase letter the font draws is outside the node's set");
+                      }
+
+                      // And an author who writes two runs that overlap is told which entry, at the
+                      // recipe, rather than through a schema failure that names no line.
+                      std::vector<cli::Diagnostic> overlapping;
+                      const std::string            bad     = recipeWith("48, 55", "57, 90");
+                      const auto                   refused = md::parseRecipe(bad, "recipes/screen/badge.toml", overlapping);
+                      checks.expect(!refused.has_value(), "a table whose ranges overlap is refused");
+                      checks.expect(firstCode(overlapping) == "MEDUI-E002", std::format("reported at the recipe, got '{}'", firstCode(overlapping)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aRefusedScreenStillYieldsItsIr{
+    "A screen refused by its text budget still hands over the box tree that refused it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-ir-on-refusal")
+            .Given("a screen whose title box is one pixel wide", [] {})
+            .When("the compiler refuses it and the caller asks for the diagnostic IR", [] {})
+            .Then("there are no artifacts, and the IR carries the refused node's resolved rectangle",
+                  [] {
+                      // The IR is worth most on the compile that failed, and the first revision of
+                      // #265 gave it up exactly then: `run()` returned before the outputs were
+                      // built, so `--dump-ir` on a screen reporting MEDUI-E050 printed nothing at
+                      // all. The dump and the artifacts are different things with different
+                      // lifetimes, and this scenario is what keeps them apart.
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-ir-refusal"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/too-narrow/TooNarrow.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen TooNarrow {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    Label {\n"
+                                 "        id: title;\n"
+                                 "        width: 1px;\n"
+                                 "        height: 20px;\n"
+                                 "        text: t(\"STR-EM-TITLE\");\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      const std::string recipeText = "[package]\n"
+                                                     "id            = \"too-narrow\"\n"
+                                                     "source        = \"recipes/screen/too-narrow/TooNarrow.medui\"\n"
+                                                     "surfaceWidth  = 400\n"
+                                                     "surfaceHeight = 200\n"
+                                                     "\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 1024\n"
+                                                     "maxIndices  = 1536\n"
+                                                     "maxCommands = 16\n"
+                                                     "\n"
+                                                     "[text]\n"
+                                                     "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+
+                      const auto recipe = md::parseRecipe(recipeText, "recipes/screen/too-narrow.toml", diagnostics);
+                      if (!recipe.has_value()) {
+                          checks.expect(false, "the recipe parses");
+                          checks.raise();
+                          return;
+                      }
+
+                      std::string ir;
+                      const auto  outputs = md::run(*recipe, "recipes/screen/too-narrow.toml", asBytes(recipeText), root.path(), diagnostics, &ir);
+                      checks.expect(!outputs.has_value(), "the screen is refused, so there is nothing to write");
+                      checks.expect(firstCode(diagnostics) == "MEDUI-E050", std::format("reported as MEDUI-E050, got '{}'", firstCode(diagnostics)));
+
+                      const auto parsed = mdux::evidence::json::parse(ir);
+                      if (!parsed.has_value()) {
+                          checks.expect(false, "the diagnostic IR is canonical JSON a reader accepts");
+                          checks.raise();
+                          return;
+                      }
+
+                      // The one thing the diagnostic cannot carry. MEDUI-E050 names the extent and
+                      // the locale; what an author cannot see from it is the box among its
+                      // neighbours, which is the rectangle read out here.
+                      bool        sawRefusedBox = false;
+                      const auto* nodes         = parsed->find("nodes");
+                      if (nodes != nullptr) {
+                          for (const auto& node : nodes->elements()) {
+                              const auto* id = node.find("id");
+                              if (id == nullptr || id->asString().value_or("") != "title") {
+                                  continue;
+                              }
+                              const auto* bounds = node.find("bounds");
+                              sawRefusedBox      = bounds != nullptr && bounds->find("width") != nullptr && bounds->find("width")->asInt().value_or(0) == 1;
+                          }
+                      }
+                      checks.expect(sawRefusedBox, "the IR carries the refused node's resolved rectangle");
+
+                      // And is honest about what it does not have. `TextBudgetResult` empties its
+                      // measurements whenever it reports, so no caller - this one included - can
+                      // read the budget of a screen that failed its budget check.
+                      const auto* budgets = parsed->find("textBudgets");
+                      checks.expect(budgets != nullptr && budgets->elements().empty(), "and no text budgets, because the budgeting pass reported instead");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aTextInputOnlyScreenCompiles{
+    "A screen whose only text-bearing component is a TextInput compiles end to end",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-textinput-only-screen")
+            .Given("a screen carrying one TextInput and no Label, Clock or NumericDisplay", [] {})
+            .When("it is compiled with the committed font and locale packages", [] {})
+            .Then("the compile succeeds and the field was measured against its box",
+                  [] {
+                      // The regression this exists for, and it is the second time this exact hole
+                      // has been dug: `needsTextBudget()` decides whether a recipe may declare a
+                      // `[text]` table, and it asks the same predicates the measuring pass asks. A
+                      // component added to the second and not the first is a component that cannot
+                      // be compiled alone - #258 hit it with `NumericDisplay` and #260 hit it again
+                      // with `TextInput`.
+                      //
+                      // Both ways out were closed, which is what made it a trap rather than a
+                      // diagnostic: with a `[text]` table the screen was `MEDUI-E002` "carries no
+                      // measurable text", and without one it was `MEDUI-E000`, an *internal* error,
+                      // because `needsTextPackageApproval()` puts `TextInput` among the components
+                      // whose screen must approve a text package. The two predicates disagreed and
+                      // the author was told to report a compiler defect either way.
+                      mdux::spec::Checks             checks;
+                      std::vector<cli::Diagnostic>   diagnostics;
+                      mdux::test::TemporaryDirectory root{"mdux-meduic-textinput-only"};
+
+                      const auto copy = [&](std::string_view relative) {
+                          const std::filesystem::path destination = root.path() / relative;
+                          std::filesystem::create_directories(destination.parent_path());
+                          std::filesystem::copy_file(repoRoot() / relative, destination, std::filesystem::copy_options::overwrite_existing);
+                      };
+                      copy("generated/font/dejavu-ui/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/package.json");
+                      copy("generated/text/endoscope-monitor-en-us/runs.bin");
+
+                      const std::filesystem::path source = root.path() / "recipes/screen/entry-only/EntryOnly.medui";
+                      std::filesystem::create_directories(source.parent_path());
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen EntryOnly {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: patient-id;\n"
+                                 "        width: 240px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"PATIENT_ID\";\n"
+                                 "        max_length: 8;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+
+                      const std::string recipeText = "[package]\n"
+                                                     "id            = \"entry-only\"\n"
+                                                     "source        = \"recipes/screen/entry-only/EntryOnly.medui\"\n"
+                                                     "surfaceWidth  = 400\n"
+                                                     "surfaceHeight = 200\n"
+                                                     "\n"
+                                                     "[budget]\n"
+                                                     "maxVertices = 1024\n"
+                                                     "maxIndices  = 1536\n"
+                                                     "maxCommands = 16\n"
+                                                     "\n"
+                                                     "[text]\n"
+                                                     "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+
+                      const auto recipe = md::parseRecipe(recipeText, "recipes/screen/entry-only.toml", diagnostics);
+                      checks.expect(recipe.has_value(), "the recipe parses");
+                      if (!recipe.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      const auto outputs = md::run(*recipe, "recipes/screen/entry-only.toml", asBytes(recipeText), root.path(), diagnostics);
+                      checks.expect(outputs.has_value(), std::format("the screen compiles, got '{}'", diagnostics.empty() ? "" : diagnostics.front().message));
+                      if (!outputs.has_value()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      // And the box really was measured rather than skipped: eight cells of the
+                      // committed font's widest permitted glyph plus the caret is 129px, which fits
+                      // 240px - so the same screen with a narrower box must be refused, and it is
+                      // that refusal which proves the measurement ran at all.
+                      std::vector<cli::Diagnostic> narrowDiagnostics;
+                      {
+                          std::ofstream out{source, std::ios::binary};
+                          out << "Screen EntryOnly {\n"
+                                 "    layout: Vertical { spacing: 0px; padding: 0px; }\n"
+                                 "    surface: 400px, 200px;\n"
+                                 "\n"
+                                 "    TextInput {\n"
+                                 "        id: patient-id;\n"
+                                 "        width: 60px;\n"
+                                 "        height: 40px;\n"
+                                 "        source: \"PATIENT_ID\";\n"
+                                 "        max_length: 8;\n"
+                                 "        color: Theme.Colors.Title;\n"
+                                 "    }\n"
+                                 "}\n";
+                      }
+                      const auto narrow = md::run(*recipe, "recipes/screen/entry-only.toml", asBytes(recipeText), root.path(), narrowDiagnostics);
+                      checks.expect(!narrow.has_value(), "a box too narrow for the field is refused");
+                      checks.expect(firstCode(narrowDiagnostics) == "MEDUI-E050",
+                                    std::format("reported as MEDUI-E050, got '{}'", firstCode(narrowDiagnostics)));
                       checks.raise();
                   })
             .Execute();
@@ -333,6 +797,83 @@ const mdux::spec::Register unusedTextRecipeIsRefused{
             .Execute();
     }};
 
+const mdux::spec::Register aNumericTemplateMustBeStructurallyDrawable{
+    "A numeric template that could never show a reading is refused at compile time",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-numeric-template-slots")
+            .Given("the committed recipe, with its template's rendering replaced", [] {})
+            .When("the rendering has no digit slots, and then too many", [] {})
+            .Then("each is refused, so a compiled template is one the device can draw",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // `measurePattern()` answers "does the widest reading fit the box", which a
+                      // rendering with no slots passes trivially - `mmHg` measures fine and can never
+                      // show a number. The runtime is stricter: `digitsOf()` refuses zero slots and
+                      // more than `maxDigitsPerField`, so a template outside that range is one the
+                      // device must refuse on every frame, rolling back the whole screen. Both ends
+                      // are now checked here, through the runtime's own `countSlots()`.
+                      const std::string committed     = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto        withRendering = [&committed](std::string_view replacement) {
+                          std::string text = committed;
+                          const auto  at   = text.find(R"(renderings = ["##.# mmHg"])");
+                          text.replace(at, std::string_view{R"(renderings = ["##.# mmHg"])"}.size(), replacement);
+                          return text;
+                      };
+
+                      for (const auto& [rendering, what] : std::vector<std::pair<std::string, std::string>>{
+                               {       R"(renderings = ["mmHg"])",     "a rendering with no digit slots"},
+                               {R"(renderings = ["###########"])", "a rendering with eleven digit slots"}
+                      }) {
+                          std::vector<cli::Diagnostic> diagnostics;
+                          const std::string            recipeText = withRendering(rendering);
+                          const auto                   recipe     = md::parseRecipe(recipeText, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                          checks.expect(recipe.has_value(), std::format("{} still parses as a recipe", what));
+                          if (!recipe.has_value()) {
+                              continue;
+                          }
+                          const auto outputs = md::run(*recipe, "recipes/screen/endoscope-monitor.toml", asBytes(recipeText), repoRoot(), diagnostics);
+                          checks.expect(!outputs.has_value(), std::format("{} is refused", what));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aTemplateNameIsDeclaredOnce{
+    "A numeric-template name declared twice is refused rather than resolved to the first",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-compile-numeric-template-duplicate")
+            .Given("a recipe declaring one template name twice, with different renderings", [] {})
+            .When("the recipe is parsed", [] {})
+            .Then("it is refused, because a name is a lookup key",
+                  [] {
+                      // The budget stage resolves a template name with a find-first, so a duplicate
+                      // is ambiguous in the quietest way available: the second rendering is never
+                      // measured, and an author who edited the wrong entry would see a template that
+                      // compiles and draws the other one's shape. Refused rather than de-duplicated,
+                      // because which entry was meant is not knowable from the recipe.
+                      mdux::spec::Checks checks;
+                      std::string        text = contentsOf(repoRoot() / "recipes/screen/endoscope-monitor.toml");
+                      const auto         at   = text.find(R"(names      = ["TPL-PRESSURE-MMHG"])");
+                      text.replace(at,
+                                   std::string_view{R"(names      = ["TPL-PRESSURE-MMHG"])"}.size(),
+                                   R"(names      = ["TPL-PRESSURE-MMHG", "TPL-PRESSURE-MMHG"])");
+                      const auto renderingAt = text.find(R"(renderings = ["##.# mmHg"])");
+                      text.replace(renderingAt, std::string_view{R"(renderings = ["##.# mmHg"])"}.size(), R"(renderings = ["##.# mmHg", "###.# mmHg"])");
+
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const auto                   recipe = md::parseRecipe(text, "recipes/screen/endoscope-monitor.toml", diagnostics);
+                      checks.expect(!recipe.has_value(), "a duplicated template name is refused");
+                      checks.expect(!diagnostics.empty() && diagnostics.front().message.find("twice") != std::string::npos,
+                                    "the diagnostic says the name was declared twice");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aScreenThatDrawsTextNeedsItsLocales{
     "A screen that draws text is refused when the recipe declares no locales",
     "evidence-unit",
@@ -365,6 +906,17 @@ const mdux::spec::Register aScreenThatDrawsTextNeedsItsLocales{
                       md::ParseResult drawsNone = md::parse(fixture("accepted-textless.medui"), "textless.medui");
                       checks.expect(drawsText.screen.has_value() && md::needsTextBudget(*drawsText.screen), "a screen with keys needs the budget stage");
                       checks.expect(drawsNone.screen.has_value() && !md::needsTextBudget(*drawsNone.screen), "a screen without them does not");
+
+                      // And a numeric template counts, which it did not until #258 was reviewed. Its
+                      // rendering is measured against the font exactly as a clock's pattern is, so a
+                      // screen carrying only a NumericDisplay needs the budget stage - and while this
+                      // answered false, the driver refused that screen's [text] table before the
+                      // template could be measured, so it could not be compiled without a Label or a
+                      // Clock beside it. Asked through the predicate rather than through a bake,
+                      // because the predicate is what the driver consults.
+                      md::ParseResult drawsNumeric = md::parse(fixture("accepted-numeric-only.medui"), "numeric.medui");
+                      checks.expect(drawsNumeric.screen.has_value() && md::needsTextBudget(*drawsNumeric.screen),
+                                    "a screen whose only text is a numeric template needs the budget stage");
                       checks.raise();
                   })
             .Execute();

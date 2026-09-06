@@ -1,0 +1,22 @@
+// A screen whose only text-bearing component is a NumericDisplay (#258).
+//
+// The gate `needsTextBudget()` decides whether a recipe may declare a [text] table at all, and it
+// asked only about fixed text and dynamic text until this fixture existed. A numeric template is
+// measured against the font exactly as a clock's pattern is, so a screen like this one needs the
+// budget stage - and without it the compiler refused the [text] table the measurement requires,
+// which meant a numeric display could not be compiled unless a Label or a Clock sat beside it to
+// answer the question on its behalf.
+Screen NumericOnlyScreen {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    surface: 400px, 300px;
+
+    NumericDisplay {
+        id: pressure;
+        width: 300px;
+        height: 80px;
+        requirement: "REQ-EC-003";
+        template: "TPL-PRESSURE-MMHG";
+        source: "PRESSURE_MMHG";
+        color: Theme.Colors.Nominal;
+    }
+}

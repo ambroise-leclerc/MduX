@@ -32,13 +32,14 @@
  *
  * The fragment shader samples an atlas in two of its three modes, so the pipeline layout declares
  * a combined image sampler - and a draw recorded without a descriptor set bound is undefined
- * behaviour, whatever mode the vertices ask for. Rather than make every caller build a descriptor
- * set before it can draw a rectangle, the renderer creates and binds a 1x1 opaque white texture.
+ * behaviour, whatever mode the vertices ask for. Rather than make every caller build descriptor
+ * plumbing before it can draw a rectangle, the renderer creates and binds neutral 1x1 opaque-white
+ * coverage and RGBA textures.
  *
- * That is not a placeholder to be removed. Sampling white and multiplying by the vertex colour is
- * the identity for the sampled-RGBA path and a full-coverage mask for the R8 path, so a default
- * atlas is the correct neutral value rather than a stand-in for a real one. #14 and #17 replace
- * the *contents* when they have glyphs and images to put there; the mechanism stays.
+ * Those textures keep both shader descriptors valid; they do not turn absent authored content
+ * into white content. `record()` therefore refuses `SampledRgba` vertices unless construction
+ * supplied a real image atlas. A real coverage atlas and a real image atlas replace only the
+ * immutable contents; the fixed two-binding mechanism stays.
  *
  * This is why the context carries a queue: uploading one white pixel needs a layout transition,
  * and a layout transition needs a submitted command. It is used once, during `create()`, and
@@ -119,8 +120,8 @@ enum class RenderError : std::uint8_t {
     CommandPoolCreationFailed,    ///< the one-shot pool used to upload the default atlas
     CommandBufferAllocationFailed,
     AtlasUploadFailed,
-    AtlasExtentMismatch,      ///< the coverage byte count is not width * height, or an extent is zero
-    SampledRgbaWithCoverageAtlas,  ///< the frame samples RGBA from a renderer holding an R8 sheet
+    AtlasExtentMismatch,  ///< an atlas byte count disagrees with its format and extent
+    SampledRgbaWithCoverageAtlas,  ///< the frame samples RGBA without a real image atlas
     NullCommandBuffer,
     FrameExceedsBudget,       ///< the DrawList is larger than the renderer was built for
 
@@ -161,10 +162,9 @@ public:
     /**
      * @brief Creates a renderer whose atlas is a baked R8 coverage sheet rather than the default.
      *
-     * Replaces the atlas' *contents*, not the mechanism: #13 already created the image, sampler
-     * and descriptor, and this overload uploads different bytes into the same arrangement. There
-     * is no second binding, no second pipeline and no branch at record time - the shader's
-     * `CoverageR8` mode was always reading whatever this image held.
+     * Replaces the coverage atlas' *contents*, not the mechanism. The independent RGBA binding
+     * receives a neutral white texture so the descriptor shape remains fixed, but `record()`
+     * still refuses `SampledRgba` vertices because no authored image atlas was supplied.
      *
      * Taken at construction rather than as a later `setAtlas()` because the descriptor is written
      * once during `create()`. A renderer that could swap atlases mid-life would need either a
@@ -176,31 +176,51 @@ public:
      * @param width   sheet width in pixels; must be non-zero and match `atlas.size()`
      * @param height  sheet height in pixels
      *
-     * ## This renderer can then draw text and solids, but not images
-     *
-     * The atlas is `VK_FORMAT_R8_UNORM`, and there is one of them. `DrawMode::SampledRgba` reads
-     * the same image expecting four channels, so it would sample red-only and return
-     * `(coverage, 0, 0, 1)` - a plausible picture in the wrong colours, which is the kind of
-     * failure nobody notices in review.
-     *
-     * So `record()` refuses a list containing any `SampledRgba` vertex on a coverage renderer,
-     * with `SampledRgbaWithCoverageAtlas`. Mixing baked text and images in one frame needs two
-     * atlas bindings, which is #17's problem rather than something to leave as a trap here.
+     * Use `createWithAtlases()` when the frame contains a real baked image as well as text.
      */
     [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createWithCoverageAtlas(
         const VulkanRenderContext& context, const mdux::shader::PackageView& package,
         const mdux::draw::DrawBudget& budget, std::span<const std::byte> atlas,
         std::uint32_t width, std::uint32_t height) noexcept;
 
+    /** @brief Creates a renderer with a baked RGBA8 image and a neutral coverage atlas. */
+    [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createWithImageAtlas(const VulkanRenderContext&       context,
+                                                                                          const mdux::shader::PackageView& package,
+                                                                                          const mdux::draw::DrawBudget&    budget,
+                                                                                          std::span<const std::byte>       pixels,
+                                                                                          std::uint32_t                    width,
+                                                                                          std::uint32_t                    height) noexcept;
+
+    /**
+     * @brief Creates a renderer with independent immutable coverage and RGBA image atlases.
+     *
+     * Both images and their descriptor set are created once. `record()` only copies bounded frame
+     * buffers and binds that fixed set; mixed Label/Image frames incur no descriptor churn.
+     */
+    [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createWithAtlases(const VulkanRenderContext&       context,
+                                                                                       const mdux::shader::PackageView& package,
+                                                                                       const mdux::draw::DrawBudget&    budget,
+                                                                                       std::span<const std::byte>       coverage,
+                                                                                       std::uint32_t                    coverageWidth,
+                                                                                       std::uint32_t                    coverageHeight,
+                                                                                       std::span<const std::byte>       image,
+                                                                                       std::uint32_t                    imageWidth,
+                                                                                       std::uint32_t                    imageHeight) noexcept;
+
     ~UiRenderer();
 
 private:
-    /// The shared body of both create() overloads. They differ only in the atlas they upload, so
-    /// the pipeline, buffers, sampler and descriptor arrangement are built once here.
+    /// The shared body of the create overloads. The immutable texture inputs and whether the RGBA
+    /// input represents authored image content are the only differences.
     [[nodiscard]] static mdux::core::Result<UiRenderer, RenderError> createInternal(
         const VulkanRenderContext& context, const mdux::shader::PackageView& package,
-        const mdux::draw::DrawBudget& budget, VkFormat atlasFormat, std::uint32_t atlasWidth,
-        std::uint32_t atlasHeight, std::span<const std::byte> atlasPixels) noexcept;
+        const mdux::draw::DrawBudget& budget, std::span<const std::byte>       coverage,
+                                                                                    std::uint32_t                    coverageWidth,
+                                                                                    std::uint32_t                    coverageHeight,
+                                                                                    std::span<const std::byte>       image,
+                                                                                    std::uint32_t                    imageWidth,
+                                                                                    std::uint32_t                    imageHeight,
+                                                                                    bool                             imageAtlasProvided) noexcept;
 
 public:
 
@@ -214,7 +234,9 @@ public:
      *
      * The command buffer must already be recording, inside a render pass compatible with the one
      * the renderer was created against. The atlas descriptor set is bound here, so a caller that
-     * only draws solid rectangles needs no descriptor plumbing of its own.
+     * only draws solid rectangles needs no descriptor plumbing of its own. A list containing
+     * `SampledRgba` is refused unless `createWithImageAtlas()` or `createWithAtlases()` supplied a
+     * real RGBA atlas.
      */
     [[nodiscard]] mdux::core::ResultVoid<RenderError> record(
         VkCommandBuffer commandBuffer, const mdux::draw::DrawList& list) noexcept;
@@ -252,9 +274,12 @@ private:
     VkDeviceMemory atlasMemory_{VK_NULL_HANDLE};
     VkImageView atlasView_{VK_NULL_HANDLE};
     VkSampler atlasSampler_{VK_NULL_HANDLE};
-    /// True when the atlas is an R8 coverage sheet, so `record()` can refuse a frame that samples
-    /// it as RGBA. Cheaper to carry than to query, and the answer never changes after create().
-    bool atlasIsCoverageOnly_{false};
+    VkImage                imageAtlasImage{VK_NULL_HANDLE};
+    VkDeviceMemory         imageAtlasMemory{VK_NULL_HANDLE};
+    VkImageView            imageAtlasView{VK_NULL_HANDLE};
+    VkSampler              imageAtlasSampler{VK_NULL_HANDLE};
+    /// The RGBA binding is always descriptor-valid, but only these renderers may record images.
+    bool                   hasImageAtlas{false};
     VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
     VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
     void* vertexMapped_{nullptr};
@@ -269,6 +294,7 @@ private:
     // shader. If the contract changes, create() refuses; it does not silently disagree with the
     // pipeline layout it built.
     std::uint32_t atlasBinding_{0};
+    std::uint32_t      imageAtlasBinding{1};
     VkShaderStageFlags pushStages_{0};
     std::uint32_t pushOffset_{0};
     std::uint32_t pushSize_{0};

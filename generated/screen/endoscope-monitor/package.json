@@ -1,9 +1,17 @@
 {
+  "approvedImagePackages": [
+    {
+      "height": 72,
+      "packageId": "brand-mark",
+      "packageSha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22",
+      "width": 240
+    }
+  ],
   "approvedTextPackages": [
     {
       "locale": "en-US",
       "packageId": "endoscope-monitor-en-us",
-      "packageSha256": "f8ed5dda0711eaa721fb63f2fc2054b8563849f2bbe38df43913d733cdeeb87b"
+      "packageSha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
     }
   ],
   "budget": {
@@ -37,13 +45,13 @@
       "id": "brand-mark",
       "kind": "Image",
       "spec": {
-        "source": "IMG-BRAND-MARK"
+        "source": "brand-mark"
       }
     },
     {
       "bounds": {
         "height": 72,
-        "width": 1040,
+        "width": 480,
         "x": 240,
         "y": 0
       },
@@ -52,6 +60,74 @@
       "spec": {
         "colorToken": "Theme.Colors.Title",
         "textKey": "STR-EM-TITLE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 160,
+        "x": 720,
+        "y": 0
+      },
+      "id": "emergency-halt",
+      "kind": "CriticalButton",
+      "spec": {
+        "colorToken": "Theme.Colors.Fault",
+        "labelKey": "STR-EM-HALT",
+        "onPress": "TriggerHalt",
+        "requirement": "REQ-EM-003"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 200,
+        "x": 880,
+        "y": 0
+      },
+      "id": "classifier-state",
+      "kind": "StatusIndicator",
+      "spec": {
+        "colorTokens": [
+          "Theme.Colors.Neutral",
+          "Theme.Colors.Nominal",
+          "Theme.Colors.Alert",
+          "Theme.Colors.Fault"
+        ],
+        "requirement": "REQ-EM-002",
+        "source": "ECG_CLASS",
+        "stateKeys": [
+          "STR-EM-CLASS-0",
+          "STR-EM-CLASS-1",
+          "STR-EM-CLASS-2",
+          "STR-EM-CLASS-3"
+        ]
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 200,
+        "x": 1080,
+        "y": 0
+      },
+      "id": "patient-id",
+      "kind": "TextInput",
+      "spec": {
+        "charset": "PATIENT-ID",
+        "charsetRanges": [
+          {
+            "first": 48,
+            "last": 57
+          },
+          {
+            "first": 65,
+            "last": 90
+          }
+        ],
+        "colorToken": "Theme.Colors.Title",
+        "maxLength": 12,
+        "source": "PATIENT_ID"
       }
     },
     {

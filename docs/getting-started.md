@@ -104,6 +104,29 @@ build and a plain `build/` one do not collide.
 | `MDUX_BUILD_TESTS` | `ON` |
 | `MDUX_BUILD_DOCS` | `OFF` |
 | `MDUX_ENABLE_REGULATORY_DOCS` | `ON` |
+| `ENABLE_CACHE` | `ON` |
+| `CACHE_OPTION` | `ccache` |
+| `CACHE_BINARY` | empty (search `PATH` for `CACHE_OPTION`) |
+
+### Compiler cache
+
+When `ccache` is available, MduX keeps it enabled without trusting it to understand C++20 named
+modules — [upstream still tracks that support as open](https://github.com/ccache/ccache/issues/1252).
+Module interfaces compile directly because a cache hit cannot restore their BMI output.
+On Clang, a module consumer remains cacheable, but the contents of every imported BMI are added to
+its cache key; changing an exported layout therefore invalidates the consumer even when its source
+is unchanged. Module command formats the launcher does not recognize bypass the cache rather than
+risk a stale object. Ordinary translation units remain eligible for the selected cache.
+
+This behavior requires ccache 4.8 or newer for cached Clang module consumers. An older ccache still
+works, but named-module compilations bypass it. `-DENABLE_CACHE=OFF` disables the launcher entirely;
+`-DCACHE_OPTION=<program>` selects another launcher, for which named-module compilations also bypass
+the cache until that program's BMI handling is qualified. `-DCACHE_BINARY=<path>` pins a particular
+cache executable, for example when bisecting a ccache version regression.
+
+`build.cache.namedModuleIntegrity` is the negative check behind this policy: it changes the layout
+of an exported struct without touching its consumer, asserts that the consumer observes the new
+layout, then forces a content-identical rebuild and asserts that it was a real ccache hit.
 
 ### Selecting suites
 
@@ -145,6 +168,48 @@ scopes of one screen can never overwrite each other's image. It is written only 
 a failure, it never goes into `generated/`, and nothing reads it back — it is for you, not for a
 check. CI passes the same flag and uploads the directory when the step fails.
 
+### Asking the compiler what the language is
+
+Two questions `mdux-meduic` answers without a recipe:
+
+```bash
+./build/tools/mdux-meduic --grammar > /tmp/medui-grammar.json
+./build/tools/mdux-meduic --explain MEDUI-E034
+```
+
+`--grammar` writes the whole contract as canonical JSON — tokens, productions with worked examples,
+every component and the fields it admits, field domains, the closed `format:` and `on_press:` sets,
+the governed theme tokens, and every diagnostic with its fix hint. `docs/medui/grammar.json` is that
+output committed, so an agent can read it without building anything; a test fails if the two drift.
+
+`--explain` answers for one code. A code the compiler does not publish exits 2 and says so, which is
+what lets a script tell "this code means nothing here" from "this code means nothing".
+
+### Looking at a screen that verifies
+
+`--diff-image-dir` only ever writes on a failure, so it cannot answer the other question a rendered
+screen raises: what does it look like. `--frame-image-dir=<dir>` does.
+
+```bash
+./build/tools/mdux-verify-ui \
+  --screen=generated/screen/endoscope-monitor \
+  --locales=all \
+  --frame-image-dir=/tmp/mdux-frames
+```
+
+Every render scope *attempts* `<screen>.<scope>.frame.png` there, pass or fail — the readback exactly
+as it came back, with no dimming and nothing drawn on top, because anything drawn on it would be this
+tool's opinion about the screen rather than the screen. A directory it cannot create, a frame it
+cannot encode or a file it cannot write is reported as a warning and changes no verdict: the image is
+an attachment for a person, and a full disk must not turn a passing verification into a failing one. The name carries a `.frame` before the
+extension and encodes the scope the same way, so pointing both flags at one directory keeps both
+images. Like `--diff-image-dir`, it chooses a location and never an expectation: the same
+obligations run in the same scopes, and the same exit status comes back, whether or not you pass it.
+
+This is the shortest path to seeing an authored `.medui` screen. There is no windowed viewer — the
+only target that opens a window is `VulkanSCTriangleExample`, and it draws the baked triangle rather
+than a compiled screen.
+
 You do not have to run it by hand to get it run. `mdux_compile_screen()` registers the same
 invocation as the ctest `verify.screen.<id>`, so:
 
@@ -154,6 +219,25 @@ ctest --preset <preset> -L verify -V --no-tests=error
 
 verifies every committed screen. `--no-tests=error` matters: without it, a label that matched no
 screen would pass the step over nothing.
+
+### Baking an Image
+
+Export lossless artwork as QOI with sRGB colour channels (QOI colorspace `0`) at the exact component
+size; S1 intentionally accepts neither PNG nor runtime scaling. Add a recipe such as:
+
+```toml
+[package]
+id      = "brand-mark"
+source  = "recipes/image/brand-mark/brand-mark.qoi"
+sidecar = "pixels.rgba"
+```
+
+Register it with `mdux_bake_artifact(KIND image ...)`, then list its committed `package.json` under
+the screen recipe's `[images].packages`. `mdux-imagebake` decodes QOI on the host and commits only
+canonical metadata plus straight-alpha RGBA8 pixels. It refuses images larger than 4096 x 4096
+pixels before allocating their decoded buffer, bounding that buffer at 64 MiB. `img("brand-mark")`
+must resolve to a rectangle whose width and height equal the package's intrinsic extent; the
+compiler refuses a mismatch.
 
 ## Examples
 
@@ -256,7 +340,7 @@ Link `MduX::Core` if you want the governed pieces without a Vulkan dependency. T
 convenience — `mdux_verify_trust_zones()` mechanically enforces that `MduXCore`'s link graph never
 reaches Vulkan.
 
-Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-meduic`,
+Host tools (`mdux-shaderbake`, `mdux-mlbake`, `mdux-textbake`, `mdux-imagebake`, `mdux-meduic`,
 `mdux-medui-check`, the emitters and `mdux-verify-ui`) are **not** exported. They are build-time
 only.
 

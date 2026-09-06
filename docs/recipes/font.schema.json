@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/font.schema.json",
+  "title": "Resolved font recipe options",
+  "description": "What `mdux-textbake` was asked to do when baking a font package: the source face, the pixel size it was rasterised at, the locales it approves, and the restricted charset it admits. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why: a silently changed default must not leave every report looking unchanged, so the report records what the bake actually did, and this documents that. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "atlas",
+    "sidecar",
+    "pixelSize",
+    "locale",
+    "locales",
+    "charset"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The artifact id, which names the directory under `generated/font/`.",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Repository-relative path to the source face the atlas was rasterised from.",
+      "minLength": 1
+    },
+    "atlas": {
+      "type": "string",
+      "description": "Always the empty string for a font recipe, and required because it is always present. `mdux-textbake` bakes both kinds from one `Recipe`, whose `atlas` member is a *text* recipe's - the id of the font package its runs index glyphs in - and the shared prefix of `toOptions()` emits it before the kind branch. A font package is not positioned against an atlas; it is one. The member is emitted unconditionally rather than omitted so that font and text reports have one shape, which is the same reason `font` and `strings` are always present on a text report. Where the atlas bytes go is `sidecar`.",
+      "enum": [
+        ""
+      ]
+    },
+    "sidecar": {
+      "type": "string",
+      "description": "The file the R8 coverage atlas is written to, beside `package.json`.",
+      "minLength": 1
+    },
+    "pixelSize": {
+      "type": "integer",
+      "description": "The pixel size every glyph was rasterised at. There is one size per package: ADR-010 keeps run-time scaling out, so a second size is a second package.",
+      "minimum": 1
+    },
+    "locale": {
+      "type": "string",
+      "description": "Always the empty string for a font recipe, for `atlas`'s reason: it is a *text* recipe's member on the shared `Recipe`, and `parseRecipe()` reads it only on the `!isFontRecipe` branch. The locales a font actually approves are `locales`, which comes from its own `[charset]` spec. Found by auditing every path-like property against its baker after review caught the same mistake on `text.font`, not by reading.",
+      "enum": [
+        ""
+      ]
+    },
+    "locales": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "description": "A BCP 47 tag this font approves.",
+        "minLength": 1
+      },
+      "description": "Every locale the package approves. A screen recipe must name one committed text package per entry here - a locale approved with no package is a build error, because a budget checked against fewer locales than were approved is a claim nobody made."
+    },
+    "charset": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The restricted charset the atlas admits, as closed code-point ranges. A character outside it has no glyph, which is what bounds what any screen using this font can display.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "first",
+          "last"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The range's name in the recipe."
+          },
+          "first": {
+            "type": "integer",
+            "description": "First code point, inclusive.",
+            "minimum": 0
+          },
+          "last": {
+            "type": "integer",
+            "description": "Last code point, inclusive.",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "dejavu-ui",
+      "source": "inputs/font/DejaVuSans.ttf",
+      "atlas": "",
+      "sidecar": "atlas.bin",
+      "pixelSize": 18,
+      "locale": "",
+      "locales": [
+        "en-US"
+      ],
+      "charset": [
+        {
+          "name": "ascii-print",
+          "first": 32,
+          "last": 126
+        }
+      ]
+    }
+  ]
+}

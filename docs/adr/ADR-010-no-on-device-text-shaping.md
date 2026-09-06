@@ -85,6 +85,79 @@ Concretely:
    against the baked atlas. There is no on-device code that walks a font table, no
    on-device code that maps code points to glyphs, and no on-device code that
    advances a pen by a runtime-computed width.
+
+   **Amended by #258: a bounded exception for slot substitution in a measured pattern.**
+   Decision 3 permits dynamic text and this decision forbade the only mechanism that could
+   draw it. That was not a tension anybody had to resolve while no component drew a live
+   value; `Clock` and `NumericDisplay` are the components that do, and the contradiction had
+   to be settled before either could exist. It is settled here rather than worked around,
+   because a runtime that quietly did what a decision forbids is worse than one that says
+   what it does.
+
+   The exception is deliberately narrow, and every clause of it is a check rather than a
+   convention:
+
+   - **The shape is fixed at build time.** A reading is drawn from a *pattern* — `HH:MM:SS`
+     for a `ClockFormat`, `###.# mmHg` for a `NumericDisplay` template — in which the
+     literal characters and the positions of the digit slots are constants. Only which
+     digit stands in each slot varies at run time. Nothing about the sequence, the
+     character set, or the number of glyphs is a function of the value.
+   - **The shape is measured at build time, against the node that will hold it.**
+     `checkClockFormat()` (#219) already computes the worst-case ink envelope over all ten
+     digits at every slot, with the font package's own advances and kerning, and refuses a
+     screen whose box cannot hold it. #258 extends the same measurement to a
+     `NumericDisplay`'s template. A pattern that could overflow its node fails the build, so
+     the runtime is replaying a shape a compiler already certified rather than discovering
+     one.
+   - **One implementation, shared.** The pen arithmetic is `mdux.medui.reading`'s, in the
+     governed zone, and the host budget stage imports it rather than carrying its own copy.
+     This is ADR-008 decision 1's doctrine applied to text: two implementations of the same
+     arithmetic agree until the day they matter, and a device-time clip the compiler had
+     certified is exactly that day.
+   - **The mapping is a bounded lookup, not a shaping decision.** `FontPackage::find()` over
+     the baked glyph table, for a code point the restricted charset permits and the compiler
+     proved the package can draw. There is no GSUB, no GPOS, no contextual form, no
+     ligature, no reordering, and no fallback — a code point the package lacks refuses the
+     frame rather than substituting anything.
+   - **Bounded and allocation-free.** `maxPatternLength` caps the glyphs one reading can
+     record, so per-node work stays a constant a device knows before it runs, and the
+     no-heap property is verified the three ways #63 established.
+
+   **Extended by #260: the same exception, over a grid rather than a pattern.** A `TextInput`
+   displays a value from an open-ended charset, so the pattern form above does not fit it: no
+   fixed string of literals describes what an operator types. What does fit is the clause the
+   amendment actually turns on — *slot positions are build-time constants* — applied to a field
+   whose cells are a **fixed pitch**: `mdux.medui.field` places cell *k* at `k * cellWidth(font)`,
+   where `cellWidth()` is the widest advance the font package's restricted charset admits. Only
+   which permitted character occupies a cell varies, exactly as only which digit occupies a slot
+   varies above.
+
+   Every clause of the exception holds unchanged, and two are worth stating in this form:
+
+   - **The shape is fixed at build time**, and more strictly than a pattern's: a cell's position
+     depends on nothing but its index and one number derived from a committed font package.
+     A proportional pen was the alternative and is the thing this decision forbids — cell 5 would
+     sit where characters 0 to 4 put it, which is a runtime-computed width.
+   - **The measurement and the placement share one implementation and one input.** `cellWidth()`
+     is derived from the font package rather than supplied by a host, so the compiler's number and
+     the device's number are the same number whenever the bytes are the same bytes. The screen's
+     own `charset:` deliberately does not narrow it: a box holding the font's widest glyph holds
+     every glyph a narrower set admits, and consulting the narrower set would mean shipping a
+     product's charset table beside the artifact.
+
+   The honest cost, again stated rather than discovered: a proportional font on a fixed pitch
+   looks monospaced. That is the appearance price of a placement a compiler can certify.
+
+   What stays forbidden is unchanged and is the whole of what this ADR was written against:
+   a layout engine, a shaping engine, a font-table parser, reflow, and any placement whose
+   *sequence* of glyphs depends on data. The rejected alternatives A through D below are
+   rejected still — none of them is what this admits.
+
+   The honest cost is stated rather than left to be discovered: the runtime now contains
+   arithmetic that must agree with the baker's, and "must agree" is a property held by a
+   shared implementation and a compile-time bound rather than by construction. Static text
+   remains stronger, because its positions are bytes in a committed artifact. A component
+   that *can* be static should be.
 5. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), composite
    glyph substitutions the baker did not pre-bake, CFF/CFF2 outlines, GPOS
    positioning, ligatures and hinting **fail the font baker (#160/#161)** with stable codes
@@ -155,6 +228,15 @@ is what makes a rendered mismatch *diagnostic*.
 
 ### Negative
 
+- **The runtime holds pen arithmetic, since #258, and grid arithmetic since #260.** Decision 4's
+  amendment admits slot substitution in a build-measured pattern, so a live `Clock` or
+  `NumericDisplay` is placed on device rather than read out of an artifact, and a `TextInput`'s
+  value is placed on a fixed-pitch grid derived from the same font package. That is a real reduction in what the committed
+  bytes alone attest, and it is bounded rather than eliminated: the shape is a compile-time
+  constant, the envelope is measured against the node, the arithmetic has one implementation
+  shared with the baker, and the runtime re-checks the drawn extent against the node's bounds
+  before it commits the frame. A reviewer comparing a static `Label` against a live reading
+  should know that the first is attested by bytes and the second by a bound.
 - **No complex scripts in v1.** Latin, Cyrillic and Greek LTR are the entire initial
   repertoire. Arabic, Devanagari, Han, Hangul, Thai and all complex-shaping scripts
   are out of scope until a later wave explicitly widens the baker. A device that
@@ -166,7 +248,9 @@ is what makes a rendered mismatch *diagnostic*.
   to see it.
 - **No IME integration.** Epic #17 explicitly cuts IME from the component dictionary
   for the same trust-zone reason; this ADR is consistent with that cut. Input-method
-  editing is a platform concern, not a governed-renderer concern.
+  editing is a platform concern, not a governed-renderer concern. #260 landed a `TextInput`
+  that honours the cut exactly: it displays a value and a caret the host supplies, and contains
+  no composition, no candidate list and no key handling of any kind.
 - **Atlas size is a build-time dimension.** A larger supported repertoire costs more
   atlas memory on every device whether a given screen uses it or not. The packer
   (#160) is responsible for power-of-two sizing and for failing closed on over-budget

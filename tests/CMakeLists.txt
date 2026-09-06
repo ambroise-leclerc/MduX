@@ -7,6 +7,37 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# Issue #280: Ccache does not model C++20 named-module dependencies. The classifier test is always
+# present and pins the fail-closed response-file parser. The integration test needs real ccache and
+# Clang's explicit BMI paths; the Linux Clang workflow installs ccache so this negative layout-change
+# case is continuously exercised rather than left as a local-only reproduction.
+add_test(NAME build.cache.classifier
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheClassifierTest.cmake)
+set_tests_properties(build.cache.classifier PROPERTIES LABELS "build")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+   MDUX_CACHE_KIND STREQUAL "ccache" AND
+   MDUX_CACHE_CAN_HASH_BMIS)
+    add_test(NAME build.cache.namedModuleIntegrity
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DGENERATOR=${CMAKE_GENERATOR}
+            -DCACHE_BINARY=${MDUX_CACHE_BINARY}
+            "-DCXX_FLAGS=${CMAKE_CXX_FLAGS}"
+            "-DEXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheIntegrityTest.cmake)
+    set_tests_properties(build.cache.namedModuleIntegrity PROPERTIES LABELS "build" TIMEOUT 120)
+else()
+    message(STATUS
+        "build.cache.namedModuleIntegrity not registered: it requires Clang and ccache 4.8+; "
+        "build.cache.classifier still verifies fail-closed module-map handling")
+endif()
+
 # Governed-zone module tests. Deliberately links MduX::Core only, not MduX::MduX -
 # this is itself a check that the governed modules are usable without pulling in
 # Vulkan (see ADR-004).
@@ -712,6 +743,33 @@ endif()
 
 mdux_discover_tests(text_tools_spec)
 
+# Governed image schema and host-only QOI baker stay in separate executables so the Core-only link
+# remains standing evidence that the decoder never enters the device runtime.
+add_executable(image_spec image/ImageSpecMain.cpp image/SchemaTests.cpp)
+target_link_libraries(image_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(image_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(image_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(image_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(image_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(image_spec)
+
+add_executable(image_tools_spec image/ImageToolsSpecMain.cpp image/QoiTests.cpp image/ImageBakeTests.cpp)
+target_link_libraries(image_tools_spec PRIVATE MduX::ImageBakeLib speclab::speclab)
+target_include_directories(image_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(image_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(image_tools_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(image_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(image_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(image_tools_spec)
+
 # Governed compiled-screen schema (issue #197)
 #
 # Links MduX::Core only, and deliberately not MduX::MeduiLib. `mdux.medui.schema` is the one type a
@@ -747,7 +805,12 @@ mdux_emit_screen_package(
 add_executable(medui_spec
     medui/MeduiSpecMain.cpp
     medui/SchemaTests.cpp
+    medui/ButtonTests.cpp
+    medui/FieldTests.cpp
+    medui/ReadingTests.cpp
     medui/ScreenRuntimeTests.cpp
+    medui/StatusTests.cpp
+    medui/TraceTests.cpp
     medui/GeneratedScreenTests.cpp
     medui/GeneratedScreenModuleConsumer.cpp
     medui/GeneratedScreenHeaderConsumer.cpp
@@ -928,6 +991,7 @@ add_executable(medui_tools_spec
     medui/EmitTests.cpp
     medui/CompileTests.cpp
     medui/CheckTests.cpp
+    medui/GrammarTests.cpp
     medui/SharedConformanceTests.cpp
 )
 

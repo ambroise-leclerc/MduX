@@ -108,6 +108,7 @@ jobs:
         sudo apt-get install -y \
           ninja-build \
           build-essential \
+          ccache \
           clang-21 \
           libc++-21-dev \
           libc++abi-21-dev \
@@ -137,6 +138,11 @@ jobs:
         major="$("$clangxx" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)"
         if [ "$major" != "21" ]; then
           echo "::error::${clangxx} reports major version ${major}, expected 21."
+          exit 1
+        fi
+        ccache_version="$(ccache --version | sed -n 's/^ccache version \([0-9][0-9.]*\).*/\1/p' | head -1)"
+        if ! dpkg --compare-versions "$ccache_version" ge 4.8; then
+          echo "::error::ccache ${ccache_version:-unknown} cannot accept per-compilation BMI inputs; 4.8+ is required."
           exit 1
         fi
 
@@ -181,6 +187,14 @@ jobs:
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         ctest --preset ninja-clang --output-on-failure
+
+    # #280's negative case changes an exported struct without touching its consumer, then proves
+    # that the new BMI invalidates the cached object. The second rebuild also has to be a cache hit:
+    # bypassing every module consumer would be correct but would throw away the compile-time benefit
+    # this launcher exists to preserve. Kept as a named step with --no-tests=error so losing the
+    # registration cannot masquerade as a green run.
+    - name: Verify ccache invalidates named-module consumers
+      run: ctest --preset ninja-clang -R '^build\.cache\.namedModuleIntegrity$' -V --no-tests=error
 
     # The step this workflow's header used to describe as future work. It matches the MSVC and GCC
     # legs in windows-build.yml / linux-gcc16-build.yml: re-derive every committed artifact and

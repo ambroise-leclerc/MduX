@@ -41,10 +41,106 @@ The runtime draws a `Panel` and, given a `TextBinding`, a `Label` (#242) — the
 compiled screen needs to reach glyphs: the font package, the text package for the locale the device
 is running, and its sidecar. Without one, a label is deferred rather than refused.
 
-One limit is worth knowing before you write a screen: every other component is visited, counted in
-`FrameStats::deferred` and left undrawn. A `Button` is more than its text — it has a face nothing in
-this project has decided — and live-data components have no geometry until the frame does. Both are
-[#17](https://github.com/ambroise-leclerc/MduX/issues/17).
+It also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves (#255): that node's whole
+rectangle, in the single token it carries, which is exactly the pair its golden entry pins.
+
+A `NumericDisplay` draws its **digits** and a `Clock` its **time**, given a `ReadingBinding` (#258).
+Three things to know before writing either:
+
+- **A `template:` needs a `[numericTemplates]` entry in the screen recipe**, naming what it renders
+  as — `##.# mmHg`, where `#` is a digit slot and every other character is a literal. Without one
+  the compile fails with `MEDUI-E053`, because a template the compiler cannot expand is one whose
+  widest reading it cannot measure against your box. The slot character is `#` rather than a letter
+  precisely so a unit like `mmHg` stays a unit.
+- **The value is a fixed-point integer**, in the template's own units: `1234` under `###.#` is
+  `123.4`. A value with more digits than its slots is refused, never truncated.
+- **A `Clock` has no `color:` field**, so its tint comes from the binding rather than from your
+  screen. That is the one appearance decision the runtime leaves to the host, and it is why a golden
+  never pins a clock's colour.
+
+A `StatusIndicator` draws its **state**, given a `StatusBinding` (#259). Three things to know before
+you write one:
+
+- **A bound indicator must declare `colors:`.** The field is optional in the dictionary and stays
+  optional here, but a node with no per-state tint cannot be bound at all - `StatusHasNoTint`, at
+  start-up. With no tint, the only thing that varies between its states is the word, and the word
+  needs a locale a device may not have joined yet; an indicator that paints the same rectangle in
+  every state is the failure that looks most like a working one.
+- **A state is a position in your `states:` list**, not a name and not an open value. The list is
+  closed by the time a device holds it, so an index past the end is `StateOutOfRange` and refuses the
+  frame - never clamped to the last state, never wrapped to the first, never drawn blank.
+- **Without a slot the node is deferred**, not painted in state 0. A device that has not read its
+  first status yet is in a normal state, and a default one would be a reading nobody supplied.
+
+What it draws is the state's own tint over the node's whole rectangle, with the state's word over it
+when a `TextBinding` is bound - the field dimming to quarter coverage under the word, exactly as a
+bound `NumericDisplay`'s does.
+
+A `TextInput` draws its **value and caret**, given a `TextInputBinding` (#260). Four things to know
+before you write one:
+
+- **It is a grid, not a run.** Cell *k* sits at `k * cellWidth(font)`, where the pitch is the widest
+  advance the font package's charset admits, so a proportional font comes out looking monospaced.
+  That is the price of a placement a compiler can certify - ADR-010 decision 4 forbids a pen whose
+  width is computed at run time, and a proportional field is exactly that pen.
+- **`max_length` is measured against your box**, since this issue: `max_length` cells of the font's
+  widest glyph plus the caret's column must fit, or the screen fails to compile with `MEDUI-E050`.
+  A `max_length` past `maxFieldCells` (64) is `MEDUI-E053` instead, because no box makes it drawable.
+- **Your `charset:` bounds what the device displays, since [#297](https://github.com/ambroise-leclerc/MduX/issues/297).**
+  It says which code points this field's data can produce; the compiler checks the font package can
+  draw all of them (`MEDUI-E053`) *and* writes the resolved ranges into the compiled node, so the
+  runtime holds the field to your set and not only to the font's. A host that sends a letter to a
+  digits-only field is refused. Before #297 the node carried the charset's *name* and nothing else,
+  so the letter went on screen.
+  - The refusal has its own name. `CharacterOutsideFieldCharset` is a character the package draws
+    perfectly well that **this node never declared**; `GlyphNotInPackage` is one the font cannot draw
+    at all. If you see the second, re-bake the font; if you see the first, either the host is sending
+    the wrong data or your `charset:` is narrower than the field's real alphabet.
+  - It is checked when a value is **bound**, not only when a frame is drawn.
+    `TextInputBinding::create()` refuses the slot, which leaves the previous frame on screen and
+    hands your host an error; a violation that reaches `render()` refuses the whole screen instead.
+  - The box is still measured against the **font's** charset, not yours, which is conservative in the
+    only safe direction: a box sized for the widest glyph the font admits holds every narrower one.
+- **Display and caret only.** No composition, no candidate window, no key handling. The host edits
+  the value; the screen shows it. A value longer than the field, or a character the font package's
+  restricted charset does not admit, refuses the frame rather than truncating or substituting — the
+  charset is the bound, not the glyph table, which may carry more than it declares.
+
+A `SignalTrace` draws its **waveform**, given a `SignalBinding` (#257) — the second join, and
+the one whose inputs no artifact carries. A slot names the node's `stream_source`, a caller-owned
+ring of samples, and the range those samples are read against; that range is the host's because what
+a sample means in millivolts is a property of an amplifier rather than of a layout. Two things to
+know before you write one: a ring past `maxSamplesPerTrace` (256) is **refused rather than
+truncated**, and a bound trace dims its field so the full-tint stroke over it is visible — an unbound
+one is the opaque field #255 draws, unchanged.
+
+`Button` and `CriticalButton` draw a **face and a word**, and resolve a **press** (#261). This
+paragraph used to say both were deferred because a button "has a face nothing in this project has
+decided"; what decided it is in `Screen.cppm` under "Why a button's rectangle is its face". Four
+things to know before you write one:
+
+- **The rectangle is the face.** Both fill their whole box with their one `color:` token, with the
+  label's word over it at full tint once a locale is bound - the field dimming to quarter coverage
+  under the word, exactly as a bound `StatusIndicator`'s does. Neither is ever deferred, so a button
+  is drawn on a device that has joined no locale: an unlabelled face is a control an operator can
+  still find, and no face at all is one they cannot.
+- **That rectangle is also the hit target.** `resolvePress(screen, x, y)` is the whole of the press
+  side: it takes a surface coordinate and returns the control under it, the requirement that control
+  is traced to, and either a `SystemEvent` or a `Button`'s `source:`. It resolves to the node drawn
+  **last**, and every node is opaque to a press - a label positioned over a button takes the press
+  and yields nothing, because firing a control the operator cannot see is worse than firing none.
+- **`on_press:` is closed and `requirement:` is mandatory, and both are checked twice.** A name
+  outside `{NoOp, TriggerHalt}` is `MEDUI-E034`, and a `CriticalButton` with no `requirement:` is a
+  missing-required-field error; both are compile time. A screen built by hand at run time met
+  neither check, so `resolvePress()` refuses such a control as `UnimplementedEvent` or
+  `UntracedCriticalControl` rather than reporting a no-op. A press is the wrong place to be lenient.
+- **What a press does not do is press anything.** This module resolves; the host acts. There is no
+  event queue, no focus, no pressed or disabled state, and no appearance for one - those are
+  decisions no artifact names and no golden pins.
+
+Annotate a `CriticalButton` `@safety_critical(cv_check: [Bounds, ColorHash])` when you want its
+position and tint pinned: the face is what makes both dischargeable, since `Bounds` reads the
+rectangle as an equality and only the label's glyphs reach the full tint `ColorHash` requires.
 
 The HTML/CSS path that used to stand in for all of this - `UiFileWatcher::loadContent()`, which
 sniffed a file extension and stored the file as a string, with no parsing, layout or rendering
@@ -144,8 +240,26 @@ compiler knows a `TimeSeconds` clock draws eight glyphs and checks them against 
 There is no product-supplied table to configure, and a box too narrow for the format is a compile
 error.
 
-`charset:` on `TextInput` stays an open name — it resolves against the character sets a build bakes,
-which the contract does not enumerate.
+`charset:` on `TextInput` stays an open **name in the source** — it resolves against the character
+sets a build bakes, which the contract does not enumerate. What the *compiled node* carries is the
+resolved set as well as the name (#297), so the device enforces it without a table shipped beside the
+screen. Write the sets in your screen recipe's `[dynamicText]` table, repeating a name to give it
+more than one run of code points:
+
+```toml
+[dynamicText]
+names           = ["PATIENT-ID", "PATIENT-ID"]
+# Decimal: the TOML subset has no hex. 48..57 is U+0030..U+0039, 65..90 is U+0041..U+005A.
+firstCodePoints = [48, 65]
+lastCodePoints  = [57, 90]
+```
+
+The ranges must not overlap, and the compiler refuses the recipe naming the entry if they do. The
+resolved set lands in the committed `package.json`, so widening what a field will accept is a re-bake
+and a reviewable diff rather than a change in a table nobody reads.
+
+What the field's box must *hold* is still measured against the font package's own charset, for the
+reason the `TextInput` notes above give.
 
 ## `@safety_critical` — when it's mandatory, and when it's automatic
 
@@ -160,8 +274,44 @@ verifier checks against. Rules:
   without `@safety_critical` — a declared position is a safety-relevant claim by itself.
 - **A node with both gets exactly one merged entry** (deduplicated `cvChecks`), never two.
 - Dynamic content (`NumericDisplay`, `StatusIndicator`, `Clock`, `SignalTrace`) pins its *bounds*
-  and *color* but never its varying value — the golden reference says **where** critical content
+  and *color* but never its varying value — and a `StatusIndicator` carries one colour per state, so
+  `ColorHash` is refused for it and only its bounds can be pinned — the golden reference says **where** critical content
   must appear and in what tint, not what the live number is.
+
+## The contract as a file, rather than as this document
+
+`mdux-meduic --grammar` writes the whole language as canonical JSON, and
+[`docs/medui/grammar.json`](../../../docs/medui/grammar.json) is that output committed. Read it
+rather than this skill when you want the *set* of something — every component, every field a
+component admits and whether it is required, every field domain and its written form, both closed
+named-value sets, every theme token, and every diagnostic with its summary and fix hint.
+
+Every one of those sections is **read off the compiler's own tables**, so what `--grammar` prints is
+never stale: adding a component or a theme token changes the emitted document with nobody editing
+anything. The committed file is a separate thing — a snapshot an agent can read without building —
+and a snapshot can be stale in a working tree. `medui-grammar-committed-copy-is-current` *detects*
+that, it does not prevent it: a file edited or left behind is caught the next time the suite runs,
+not at the moment something reads it. If it matters that you have the current one, run
+`mdux-meduic --grammar` rather than trusting the checkout.
+
+The one written section is `productions`, the EBNF, and it carries executable examples — sources the
+compiler accepts, and sources it rejects with the code each rejection must produce — which a test
+runs through the real front end. What that buys is worth knowing precisely: the examples are
+verified, the EBNF prose is checked only as far as they reach. What *is* checked mechanically is
+that no rule refers to a form the document leaves undefined, so the contract is at least closed.
+
+`mdux-meduic --explain MEDUI-E034` answers for one code:
+
+```console
+$ mdux-meduic --explain MEDUI-E034
+MEDUI-E034 [error] a named value is outside the closed set its field admits
+  fix: use one of the members the shared component model lists for this field. This is not
+  MEDUI-E033: the value is a well-formed identifier, so its kind is right and only its
+  membership is wrong
+```
+
+A code no row names exits 2 and says so, rather than printing an empty explanation — so a script can
+tell "this code means nothing here" from "this code means nothing".
 
 ## Checking a file without a full build
 

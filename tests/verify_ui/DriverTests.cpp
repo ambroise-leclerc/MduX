@@ -205,6 +205,50 @@ const mdux::spec::Register trailingSeparatorCli{"A trailing screen separator is 
                                                         .Execute();
                                                 }};
 
+const mdux::spec::Register imageDirectoryCli{"Both image destinations are accepted once each, and neither may be empty", "evidence-unit", [] {
+                                                 return speclab::Test("verify-ui-image-dir-cli")
+                                                     .Given("invocations naming where to write a diff image and a frame image", [] {})
+                                                     .When("the CLI boundary parses each", [] {})
+                                                     .Then("both destinations are retained, and a repeated or empty one is a usage error",
+                                                           [] {
+                                                               constexpr std::array accepted{std::string_view{"--screen=generated/screen/demo"},
+                                                                                             std::string_view{"--locales=all"},
+                                                                                             std::string_view{"--diff-image-dir=out/diff"},
+                                                                                             std::string_view{"--frame-image-dir=out/frame"}};
+                                                               const auto           invocation = vu::parseArguments(accepted);
+
+                                                               mdux::spec::Checks assertions;
+                                                               assertions.expect(invocation.diffImageDirectory == "out/diff",
+                                                                                 "the diff destination is retained");
+                                                               assertions.expect(invocation.frameImageDirectory == "out/frame",
+                                                                                 "and the frame destination is a separate one");
+
+                                                               // Two directories rather than one flag with a mode, because the two images
+                                                               // answer different questions and a run may legitimately want either alone.
+                                                               const auto rejects = [](std::span<const std::string_view> arguments) {
+                                                                   try {
+                                                                       static_cast<void>(vu::parseArguments(arguments));
+                                                                   } catch (const mdux::tools::cli::UsageError&) {
+                                                                       return true;
+                                                                   }
+                                                                   return false;
+                                                               };
+
+                                                               constexpr std::array empty{std::string_view{"--screen=generated/screen/demo"},
+                                                                                          std::string_view{"--locales=all"},
+                                                                                          std::string_view{"--frame-image-dir="}};
+                                                               assertions.expect(rejects(empty), "an empty destination would write into the working directory");
+
+                                                               constexpr std::array twice{std::string_view{"--screen=generated/screen/demo"},
+                                                                                          std::string_view{"--locales=all"},
+                                                                                          std::string_view{"--frame-image-dir=a"},
+                                                                                          std::string_view{"--frame-image-dir=b"}};
+                                                               assertions.expect(rejects(twice), "a repeated destination has no defensible winner");
+                                                               assertions.raise();
+                                                           })
+                                                     .Execute();
+                                             }};
+
 const mdux::spec::Register subsetCli{"A locale subset is rejected", "evidence-unit", [] {
                                          return speclab::Test("verify-ui-subset-cli")
                                              .Given("a request for one locale", [] {})

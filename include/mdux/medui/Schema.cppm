@@ -44,6 +44,12 @@
  * approval manifest, deliberately - otherwise a different, individually valid package could be
  * substituted after review while every local consistency check still passed.
  *
+ * The locale in that record is a *tag*, and `isLocaleTag()` below says what that means (#281).
+ * Until then the only rule was non-empty, so `en/US`, `(locale-free)` and a kilobyte of text were
+ * all legal approved locales - while consumers had begun deriving filenames and identifiers from
+ * the tag. Constraining it here rather than at each consumer makes it a compile error in the
+ * generated screen's own `static_assert`, which is the earliest place it can be one.
+ *
  * The cost, stated as a cost: one rectangle serves every locale, so it must be the one that
  * survives the widest approved translation. That is what #195 measures, and why the budget below
  * cannot be derived from the node count.
@@ -89,6 +95,12 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 
+// Re-exported, not merely imported. `TextInputSpec::charsetRanges` is a span of
+// `mdux::font::CharsetRange`, so the type is part of this contract rather than an implementation
+// detail behind it: a consumer holding a compiled screen has to be able to name what a field admits,
+// and the generated translation unit that owns the storage has to be able to declare the array.
+export import mdux.font.schema;
+
 export namespace mdux::medui {
 
 /// The `<kind>` component of `generated/<kind>/<id>/`, and the value of a package's `kind` member.
@@ -99,33 +111,59 @@ inline constexpr std::string_view packageKind = "screen";
 inline constexpr std::string_view colorTokenPrefix = "Theme.Colors.";
 
 enum class SchemaError : std::uint8_t {
-    UnsupportedSchemaVersion,    ///< the package declares a version this module does not read
-    EmptyId,                     ///< the screen has no id, so no directory and no evidence entry
-    NonPositiveSurface,          ///< a surface with no extent cannot contain a rectangle
-    EmptyNodeId,                 ///< a node with no id cannot be named by a golden or a requirement
-    DuplicateNodeId,             ///< two nodes share an id, so a golden could name either
-    DegenerateBounds,            ///< a rectangle with no extent, which `DrawList` refuses to record
-    BoundsOutsideSurface,        ///< a rectangle the declared surface does not contain
-    MalformedColorToken,         ///< a colour that is not a `Theme.Colors.<Token>` name
-    UnknownColorToken,           ///< a well-formed name the governed table does not define
-    UnknownPayload,              ///< a payload this module cannot name, or one left valueless
-    EmptyRequiredName,           ///< a spec field the component dictionary requires is empty
-    NoStates,                    ///< a status indicator that can show nothing
-    StateColorCountMismatch,     ///< per-state tints that do not pair one-to-one with the states
-    NonPositiveMaxLength,        ///< a text input that can hold no character
-    EmptyBudget,                 ///< a screen with nodes whose budget can hold no primitive
-    BudgetExceedsIndexWidth,     ///< more vertices than a 16-bit index can address
-    EmptyApprovedLocale,         ///< a text-package approval does not name its locale
-    EmptyApprovedPackageId,      ///< a text-package approval does not name its package
-    EmptyApprovedPackageDigest,  ///< a text-package approval carries no package identity
-    DuplicateApprovedLocale,     ///< two text-package approvals claim the same locale
-    MissingTextPackageApproval,  ///< a text-bearing screen approves no text package
-    UnspecifiedNamedValue,       ///< a closed-set field left at its `Unspecified` sentinel
-    NamedValueOutOfRange,        ///< a closed-set field holding no enumerator of its type
+    UnsupportedSchemaVersion,     ///< the package declares a version this module does not read
+    EmptyId,                      ///< the screen has no id, so no directory and no evidence entry
+    NonPositiveSurface,           ///< a surface with no extent cannot contain a rectangle
+    EmptyNodeId,                  ///< a node with no id cannot be named by a golden or a requirement
+    DuplicateNodeId,              ///< two nodes share an id, so a golden could name either
+    DegenerateBounds,             ///< a rectangle with no extent, which `DrawList` refuses to record
+    BoundsOutsideSurface,         ///< a rectangle the declared surface does not contain
+    MalformedColorToken,          ///< a colour that is not a `Theme.Colors.<Token>` name
+    UnknownColorToken,            ///< a well-formed name the governed table does not define
+    UnknownPayload,               ///< a payload this module cannot name, or one left valueless
+    EmptyRequiredName,            ///< a spec field the component dictionary requires is empty
+    NoStates,                     ///< a status indicator that can show nothing
+    StateColorCountMismatch,      ///< per-state tints that do not pair one-to-one with the states
+    NonPositiveMaxLength,         ///< a text input that can hold no character
+    EmptyBudget,                  ///< a screen with nodes whose budget can hold no primitive
+    BudgetExceedsIndexWidth,      ///< more vertices than a 16-bit index can address
+    EmptyApprovedLocale,          ///< a text-package approval does not name its locale
+    MalformedApprovedLocale,      ///< a locale tag outside the closed subset `isLocaleTag()` admits
+    EmptyApprovedPackageId,       ///< a text-package approval does not name its package
+    EmptyApprovedPackageDigest,   ///< a text-package approval carries no package identity
+    DuplicateApprovedLocale,      ///< two text-package approvals claim the same locale
+    MissingTextPackageApproval,   ///< a text-bearing screen approves no text package
+    EmptyApprovedImageId,         ///< an image-package approval does not name its package
+    EmptyApprovedImageDigest,     ///< an image-package approval carries no package identity
+    NonPositiveImageExtent,       ///< an image-package approval has no intrinsic extent
+    ImageExtentMismatch,          ///< an Image node differs from its package's intrinsic extent
+    TooManyApprovedImages,        ///< S1 has one immutable RGBA descriptor per screen
+    DuplicateApprovedImage,       ///< two image approvals claim the same package id
+    MissingImagePackageApproval,  ///< an Image names no approved image package
+    UnspecifiedNamedValue,        ///< a closed-set field left at its `Unspecified` sentinel
+    NamedValueOutOfRange,         ///< a closed-set field holding no enumerator of its type
+    NarrowedCharsetIsEmpty,       ///< a node names a charset but carries no set, so nothing narrows
+    UnnamedCharsetRanges,         ///< a node carries a charset set that no `charset:` asked for
+    CharsetRangeDescending,       ///< a range ending before it begins, which admits nothing
+    CharsetRangesOverlap,         ///< ranges out of order or overlapping, so the set is ambiguous
+    CodePointOutOfRange,          ///< a range naming something past the last Unicode scalar value
+    SurrogateCodePoint,           ///< a range admitting a lone surrogate, which is no character
 };
 
 [[nodiscard]] constexpr std::string_view describe(SchemaError error) noexcept {
     switch (error) {
+        case SchemaError::NarrowedCharsetIsEmpty:
+            return "a text input names a charset but carries no resolved set";
+        case SchemaError::UnnamedCharsetRanges:
+            return "a text input carries a resolved charset it never named";
+        case SchemaError::CharsetRangeDescending:
+            return "a charset range ends before it begins";
+        case SchemaError::CharsetRangesOverlap:
+            return "the charset ranges are not sorted and disjoint";
+        case SchemaError::CodePointOutOfRange:
+            return "a charset range names a value past the last Unicode scalar value";
+        case SchemaError::SurrogateCodePoint:
+            return "a charset range admits a surrogate, which is not a character";
         case SchemaError::UnspecifiedNamedValue:
             return "a field whose value must come from a closed set was left unspecified";
         case SchemaError::NamedValueOutOfRange:
@@ -164,6 +202,8 @@ enum class SchemaError : std::uint8_t {
             return "the vertex budget exceeds what a 16-bit index can address";
         case SchemaError::EmptyApprovedLocale:
             return "an approved text package does not name its locale";
+        case SchemaError::MalformedApprovedLocale:
+            return "an approved locale is not a well-formed language tag";
         case SchemaError::EmptyApprovedPackageId:
             return "an approved text package does not name its package id";
         case SchemaError::EmptyApprovedPackageDigest:
@@ -172,6 +212,20 @@ enum class SchemaError : std::uint8_t {
             return "two approved text packages claim the same locale";
         case SchemaError::MissingTextPackageApproval:
             return "a text-bearing screen approves no text package";
+        case SchemaError::EmptyApprovedImageId:
+            return "an approved image package does not name its package id";
+        case SchemaError::EmptyApprovedImageDigest:
+            return "an approved image package does not carry its package digest";
+        case SchemaError::NonPositiveImageExtent:
+            return "an approved image package has no intrinsic extent";
+        case SchemaError::ImageExtentMismatch:
+            return "an Image node differs from its approved package's intrinsic extent";
+        case SchemaError::TooManyApprovedImages:
+            return "S1 supports at most one approved image package per screen";
+        case SchemaError::DuplicateApprovedImage:
+            return "two approved image packages claim the same package id";
+        case SchemaError::MissingImagePackageApproval:
+            return "an Image names no approved image package";
     }
     return "unknown schema error";
 }
@@ -575,6 +629,27 @@ struct StatusIndicatorSpec {
     }
 };
 
+/**
+ * @brief A text input's source, its cell count, and the set of characters it may display.
+ *
+ * `charset` is the name the source wrote and `charsetRanges` is what that name resolved to, and the
+ * pair is the point of #297. A name alone is a claim about the *source*: the compiler proves every
+ * code point the named set can produce is one the font package can draw (`MEDUI-E053`), which stops
+ * a screen escaping its font. It is not a bound on what a *device* displays, because a device
+ * handed only a name has nothing to compare a character against - so a field declared `charset:
+ * DIGITS`, on a font that also admits letters, displayed the `A` a host handed it.
+ *
+ * The ranges close that. They are resolved by the compiler from the build's own character-set table
+ * and carried here, so the device tests membership against data in the artifact and needs no table
+ * shipped beside it. That is what distinguishes this from `NumericDisplaySpec::templateId`, which
+ * #258 deliberately left a name: a template stands for a *rendering the host supplies at run time*
+ * (`ReadingSlot::rendering`), while a charset stands for a set the compiler has already resolved and
+ * already validated. Carrying it is closer to carrying resolved `bounds` than to carrying a product
+ * table.
+ *
+ * Both or neither. `validate()` refuses a name with no ranges - a narrowing nothing can enforce -
+ * and ranges with no name, which would be a set no source asked for.
+ */
 struct TextInputSpec {
     std::string_view source{};
     std::string_view colorToken{};
@@ -582,7 +657,19 @@ struct TextInputSpec {
     std::string_view charset{};      ///< empty when the component narrows nothing
     std::string_view requirement{};  ///< optional on a TextInput
 
-    [[nodiscard]] constexpr bool operator==(const TextInputSpec&) const noexcept = default;
+    /// The code points `charset` resolved to: sorted, non-overlapping, scalar values. Empty exactly
+    /// when `charset` is, and spanning storage the generated translation unit owns, as
+    /// `StatusIndicatorSpec`'s parallel lists do.
+    std::span<const mdux::font::CharsetRange> charsetRanges{};
+
+    [[nodiscard]] constexpr bool operator==(const TextInputSpec& other) const noexcept {
+        return source == other.source && colorToken == other.colorToken && maxLength == other.maxLength && charset == other.charset
+               && requirement == other.requirement && std::ranges::equal(charsetRanges, other.charsetRanges);
+    }
+
+    // The membership test lives in `mdux.medui.field` as `admits()`, not here as an accessor. One
+    // definition: an empty set means "this node narrows nothing" rather than "this node admits
+    // nothing", and a rule with two spellings is a rule two readers can disagree about.
 };
 
 /**
@@ -706,6 +793,68 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
     return {};
 }
 
+/// The longest locale tag an approval may carry. Not a rule of RFC 5646, which sets no maximum -
+/// this repository's bound, chosen because consumers derive filenames and identifiers from the tag
+/// and a name has to be a name. It admits language-script-region plus several variants, which is
+/// past anything `mdux-textbake` can produce, and rejects a tag long enough to be a payload.
+inline constexpr std::size_t maxLocaleTagLength = 35;
+
+/**
+ * @brief Whether `tag` is a locale tag this schema admits: `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`.
+ *
+ * A **closed subset** of RFC 5646, not the whole of it. Full BCP 47 is a registry and a parser, and
+ * neither belongs in a `constexpr` device-side check; the subset above covers every locale the text
+ * pipeline can bake today - `en-US`, `de-DE`, `fr-FR` and their script and variant forms - and
+ * rejects everything the permissiveness admitted before: `en/US`, `(locale-free)`, `../etc`, a tag
+ * carrying a newline, and a kilobyte of text.
+ *
+ * Case is not constrained. RFC 5646 declares tags case-insensitive and recommends `en-US` casing
+ * without requiring it, so a schema that refused `en-us` would be inventing a rule; equality between
+ * approvals stays exact, which is what makes duplicate detection a comparison rather than a fold.
+ *
+ * Shape is not existence, the same distinction `isColorToken()` draws: a well-formed tag may name a
+ * locale no text package was ever baked for, which the approval manifest's digest answers and this
+ * predicate does not.
+ */
+[[nodiscard]] constexpr bool isLocaleTag(std::string_view tag) noexcept {
+    if (tag.empty() || tag.size() > maxLocaleTagLength) {
+        return false;
+    }
+
+    // The primary subtag: letters only, two or three of them.
+    std::size_t index = 0;
+    while (index < tag.size() && tag[index] != '-') {
+        const char character = tag[index];
+        if (!((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z'))) {
+            return false;
+        }
+        ++index;
+    }
+    if (index < 2 || index > 3) {
+        return false;
+    }
+
+    // Everything after it is a `-` and two to eight alphanumerics, repeated. The loop never has to
+    // know whether a subtag is a script, a region or a variant - telling them apart is the registry
+    // half of BCP 47, and dropping it is what makes this subset a check rather than a parser.
+    while (index < tag.size()) {
+        ++index;  // `tag[index]` is the `-` the loop above or below stopped on.
+        const std::size_t start = index;
+        while (index < tag.size() && tag[index] != '-') {
+            const char character = tag[index];
+            const bool admitted  = (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9');
+            if (!admitted) {
+                return false;
+            }
+            ++index;
+        }
+        if (const std::size_t length = index - start; length < 2 || length > 8) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /**
  * @brief One text package this screen was compiled and reviewed against.
  *
@@ -714,11 +863,21 @@ static_assert(std::variant_size_v<NodePayload> == 11, "an alternative was added 
  * when that package is internally valid, uses the same font and carries the same keys.
  */
 struct TextPackageApproval {
-    std::string_view locale;           ///< the package's BCP 47 locale
+    std::string_view locale;           ///< the package's locale; `isLocaleTag()` is the grammar
     std::string_view packageId;        ///< the package header id
     evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
 
     [[nodiscard]] constexpr bool operator==(const TextPackageApproval&) const noexcept = default;
+};
+
+/** @brief One baked image package this screen was compiled and reviewed against. */
+struct ImagePackageApproval {
+    std::string_view packageId;        ///< the image package header id and Image source
+    evidence::Digest packageSha256{};  ///< SHA-256 of its canonical `package.json`
+    std::uint32_t    width{0};         ///< intrinsic width checked against the node
+    std::uint32_t    height{0};        ///< intrinsic height checked against the node
+
+    [[nodiscard]] constexpr bool operator==(const ImagePackageApproval&) const noexcept = default;
 };
 
 /**
@@ -728,13 +887,14 @@ struct TextPackageApproval {
  * in read-only memory and `static_assert` that it validates.
  */
 struct ScreenPackage {
-    std::string_view                     id;
-    std::uint64_t                        schemaVersion{evidence::kSchemaVersion};
-    std::int32_t                         surfaceWidth{0};
-    std::int32_t                         surfaceHeight{0};
-    std::span<const TextPackageApproval> approvedTextPackages;
-    std::span<const CompiledNode>        nodes;
-    mdux::draw::DrawBudget               budget{};
+    std::string_view                      id;
+    std::uint64_t                         schemaVersion{evidence::kSchemaVersion};
+    std::int32_t                          surfaceWidth{0};
+    std::int32_t                          surfaceHeight{0};
+    std::span<const TextPackageApproval>  approvedTextPackages;
+    std::span<const ImagePackageApproval> approvedImagePackages{};
+    std::span<const CompiledNode>         nodes;
+    mdux::draw::DrawBudget                budget{};
 
     /// Checks every invariant a consumer is entitled to assume. See the module comment for the one
     /// invariant it deliberately leaves to the compiler: whether the budget is *large enough*.
@@ -948,6 +1108,31 @@ template <typename Member>
     if (spec->maxLength <= 0) {
         return mdux::core::err(SchemaError::NonPositiveMaxLength);
     }
+    // Both or neither (#297). A name with no set is a narrowing the device cannot enforce, which is
+    // the state this whole member exists to leave; a set with no name is one no source asked for.
+    // Refusing both directions is what makes `narrows()` answerable from either field.
+    if (spec->charset.empty() != spec->charsetRanges.empty()) {
+        return mdux::core::err(spec->charset.empty() ? SchemaError::UnnamedCharsetRanges : SchemaError::NarrowedCharsetIsEmpty);
+    }
+    // The same four rules `FontPackage::validate()` applies to `restrictedCharset`, in the same
+    // order and under the same names, because they are the same rules about the same type. Sorted
+    // and disjoint is not tidiness: `permits()` reads the set as a union, so an overlapping pair
+    // describes a set two readers could enumerate differently.
+    for (std::size_t index = 0; index < spec->charsetRanges.size(); ++index) {
+        const mdux::font::CharsetRange& range = spec->charsetRanges[index];
+        if (range.last < range.first) {
+            return mdux::core::err(SchemaError::CharsetRangeDescending);
+        }
+        if (range.last > mdux::font::maxCodePoint) {
+            return mdux::core::err(SchemaError::CodePointOutOfRange);
+        }
+        if (range.first <= mdux::font::surrogateLast && range.last >= mdux::font::surrogateFirst) {
+            return mdux::core::err(SchemaError::SurrogateCodePoint);
+        }
+        if (index > 0 && range.first <= spec->charsetRanges[index - 1].last) {
+            return mdux::core::err(SchemaError::CharsetRangesOverlap);
+        }
+    }
     return requireColor(spec->colorToken);
 }
 
@@ -979,6 +1164,11 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (approval.locale.empty()) {
             return err(SchemaError::EmptyApprovedLocale);
         }
+        // Empty first, then shape. `isLocaleTag()` refuses an empty tag too, so the order is what
+        // keeps "the field was never filled in" a different diagnosis from "the tag is not a tag".
+        if (!isLocaleTag(approval.locale)) {
+            return err(SchemaError::MalformedApprovedLocale);
+        }
         if (approval.packageId.empty()) {
             return err(SchemaError::EmptyApprovedPackageId);
         }
@@ -992,10 +1182,35 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         }
     }
 
+    if (approvedImagePackages.size() > 1) {
+        return err(SchemaError::TooManyApprovedImages);
+    }
+    for (std::size_t index = 0; index < approvedImagePackages.size(); ++index) {
+        const ImagePackageApproval& approval = approvedImagePackages[index];
+        if (approval.packageId.empty()) {
+            return err(SchemaError::EmptyApprovedImageId);
+        }
+        if (approval.packageSha256 == evidence::Digest{}) {
+            return err(SchemaError::EmptyApprovedImageDigest);
+        }
+        if (approval.width == 0 || approval.height == 0) {
+            return err(SchemaError::NonPositiveImageExtent);
+        }
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (approvedImagePackages[earlier].packageId == approval.packageId) {
+                return err(SchemaError::DuplicateApprovedImage);
+            }
+        }
+    }
+
     for (std::size_t index = 0; index < nodes.size(); ++index) {
         const CompiledNode& node = nodes[index];
+        // See validatePayload()'s rationale: GCC 16.1 under UBSan rejects std::get_if over a
+        // subobject of an external inline variable during constant evaluation. Generated screens
+        // have exactly that storage shape, so inspect an automatic copy throughout this iteration.
+        const NodePayload payload = node.payload;
 
-        if (approvedTextPackages.empty() && needsTextPackageApproval(node.payload)) {
+        if (approvedTextPackages.empty() && needsTextPackageApproval(payload)) {
             return err(SchemaError::MissingTextPackageApproval);
         }
 
@@ -1015,8 +1230,19 @@ constexpr mdux::core::ResultVoid<SchemaError> ScreenPackage::validate() const no
         if (!containedBy(node.bounds, surfaceWidth, surfaceHeight)) {
             return err(SchemaError::BoundsOutsideSurface);
         }
-        if (const auto payload = validatePayload(node.payload); !payload.has_value()) {
-            return payload;
+        if (const auto validPayload = validatePayload(payload); !validPayload.has_value()) {
+            return validPayload;
+        }
+        if (const auto* image = std::get_if<ImageSpec>(&payload); image != nullptr) {
+            const auto approval = std::ranges::find_if(approvedImagePackages, [image](const ImagePackageApproval& candidate) {
+                return candidate.packageId == image->source;
+            });
+            if (approval == approvedImagePackages.end()) {
+                return err(SchemaError::MissingImagePackageApproval);
+            }
+            if (approval->width != static_cast<std::uint32_t>(node.bounds.width) || approval->height != static_cast<std::uint32_t>(node.bounds.height)) {
+                return err(SchemaError::ImageExtentMismatch);
+            }
         }
     }
 

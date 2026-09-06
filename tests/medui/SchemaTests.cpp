@@ -50,6 +50,9 @@ constexpr std::array<ms::CompiledNode, 3> constNodes{
 constexpr std::array<ms::TextPackageApproval, 1> constApprovals{
     ms::TextPackageApproval{.locale = "en-US", .packageId = "neurosense-en-us", .packageSha256 = {1}}
 };
+constexpr std::array<ms::ImagePackageApproval, 1> constImageApprovals{
+    ms::ImagePackageApproval{.packageId = "brand-mark", .packageSha256 = {2}, .width = 40, .height = 20}
+};
 
 constexpr ms::ScreenPackage constPackage{
     .id                   = "neurosense",
@@ -95,18 +98,20 @@ static_assert(ms::requirementOf(constNodes[1]).empty(), "and an untraced one yie
  */
 namespace mdux::test::medui::inlinescreen {
 
-inline constexpr std::array<ms::CompiledNode, 1> inlineNodes{
-    ms::CompiledNode{.id = "title", .bounds = {0, 0, 200, 40}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}}
+inline constexpr std::array<ms::CompiledNode, 2> inlineNodes{
+    ms::CompiledNode{.id = "title", .bounds = {0, 0, 200, 40}, .payload = ms::LabelSpec{.textKey = "STR-TITLE", .colorToken = "Theme.Colors.Title"}},
+    ms::CompiledNode{.id = "image", .bounds = {0, 40, 40, 20},                                     .payload = ms::ImageSpec{.source = "brand-mark"}}
 };
 
 inline constexpr ms::ScreenPackage inlinePackage{
-    .id                   = "inline-screen",
-    .schemaVersion        = mdux::evidence::kSchemaVersion,
-    .surfaceWidth         = 200,
-    .surfaceHeight        = 100,
-    .approvedTextPackages = constApprovals,
-    .nodes                = inlineNodes,
-    .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+    .id                    = "inline-screen",
+    .schemaVersion         = mdux::evidence::kSchemaVersion,
+    .surfaceWidth          = 200,
+    .surfaceHeight         = 100,
+    .approvedTextPackages  = constApprovals,
+    .approvedImagePackages = constImageApprovals,
+    .nodes                 = inlineNodes,
+    .budget                = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
 };
 
 static_assert(inlinePackage.validate().has_value(), "an inline constexpr screen validates at compile time, as generated code is");
@@ -294,6 +299,135 @@ const mdux::spec::Register textPackageApprovalsAreIdentified{
                       textBearing.approvedTextPackages.clear();
                       checks.expect(errorOf(textBearing) == ms::SchemaError::MissingTextPackageApproval,
                                     std::format("a text-bearing screen without approvals is refused, got {}", describe(errorOf(textBearing))));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register imagePackageApprovalsAreIdentified{
+    "Image approval identity and intrinsic extent failures have image-specific diagnostics",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-image-approvals")
+            .Given("one Image node and the package approval it names", [] {})
+            .When("the approval loses an identity field or its intrinsic extent disagrees", [] {})
+            .Then(
+                "each condition is refused with its own image-specific schema error",
+                [] {
+                    const auto errorFor = [](ms::ImagePackageApproval approval, ms::NodeRect bounds) -> std::optional<ms::SchemaError> {
+                        const std::array approvals{approval};
+                        const std::array nodes{
+                            ms::CompiledNode{.id = "image", .bounds = bounds, .payload = ms::ImageSpec{.source = "brand-mark"}}
+                        };
+                        const ms::ScreenPackage package{
+                            .id                    = "image-screen",
+                            .schemaVersion         = mdux::evidence::kSchemaVersion,
+                            .surfaceWidth          = 100,
+                            .surfaceHeight         = 100,
+                            .approvedTextPackages  = {},
+                            .approvedImagePackages = approvals,
+                            .nodes                 = nodes,
+                            .budget                = {.maxVertices = 4, .maxIndices = 6, .maxCommands = 1}
+                        };
+                        const auto result = package.validate();
+                        return result.has_value() ? std::nullopt : std::optional{result.error()};
+                    };
+
+                    constexpr ms::ImagePackageApproval valid{.packageId = "brand-mark", .packageSha256 = {2}, .width = 40, .height = 20};
+                    mdux::spec::Checks                 checks;
+                    checks.expect(
+                        errorFor(ms::ImagePackageApproval{.packageId = {}, .packageSha256 = valid.packageSha256, .width = valid.width, .height = valid.height},
+                                 {0, 0, 40, 20})
+                            == ms::SchemaError::EmptyApprovedImageId,
+                        "an empty image package id is identified");
+                    checks.expect(
+                        errorFor(ms::ImagePackageApproval{.packageId = valid.packageId, .packageSha256 = {}, .width = valid.width, .height = valid.height},
+                                 {0, 0, 40, 20})
+                            == ms::SchemaError::EmptyApprovedImageDigest,
+                        "an empty image package digest is identified");
+                    checks.expect(
+                        errorFor(
+                            ms::ImagePackageApproval{.packageId = valid.packageId, .packageSha256 = valid.packageSha256, .width = 0, .height = valid.height},
+                            {0, 0, 40, 20})
+                            == ms::SchemaError::NonPositiveImageExtent,
+                        "an empty intrinsic image extent is identified");
+                    checks.expect(errorFor(valid, {0, 0, 39, 20}) == ms::SchemaError::ImageExtentMismatch, "a node that would scale the image is identified");
+                    checks.raise();
+                })
+            .Execute();
+    }};
+
+// `isLocaleTag()` is `constexpr`, and a generated screen's `static_assert(validate())` is where a
+// malformed tag now becomes a compile error rather than a run-time refusal. These pin the grammar
+// where the device build reads it - the scenario below covers what `validate()` does with it.
+static_assert(ms::isLocaleTag("en"), "a bare two-letter language is a tag");
+static_assert(ms::isLocaleTag("fra"), "and so is a three-letter one");
+static_assert(ms::isLocaleTag("en-US"), "language-region, the form every baked package uses");
+static_assert(ms::isLocaleTag("zh-Hans-CN"), "language-script-region");
+static_assert(ms::isLocaleTag("de-DE-1996"), "a numeric variant subtag");
+static_assert(ms::isLocaleTag("en-us"), "case is not constrained: RFC 5646 tags are case-insensitive");
+static_assert(!ms::isLocaleTag(""), "an empty tag names nothing");
+static_assert(!ms::isLocaleTag("e"), "a one-letter primary subtag is below the grammar");
+static_assert(!ms::isLocaleTag("engl"), "and a four-letter one is above it");
+static_assert(!ms::isLocaleTag("en/US"), "the separator that collided with a filename is not a separator here");
+static_assert(!ms::isLocaleTag("(locale-free)"), "nor is the sentinel a scope may carry outside the manifest");
+static_assert(!ms::isLocaleTag("../etc"), "nor a path");
+static_assert(!ms::isLocaleTag("en\nUS"), "nor a tag carrying a newline");
+static_assert(!ms::isLocaleTag("en-"), "a trailing separator introduces an empty subtag");
+static_assert(!ms::isLocaleTag("en--US"), "and so does a doubled one");
+static_assert(!ms::isLocaleTag("en-U"), "a one-character subtag is below the grammar");
+static_assert(!ms::isLocaleTag("en-ABCDEFGHI"), "and a nine-character one is above it");
+static_assert(!ms::isLocaleTag(std::string_view{"en-US-aaaaaaaa-bbbbbbbb-cccccccc-dddddddd"}), "a tag past maxLocaleTagLength is a payload, not a name");
+static_assert(std::string_view{"en-US-aaaaaaaa-bbbbbbbb-cccccccc-dddddddd"}.size() > ms::maxLocaleTagLength,
+              "and that rejection is the length bound rather than the subtag grammar");
+
+const mdux::spec::Register approvedLocalesHaveAGrammar{
+    "An approved locale is a language tag, not an arbitrary string",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-approved-locale-grammar")
+            .Given("the reference screen, whose one approval names en-US", [] {})
+            .When("that tag is replaced by strings the schema previously admitted", [] {})
+            .Then("each is refused as malformed, while a well-formed tag still validates",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The four from #281, which `validate()` accepted before this rule: a tag whose
+                      // separator is a path separator, the locale-free sentinel a diff-image scope
+                      // carries, a relative path, and a tag with a newline in it. Every one of them
+                      // reached a consumer that derives a filename from it.
+                      for (const std::string_view malformed : {"en/US", "(locale-free)", "../etc", "en\nUS", "e", "engl", "en-", "en--US"}) {
+                          Fixture bad;
+                          bad.approvedTextPackages[0].locale = malformed;
+                          checks.expect(errorOf(bad) == ms::SchemaError::MalformedApprovedLocale,
+                                        std::format("'{}' is refused as malformed, got {}", malformed, describe(errorOf(bad))));
+                      }
+
+                      // A kilobyte of letters satisfies the primary-subtag rule for its first three
+                      // characters and nothing else; the length bound is what refuses it, and it is
+                      // checked here rather than only at compile time because the run-time path is
+                      // the one a parsed artifact takes.
+                      const std::string oversized(1024, 'a');
+
+                      Fixture huge;
+                      huge.approvedTextPackages[0].locale = oversized;
+                      checks.expect(errorOf(huge) == ms::SchemaError::MalformedApprovedLocale,
+                                    std::format("a 1 KB tag is refused, got {}", describe(errorOf(huge))));
+
+                      // Empty stays its own diagnosis. `isLocaleTag()` would refuse it too, so this
+                      // pins the order of the two checks rather than restating the first one.
+                      Fixture empty;
+                      empty.approvedTextPackages[0].locale = {};
+                      checks.expect(errorOf(empty) == ms::SchemaError::EmptyApprovedLocale,
+                                    std::format("an unfilled field is still EmptyApprovedLocale, got {}", describe(errorOf(empty))));
+
+                      // The cost check #281 asked for: every locale the text pipeline bakes today
+                      // still validates. These are the three the fixtures and recipes carry.
+                      for (const std::string_view accepted : {"en-US", "de-DE", "fr-FR"}) {
+                          Fixture good;
+                          good.approvedTextPackages[0].locale = accepted;
+                          checks.expect(!errorOf(good).has_value(), std::format("'{}' still validates", accepted));
+                      }
                       checks.raise();
                   })
             .Execute();
@@ -677,6 +811,93 @@ const mdux::spec::Register statesAndTheirTintsPairUp{
                       checks.expect(errorFor(ms::StatusIndicatorSpec{.requirement = "REQ-1", .source = "S", .stateKeys = states, .colorTokens = oneTint})
                                         == ms::SchemaError::StateColorCountMismatch,
                                     "a short tint list is refused rather than padded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aNarrowedCharsetIsCheckedAsASet{
+    "A text input's resolved charset is a set, and every way it could not be is refused",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-charset-ranges")
+            .Given("a TextInput carrying a charset name and the ranges it resolved to", [] {})
+            .When("each way the pair could be wrong is validated", [] {})
+            .Then("each has its own error, so a screen a device cannot enforce is a compile failure",
+                  [] {
+                      // #297 puts the resolved set in the artifact, and this is what keeps that set
+                      // meaning one thing. `admits()` reads the ranges as a union and an empty span
+                      // as "narrows nothing", so both halves of that reading have to be guaranteed
+                      // here: a name with no set would be a narrowing silently gone - the state
+                      // before #297 - and overlapping ranges are a set two readers could enumerate
+                      // differently.
+                      mdux::spec::Checks checks;
+
+                      static constexpr std::array digits{
+                          mdux::font::CharsetRange{.first = U'0', .last = U'9'}
+                      };
+                      static constexpr std::array descending{
+                          mdux::font::CharsetRange{.first = U'9', .last = U'0'}
+                      };
+                      static constexpr std::array overlapping{
+                          mdux::font::CharsetRange{.first = U'0', .last = U'9'},
+                          mdux::font::CharsetRange{.first = U'5', .last = U'A'}
+                      };
+                      static constexpr std::array pastUnicode{
+                          mdux::font::CharsetRange{.first = 0x30, .last = mdux::font::maxCodePoint + 1}
+                      };
+                      static constexpr std::array surrogates{
+                          mdux::font::CharsetRange{.first = 0xD800, .last = 0xDFFF}
+                      };
+
+                      const auto verdict = [&](std::string_view charset, std::span<const mdux::font::CharsetRange> ranges) {
+                          const std::array<ms::CompiledNode, 1> nodes{
+                              ms::CompiledNode{.id      = "entry",
+                                               .bounds  = {0, 0, 100, 20},
+                                               .payload = ms::TextInputSpec{.source        = "NOTE",
+                                                                            .colorToken    = "Theme.Colors.Title",
+                                                                            .maxLength     = 16,
+                                                                            .charset       = charset,
+                                                                            .requirement   = {},
+                                                                            .charsetRanges = ranges}}
+                          };
+                          const ms::ScreenPackage package{
+                              .id                   = "screen",
+                              .schemaVersion        = mdux::evidence::kSchemaVersion,
+                              .surfaceWidth         = 400,
+                              .surfaceHeight        = 300,
+                              .approvedTextPackages = constApprovals,
+                              .nodes                = nodes,
+                              .budget               = mdux::draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 4}
+                          };
+                          const auto result = package.validate();
+                          return result.has_value() ? std::optional<ms::SchemaError>{} : std::optional{result.error()};
+                      };
+
+                      checks.expect(!verdict("DIGITS", digits).has_value(), "a name with the set it resolved to is valid");
+                      checks.expect(!verdict({}, {}).has_value(), "and so is a node that narrows nothing, carrying neither");
+
+                      // The pair, in both directions. Neither half alone is a state `admits()` could
+                      // read correctly.
+                      checks.expect(verdict("DIGITS", {}) == ms::SchemaError::NarrowedCharsetIsEmpty, "a name with no set is NarrowedCharsetIsEmpty");
+                      checks.expect(verdict({}, digits) == ms::SchemaError::UnnamedCharsetRanges, "a set with no name is UnnamedCharsetRanges");
+
+                      // The four rules the font package's own charset is held to, under the same
+                      // names, because they are the same rules about the same type.
+                      checks.expect(verdict("DIGITS", descending) == ms::SchemaError::CharsetRangeDescending, "a range ending before it begins is refused");
+                      checks.expect(verdict("DIGITS", overlapping) == ms::SchemaError::CharsetRangesOverlap, "overlapping ranges are refused");
+                      checks.expect(verdict("DIGITS", pastUnicode) == ms::SchemaError::CodePointOutOfRange, "a range past the last scalar value is refused");
+                      checks.expect(verdict("DIGITS", surrogates) == ms::SchemaError::SurrogateCodePoint, "a range admitting a surrogate is refused");
+
+                      // Every one of them has a description, as every other schema error does.
+                      for (const ms::SchemaError error : {ms::SchemaError::NarrowedCharsetIsEmpty,
+                                                          ms::SchemaError::UnnamedCharsetRanges,
+                                                          ms::SchemaError::CharsetRangeDescending,
+                                                          ms::SchemaError::CharsetRangesOverlap,
+                                                          ms::SchemaError::CodePointOutOfRange,
+                                                          ms::SchemaError::SurrogateCodePoint}) {
+                          checks.expect(!ms::describe(error).empty(), "the error names itself");
+                      }
                       checks.raise();
                   })
             .Execute();

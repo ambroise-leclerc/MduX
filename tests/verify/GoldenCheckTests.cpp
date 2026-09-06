@@ -30,6 +30,7 @@ import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.report;
 import mdux.medui.schema;
+import mdux.medui.screen;
 import mdux.verify;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -92,6 +93,34 @@ constexpr ms::ScreenPackage titledScreen{.id                   = "titled",
 
 static_assert(titledScreen.validate().has_value(), "and so must the text-bearing one");
 
+/// The committed screen's topbar, in miniature: a control tinted `Theme.Colors.Fault` over a panel
+/// in `Theme.Colors.TopbarBackground`.
+///
+/// That pair is not decoration. Its red channel spans ten units where green spans 163, and a narrow
+/// span is what turns one UNORM step of device rounding into a wide interval of implied coverage -
+/// which is the whole of what `verify-golden-two-coverage-rounding` is about. A fixture in
+/// `ScoreDigits` over black could not exercise it, because every channel there is wide.
+constexpr std::string_view haltToken = "Theme.Colors.Fault";
+
+constexpr ms::CriticalButtonSpec haltButton{.requirement = "REQ-GC-001",
+                                            .labelKey    = "STR-HALT",
+                                            .colorToken  = haltToken,
+                                            .onPress     = ms::SystemEvent::TriggerHalt};
+
+constexpr std::array<ms::CompiledNode, 1> haltNodes{
+    ms::CompiledNode{.id = "halt", .bounds = {4, 4, 8, 6}, .payload = haltButton}
+};
+
+constexpr ms::ScreenPackage haltScreen{.id                   = "halt",
+                                       .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                       .surfaceWidth         = 16,
+                                       .surfaceHeight        = 20,
+                                       .approvedTextPackages = approvals,
+                                       .nodes                = haltNodes,
+                                       .budget               = budget};
+
+static_assert(haltScreen.validate().has_value(), "and so must the one carrying a critical control");
+
 /// A screen naming a colour the governed table does not define.
 ///
 /// Deliberately *not* `static_assert`ed: `validate()` refuses it, which is the point. A screen like
@@ -124,6 +153,15 @@ constexpr mv::GoldenEntry readoutGolden{
     .bounds     = {4, 4, 8, 6},
     .textKey    = {},
     .colorToken = readoutToken,
+    .cvChecks   = bothChecks
+};
+
+/// The control's entry, opted into both checks exactly as the committed screen's is.
+constexpr mv::GoldenEntry haltGolden{
+    .nodeId     = "halt",
+    .bounds     = {4, 4, 8, 6},
+    .textKey    = "STR-HALT",
+    .colorToken = haltToken,
     .cvChecks   = bothChecks
 };
 
@@ -326,6 +364,126 @@ const mdux::spec::Register everyChannelMustAgreeOnOneCoverage{
                       honest.fill({4, 4, 8, 6}, tint);
                       honest.set(6, 6, mv::blend(ground, tint, 128));
                       checks.expect(mv::colorHash(honest.view(), expectation).held(), "a genuine half-coverage pixel is still a blend");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aDimmedFieldUnderAFullTintStrokeIsAdmitted{
+    "A field at reduced coverage under a full-tint stroke discharges both checks",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-golden-two-coverage-composition")
+            .Given("the composition a bound SignalTrace paints (#257)", [] {})
+            .When("Bounds and ColorHash are run over it", [] {})
+            .Then("both hold, which is what makes that composition available at all",
+                  [] {
+                      // The check behind an argument `mdux.medui.screen` makes rather than proves in
+                      // its own suite. A `SignalTraceSpec` carries one colour token, an additive draw
+                      // list cannot knock a stroke back to the ground, and a third colour fails
+                      // ColorHash - so the only composition left is one tint at two coverages, and
+                      // whether that is admissible is this module's answer to give, not that one's.
+                      //
+                      // The dimmed field is what keeps Bounds true: a stroke alone paints a
+                      // data-dependent box, and `goldenBounds()` asks for the node's whole rectangle
+                      // edge for edge. The full-tint stroke is what keeps ColorHash from reporting
+                      // TintAbsent, which a dimmed field alone would earn.
+                      mdux::spec::Checks checks;
+
+                      const mv::GoldenExpectation expectation = expect(readoutGolden, textlessScreen, mv::RenderScope::localeFree());
+                      const ColorRgba8            tint        = tintOf(readoutToken);
+
+                      // `mdux::medui::boundFieldCoverage` as the runtime quantises it. Written
+                      // as the same arithmetic rather than as 64, so a change to the constant moves
+                      // this scenario with it instead of leaving it testing a number nothing paints.
+                      const auto dimmed = static_cast<std::uint8_t>((255.0F * mdux::medui::boundFieldCoverage) + 0.5F);
+
+                      Canvas canvas{16, 20, ground};
+                      canvas.fill({4, 4, 8, 6}, mv::blend(ground, tint, dimmed));
+                      // A stroke through the field: full tint, and nowhere near filling the box.
+                      for (mdux::core::Px x = 4; x < 12; ++x) {
+                          canvas.set(x, 6 + (x % 3), tint);
+                      }
+
+                      const mv::CheckOutcome bounds = mv::goldenBounds(canvas.view(), expectation);
+                      checks.expect(bounds.held(), std::format("the dimmed field keeps the node's whole rectangle painted: {}", mv::describe(bounds.finding)));
+
+                      const mv::CheckOutcome colour = mv::colorHash(canvas.view(), expectation);
+                      checks.expect(colour.held(), std::format("both coverages are blends of one tint: {}", mv::describe(colour.finding)));
+
+                      // And the half that keeps this from being a scenario that cannot fail: the
+                      // same field with no stroke over it reaches full coverage nowhere, which is
+                      // exactly the TintAbsent the stroke is there to answer.
+                      Canvas fieldOnly{16, 20, ground};
+                      fieldOnly.fill({4, 4, 8, 6}, mv::blend(ground, tint, dimmed));
+                      checks.expect(mv::colorHash(fieldOnly.view(), expectation).finding == mv::Finding::TintAbsent,
+                                    "a dimmed field on its own does not carry its tint");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aTwoLayerCompositeIsAllowedTwoStepsOfRounding{
+    "A pixel two composites deep is admitted at two steps and refused at one",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-golden-two-coverage-rounding")
+            .Given("the pixel three CI legs actually rendered for the committed screen's halt control", [] {})
+            .When("ColorHash is run over it at one composite and at two", [] {})
+            .Then("one step reports ForeignColour and two admits it, which is what a device's own precision costs",
+                  [] {
+                      // The scenario above is right in exact arithmetic and passed while saying
+                      // nothing about a GPU: it paints `blend()`'s own output, so no rounding ever
+                      // disagrees with it. This one paints what lavapipe produced under #261 -
+                      // identical on the GCC, Clang and MSVC legs, so a measurement rather than a
+                      // driver's noise - and it is the case that argument did not cover.
+                      //
+                      // A bound button paints its field and then its word: two composites, each
+                      // quantised to eight bits. `Theme.Colors.Fault` over
+                      // `Theme.Colors.TopbarBackground` spans ten units of red against 163 of green,
+                      // so one step of rounding on red implies a tenth of coverage while green and
+                      // blue pin it to a hundredth - and the intervals miss.
+                      mdux::spec::Checks checks;
+
+                      constexpr ColorRgba8 topbar{.r = 209, .g = 214, .b = 219, .a = 255};
+                      constexpr ColorRgba8 fault{.r = 219, .g = 51, .b = 46, .a = 255};
+                      constexpr ColorRgba8 rendered{.r = 215, .g = 134, .b = 135, .a = 255};
+
+                      // Ideal red at the coverage green and blue agree on is 213.88, so the frame's
+                      // 215 is one step above what a single composite could explain. Stated as an
+                      // assertion rather than a comment, because the whole scenario turns on it.
+                      checks.expect(mv::blend(topbar, fault, 124).r == 214, "the ideal red at this coverage rounds to 214");
+
+                      const auto colourAt = [&](std::size_t composites) {
+                          const auto expectation = mv::GoldenExpectation::create(haltGolden, haltScreen, mv::RenderScope::localeFree(), topbar, composites);
+                          if (!expectation.has_value()) {
+                              throw speclab::core::AssertionFailure("the fixture golden must resolve", std::source_location::current());
+                          }
+                          Canvas canvas{16, 20, topbar};
+                          canvas.fill({4, 4, 8, 6}, rendered);
+                          // One fully covered pixel, so the check is answering ForeignColour or Held
+                          // rather than TintAbsent - which would pass this scenario for the wrong
+                          // reason at both depths.
+                          canvas.set(5, 5, fault);
+                          return mv::colorHash(canvas.view(), *expectation).finding;
+                      };
+
+                      checks.expect(colourAt(1) == mv::Finding::ForeignColour,
+                                    "one step is what the check allowed before #261, and it refuses a frame three CI legs produced");
+                      checks.expect(colourAt(2) == mv::Finding::Held, "one step per composite admits it");
+
+                      // And the half that keeps the slack from being a licence: a genuinely foreign
+                      // colour misses by far more than two steps on the channels that carry the
+                      // coverage, so two composites do not admit it either.
+                      const auto foreign = mv::GoldenExpectation::create(haltGolden, haltScreen, mv::RenderScope::localeFree(), topbar, 2);
+                      if (!foreign.has_value()) {
+                          throw speclab::core::AssertionFailure("the fixture golden must resolve", std::source_location::current());
+                      }
+                      Canvas wrong{16, 20, topbar};
+                      wrong.fill({4, 4, 8, 6}, ColorRgba8{.r = 215, .g = 20, .b = 135, .a = 255});
+                      wrong.set(5, 5, fault);
+                      checks.expect(mv::colorHash(wrong.view(), *foreign).finding == mv::Finding::ForeignColour,
+                                    "a colour no coverage of this tint produces is still refused at two steps");
                       checks.raise();
                   })
             .Execute();

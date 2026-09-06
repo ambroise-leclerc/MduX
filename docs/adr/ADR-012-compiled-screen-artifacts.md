@@ -84,9 +84,47 @@ values is also what makes the package readable in a diff: a reviewer sees
 (MEDUI-DEC-006) and a name outside one is `MEDUI-E034`. The distinction matters here rather than
 being a typing detail. A validated *name* is proved to resolve against a table a build supplies, so
 what it means is configuration; a *member* means one thing everywhere, which is what lets the
-compiler measure a clock's rendering against its bounds instead of looking it up. `charset` stays a
-name, because the character sets it resolves against are baked per build and the contract does not
-enumerate them.
+compiler measure a clock's rendering against its bounds instead of looking it up.
+
+**Amended by #297: a `TextInput` carries its `charset` name *and* the code points that name resolved
+to.** This record previously said "`charset` stays a name, because the character sets it resolves
+against are baked per build and the contract does not enumerate them", and the second half of that
+sentence is still true — it is the conclusion drawn from it that was wrong. A device handed only the
+name has nothing to compare a character against but the font package, so a field declared `charset:
+DIGITS` on a font admitting all of Latin-1 displayed the `A` a host handed it: the narrowing stopped
+at the compiler and an author reading the field could not tell.
+
+There are three kinds of thing a compiled node can carry, not two, and `charset` is the third:
+
+- a **member**, which means one thing everywhere, because the contract enumerates it;
+- a **name**, which resolves against a table a *build* supplies, and which a device therefore cannot
+  resolve without that table shipped beside the artifact — the exposure `ReadingSlot` documents at
+  length, and the reason #258 left `NumericDisplay`'s `templateId` a name: what a template stands for
+  is a *rendering the host supplies at run time*;
+- a **resolved value**, which the compiler derived from such a table at build time and wrote down.
+  `bounds` is one. `charsetRanges` is one. Nothing ships beside the screen and nothing is looked up:
+  the device tests membership in a set that is in the file.
+
+That third category is what makes this different from `templateId` rather than a reversal of it. A
+charset name stands for a set the compiler has already resolved and already validated against the
+font (`MEDUI-E053`); resolving it twice, once into a compile-time check and once into a table a
+product hands the runtime, is precisely how the two would come to disagree.
+
+**This is not a widening of the shared contract**, and the reason is worth stating because the
+opposite is arguable. MEDUI-DEC-006 assigns the character sets themselves to the implementation —
+"`charset` stays an open name resolved against the implementation's baked character sets" — so what
+lands in `package.json` is the resolution of a table the contract has already delegated.
+MEDUI-DEC-003 characterises a compiled screen as *locale-free layout data* and closes by assigning
+"committed artifact layouts" to implementations, with conformance comparing "observable meaning, not
+output encoding"; the ranges are locale-free, are not glyph data, and are integers the compiler
+computed. And it is checkable rather than only arguable: the four claimed capabilities are `syntax`,
+`semantics`, `layout` and `safety`, none of which reads a compiled package, and all eighteen pinned
+cases at `265df19` pass unchanged.
+
+What it *is* is a portability difference worth recording rather than discovering: the same `.medui`
+source compiled by an implementation that does not carry the ranges will display a character this one
+refuses. That belongs upstream, and this record is where MduX says what it did and why, not a
+substitute for asking.
 
 **All three files spell their members in camelCase**, as the committed font, shader and model
 packages do (`byteLength`, `occupancyPercent`, `advanceWidth`). The one file that could have differed is
@@ -116,6 +154,14 @@ compiler measured. The compiler first proves the input file is the canonical ser
 form without allocation, requires both digests to agree, and then requires an exact manifest match.
 The binding retains that identity, and `render()` refuses it against a screen whose manifest does not
 contain the same record.
+
+`locale` is constrained to `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`, at most 35 characters — a closed
+subset of RFC 5646 rather than the whole of it, checked by `mdux::medui::isLocaleTag()` inside
+`ScreenPackage::validate()` and therefore inside every generated screen's `static_assert` (#281).
+The subset is deliberately smaller than BCP 47: full conformance is a registry and a parser, and the
+subset already covers every locale `mdux-textbake` can produce. Before it the manifest's only rule
+was non-empty, which admitted `en/US`, `(locale-free)` and a kilobyte of text into a field consumers
+had started deriving filenames and identifiers from.
 
 This amends the earlier consequence that adding a locale or changing a translation rewrote no screen
 artifact. It now rewrites `approvedTextPackages` and the screen's digest intentionally. The layout is

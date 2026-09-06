@@ -24,14 +24,46 @@
  *    model id. The weight-swap test (tests/ml/WeightSwapTests.cpp) exercises the two committed
  *    packages dynamically without changing this device example.
  *
- * ## Two things it deliberately does not do yet
+ * ## 5. One ring, two readers - which is what #257 came here to demonstrate
  *
- * The `.medui` screen and the `SignalTrace` widget issue #64 describes do not exist yet - they are
- * issue #15 and epic #11's S2. When they land, this classifier's output drives a `StatusIndicator`
- * and reads from the same sample ring buffer the trace renders. The ring buffer below is written
- * with that in mind: the classifier reads a window out of it rather than owning the samples, so
- * the eventual demonstration that the trace and the classifier are provably looking at identical
- * data is a matter of giving them the same buffer.
+ * This file used to say that "the `.medui` screen and the `SignalTrace` widget issue #64 describes
+ * do not exist yet", and that when they landed the demonstration "is a matter of giving them the
+ * same buffer". It landed, and that is exactly what happens below: `EndoscopeMonitor` - the
+ * committed screen this repository compiles, whose `SignalTrace` is named `ECG_LEAD_II` - is bound
+ * to the same `SampleRing` the classifier reads its window out of, and a frame is recorded from it.
+ *
+ * The demonstration is the *identity*, not the picture. Nothing copies the samples on the way to
+ * either reader: `readWindow()` hands the classifier a contiguous ordered window and `view()` hands
+ * the trace a description of the same storage, so there is no second buffer that could drift from
+ * the first. A monitor showing a waveform beside a classification derived from different samples is
+ * a specific and very bad failure, and this arrangement makes it unspellable rather than unlikely.
+ *
+ * Still no Vulkan and no window. A draw list is geometry - the vertices, indices and commands a
+ * renderer would consume - and building one needs neither a device nor a surface, which is the
+ * same thing `MedicalUiExample` demonstrates from the other end.
+ *
+ * ## 6. One ring, and now one *state* as well - #259
+ *
+ * This file used to end the section above by saying that "the classifier's output does not drive a
+ * `StatusIndicator`: that component is still deferred by the runtime and arrives with #259". It
+ * arrived, and the wiring below is three lines: the class the classifier chose becomes a
+ * `StatusSlot` for `classifier-state`, the screen's indicator, and the frame draws that state's tint.
+ *
+ * What makes it worth having rather than decorative is the refusal on the other side of it. The
+ * node's `states:` list is closed in the artifact - four states, each a key the compiler validated
+ * against every approved locale and measured against the node's box - so a class index outside it is
+ * `StateOutOfRange` at `StatusBinding::create()` and the demonstrator exits, exactly as it does when
+ * the classifier itself refuses to start. A model retrained to five classes against a screen
+ * compiled for four is caught at the join rather than shown as a fifth state that looks like the
+ * first.
+ *
+ * The words are *not* drawn here, and that is a property of this program rather than a limit of the
+ * runtime: drawing them needs a bound text package, this demonstrator opens no files, and there is
+ * no `constexpr` emitter for a text package the way there is for a screen and a model. So the state
+ * reaches the frame as its tint. `ScreenPixelTests`'s
+ * "An authored screen's bound status state reaches the pixels" is where the same node - the same
+ * `classifier-state`, on the same committed screen - is bound with a text package as well, and its
+ * word is compared against the committed run under lavapipe.
  *
  * The package emitter is the equivalent of the shader pipeline's issue #121: the committed JSON is
  * mechanically rendered into build-tree source and validated by `static_assert`. Only the weight
@@ -39,6 +71,12 @@
  */
 
 import std;
+import mdux.core.units;
+import mdux.draw;
+import mdux.medui.schema;
+import mdux.medui.screen;
+import mdux.medui.trace;
+import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.ml.schema;
 import mdux.ml.runtime;
 import mdux.ml.generated.model_ecg_demo;
@@ -47,7 +85,9 @@ import mdux.ml.generated.model_ecg_demo;
 
 namespace {
 
-namespace ml = mdux::ml;
+namespace ml    = mdux::ml;
+namespace medui = mdux::medui;
+namespace draw  = mdux::draw;
 
 /// Sampling rate the demonstrator's 180-sample window corresponds to.
 constexpr std::size_t sampleRateHz = 180;
@@ -84,6 +124,17 @@ public:
         }
     }
 
+    /// The same samples as the governed trace expansion reads them: a description, not a copy.
+    ///
+    /// `head_` is where the *next* sample goes, which is also the oldest live one once the ring has
+    /// wrapped - and is not the oldest before it has, when the samples start at zero and stop at
+    /// `filled_`. Both cases are spelled out rather than left to the full() path alone, because a
+    /// trace is drawn from the first frame of a device's life and the classifier only from the
+    /// moment its window is complete.
+    [[nodiscard]] medui::SampleRing view() const noexcept {
+        return medui::SampleRing{.storage = samples_, .oldest = full() ? head_ : 0, .count = filled_};
+    }
+
 private:
     std::array<float, Capacity> samples_{};
     std::size_t                 head_{0};
@@ -102,6 +153,27 @@ private:
     }
     return 0.05f * static_cast<float>((index % 7)) - 0.15f;
 }
+
+/// The committed screen, as generated code holds it: read-only data its own emitter `static_assert`ed.
+constexpr medui::ScreenPackage endoscopeMonitor = medui::generated::screen_endoscope_monitor::package();
+static_assert(endoscopeMonitor.validate().has_value(), "the committed screen's generated form validates");
+
+/// Storage for one frame, sized once from the screen's own budget - and by it, so the two cannot
+/// drift. This is the "pre-sized vertex budget" #257 writes into: made here, never grown, and large
+/// enough for the trace because the budget the product declared says so.
+struct Frame {
+    std::array<draw::UiVertex, endoscopeMonitor.budget.maxVertices>    vertices{};
+    std::array<draw::Index, endoscopeMonitor.budget.maxIndices>        indices{};
+    std::array<draw::DrawCommand, endoscopeMonitor.budget.maxCommands> commands{};
+};
+
+/// The scale this demonstrator's synthetic samples are read against.
+///
+/// The screen cannot carry these numbers and should not: what a sample of `ECG_LEAD_II` means is a
+/// property of the amplifier the host owns, not of the layout. Here the "amplifier" is
+/// `syntheticSample()`, whose output lies in [-0.5, 1.0], and the band is widened a little either
+/// side so an excursion is visible as an excursion rather than as a reading against the rail.
+constexpr medui::TraceStyle ecgTrace{.minimum = -1.0F, .maximum = 1.5F, .strokeWidth = 2};
 
 }  // namespace
 
@@ -145,6 +217,10 @@ int main() {
     std::vector<float> window(package.inputLength, 0.0f);
     std::vector<float> output(package.outputLength, 0.0f);
 
+    // The class the last classified window chose, and the one the screen's indicator is bound to
+    // below. Declared out here rather than inside the loop for exactly that reason.
+    std::size_t latestClass = 0;
+
     std::size_t classified = 0;
     for (std::size_t index = 0; index < sampleRateHz * 4 && classified < 3; ++index) {
         ring.push(syntheticSample(index, 60));
@@ -165,6 +241,7 @@ int main() {
                 best = i;
             }
         }
+        latestClass = best;
         std::print("window {}: class {} (", classified, best);
         for (std::size_t i = 0; i < output.size(); ++i) {
             std::print("{}{:.4f}", i == 0 ? "" : ", ", output[i]);
@@ -172,6 +249,78 @@ int main() {
         std::println(")");
         ++classified;
     }
+
+    // 4. The same ring, read as a waveform by the governed screen runtime (#257).
+    //
+    // Nothing is copied between step 3 and this one. `ring` is the object the loop above pushed
+    // samples into and `readWindow()` classified out of; `ring.view()` describes that same storage
+    // to the trace expansion. Whatever the classifier just said, it said about these samples.
+    std::println("");
+    std::println("Frame from the committed screen '{}' ({}x{}):", endoscopeMonitor.id, endoscopeMonitor.surfaceWidth, endoscopeMonitor.surfaceHeight);
+
+    const medui::SampleRing                view = ring.view();
+    const std::array<medui::SignalSlot, 1> slots{
+        medui::SignalSlot{.streamSource = "ECG_LEAD_II", .ring = &view, .style = ecgTrace}
+    };
+
+    auto binding = medui::SignalBinding::create(endoscopeMonitor, slots);
+    if (!binding.has_value()) {
+        // Fail-closed here too, and for the same class of reason `Classifier1D::create()` is: a
+        // stream name this screen does not carry is a trace that would silently stay empty.
+        std::println(std::cerr, "signal binding refused: {}", medui::describe(binding.error()));
+        return 1;
+    }
+
+    // 5. The same classification, read as a state by the same runtime (#259).
+    //
+    // `latestClass` is the index the softmax above chose, offered to the screen's own closed list of
+    // states. Nothing here decides what class 2 *means*: the screen names its four states and the
+    // compiler measured them, and this program supplies a position and nothing else.
+    const std::array<medui::StatusSlot, 1> states{
+        medui::StatusSlot{.nodeId = "classifier-state", .state = static_cast<std::uint32_t>(latestClass)}
+    };
+
+    auto statusBinding = medui::StatusBinding::create(endoscopeMonitor, states);
+    if (!statusBinding.has_value()) {
+        // The closed-list refusal, and the reason this is a `return` rather than a warning: a class
+        // the screen has no state for is a model and a screen that were built against different
+        // ideas of what this device reports. Drawing the nearest state would hide that.
+        std::println(std::cerr, "status binding refused: {}", medui::describe(statusBinding.error()));
+        return 1;
+    }
+
+    // Sized once, from the screen's own budget, and never grown - which is what makes the no-heap
+    // property true of the frame rather than of an intention. Heap-allocated because a demonstrator
+    // on a desktop has a heap; on a device this is a static object, and either way `render()` never
+    // touches an allocator. See tests/medui/ScreenNoHeapTests.cpp.
+    auto frame = std::make_unique<Frame>();
+    auto list  = draw::DrawList::create(frame->vertices, frame->indices, frame->commands, endoscopeMonitor.budget);
+    if (!list.has_value()) {
+        std::println(std::cerr, "draw list refused: {}", draw::describe(list.error()));
+        return 1;
+    }
+
+    const auto recorded = medui::render(endoscopeMonitor, *list, {}, {}, *binding, {}, *statusBinding);
+    if (!recorded.has_value()) {
+        std::println(std::cerr, "frame refused: {}", medui::describe(recorded.error()));
+        return 1;
+    }
+
+    std::println("  samples bound  : {} (the window the classifier read, not a copy of it)", view.count);
+    std::println("  traces expanded: {}", recorded->traces);
+    std::println("  states drawn   : {} (class {}, in that state's own tint)", recorded->states, latestClass);
+    std::println("  nodes / drawn  : {} visited, {} rectangles, {} deferred", recorded->nodes, recorded->rects, recorded->deferred);
+    std::println("  budget used    : {}/{} vertices, {}/{} indices, {}/{} commands",
+                 list->vertices().size(),
+                 endoscopeMonitor.budget.maxVertices,
+                 list->indices().size(),
+                 endoscopeMonitor.budget.maxIndices,
+                 list->commands().size(),
+                 endoscopeMonitor.budget.maxCommands);
+    std::println("");
+    std::println("  The label, the image, the video surface and the patient-id field are deferred:");
+    std::println("  they need bound packages this program opens no files to load. The waveform and");
+    std::println("  the state do not.");
 
     std::println("");
     std::println("Swapping these weights is a re-bake of the recipe and a change to the configured");

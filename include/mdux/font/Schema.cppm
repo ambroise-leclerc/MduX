@@ -126,12 +126,12 @@ enum class SchemaError : std::uint8_t {
 /// only in `report.json` so a runtime that loads a package can check the sidecar it was given
 /// belongs to it, without needing the bake report.
 struct AtlasMetrics {
-    std::string   path{};              ///< bare filename, resolved beside `package.json`
+    std::string   path{};  ///< bare filename, resolved beside `package.json`
     std::uint32_t width{0};
     std::uint32_t height{0};
-    std::uint64_t byteLength{0};       ///< exactly `width * height`; the sheet is R8
-    std::string   sha256{};            ///< 64 lowercase hex characters
-    std::uint32_t occupancyPercent{0}; ///< recorded for the report, not load-bearing
+    std::uint64_t byteLength{0};        ///< exactly `width * height`; the sheet is R8
+    std::string   sha256{};             ///< 64 lowercase hex characters
+    std::uint32_t occupancyPercent{0};  ///< recorded for the report, not load-bearing
 };
 
 /// One baked glyph: where it sits in the sheet, and what it does to the pen.
@@ -146,12 +146,14 @@ struct GlyphRecord {
     std::int16_t  leftSideBearing{0};
     std::uint32_t x{0};
     std::uint32_t y{0};
-    std::uint32_t width{0};   ///< zero for a blank such as the space, which still has an advance
+    std::uint32_t width{0};  ///< zero for a blank such as the space, which still has an advance
     std::uint32_t height{0};
     std::int32_t  bitmapOriginX{0};
     std::int32_t  bitmapOriginY{0};
 
-    [[nodiscard]] bool isBlank() const noexcept { return width == 0 || height == 0; }
+    [[nodiscard]] bool isBlank() const noexcept {
+        return width == 0 || height == 0;
+    }
 };
 
 /// One kerning adjustment the baker chose to bake, in font units.
@@ -165,12 +167,36 @@ struct KerningPair {
     std::int16_t adjustment{0};
 };
 
-/// One run of code points the package is allowed to draw.
+/// The largest Unicode scalar value. Above this is not a character at all, so a table naming one is
+/// describing something no text can contain.
+///
+/// Exported rather than kept in this module's implementation because a `TextInput`'s own narrowed
+/// charset is checked against the same three bounds by `mdux.medui.schema`, and Unicode's limits are
+/// not a fact each table gets to spell for itself. They live beside `CharsetRange` because that is
+/// the type they bound, not because they belong to fonts.
+inline constexpr char32_t maxCodePoint = 0x10FFFF;
+
+/// The surrogate block. Not scalar values: a lone surrogate is a UTF-16 encoding artefact, never a
+/// character, so a charset admitting one admits something no glyph can correspond to.
+inline constexpr char32_t surrogateFirst = 0xD800;
+inline constexpr char32_t surrogateLast  = 0xDFFF;
+
+/// One run of code points a table admits, inclusive at both ends.
+///
+/// Shared by a font package's `restrictedCharset` - the set the *package can draw* - and by a
+/// `TextInput`'s narrowed `charsetRanges` - the set that *node may display*. One type rather than
+/// two of the same shape, because the check `recordField()` makes is a comparison between them: the
+/// node's set is the narrower of the two by construction, and comparing like with like is what makes
+/// that sentence checkable rather than a claim about two spellings.
 struct CharsetRange {
     char32_t first{0};
     char32_t last{0};
 
-    [[nodiscard]] bool contains(char32_t point) const noexcept { return point >= first && point <= last; }
+    [[nodiscard]] constexpr bool contains(char32_t point) const noexcept {
+        return point >= first && point <= last;
+    }
+
+    [[nodiscard]] constexpr bool operator==(const CharsetRange&) const noexcept = default;
 };
 
 /**
@@ -181,13 +207,13 @@ struct CharsetRange {
  * caller holds a `FontPackage` that has not been checked.
  */
 struct FontPackage {
-    std::string              id{};
-    std::uint16_t            unitsPerEm{0};
-    std::uint32_t            pixelSize{0};
-    std::vector<std::string> locales{};
-    AtlasMetrics             atlas{};
-    std::vector<GlyphRecord> glyphs{};       ///< sorted by code point
-    std::vector<KerningPair> kerning{};
+    std::string               id{};
+    std::uint16_t             unitsPerEm{0};
+    std::uint32_t             pixelSize{0};
+    std::vector<std::string>  locales{};
+    AtlasMetrics              atlas{};
+    std::vector<GlyphRecord>  glyphs{};             ///< sorted by code point
+    std::vector<KerningPair>  kerning{};
     std::vector<CharsetRange> restrictedCharset{};  ///< sorted, non-overlapping
 
     /// Every structural rule this module enforces, including the tabular-figure requirement and

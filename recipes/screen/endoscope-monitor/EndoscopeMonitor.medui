@@ -1,10 +1,13 @@
 // The first screen this repository compiles into a committed artifact (#198).
 //
 // It draws the Row background the solver synthesises, a live video surface, a live waveform, a
-// baked image, an explicitly positioned node whose rectangle a golden reference pins - and, since
-// #235, a label. The label is what puts the text-budget stage over a committed artifact: its box is
-// measured against the widest translation every approved locale carries, which is a check that had
-// only ever run over packages a test built for itself.
+// baked image, an explicitly positioned node whose rectangle a golden reference pins, a label since
+// #235, a status indicator whose closed list of states the ECG demonstrator drives since #259,
+// since #260 a bounded text field whose worst case the compiler measures against its box, and since
+// #261 a safety-critical control whose action comes from a closed set and whose requirement traces
+// it to the software development file. The label is what puts the text-budget stage over a committed
+// artifact: its box is measured against the widest translation every approved locale carries, which
+// is a check that had only ever run over packages a test built for itself.
 //
 // One property per line, matching TrustSC's own sources: its parser splits a component body line by
 // line, so a fixture written the portable way is evidence about a shared grammar rather than about
@@ -22,7 +25,7 @@ Screen EndoscopeMonitor {
             id: brand-mark;
             width: 240px;
             height: 72px;
-            source: img("IMG-BRAND-MARK");
+            source: img("brand-mark");
         }
 
         // The screen's one piece of text, and the reason it is here rather than anywhere more
@@ -32,10 +35,72 @@ Screen EndoscopeMonitor {
         // approved locale, because a compiled screen is locale-free (ADR-011 as amended by #203).
         Label {
             id: screen-title;
-            width: 1040px;
+            width: 480px;
             height: 72px;
             text: t("STR-EM-TITLE");
             color: Theme.Colors.Title;
+        }
+
+        // The screen's safety-critical control (#261), and the second node here carrying a golden
+        // reference. Annotated and traced, so `goldens.json` says where the halt control must appear
+        // and in what tint - which is a stronger claim for a button than for a readout, because a
+        // button's rectangle is also the region a press resolves against. A halt control drawn
+        // somewhere other than where the artifact says it is would be pressed by an operator aiming
+        // at whatever moved into its place.
+        //
+        // `on_press: TriggerHalt` is a member of a set the shared contract closed (#219), so this
+        // screen cannot name an action nothing implements - the failure #17 says is worst discovered
+        // on the press of a critical button. `resolvePress()` refuses rather than reporting NoOp if
+        // one ever reaches a device anyway.
+        //
+        // Nothing in this repository presses it. The host owns the input device and the halt path;
+        // what this screen owns is where the control is, what it says, and what it is traced to.
+        @safety_critical(cv_check: [Bounds, ColorHash])
+        CriticalButton {
+            id: emergency-halt;
+            requirement: "REQ-EM-003";
+            width: 160px;
+            height: 72px;
+            label: t("STR-EM-HALT");
+            color: Theme.Colors.Fault;
+            on_press: TriggerHalt;
+        }
+
+        // The ECG demonstrator's waiting consumer (#259). `EcgClassifierExample` binds the class its
+        // classifier chose to this node, so the same window of samples reaches the screen twice:
+        // once as the waveform below, and once as the state up here.
+        //
+        // The states are named for the model's output classes and nothing else, because the model is
+        // a demonstrator with synthetic weights and no clinical validity (ADR-008): a state called
+        // "Bradycardia" would be a diagnosis this screen has no right to display. The four tints are
+        // chosen to be told apart at a glance and carry no severity claim either - which is the same
+        // reason the words are here at all, since a colour alone would invite one to be read into it.
+        StatusIndicator {
+            id: classifier-state;
+            width: 200px;
+            height: 72px;
+            requirement: "REQ-EM-002";
+            source: "ECG_CLASS";
+            states: [t("STR-EM-CLASS-0"), t("STR-EM-CLASS-1"), t("STR-EM-CLASS-2"), t("STR-EM-CLASS-3")];
+            colors: [Theme.Colors.Neutral, Theme.Colors.Nominal, Theme.Colors.Alert, Theme.Colors.Fault];
+        }
+
+        // The screen's bounded input (#260), and the reason it is here rather than in a dialogue this
+        // project has no concept of: a `max_length` in a resolved box is what puts the field
+        // measurement over a committed artifact. Twelve cells of the font's widest permitted glyph
+        // plus the caret's column is 193px, which is what the budget stage checks this 200px box
+        // against - and it fails the build if a wider font is ever baked under the same id.
+        //
+        // Display and caret only. Nothing in this repository edits it: #17 cuts input-method
+        // editing, and the host owns the keystrokes that would change what it shows.
+        TextInput {
+            id: patient-id;
+            width: 200px;
+            height: 72px;
+            source: "PATIENT_ID";
+            max_length: 12;
+            color: Theme.Colors.Title;
+            charset: PATIENT-ID;
         }
     }
 

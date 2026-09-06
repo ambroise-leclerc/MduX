@@ -70,6 +70,17 @@ constexpr std::string_view packageId  = "labelled-en-us";
 constexpr std::string_view localeTag  = "en-US";
 
 constexpr ms::LabelSpec titleLabel{.textKey = titleKey, .colorToken = titleToken};
+
+/// The committed screen's halt control in miniature: a run in `Theme.Colors.Fault`, which is the
+/// tint whose narrow red span against `Theme.Colors.TopbarBackground` makes a faint edge
+/// indistinguishable from its own background.
+constexpr std::string_view faultToken = "Theme.Colors.Fault";
+constexpr ms::LabelSpec    faintLabel{.textKey = titleKey, .colorToken = faultToken};
+constexpr ms::CompiledNode faintNode{
+    .id      = "title",
+    .bounds  = {10, 20, 40, 20},
+    .payload = faintLabel
+};
 constexpr ms::PanelSpec backdrop{.colorToken = "Theme.Colors.TopbarBackground"};
 constexpr ms::ClockSpec wallClock{.format = ms::ClockFormat::TimeSeconds};
 
@@ -132,6 +143,20 @@ constexpr std::uint32_t glyphRows  = 6;
 /// `bitmapOriginY` is measured *up* from the baseline, which is why a record's y is a baseline
 /// rather than a top edge; the values here make the arithmetic legible - a glyph whose origin is six
 /// pixels above a baseline at six lands its top edge on zero.
+/**
+ * @brief The same sheet with `B`'s rightmost painted texel dropped to a coverage of 2.
+ *
+ * Two out of 255, which is the whole point: over a ground the device composited, that texel lands
+ * within one UNORM step of the ground and cannot be told from a ground pixel the device rounded.
+ * The glyph's *metrics* are unchanged, so the ink box the artifacts predict still includes the
+ * column - and a frame that draws it correctly measures one pixel narrower than the prediction.
+ */
+[[nodiscard]] std::vector<std::byte> faintEdgeAtlas() {
+    std::vector<std::byte> sheet                                 = syntheticAtlas();
+    sheet[static_cast<std::size_t>(glyphWidth + glyphWidth - 1)] = std::byte{2};
+    return sheet;
+}
+
 [[nodiscard]] mdux::font::FontPackage twoGlyphFont() {
     mdux::font::FontPackage font;
     font.id         = std::string{fontId};
@@ -547,6 +572,96 @@ const mdux::spec::Register inkInTheWrongPlaceIsCaught{
                       Canvas                 empty{64, 48, ground};
                       const mv::CheckOutcome absent = mv::inkContainment(empty.view(), title);
                       checks.expect(absent.finding == mv::Finding::NothingPainted, "a label that drew nothing is a different fact from one that drew badly");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aFaintEdgeOverACompositedGroundStillHolds{
+    "A glyph column too faint to tell from its own background does not fail containment",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-text-ink-extent-faint-edge")
+            .Given("a run over a composited field whose outermost texel is at coverage 2", [] {})
+            .When("InkContainment runs on a frame that drew it correctly", [] {})
+            .Then("it holds, while a displaced and a clipped run are still caught",
+                  [] {
+                      // The case the ground allowance introduced and an equality could not survive.
+                      // `paintedBox()` cannot count a texel whose composite is within the ground's
+                      // own rounding, because a field pixel the device rounded looks exactly the
+                      // same - so the frame measures one pixel narrower than the metrics predict,
+                      // and the check has to express that uncertainty rather than assert past it.
+                      //
+                      // The numbers are the committed screen's: `Theme.Colors.Fault` over a field of
+                      // itself at `boundFieldCoverage` over `Theme.Colors.TopbarBackground`. A
+                      // coverage of 2 composites to one step from that ground on every channel.
+                      mdux::spec::Checks checks;
+
+                      const ColorRgba8 fault  = tintOf(faultToken);
+                      const ColorRgba8 topbar = tintOf("Theme.Colors.TopbarBackground");
+                      const auto       dimmed = static_cast<std::uint8_t>((255.0F * mdux::medui::boundFieldCoverage) + 0.5F);
+                      const ColorRgba8 field  = mv::blend(topbar, fault, dimmed);
+
+                      // Stated rather than assumed: if this ever stops being true the scenario is
+                      // testing something else, and should fail here rather than pass vacuously.
+                      const ColorRgba8 faintest = mv::blend(field, fault, 2);
+                      checks.expect(std::abs(faintest.g - field.g) <= 1 && std::abs(faintest.b - field.b) <= 1 && std::abs(faintest.r - field.r) <= 1,
+                                    "a coverage of 2 is within one step of this ground on every channel");
+
+                      const mdux::font::FontPackage font    = twoGlyphFont();
+                      const std::vector<std::byte>  atlas   = faintEdgeAtlas();
+                      const std::vector<std::byte>  records = abRun();
+
+                      auto made = mv::TextExpectation::createSynthetic(faintNode, approvedLocale, records, font, atlas, field, 1);
+                      if (!made.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("the expectation was refused: {}", mv::describe(made.error())),
+                                                                std::source_location::current());
+                      }
+                      const mv::TextExpectation run = *made;
+
+                      const auto paint = [&](Canvas& canvas, Px shiftX, bool includeSecondGlyph) {
+                          for (std::size_t index = 0; index < run.glyphCount(); ++index) {
+                              const std::optional<mv::PlacedGlyph> placed = run.glyph(index);
+                              if (!placed.has_value() || (!includeSecondGlyph && index > 0)) {
+                                  continue;
+                              }
+                              for (Px dy = 0; dy < placed->rect.height; ++dy) {
+                                  for (Px dx = 0; dx < placed->rect.width; ++dx) {
+                                      const Px x = placed->rect.x + dx + shiftX;
+                                      const Px y = placed->rect.y + dy;
+                                      canvas.set(x, y, mv::blend(canvas.at(x, y), fault, run.coverage(*placed, dx, dy)));
+                                  }
+                              }
+                          }
+                      };
+
+                      Canvas correct{64, 48, field};
+                      paint(correct, 0, true);
+                      const mv::CheckOutcome held = mv::inkContainment(correct.view(), run);
+                      checks.expect(held.finding == mv::Finding::Held, std::format("a correct frame holds: {}", mv::describe(held.finding)));
+
+                      // The uncertainty made visible: what the frame certainly shows really is one
+                      // pixel narrower than what the artifacts predict, so this scenario would pass
+                      // for the wrong reason if the two ever agreed.
+                      checks.expect(held.expected == ms::NodeRect{10, 20, 14, 6}, "the prediction is the metrics' box");
+                      checks.expect(held.found == ms::NodeRect{10, 20, 13, 6}, std::format("and the certain ink is one column short of it"));
+
+                      // The other half, and the reason this is a containment rather than a licence:
+                      // the same allowance must not swallow a run that moved or one that was cut.
+                      Canvas shifted{64, 48, field};
+                      paint(shifted, 1, true);
+                      checks.expect(mv::inkContainment(shifted.view(), run).finding == mv::Finding::InkExtentDiffers,
+                                    "a run displaced by one pixel is still caught");
+
+                      Canvas clipped{64, 48, field};
+                      paint(clipped, 0, false);
+                      checks.expect(mv::inkContainment(clipped.view(), run).finding == mv::Finding::InkExtentDiffers,
+                                    "and so is one whose second glyph never reached the frame");
+
+                      // The frame really is correct, which is what makes the first assertion a
+                      // false-negative repair rather than a loosened check.
+                      checks.expect(mv::localizedTextPresence(correct.view(), run).finding == mv::Finding::Held,
+                                    "the same frame satisfies the per-pixel coverage check");
                       checks.raise();
                   })
             .Execute();

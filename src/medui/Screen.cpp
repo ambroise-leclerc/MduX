@@ -13,7 +13,11 @@ import mdux.core.units;
 import mdux.draw;
 import mdux.evidence.digest;
 import mdux.font.schema;
+import mdux.image.schema;
+import mdux.medui.field;
+import mdux.medui.reading;
 import mdux.medui.schema;
+import mdux.medui.trace;
 import mdux.text.draw;
 import mdux.text.schema;
 
@@ -106,6 +110,50 @@ struct InkBox {
     return binding.runs().subspan(static_cast<std::size_t>(run->byteOffset), static_cast<std::size_t>(run->byteLength));
 }
 
+/**
+ * @brief Whether everything recorded since `verticesBefore` lies inside `bounds`.
+ *
+ * The runtime half of ADR-010 decision 4's amendment: a reading's shape was measured against this
+ * node at build time, and this measures what was actually drawn against it again. The two are not
+ * redundant, for the reason Screen.cppm gives about a `Label`'s ink - the build-time check reports a
+ * useful diagnostic to the person who can fix it, and this one holds when the table the device was
+ * given is not the table the compiler measured.
+ *
+ * Read off the recorded vertices rather than recomputed, so it measures the frame rather than a
+ * second opinion about it.
+ */
+[[nodiscard]] bool readingFitsNode(const mdux::draw::DrawList& list, std::size_t verticesBefore, const NodeRect& bounds) noexcept {
+    const std::span<const mdux::draw::UiVertex> recorded = list.vertices().subspan(verticesBefore);
+    for (const mdux::draw::UiVertex& vertex : recorded) {
+        if (vertex.x < static_cast<float>(bounds.x) || vertex.y < static_cast<float>(bounds.y)) {
+            return false;
+        }
+        if (vertex.x > static_cast<float>(bounds.x + bounds.width) || vertex.y > static_cast<float>(bounds.y + bounds.height)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// A `FieldError` as the screen runtime's caller sees it.
+///
+/// Collapsed to one enumerator, as `ReadingError` is and for its reason: a field's refusals all name
+/// the same party - whoever supplied the value and the caret supplied both, and `FieldError`'s own
+/// `describe()` tells them which it was. `ListRejected` is the exception for its usual reason, being
+/// the frame's budget rather than the caller's value, and something a caller acts on differently.
+[[nodiscard]] ScreenError asScreenError(FieldError error) noexcept {
+    if (error == FieldError::ListRejected) {
+        return ScreenError::BudgetExhausted;
+    }
+    // Named rather than flattened into `FieldRefused`, because it is the one field refusal a caller
+    // can act on without reading `FieldError`: the character is drawable and the *node* excluded it,
+    // so what is wrong is the value a host supplied and not the screen, the font or the budget.
+    if (error == FieldError::CharacterOutsideFieldCharset) {
+        return ScreenError::CharacterOutsideFieldCharset;
+    }
+    return ScreenError::FieldRefused;
+}
+
 }  // namespace
 
 mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPackage&           screen,
@@ -174,6 +222,213 @@ mdux::core::Result<TextBinding, ScreenError> TextBinding::create(const ScreenPac
     return TextBinding{&font, &text, runs, packageSha256};
 }
 
+mdux::core::Result<ImageBinding, ScreenError> ImageBinding::create(const ScreenPackage&             screen,
+                                                                   const mdux::image::ImagePackage& image,
+                                                                   std::span<const std::byte>       packageJson,
+                                                                   std::span<const std::byte>       pixels) noexcept {
+    if (pixels.size() != image.sidecarByteLength || mdux::evidence::sha256(pixels) != image.sidecarSha256) {
+        return mdux::core::err(ScreenError::ImageSidecarMismatch);
+    }
+    const mdux::evidence::Digest packageSha256   = mdux::evidence::sha256(packageJson);
+    const auto                   canonicalSha256 = image.canonicalSha256();
+    if (!canonicalSha256.has_value() || *canonicalSha256 != packageSha256) {
+        return mdux::core::err(ScreenError::ImageNotApproved);
+    }
+    const auto approved = std::ranges::find_if(screen.approvedImagePackages, [&](const ImagePackageApproval& candidate) {
+        return candidate.packageId == image.header.id && candidate.packageSha256 == packageSha256 && candidate.width == image.width
+               && candidate.height == image.height;
+    });
+    if (approved == screen.approvedImagePackages.end()) {
+        return mdux::core::err(ScreenError::ImageNotApproved);
+    }
+    return ImageBinding{packageSha256, image.width, image.height};
+}
+
+mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const ScreenPackage& screen, std::span<const SignalSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const SignalSlot& slot = slots[index];
+
+        if (slot.ring == nullptr) {
+            // A slot with no ring is a trace that would draw a dimmed field and nothing in it -
+            // indistinguishable, on a monitor, from a flat line. Refused here rather than deferred
+            // per frame, because it is a defect in how the caller assembled its slots.
+            //
+            // Its own error rather than `MalformedTraceStyle`, for the reason stated where the two
+            // colour-token failures are kept apart: an absent ring is a slot the caller never
+            // finished filling in, while a malformed style is a slot filled in wrongly. They send an
+            // integrator to different places.
+            return mdux::core::err(ScreenError::MissingSampleRing);
+        }
+        if (slot.style.strokeWidth < 1 || slot.style.strokeWidth > maxStrokeWidth) {
+            return mdux::core::err(ScreenError::MalformedTraceStyle);
+        }
+        if (!std::isfinite(slot.style.minimum) || !std::isfinite(slot.style.maximum) || !(slot.style.maximum > slot.style.minimum)) {
+            return mdux::core::err(ScreenError::MalformedTraceStyle);
+        }
+
+        // Quadratic in the slot count, which is a handful: a screen holds tens of nodes and rather
+        // fewer traces, and a set would allocate. `ScreenPackage::find()` makes the same trade.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].streamSource == slot.streamSource) {
+                return mdux::core::err(ScreenError::DuplicateStream);
+            }
+        }
+
+        const bool named = std::ranges::any_of(screen.nodes, [&](const CompiledNode& node) {
+            const NodePayload payload = node.payload;
+            const auto*       trace   = std::get_if<SignalTraceSpec>(&payload);
+            return trace != nullptr && trace->streamSource == slot.streamSource;
+        });
+        if (!named) {
+            // The check that earns this type. A mistyped stream name would otherwise leave the trace
+            // drawing its reserved field forever, and the caller with no way to tell that from a
+            // stream that has simply not started.
+            return mdux::core::err(ScreenError::UnknownStreamSource);
+        }
+    }
+
+    return SignalBinding{screen.id, slots};
+}
+
+mdux::core::Result<ReadingBinding, ScreenError>
+ReadingBinding::create(const ScreenPackage& screen, std::span<const ReadingSlot> readings, const CivilTime* now, std::string_view clockColorToken) noexcept {
+    for (std::size_t index = 0; index < readings.size(); ++index) {
+        const ReadingSlot& slot = readings[index];
+
+        if (slot.rendering.empty() || slot.rendering.size() > maxPatternLength) {
+            return mdux::core::err(ScreenError::MalformedPattern);
+        }
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (readings[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateReading);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownReadingNode);
+        }
+        const NodePayload payload = node->payload;
+        if (!std::holds_alternative<NumericDisplaySpec>(payload)) {
+            // A node that exists and is something else. The same refusal as one that does not
+            // exist, because from the caller's side both are "this slot will never be drawn", and
+            // the fix in both cases is to correct the id.
+            return mdux::core::err(ScreenError::UnknownReadingNode);
+        }
+    }
+
+    if (now != nullptr) {
+        // A clock the artifact names no tint for. See `ReadingBinding` for why the host supplies one
+        // and why that contradicts no golden; what is checked here is that it supplies an *approved*
+        // one, resolved through the same governed table a screen's own token resolves through.
+        if (const auto colour = resolveColorToken(clockColorToken); !colour.has_value()) {
+            return mdux::core::err(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+        }
+    }
+
+    return ReadingBinding{screen.id, readings, now, clockColorToken};
+}
+
+mdux::core::Result<StatusBinding, ScreenError> StatusBinding::create(const ScreenPackage& screen, std::span<const StatusSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const StatusSlot& slot = slots[index];
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateStatus);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownStatusNode);
+        }
+        const NodePayload payload   = node->payload;
+        const auto*       indicator = std::get_if<StatusIndicatorSpec>(&payload);
+        if (indicator == nullptr) {
+            // A node that exists and is something else. `ReadingBinding::create()`'s rule: from the
+            // caller's side this and a missing node are both "this slot will never be drawn", and
+            // the fix for both is to correct the id.
+            return mdux::core::err(ScreenError::UnknownStatusNode);
+        }
+
+        // The closed-list check this type exists for. The `states:` list is fixed in the artifact -
+        // every key validated against every approved locale, the widest measured against this box -
+        // so an index outside it names a state the screen was never compiled for. Refused here, at
+        // start-up, and again in `render()` before the list is indexed.
+        if (slot.state >= indicator->stateKeys.size()) {
+            return mdux::core::err(ScreenError::StateOutOfRange);
+        }
+
+        // The one refusal about appearance rather than about names, and `StatusBinding` says why at
+        // length: a node with no per-state tint shows the same rectangle in every state unless a
+        // locale is bound, and an indicator that cannot indicate is the failure here that looks most
+        // like a working one.
+        if (indicator->colorTokens.size() != indicator->stateKeys.size()) {
+            return mdux::core::err(ScreenError::StatusHasNoTint);
+        }
+    }
+
+    return StatusBinding{screen.id, slots};
+}
+
+mdux::core::Result<TextInputBinding, ScreenError> TextInputBinding::create(const ScreenPackage& screen, std::span<const TextInputSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const TextInputSlot& slot = slots[index];
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].nodeId == slot.nodeId) {
+                return mdux::core::err(ScreenError::DuplicateTextInput);
+            }
+        }
+
+        const CompiledNode* node = screen.find(slot.nodeId);
+        if (node == nullptr) {
+            return mdux::core::err(ScreenError::UnknownTextInputNode);
+        }
+        const NodePayload payload = node->payload;
+        const auto*       input   = std::get_if<TextInputSpec>(&payload);
+        if (input == nullptr) {
+            // A node that exists and is something else. `ReadingBinding::create()`'s rule: from the
+            // caller's side this and a missing node are both "this slot will never be drawn".
+            return mdux::core::err(ScreenError::UnknownTextInputNode);
+        }
+
+        // `maxLength` is `std::int64_t` in the schema and positive by `validatePayload()`, so the
+        // cast is the narrowing this comparison needs rather than an assumption about the value.
+        // Everything about *what fits* is `mdux.medui.field`'s to answer, and it answers it here as
+        // well as per frame - the same doubling `StatusBinding` documents.
+        const auto cells = input->maxLength <= 0 ? std::size_t{0} : static_cast<std::size_t>(input->maxLength);
+        if (const auto fits = fieldAccepts(cells, slot.text.size(), slot.caret); !fits.has_value()) {
+            return mdux::core::err(asScreenError(fits.error()));
+        }
+
+        // The node's declared charset, checked where a host can still do something about it (#297).
+        // This is the *first* line: `recordField()` asks the same question per frame, and a refusal
+        // there rolls back the whole screen, so a value that was never going to be displayable is
+        // much better refused when it is offered than when it is drawn.
+        //
+        // Not checked here: whether the font package can draw the character. That needs a
+        // `FontPackage`, which a text-input binding is deliberately not given - the value and the
+        // glyphs are joined by `TextBinding`, and asking a caller for a second artifact to build
+        // this one would couple two bindings that are independent by design. The frame asks it.
+        for (const char32_t point : slot.text) {
+            if (!admits(input->charsetRanges, point)) {
+                return mdux::core::err(ScreenError::CharacterOutsideFieldCharset);
+            }
+        }
+    }
+
+    return TextInputBinding{screen.id, slots};
+}
+
 std::string_view describe(ScreenError error) noexcept {
     switch (error) {
         case ScreenError::MalformedColorToken:
@@ -196,13 +451,206 @@ std::string_view describe(ScreenError error) noexcept {
             return "the screen was not compiled against this text package";
         case ScreenError::TextOverflowsNode:
             return "a run's ink is larger than the node that names it";
+        case ScreenError::ImageSidecarMismatch:
+            return "the RGBA sidecar is not the one the image package describes";
+        case ScreenError::ImageNotApproved:
+            return "the screen was not compiled against this image package";
+        case ScreenError::UnknownStreamSource:
+            return "a signal slot names a stream no SignalTrace on this screen carries";
+        case ScreenError::DuplicateStream:
+            return "two signal slots name the same stream";
+        case ScreenError::MissingSampleRing:
+            return "a signal slot names a stream but carries no ring to read samples from";
+        case ScreenError::MalformedTraceStyle:
+            return "a signal slot's sample range is empty or not finite, or its stroke width is out of range";
+        case ScreenError::MalformedSampleRing:
+            return "a bound ring's oldest index or live count is not a position in its storage";
+        case ScreenError::NonFiniteSample:
+            return "a live sample is not a finite number";
+        case ScreenError::TraceTooLong:
+            return "a bound ring holds more samples than this runtime will expand in one trace";
+        case ScreenError::TraceBandTooSmall:
+            return "a bound trace's node is too small to hold its stroke";
+        case ScreenError::ScreenNotApproved:
+            return "the binding was built for a different screen";
+        case ScreenError::UnknownReadingNode:
+            return "a reading slot names no NumericDisplay on this screen";
+        case ScreenError::DuplicateReading:
+            return "two reading slots name the same node";
+        case ScreenError::MalformedPattern:
+            return "a reading slot's rendering is empty or longer than this runtime will draw";
+        case ScreenError::ReadingRefused:
+            return "a reading could not be drawn from the value and pattern it was given";
+        case ScreenError::ReadingOverflowsNode:
+            return "a drawn reading's ink is larger than the node that holds it";
+        case ScreenError::UnknownStatusNode:
+            return "a status slot names no StatusIndicator on this screen";
+        case ScreenError::DuplicateStatus:
+            return "two status slots name the same node";
+        case ScreenError::StateOutOfRange:
+            return "a status slot's state is not one this node's states list carries";
+        case ScreenError::StatusHasNoTint:
+            return "a bound StatusIndicator declares no per-state colour to tell its states apart";
+        case ScreenError::UnknownTextInputNode:
+            return "a text-input slot names no TextInput on this screen";
+        case ScreenError::DuplicateTextInput:
+            return "two text-input slots name the same node";
+        case ScreenError::FieldRefused:
+            return "a field could not be drawn from the value, caret and length it was given";
+        case ScreenError::CharacterOutsideFieldCharset:
+            return "a value carries a character the node's own charset does not admit";
+        case ScreenError::FieldOverflowsNode:
+            return "a drawn field's ink is larger than the node that holds it";
+        case ScreenError::UnimplementedEvent:
+            return "a pressed CriticalButton names no member of the closed system-event set";
+        case ScreenError::UntracedCriticalControl:
+            return "a pressed CriticalButton declares no requirement to trace its action to";
     }
     // Unreachable for a value of the enumeration, and named rather than defaulted so that adding an
     // enumerator without a case here is a warning at this switch instead of a blank string later.
     return "unknown screen error";
 }
 
-mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, mdux::draw::DrawList& list, const TextBinding& text) noexcept {
+namespace {
+
+/// A `TraceError` as the screen runtime's caller sees it.
+///
+/// One-for-one rather than collapsed to a single "the trace was refused", for the reason the two
+/// colour-token failures are kept apart: a malformed ring is the producer's defect, a too-long one is
+/// a caller asking for more than the cap admits, and a non-finite sample is a driver fault. Sending
+/// all three to the same integrator would send two of them to the wrong person.
+/// A `ReadingError` as the screen runtime's caller sees it.
+///
+/// Collapsed to one enumerator, unlike `TraceError`'s mapping, and the asymmetry is deliberate. A
+/// trace's failures name different parties - the producer's ring, the integrator's cap, a driver's
+/// NaN - and each needs a different person. A reading's are all the same party's: whoever supplied
+/// the pattern and the value supplied both, and `ReadingError`'s own `describe()` is what tells them
+/// which of the two it was. Minting five screen-level enumerators that all mean "ask the same
+/// integrator" would be a wider error surface saying nothing more.
+[[nodiscard]] ScreenError asScreenError(mdux::medui::ReadingError error) noexcept {
+    if (error == ReadingError::ListRejected) {
+        // The one that is not the caller's: the frame ran out of budget, which is what every other
+        // path in this file reports as BudgetExhausted and what a caller can act on differently.
+        return ScreenError::BudgetExhausted;
+    }
+    return ScreenError::ReadingRefused;
+}
+
+[[nodiscard]] ScreenError asScreenError(mdux::medui::TraceError error) noexcept {
+    switch (error) {
+        case TraceError::MalformedRing:
+            return ScreenError::MalformedSampleRing;
+        case TraceError::TooManySamples:
+            return ScreenError::TraceTooLong;
+        case TraceError::NonFiniteSample:
+            return ScreenError::NonFiniteSample;
+        case TraceError::MalformedStyle:
+            return ScreenError::MalformedTraceStyle;
+        case TraceError::BandTooSmall:
+            return ScreenError::TraceBandTooSmall;
+        case TraceError::ListRejected:
+            return ScreenError::BudgetExhausted;
+    }
+    // Named rather than defaulted, so a new TraceError is a warning here rather than a frame refused
+    // with a reason that names the wrong thing.
+    return ScreenError::BudgetExhausted;
+}
+
+/**
+ * @brief Records a captioned field: the node's whole rectangle in `colour`, with one run over it.
+ *
+ * The composition #259 settled for a bound `StatusIndicator` and #261 reuses unchanged for a
+ * `Button` and a `CriticalButton`. One spelling rather than two, because the two components differ
+ * only in where the tint and the key come from - a state's position in a closed list, or the single
+ * token and label key the node carries - and not at all in what is recorded. Two copies of this
+ * would be two places for a `boundFieldCoverage` composition to drift out of agreement with the
+ * golden checks `verify-golden-two-coverage-composition` proves it satisfies.
+ *
+ * `text` may be unbound, which means "no locale joined yet": the field is then drawn opaque and no
+ * word goes over it, which is #255's rule applied to the one tint the node has. `textKey` is read
+ * only when `text` is bound.
+ *
+ * Everything is measured before anything is recorded, deliberately. A refusal from `runFor()` or
+ * `measureInk()` then rolls back a frame that has nothing of this node in it, rather than one
+ * carrying a rectangle whose word was refused - and the field's coverage depends on whether a word
+ * will cover it, so the measurement has to come first in any case.
+ *
+ * Writes `stats.rects` and `stats.steps` and nothing else: which counter a *node* increments is the
+ * caller's, because a bound state and a drawn button are different facts about a frame.
+ */
+[[nodiscard]] mdux::core::ResultVoid<ScreenError> recordCaptionedField(mdux::draw::DrawList&       list,
+                                                                       const TextBinding&          text,
+                                                                       const NodeRect&             bounds,
+                                                                       std::string_view            textKey,
+                                                                       const std::array<float, 4>& colour,
+                                                                       FrameStats&                 stats) noexcept {
+    std::span<const std::byte> records{};
+    InkBox                     ink{};
+    if (text.bound()) {
+        const auto found = runFor(text, textKey);
+        if (!found.has_value()) {
+            return mdux::core::err(found.error());
+        }
+        records = *found;
+
+        const auto measured = measureInk(*text.font(), records);
+        if (!measured.has_value()) {
+            return mdux::core::err(measured.error());
+        }
+        ink = *measured;
+
+        // Payload-proportional work, counted per record for the reason the label path gives:
+        // `maxGlyphsPerRun` bounds it, and `steps` has to say so.
+        stats.steps += static_cast<std::uint32_t>(records.size() / mdux::text::draw::recordSize);
+
+        // The label path's re-measurement, for the label path's reason. #195 proved the widest text
+        // this node can carry fits its box in every approved locale; this proves the text actually
+        // on screen fits it in the package actually bound.
+        if (ink.inked && (ink.width() > static_cast<mdux::core::Px>(bounds.width) || ink.height() > static_cast<mdux::core::Px>(bounds.height))) {
+            return mdux::core::err(ScreenError::TextOverflowsNode);
+        }
+    }
+
+    // #255's opaque field when nothing will cover it, and `boundFieldCoverage`'s two-coverage
+    // composition when a word will. The field dims exactly when there is something over it to be
+    // seen, which is the whole of the rule and is why it is one expression.
+    mdux::core::ColorRgba8 fieldColour = quantise(colour);
+    if (ink.inked) {
+        fieldColour.a = quantise(colour[3] * boundFieldCoverage);
+    }
+    if (const auto recorded = list.addSolidRect(toRect(bounds), fieldColour); !recorded.has_value()) {
+        return mdux::core::err(ScreenError::BudgetExhausted);
+    }
+    ++stats.rects;
+
+    if (ink.inked) {
+        // The ink box's corner on the node's corner, `measureInk()`'s placement rule and the label
+        // path's arithmetic - not a second copy of a decision, the same one.
+        const auto originX = static_cast<mdux::core::Px>(bounds.x) - ink.left;
+        const auto originY = static_cast<mdux::core::Px>(bounds.y) - ink.top;
+
+        const std::size_t verticesBefore = list.vertices().size();
+        if (const auto recorded = mdux::text::draw::recordRun(list, *text.font(), records, originX, originY, quantise(colour)); !recorded.has_value()) {
+            // The label path's reasoning about this error: every other way `recordRun()` can fail
+            // here was already refused above, and the list declining a write is the one a caller can
+            // act on.
+            return mdux::core::err(ScreenError::BudgetExhausted);
+        }
+        stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+    }
+    return {};
+}
+
+}  // namespace
+
+mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    screen,
+                                                   mdux::draw::DrawList&   list,
+                                                   const TextBinding&      text,
+                                                   const ImageBinding&     image,
+                                                   const SignalBinding&    signals,
+                                                   const ReadingBinding&   readings,
+                                                   const StatusBinding&    status,
+                                                   const TextInputBinding& inputs) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -220,6 +668,25 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
     // screen closes the cross-screen substitution path without rehashing or allocating.
     if (!text.approvedBy(screen)) {
         return refuse(ScreenError::PackageNotApproved);
+    }
+    if (!image.approvedBy(screen)) {
+        return refuse(ScreenError::ImageNotApproved);
+    }
+
+    // The same closure for signals, and the same reason: slots validated against screen A's traces
+    // say nothing about screen B's. Weaker than the text binding's check by exactly as much as the
+    // available evidence is weaker - an id rather than a digest - which `approvedBy()` says.
+    if (!signals.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!readings.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!status.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!inputs.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
     }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
@@ -241,6 +708,33 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
     for (const CompiledNode& node : screen.nodes) {
         ++stats.nodes;
         ++stats.steps;
+
+        if (const auto* imageSpec = std::get_if<ImageSpec>(&node.payload); imageSpec != nullptr) {
+            if (!image.bound()) {
+                ++stats.deferred;
+                continue;
+            }
+            const auto approval = std::ranges::find_if(screen.approvedImagePackages, [imageSpec](const ImagePackageApproval& candidate) {
+                return candidate.packageId == imageSpec->source;
+            });
+            if (approval == screen.approvedImagePackages.end() || !image.matches(*approval) || approval->width != static_cast<std::uint32_t>(node.bounds.width)
+                || approval->height != static_cast<std::uint32_t>(node.bounds.height)) {
+                return refuse(ScreenError::ImageNotApproved);
+            }
+            if (const auto recorded = list.addRect(toRect(node.bounds),
+                                                   mdux::core::ColorRgba8{255, 255, 255, 255},
+                                                   mdux::draw::DrawMode::SampledRgba,
+                                                   mdux::draw::UvRect{.u0 = 0.0F, .v0 = 0.0F, .u1 = 1.0F, .v1 = 1.0F});
+                !recorded.has_value()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+            ++stats.rects;
+            ++stats.steps;
+            continue;
+        }
 
         if (const auto* label = std::get_if<LabelSpec>(&node.payload); label != nullptr) {
             if (!text.bound()) {
@@ -309,6 +803,251 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
             continue;
         }
 
+        // A `Clock` the caller has a time for. First among the live components because it is the
+        // one with nothing else to fall back on: it carries no colour token, so there is no field
+        // to reserve and a `Clock` with no binding is still deferred whole, exactly as before #258.
+        if (const auto* clock = std::get_if<ClockSpec>(&node.payload); clock != nullptr) {
+            if (!text.bound() || readings.now() == nullptr) {
+                // No locale bound, or no time in the reading binding. Deferred rather than
+                // refused: a caller with no clock service, or one still starting up, is in a normal
+                // state. The font comes from the text binding - see `ReadingBinding` for why that is
+                // the schema's choice rather than this module's.
+                ++stats.deferred;
+                continue;
+            }
+
+            // The tint the host chose, already proved to resolve by `ReadingBinding::create()`.
+            // Resolved again rather than carried, because a binding stores a token and this is the
+            // one place a colour is needed - and re-resolving is a bounded scan of eight entries.
+            const auto colour = resolveColorToken(readings.clockColorToken());
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            const std::size_t verticesBefore = list.vertices().size();
+            if (const auto recorded = recordClock(list, *text.font(), toRect(node.bounds), clock->format, *readings.now(), quantise(*colour));
+                !recorded.has_value()) {
+                return refuse(asScreenError(recorded.error()));
+            }
+            if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                return refuse(ScreenError::ReadingOverflowsNode);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            stats.steps += static_cast<std::uint32_t>(rendering(clock->format).size());
+            ++stats.readings;
+            continue;
+        }
+
+        // A `NumericDisplay` the caller has a reading for.
+        if (const auto* numeric = std::get_if<NumericDisplaySpec>(&node.payload); numeric != nullptr) {
+            const ReadingSlot* slot = readings.find(node.id);
+            if (slot != nullptr && text.bound()) {
+                const auto colour = resolveColorToken(numeric->colorToken);
+                if (!colour.has_value()) {
+                    return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+                }
+
+                // The field at reduced coverage, then the digits at full tint - the composition
+                // `boundFieldCoverage` documents and `verify-golden-two-coverage-composition`
+                // proves both golden checks admit. This node is the one that scenario's fixture
+                // models, since `insufflation-pressure` is what carries `ColorHash` on the
+                // committed screen.
+                mdux::core::ColorRgba8 fieldColour = quantise(*colour);
+                fieldColour.a                      = quantise((*colour)[3] * boundFieldCoverage);
+                if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+                ++stats.rects;
+
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = recordNumeric(list, *text.font(), toRect(node.bounds), slot->rendering, slot->value, quantise(*colour));
+                    !recorded.has_value()) {
+                    return refuse(asScreenError(recorded.error()));
+                }
+                // The check that makes the host-supplied pattern safe. The compiler measured this
+                // node against the table it was given; this measures what was actually drawn against
+                // the node, so a drifted table cannot put digits over a neighbour. See `ReadingSlot`.
+                if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                    return refuse(ScreenError::ReadingOverflowsNode);
+                }
+                if (!withinScreenBudget()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+                stats.steps += static_cast<std::uint32_t>(slot->rendering.size());
+                ++stats.readings;
+                ++stats.steps;
+                continue;
+            }
+            // No reading for this node, or no locale bound to draw one with. Falls through to the
+            // field path below,
+            // paints the opaque rectangle this node reserves - #255's behaviour, unchanged.
+        }
+
+        // A `TextInput` the caller has a value for. Unbound it is deferred: an empty box would say
+        // the operator's entry was blank rather than absent, and those are different facts.
+        if (const auto* input = std::get_if<TextInputSpec>(&node.payload); input != nullptr) {
+            const TextInputSlot* slot = inputs.find(node.id);
+            if (slot == nullptr || !text.bound()) {
+                // No value for this node, or no locale bound to take a font from. Deferred rather
+                // than refused: a caller still starting up is in a normal state, and the font comes
+                // from the text binding for the reason `ReadingBinding` gives - the schema already
+                // requires a screen carrying a `TextInput` to approve a text package.
+                ++stats.deferred;
+                continue;
+            }
+
+            const auto colour = resolveColorToken(input->colorToken);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            const auto cells = input->maxLength <= 0 ? std::size_t{0} : static_cast<std::size_t>(input->maxLength);
+
+            const std::size_t verticesBefore = list.vertices().size();
+            if (const auto recorded =
+                    recordField(list, *text.font(), input->charsetRanges, toRect(node.bounds), cells, slot->text, slot->caret, quantise(*colour));
+                !recorded.has_value()) {
+                // Forwarded rather than flattened, unlike the label path's: every way `recordField()`
+                // refuses is a distinct thing the caller can act on, and none of them was already
+                // refused here.
+                return refuse(asScreenError(recorded.error()));
+            }
+            // The re-check that makes the grid safe when the bound font is not the font the compiler
+            // measured. `cellWidth()` is derived from the package rather than supplied, so the two
+            // sides agree whenever the bytes do - and this is what holds when they do not.
+            if (const auto fits = readingFitsNode(list, verticesBefore, node.bounds); !fits) {
+                return refuse(ScreenError::FieldOverflowsNode);
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            // Payload-proportional work, bounded by `maxFieldCells` exactly as a label's is by
+            // `maxGlyphsPerRun`.
+            stats.steps += static_cast<std::uint32_t>(slot->text.size());
+            stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+            ++stats.fields;
+            ++stats.steps;
+            continue;
+        }
+
+        // A `StatusIndicator` the caller has a state for. Unbound it is deferred, exactly as it was
+        // before #259: the node carries one tint per state and no state, so nothing this module
+        // could paint would say which one the device is in.
+        if (const auto* indicator = std::get_if<StatusIndicatorSpec>(&node.payload); indicator != nullptr) {
+            const StatusSlot* slot = status.find(node.id);
+            if (slot == nullptr) {
+                ++stats.deferred;
+                continue;
+            }
+
+            // Both were proved once by `StatusBinding::create()`. Both are checked again because the
+            // lines below index these two spans, and a bound is worth more here than the branch it
+            // costs - `validate()` is a property of the binary, not of a screen assembled by hand.
+            if (slot->state >= indicator->stateKeys.size()) {
+                return refuse(ScreenError::StateOutOfRange);
+            }
+            if (indicator->colorTokens.size() != indicator->stateKeys.size()) {
+                return refuse(ScreenError::StatusHasNoTint);
+            }
+
+            const auto colour = resolveColorToken(indicator->colorTokens[slot->state]);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+
+            // The state's tint with the state's word over it - the composition `recordCaptionedField()`
+            // owns, shared with a button since #261. An unbound text binding means no word, and the
+            // field is then the opaque rectangle #255 draws.
+            if (const auto captioned = recordCaptionedField(list, text, node.bounds, indicator->stateKeys[slot->state], *colour, stats);
+                !captioned.has_value()) {
+                return refuse(captioned.error());
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            ++stats.states;
+            ++stats.steps;
+            continue;
+        }
+
+        // A `Button` or a `CriticalButton` whose label this caller can draw. Both draw the same
+        // thing - the face their single token names, with their label's word over it - and neither
+        // is ever deferred, for the reason the module comment gives under "Why a button's rectangle
+        // is its face": that rectangle is the control's hit target as well as its golden's, and a
+        // control an operator cannot see is worse than one they cannot read. With no locale bound
+        // this falls through to the field path below and paints the opaque face, exactly as an
+        // unbound `NumericDisplay` paints its field.
+        //
+        // What a press *does* is not asked here. `resolvePress()` owns that, and it is a separate
+        // question from what a frame shows: a screen is drawn many times between presses, and the
+        // press path reads no binding and records nothing.
+        if (const std::optional<ButtonFace> face = buttonFace(node.payload); face.has_value() && text.bound()) {
+            const auto colour = resolveColorToken(face->colorToken);
+            if (!colour.has_value()) {
+                return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+            }
+            if (const auto captioned = recordCaptionedField(list, text, node.bounds, face->labelKey, *colour, stats); !captioned.has_value()) {
+                return refuse(captioned.error());
+            }
+            if (!withinScreenBudget()) {
+                return refuse(ScreenError::BudgetExhausted);
+            }
+
+            ++stats.steps;
+            continue;
+        }
+
+        // A `SignalTrace` the caller has samples for. Everything else about the node - where it is,
+        // which token it draws with - is still the artifact's; what the binding adds is the samples
+        // and the scale, which no compiled screen can carry (see `SignalSlot`).
+        if (const auto* trace = std::get_if<SignalTraceSpec>(&node.payload); trace != nullptr) {
+            if (const SignalSlot* slot = signals.find(trace->streamSource); slot != nullptr) {
+                const auto colour = resolveColorToken(trace->colorToken);
+                if (!colour.has_value()) {
+                    return refuse(colour.error() == ThemeError::MalformedToken ? ScreenError::MalformedColorToken : ScreenError::UnknownColorToken);
+                }
+
+                // The field at reduced coverage, then the stroke at full tint. See Screen.cppm,
+                // `boundFieldCoverage`, for why one tint at two coverages is the only
+                // composition a `ColorHash` golden and an additive draw list both admit.
+                mdux::core::ColorRgba8 fieldColour = quantise(*colour);
+                fieldColour.a                      = quantise((*colour)[3] * boundFieldCoverage);
+                if (const auto recorded = list.addSolidRect(toRect(node.bounds), fieldColour); !recorded.has_value()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+                ++stats.rects;
+
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = mdux::medui::recordTrace(list, toRect(node.bounds), *slot->ring, slot->style, quantise(*colour));
+                    !recorded.has_value()) {
+                    // `recordTrace()` rolls its own trace back and this rolls the whole frame back.
+                    // Its error *is* forwarded, unlike the label path's: every way it fails is a
+                    // distinct thing the caller can act on, and none of them was already refused here.
+                    return refuse(asScreenError(recorded.error()));
+                }
+                if (!withinScreenBudget()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+
+                // Payload-proportional work, bounded by `maxSamplesPerTrace` exactly as a label's is
+                // by `maxGlyphsPerRun`. Counted here so the bounded-work tests keep reporting a
+                // number that is still a function of what this frame actually did.
+                stats.steps += static_cast<std::uint32_t>(slot->ring->count);
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+                ++stats.traces;
+                ++stats.steps;
+                continue;
+            }
+        }
+
         const std::optional<std::string_view> field = fieldColorToken(node.payload);
         if (!field.has_value()) {
             // Visited and left undrawn. The module comment says which components these are and why
@@ -341,6 +1080,65 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage& screen, 
     }
 
     return stats;
+}
+
+namespace {
+
+/// Whether a surface coordinate falls inside a node's resolved rectangle, right and bottom exclusive.
+///
+/// 64-bit for `containedBy()`'s reason: `x + width` on two `std::int32_t` at their extremes overflows,
+/// and an overflowed comparison would admit exactly the press this is written to exclude. A
+/// validated screen cannot hold such a rectangle, and `resolvePress()` does not require one to have
+/// been validated.
+[[nodiscard]] constexpr bool covers(const NodeRect& bounds, std::int32_t x, std::int32_t y) noexcept {
+    const std::int64_t left = bounds.x;
+    const std::int64_t top  = bounds.y;
+    return x >= left && y >= top && static_cast<std::int64_t>(x) < left + bounds.width && static_cast<std::int64_t>(y) < top + bounds.height;
+}
+
+}  // namespace
+
+mdux::core::Result<std::optional<PressAction>, ScreenError> resolvePress(const ScreenPackage& screen, std::int32_t x, std::int32_t y) noexcept {
+    // From the end, so the node drawn over its neighbours is the one a press resolves to. See
+    // Screen.cppm for why that is the only answer an operator's eyes agree with.
+    for (std::size_t index = screen.nodes.size(); index > 0; --index) {
+        const CompiledNode& node = screen.nodes[index - 1];
+        if (!covers(node.bounds, x, y)) {
+            continue;
+        }
+
+        // The payload is copied for `validatePayload()`'s documented reason: `std::get_if` over a
+        // subobject of an external `inline` variable is refused during constant evaluation under
+        // GCC 16.1 with `-fsanitize=undefined`, and a generated screen has exactly that storage.
+        const NodePayload payload = node.payload;
+
+        if (const auto* button = std::get_if<ButtonSpec>(&payload); button != nullptr) {
+            return PressAction{.nodeId = node.id, .requirement = button->requirement, .source = button->source, .event = std::nullopt};
+        }
+
+        if (const auto* critical = std::get_if<CriticalButtonSpec>(&payload); critical != nullptr) {
+            // Both of these are already compile errors and neither can reach a device through the
+            // normal path; see Screen.cppm for why a press is nevertheless the wrong place to be
+            // lenient about them. `toWire()` is the membership test the schema uses, so an event
+            // cast from a number the enumeration has no name for is caught here as well as one left
+            // at `Unspecified`.
+            if (critical->onPress == SystemEvent::Unspecified || toWire(critical->onPress).empty()) {
+                return mdux::core::err(ScreenError::UnimplementedEvent);
+            }
+            if (critical->requirement.empty()) {
+                return mdux::core::err(ScreenError::UntracedCriticalControl);
+            }
+            return PressAction{.nodeId = node.id, .requirement = critical->requirement, .source = {}, .event = critical->onPress};
+        }
+
+        // A node that is not a control. It is *not* transparent to a press: a panel, a viewport or a
+        // label drawn over a button covers it, and resolving through to the button underneath would
+        // fire a control the operator cannot see. The press lands on nothing, which is what it looks
+        // like from the operator's side.
+        return std::optional<PressAction>{};
+    }
+
+    return std::optional<PressAction>{};
 }
 
 }  // namespace mdux::medui

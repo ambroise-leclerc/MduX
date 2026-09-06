@@ -9,12 +9,42 @@
       "byteOffset": 0,
       "id": "STR-EM-TITLE",
       "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 102,
+      "id": "STR-EM-CLASS-0",
+      "sha256": "2ffb10ef54f06db6bdba61e4d1f23b1a368d5498113121ab27858aef6b40e329"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 144,
+      "id": "STR-EM-CLASS-1",
+      "sha256": "7f3575773de319becbff76792bcc748556d38bd0b6bc26ac06bfa15107e964fe"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 186,
+      "id": "STR-EM-CLASS-2",
+      "sha256": "16959055d20c6b8558a8f7a91237bbd21afdad6a8ab1e40470a98c46cf95a66a"
+    },
+    {
+      "byteLength": 42,
+      "byteOffset": 228,
+      "id": "STR-EM-CLASS-3",
+      "sha256": "7b37fdcfb5c487d1efb21ecc874dd72d5b031741792adb0bd67191f23501407a"
+    },
+    {
+      "byteLength": 24,
+      "byteOffset": 270,
+      "id": "STR-EM-HALT",
+      "sha256": "39671c316e0263692813189dda906b5cd44b816eca3ed13ebca5b4d7a10eb5c4"
     }
   ],
   "schemaVersion": 1,
   "sidecar": {
-    "byteLength": 102,
+    "byteLength": 294,
     "path": "runs.bin",
-    "sha256": "33396e09eb766c8452f8ada6bccff13838b4db2cd327007a0f5556cc26ee2d58"
+    "sha256": "bd09d7ab2998ac6fdbe9624129387f3d63358d4bede51f59e37096fceb81001d"
   }
 }

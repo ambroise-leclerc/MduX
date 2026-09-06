@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/model.schema.json",
+  "title": "Resolved ML model recipe options",
+  "description": "What `mdux-mlbake` was asked to do: the shape of the network, the scratch it needs, and the golden vectors that make `Classifier1D::create()` fail closed on a mismatch. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why: a silently changed default must not leave every report looking unchanged, so the report records what the bake actually did, and this documents that. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "inputLength",
+    "outputLength",
+    "layerCount",
+    "maxScratchFloats",
+    "goldenCount",
+    "goldenSeed",
+    "goldenPrng"
+  ],
+  "properties": {
+    "inputLength": {
+      "type": "integer",
+      "description": "Samples the model takes.",
+      "minimum": 1
+    },
+    "outputLength": {
+      "type": "integer",
+      "description": "Classes the model produces.",
+      "minimum": 1
+    },
+    "layerCount": {
+      "type": "integer",
+      "description": "Layers in the network, as resolved from the recipe.",
+      "minimum": 1
+    },
+    "maxScratchFloats": {
+      "type": "integer",
+      "description": "The scratch a caller must supply, computed from the layer shapes rather than declared - so a device sizes its buffer from the artifact instead of from a number somebody kept up to date.",
+      "minimum": 0
+    },
+    "goldenCount": {
+      "type": "integer",
+      "description": "How many golden input/output pairs the package carries.",
+      "minimum": 1
+    },
+    "goldenSeed": {
+      "type": "integer",
+      "description": "The seed the golden inputs were generated from. Recorded because a golden set nobody can regenerate is a golden set nobody can review.",
+      "minimum": 0
+    },
+    "goldenPrng": {
+      "type": "string",
+      "description": "The generator the seed drives. A closed set of one: the algorithm is written out in `tools/ml/GoldenGen.cpp` rather than taken from a library, so that regenerating a golden set does not depend on a standard library's implementation choices.",
+      "enum": [
+        "lcg-numerical-recipes-32"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "inputLength": 180,
+      "outputLength": 4,
+      "layerCount": 4,
+      "maxScratchFloats": 2752,
+      "goldenCount": 8,
+      "goldenSeed": 20250803,
+      "goldenPrng": "lcg-numerical-recipes-32"
+    }
+  ]
+}
