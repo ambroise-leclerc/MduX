@@ -45,7 +45,7 @@ ADR-012 describes.
 | Remaining | 2 |
 | Waves shipped | 5, plus half of Wave 6 (#16 in v0.7.0; #17 open) |
 | Standalone open issues | 3 (#280, #281, #282) |
-| Open epic children | 9 (#256–#261, #263–#265) |
+| Open epic children | 2 (#264, #265) |
 
 ## The thesis
 
@@ -477,20 +477,20 @@ A diagnostic envelope of file, line, code, severity and fix hint is what lets an
 fix a `.medui` error without parsing prose. With a published grammar, it is the difference
 between guessing at the DSL and being handed its contract.
 
-AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are present, and
-the stable JSON diagnostic envelope is landed across the tools. What remains is the
-machine-readable contract side, which follows the surfaces it describes.
+AGENTS.md is aligned with the v0.4.0+ architecture, the repository skills are present, the stable
+JSON diagnostic envelope is landed across the tools, and the `.medui` contract is published as
+machine-readable JSON the compiler emits from its own tables. What remains is the recipe schemas and
+the IR dump.
 
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_
 - #118 Stable JSON diagnostic envelope across all tools · _closed_
-- #263 S4 Machine-readable `.medui` grammar and `--explain`
+- #263 S4 Machine-readable `.medui` grammar and `--explain` — **shipped**; `docs/medui/grammar.json`, emitted from the compiler's own tables
 - #264 S5 JSON Schemas for every recipe kind
 - #265 S6 `--dump-ir` JSON and a generated tool manifest
 
-_S1–S3 closed. S4–S6 followed #15 and #18 — closed on 23 August and 3 August — so they are
-actionable and were promoted on 28 August 2026. They are independent of one another; #264 needs no
-compiler work and is the cheapest of the three._
+_S1–S4 closed. S5 and S6 followed #15 and #18 — closed on 23 August and 3 August — so both are
+actionable; #264 needs no compiler work and is the cheaper of the two._
 
 ---
 
@@ -550,5 +550,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 _Epic status re-verified against `develop` @ `51eb779` · 3 September 2026_
 _13 epics · 11 delivered · Waves 1–5 shipped · Wave 6 half-shipped in v0.7.0 (#16 done, #17 open) · no enforcement gaps outstanding_
-_3 standalone open issues: #280, #281, #282 (all from #255) · 9 open epic children (#256–#261, #263–#265)_
+_3 standalone open issues: #280, #281, #282 (all from #255) · 2 open epic children (#264, #265)_
 _All epics on GitHub_

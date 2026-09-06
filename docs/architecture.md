@@ -114,7 +114,7 @@ performs no checking and confers no compliance.
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
-| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197) and the compiler driver behind `mdux-meduic` (#198) |
+| `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
@@ -287,6 +287,28 @@ paints its own field *under* its run. So the driver hands them the field rather 
 beneath the node, together with the number of device composites that produced it — one — and the
 checks allow that many UNORM steps on a ground pixel. Zero keeps the old exactness, which is what
 every other node still passes: a slack granted where none is needed is a wrong tint waved through.
+
+### The language as a file an agent can read
+
+`mdux-meduic --grammar` emits the whole `.medui` contract as canonical JSON, committed as
+`docs/medui/grammar.json`: tokens, productions, the component dictionary with each field's
+requiredness and domain, the field domains themselves, both closed named-value sets, the governed
+theme tokens, and every diagnostic with its summary and fix hint. `--explain MEDUI-EXXX` answers for
+one code and exits 2 on one no row names, rather than printing an empty explanation.
+
+This is the other half of #118. A stable diagnostic envelope says *what went wrong* in a form an
+agent need not parse prose to read; this says *what the language is* in the same form.
+
+Every section but one is **read off the compiler's own tables** — `componentDictionary()`,
+`registry()`, `themeColors`, the schema's `toWire()` sets — so it cannot drift from the
+implementation without the implementation moving with it. The exception is the EBNF, which the
+hand-written recursive-descent parser gives no table to emit from; it is held honest instead by
+carrying executable examples, accepted and rejected with the code each rejection must produce, which
+`GrammarTests.cpp` runs through the real front end. The limit that leaves is stated rather than
+implied: the examples are verified, the EBNF prose only as far as they reach.
+
+The upstream pin is deliberately not embedded. `medui-conformance.toml` is already machine-readable,
+and a second copy compiled into a tool is the drift the issue exists to prevent.
 
 `mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
 committed screen and a new one is gated by being committed. Three legs assert it as a named step —

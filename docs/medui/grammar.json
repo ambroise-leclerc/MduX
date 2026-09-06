@@ -1,0 +1,962 @@
+{
+  "components": [
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "domain": "ColorToken",
+          "name": "background",
+          "required": false
+        }
+      ],
+      "name": "Row"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "requirement",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "TextKey",
+          "name": "label",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "SystemEventName",
+          "name": "on_press",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "CriticalButton"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "TextKey",
+          "name": "label",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "source",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        },
+        {
+          "domain": "String",
+          "name": "requirement",
+          "required": false
+        }
+      ],
+      "name": "Button"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "stream_source",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "VulkanViewport"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "stream_source",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "SignalTrace"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "requirement",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "template",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "source",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "NumericDisplay"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "requirement",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "source",
+          "required": true
+        },
+        {
+          "domain": "TextKeyList",
+          "name": "states",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        },
+        {
+          "domain": "ColorTokenList",
+          "name": "colors",
+          "required": false
+        }
+      ],
+      "name": "StatusIndicator"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "TextKey",
+          "name": "text",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "Label"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "ClockFormatName",
+          "name": "format",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "Clock"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "ImageRef",
+          "name": "source",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        }
+      ],
+      "name": "Image"
+    },
+    {
+      "fields": [
+        {
+          "domain": "Identifier",
+          "name": "id",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "width",
+          "required": true
+        },
+        {
+          "domain": "Size",
+          "name": "height",
+          "required": true
+        },
+        {
+          "domain": "String",
+          "name": "source",
+          "required": true
+        },
+        {
+          "domain": "Number",
+          "name": "max_length",
+          "required": true
+        },
+        {
+          "domain": "ColorToken",
+          "name": "color",
+          "required": true
+        },
+        {
+          "domain": "Point",
+          "name": "position",
+          "required": false
+        },
+        {
+          "domain": "Identifier",
+          "name": "charset",
+          "required": false
+        },
+        {
+          "domain": "String",
+          "name": "requirement",
+          "required": false
+        }
+      ],
+      "name": "TextInput"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "MEDUI-E000",
+      "fixHint": "check the path passed on the command line, and that the file is readable",
+      "severity": "error",
+      "summary": "the recipe file could not be opened"
+    },
+    {
+      "code": "MEDUI-E001",
+      "fixHint": "see recipes/font/dejavu-ui.toml for the accepted shape; there is no [[table]] support",
+      "severity": "error",
+      "summary": "the recipe is not valid TOML in the subset mdux.tools.toml accepts"
+    },
+    {
+      "code": "MEDUI-E002",
+      "fixHint": "add the named key; every recipe knob is required because a defaulted one would not appear in report.json (ADR-007)",
+      "severity": "error",
+      "summary": "the recipe is missing a member the compiler requires"
+    },
+    {
+      "code": "MEDUI-E003",
+      "fixHint": "check the path in the recipe",
+      "severity": "error",
+      "summary": "the .medui source named by the recipe could not be opened"
+    },
+    {
+      "code": "MEDUI-E004",
+      "fixHint": "re-save the file as UTF-8 without a byte-order mark",
+      "severity": "error",
+      "summary": "the .medui source is not valid UTF-8"
+    },
+    {
+      "code": "MEDUI-E010",
+      "fixHint": "",
+      "severity": "error",
+      "summary": "the parser found a token that cannot appear here"
+    },
+    {
+      "code": "MEDUI-E011",
+      "fixHint": "see the component table in the medui-authoring skill; the dictionary is closed",
+      "severity": "error",
+      "summary": "the component name is not in the dictionary"
+    },
+    {
+      "code": "MEDUI-E012",
+      "fixHint": "",
+      "severity": "error",
+      "summary": "a component is missing a field its dictionary entry requires"
+    },
+    {
+      "code": "MEDUI-E013",
+      "fixHint": "check the spelling; unknown fields are rejected rather than ignored, so a typo cannot silently do nothing",
+      "severity": "error",
+      "summary": "a component carries a field its dictionary entry does not define"
+    },
+    {
+      "code": "MEDUI-E014",
+      "fixHint": "ids address nodes in golden references and requirement traces, so they must be unique within a screen",
+      "severity": "error",
+      "summary": "two nodes in one screen share an id"
+    },
+    {
+      "code": "MEDUI-E015",
+      "fixHint": "flatten the inner Row into its parent. Row is a single level so that layout stays one flattening pass (ADR-011 decision 5)",
+      "severity": "error",
+      "summary": "a Row contains another Row"
+    },
+    {
+      "code": "MEDUI-E016",
+      "fixHint": "express the screen at its maximum extent and hide what is unused. These make the primitive count depend on data the compiler cannot see, so DrawBudget could not be computed exactly (ADR-011 decision 5)",
+      "severity": "error",
+      "summary": "the source uses a loop, conditional, recursion or scripting construct"
+    },
+    {
+      "code": "MEDUI-E017",
+      "fixHint": "use t(\"STR-KEY\") against an approved text package. A hardcoded string cannot be validated against every approved locale, which is what the budget check needs",
+      "severity": "error",
+      "summary": "a literal string appears where a text key is required"
+    },
+    {
+      "code": "MEDUI-E030",
+      "fixHint": "check the spelling against the theme token table. Unknown tokens are a compile error rather than a fallback colour, because a fallback would render something nobody approved",
+      "severity": "error",
+      "summary": "a Theme.Colors token is not in the governed table"
+    },
+    {
+      "code": "MEDUI-E031",
+      "fixHint": "",
+      "severity": "error",
+      "summary": "a text key is not in the approved text package at all"
+    },
+    {
+      "code": "MEDUI-E032",
+      "fixHint": "add the translation, or remove the locale from the recipe's approved list. A key present in one locale and absent in another is a screen that renders blank on a shipped device",
+      "severity": "error",
+      "summary": "a text key exists but is missing from at least one approved locale"
+    },
+    {
+      "code": "MEDUI-E033",
+      "fixHint": "use the value form assigned to this field in the shared component model",
+      "severity": "error",
+      "summary": "a field value has the wrong semantic kind"
+    },
+    {
+      "code": "MEDUI-E034",
+      "fixHint": "use one of the members the shared component model lists for this field. This is not MEDUI-E033: the value is a well-formed identifier, so its kind is right and only its membership is wrong",
+      "severity": "error",
+      "summary": "a named value is outside the closed set its field admits"
+    },
+    {
+      "code": "MEDUI-E050",
+      "fixHint": "widen the component or shorten the translation. The check is against the widest approved locale, not the authoring one",
+      "severity": "error",
+      "summary": "a component's bounds cannot contain the widest approved translation"
+    },
+    {
+      "code": "MEDUI-E051",
+      "fixHint": "the solver reports overflow rather than clamping, because a clamped layout renders something the author did not describe",
+      "severity": "error",
+      "summary": "a node does not fit the space its parent allows"
+    },
+    {
+      "code": "MEDUI-E052",
+      "fixHint": "",
+      "severity": "error",
+      "summary": "a node falls outside the declared surface"
+    },
+    {
+      "code": "MEDUI-E053",
+      "fixHint": "restrict the format, or extend the charset in the font recipe and re-bake. The charset is what makes \"no shaping on device\" checkable rather than conventional (ADR-010)",
+      "severity": "error",
+      "summary": "dynamic text could produce a character outside the restricted charset"
+    },
+    {
+      "code": "MEDUI-E070",
+      "fixHint": "add requirement:, or remove the annotation. A safety-critical node with no requirement cannot be traced, and tracing is what the annotation is for",
+      "severity": "error",
+      "summary": "a @safety_critical node carries no requirement:"
+    },
+    {
+      "code": "MEDUI-E071",
+      "fixHint": "",
+      "severity": "error",
+      "summary": "a cv_check names a verification this compiler does not emit"
+    }
+  ],
+  "fieldDomains": [
+    {
+      "form": "an unquoted name",
+      "name": "Identifier"
+    },
+    {
+      "form": "Npx or Fill",
+      "name": "Size"
+    },
+    {
+      "form": "Xpx, Ypx",
+      "name": "Point"
+    },
+    {
+      "form": "a quoted string",
+      "name": "String"
+    },
+    {
+      "form": "t(\"STR-KEY\")",
+      "name": "TextKey"
+    },
+    {
+      "form": "a non-empty list of t(\"STR-KEY\") values",
+      "name": "TextKeyList"
+    },
+    {
+      "form": "Theme.Colors.<Token>",
+      "name": "ColorToken"
+    },
+    {
+      "form": "a non-empty list of Theme.Colors.<Token> values",
+      "name": "ColorTokenList"
+    },
+    {
+      "form": "img(\"ID\")",
+      "name": "ImageRef"
+    },
+    {
+      "form": "a positive integer",
+      "name": "Number"
+    },
+    {
+      "form": "a member of namedValues.format",
+      "name": "ClockFormatName"
+    },
+    {
+      "form": "a member of namedValues.on_press",
+      "name": "SystemEventName"
+    }
+  ],
+  "language": "medui",
+  "namedValues": {
+    "format": [
+      "TimeSeconds",
+      "DateTimeSeconds"
+    ],
+    "on_press": [
+      "NoOp",
+      "TriggerHalt"
+    ]
+  },
+  "productions": [
+    {
+      "accepts": [
+        "Screen Minimal {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n}\n"
+      ],
+      "name": "screen",
+      "note": "The whole file is one screen. Its name is CamelCase; the recipe records the pairing with the lowercase artifact id rather than either being derived from the other.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Minimal\n"
+        }
+      ],
+      "rule": "screen = \"Screen\" identifier \"{\" { screen-member } \"}\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Sized {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    surface: 1280px, 720px;\n}\n"
+      ],
+      "name": "surface",
+      "note": "Optional. A file without one still parses and is still checked, but layout, overflow and golden bounds are not - mdux-medui-check reports that as MDC002 rather than passing quietly.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Sized {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    surface: 1280pt, 720px;\n}\n"
+        }
+      ],
+      "rule": "surface = \"surface\" \":\" pixels \",\" pixels \";\" ;"
+    },
+    {
+      "accepts": [
+        "Screen WithLabel {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "component",
+      "note": "Only a Row takes children. Every other component is a leaf, which is why this is an alternation rather than one recursive rule - a rule that let any component nest would describe a language this parser rejects.",
+      "rejects": [
+        {
+          "code": "MEDUI-E011",
+          "source": "Screen WithLabel {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Gauge {\n        id: dial;\n    }\n}\n"
+        },
+        {
+          "code": "MEDUI-E012",
+          "source": "Screen WithLabel {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        color: Theme.Colors.Title;\n    }\n}\n"
+        }
+      ],
+      "rule": "component = leaf-component | row ;"
+    },
+    {
+      "accepts": [
+        "Screen Banded {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Row {\n        id: topbar;\n        height: 72px;\n        Label {\n            id: title;\n            width: 120px;\n            height: 20px;\n            text: t(\"STR-TITLE\");\n            color: Theme.Colors.Title;\n        }\n    }\n}\n"
+      ],
+      "name": "row",
+      "note": "A single-level horizontal group, flattened at compile time. Its children are leaf components and may be annotated; a Row inside a Row is refused rather than flattened, because the solver has no second axis to give it.",
+      "rejects": [
+        {
+          "code": "MEDUI-E015",
+          "source": "Screen Banded {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Row {\n        id: topbar;\n        height: 72px;\n        Row {\n            id: inner;\n            height: 20px;\n        }\n    }\n}\n"
+        }
+      ],
+      "rule": "row = \"Row\" \"{\" { field | row-child } \"}\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Traced {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    @safety_critical(cv_check: [Bounds, ColorHash])\n    NumericDisplay {\n        id: pressure;\n        width: 200px;\n        height: 60px;\n        requirement: \"REQ-1\";\n        template: \"TPL-1\";\n        source: \"PRESSURE\";\n        color: Theme.Colors.ScoreDigits;\n    }\n}\n"
+      ],
+      "name": "annotation",
+      "note": "Precedes the node it annotates. @safety_critical(cv_check: [...]) is the one annotation with a rule attached: the node it marks must carry a requirement.",
+      "rejects": [
+        {
+          "code": "MEDUI-E070",
+          "source": "Screen Traced {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    @safety_critical(cv_check: [Bounds])\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+        }
+      ],
+      "rule": "annotation = \"@\" identifier [ \"(\" annotation-argument { \",\" annotation-argument } \")\" ] ;"
+    },
+    {
+      "accepts": [
+        "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    surface: 400px, 200px;\n    Clock {\n        id: wall;\n        width: 120px;\n        height: 20px;\n        position: 0px, 0px;\n        format: TimeSeconds;\n    }\n}\n"
+      ],
+      "name": "value",
+      "note": "Which forms a field admits is the field's domain rather than the grammar's - see fieldDomains. Localizable text is always t(\"STR-KEY\"): a literal in such a field is refused, because a screen carrying one locale's words is not locale-free.",
+      "rejects": [
+        {
+          "code": "MEDUI-E017",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: \"Endoscope Monitor\";\n        color: Theme.Colors.Title;\n    }\n}\n"
+        },
+        {
+          "code": "MEDUI-E034",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Clock {\n        id: wall;\n        width: 120px;\n        height: 20px;\n        format: HH_MM;\n    }\n}\n"
+        }
+      ],
+      "rule": "value = pixels | \"Fill\" | number | string | text-key | image-ref | color-token | identifier | point | list ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "screen-member",
+      "note": "A screen's body is these three in any order. `layout` and `surface` may each appear once; everything else is a node.",
+      "rejects": [],
+      "rule": "screen-member = layout | surface | node ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "layout",
+      "note": "The identifier is the layout kind - `Vertical` is the one the solver implements. The block carries `spacing` and `padding`, both sizes.",
+      "rejects": [
+        {
+          "code": "MEDUI-E016",
+          "source": "Screen Members {\n    layout: if { spacing: 0px; }\n}\n"
+        }
+      ],
+      "rule": "layout = \"layout\" \":\" identifier [ \"{\" { field } \"}\" ] [ \";\" ] ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "node",
+      "note": "Annotations precede the component they mark, and there may be more than one.",
+      "rejects": [],
+      "rule": "node = { annotation } component ;"
+    },
+    {
+      "accepts": [
+        "Screen WithLabel {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "leaf-component",
+      "note": "Every component but Row. The name must be one the dictionary carries and its fields exactly the set that entry admits: every required one present, no unknown one. See components. A child here is read as a field name, which is why nesting fails at the brace rather than at the dictionary.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Nested {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: outer;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n        Label {\n            id: inner;\n            width: 10px;\n            height: 10px;\n            text: t(\"STR-TITLE\");\n            color: Theme.Colors.Title;\n        }\n    }\n}\n"
+        }
+      ],
+      "rule": "leaf-component = identifier \"{\" { field } \"}\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Banded {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Row {\n        id: topbar;\n        height: 72px;\n        Label {\n            id: title;\n            width: 120px;\n            height: 20px;\n            text: t(\"STR-TITLE\");\n            color: Theme.Colors.Title;\n        }\n    }\n}\n"
+      ],
+      "name": "row-child",
+      "note": "What a Row may contain besides its own fields. Annotated, because a golden reference on a child of a Row is a thing an author writes.",
+      "rejects": [],
+      "rule": "row-child = { annotation } leaf-component ;"
+    },
+    {
+      "accepts": [
+        "Screen Traced {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    @safety_critical(cv_check: [Bounds, ColorHash])\n    NumericDisplay {\n        id: pressure;\n        width: 200px;\n        height: 60px;\n        requirement: \"REQ-1\";\n        template: \"TPL-1\";\n        source: \"PRESSURE\";\n        color: Theme.Colors.ScoreDigits;\n    }\n}\n"
+      ],
+      "name": "annotation-argument",
+      "note": "A field's shape **without** the terminating semicolon - the comma or the closing parenthesis ends it. Writing one as a field is the mistake this form exists to rule out.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Traced {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    @safety_critical(cv_check: [Bounds, ColorHash];)\n    NumericDisplay {\n        id: pressure;\n        width: 200px;\n        height: 60px;\n        requirement: \"REQ-1\";\n        template: \"TPL-1\";\n        source: \"PRESSURE\";\n        color: Theme.Colors.ScoreDigits;\n    }\n}\n"
+        }
+      ],
+      "rule": "annotation-argument = identifier \":\" value ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "field",
+      "note": "One property per line by convention, and the sibling implementation requires it - it splits a component body on the first colon of each line. This parser is token-based and would accept several on one line, so writing one per line is what keeps a screen portable in both directions.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Members {\n    layout: Vertical { spacing 0px; padding: 0px; }\n}\n"
+        }
+      ],
+      "rule": "field = identifier \":\" value \";\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "pixels",
+      "note": "The only unit. `Fill` is the other size form and takes no number; there is no percentage, em or point.",
+      "rejects": [
+        {
+          "code": "MEDUI-E010",
+          "source": "Screen Sized {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    surface: 1280pt, 720px;\n}\n"
+        }
+      ],
+      "rule": "pixels = number \"px\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "point",
+      "note": "What `position:` and `surface:` take. A lone `Npx` is a size; the comma is what makes it a point.",
+      "rejects": [],
+      "rule": "point = pixels \",\" pixels ;"
+    },
+    {
+      "accepts": [
+        "Screen Listed {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    StatusIndicator {\n        id: state;\n        width: 100px;\n        height: 20px;\n        requirement: \"REQ-1\";\n        source: \"STATE\";\n        states: [t(\"STR-OK\"), t(\"STR-ALARM\")];\n        colors: [Theme.Colors.Nominal, Theme.Colors.Fault];\n    }\n}\n"
+      ],
+      "name": "list",
+      "note": "Used by `states:` and `colors:` on a StatusIndicator, which must pair one to one.",
+      "rejects": [],
+      "rule": "list = \"[\" [ value { \",\" value } ] \"]\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "text-key",
+      "note": "The only way to write localizable text. A literal in such a field is refused, because a compiled screen is locale-free and carries the key rather than the words.",
+      "rejects": [
+        {
+          "code": "MEDUI-E017",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: \"Endoscope Monitor\";\n        color: Theme.Colors.Title;\n    }\n}\n"
+        },
+        {
+          "code": "MEDUI-E034",
+          "source": "Screen Values {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Clock {\n        id: wall;\n        width: 120px;\n        height: 20px;\n        format: HH_MM;\n    }\n}\n"
+        }
+      ],
+      "rule": "text-key = \"t\" \"(\" string \")\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Branded {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Image {\n        id: brand;\n        width: 240px;\n        height: 72px;\n        source: img(\"brand-mark\");\n    }\n}\n"
+      ],
+      "name": "image-ref",
+      "note": "Names a baked image package by id. The screen approves that package's identity and intrinsic extent; no compressed bytes and no decoder reach a device.",
+      "rejects": [],
+      "rule": "image-ref = \"img\" \"(\" string \")\" ;"
+    },
+    {
+      "accepts": [
+        "Screen Members {\n    layout: Vertical { spacing: 8px; padding: 0px; }\n    surface: 400px, 200px;\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.Title;\n    }\n}\n"
+      ],
+      "name": "color-token",
+      "note": "Written `Theme.Colors.<Token>`, and validated against the governed table rather than against the shape - see themeTokens for the set. The parser keeps the dotted path whole and unresolved; semantic analysis is what refuses an unknown one.",
+      "rejects": [
+        {
+          "code": "MEDUI-E030",
+          "source": "Screen Tinted {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    Label {\n        id: title;\n        width: 120px;\n        height: 20px;\n        text: t(\"STR-TITLE\");\n        color: Theme.Colors.NotInTheTable;\n    }\n}\n"
+        }
+      ],
+      "rule": "color-token = identifier { \".\" identifier } ;"
+    },
+    {
+      "accepts": [],
+      "name": "forbidden",
+      "note": "Absent by design rather than unimplemented. A screen whose shape depends on data is a screen whose worst case no compiler can measure, which is what every bound in this language rests on.",
+      "rejects": [
+        {
+          "code": "MEDUI-E016",
+          "source": "Screen Scripted {\n    layout: Vertical { spacing: 0px; padding: 0px; }\n    if (true) {\n    }\n}\n"
+        }
+      ],
+      "rule": "(* no production: loops, conditionals, recursion and scripting are absent *)"
+    }
+  ],
+  "retiredDiagnostics": [],
+  "schemaVersion": 1,
+  "themeTokens": [
+    "Theme.Colors.TopbarBackground",
+    "Theme.Colors.Title",
+    "Theme.Colors.ScoreDigits",
+    "Theme.Colors.Nominal",
+    "Theme.Colors.Alert",
+    "Theme.Colors.Fault",
+    "Theme.Colors.Neutral",
+    "Theme.Colors.PrimaryAction"
+  ],
+  "tokens": [
+    {
+      "description": "an identifier",
+      "name": "Identifier"
+    },
+    {
+      "description": "a number",
+      "name": "Number"
+    },
+    {
+      "description": "a string",
+      "name": "String"
+    },
+    {
+      "description": "'@'",
+      "name": "At"
+    },
+    {
+      "description": "'{'",
+      "name": "LBrace"
+    },
+    {
+      "description": "'}'",
+      "name": "RBrace"
+    },
+    {
+      "description": "'('",
+      "name": "LParen"
+    },
+    {
+      "description": "')'",
+      "name": "RParen"
+    },
+    {
+      "description": "'['",
+      "name": "LBracket"
+    },
+    {
+      "description": "']'",
+      "name": "RBracket"
+    },
+    {
+      "description": "':'",
+      "name": "Colon"
+    },
+    {
+      "description": "';'",
+      "name": "Semicolon"
+    },
+    {
+      "description": "','",
+      "name": "Comma"
+    },
+    {
+      "description": "'.'",
+      "name": "Dot"
+    },
+    {
+      "description": "end of file",
+      "name": "EndOfFile"
+    }
+  ]
+}

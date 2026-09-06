@@ -376,6 +376,7 @@ target_sources(MduXMeduiLib
             medui/Emit.cppm
             medui/Compile.cppm
             medui/Check.cppm
+            medui/Grammar.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
@@ -388,6 +389,7 @@ target_sources(MduXMeduiLib
         medui/Emit.cpp
         medui/Compile.cpp
         medui/Check.cpp
+        medui/Grammar.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
