@@ -67,11 +67,28 @@ know will fail or guessing at results.
 
 3. **Test**, focused before broad:
    ```bash
-   ctest --test-dir build -R MduXUnitTests --output-on-failure  # one suite
-   ctest --test-dir build --output-on-failure                   # full suite
+   ctest --test-dir build --output-on-failure                                             # full suite
+   ctest --test-dir build -R '^unit_tests::' --no-tests=error --output-on-failure          # one target's cases
+   ctest --test-dir build -L evidence --no-tests=error --output-on-failure                 # one label
    ```
-   Registered CTest names: `MduXUnitTests`, `MduXComplianceTests`, `VulkanSCMemoryPoolTests`,
-   `VulkanSCDeviceObjectTests`.
+   `mdux_discover_tests()` registers one CTest entry per `TEST_CASE`, named `<target>::<case>` -
+   not a hand-written suite name. There is no fixed list to quote here that would not go stale the
+   next time a case is added or renamed; find the live one with `ctest --test-dir build -N` (lists
+   every registered name) or `ctest --test-dir build -N -R <pattern>` (narrows first). See
+   [`docs/getting-started.md`](../../../docs/getting-started.md#selecting-suites) for the labels
+   already wired up (`evidence`, `determinism`, `noheap`, `pixel`, `regulatory`, `verify`, …) and
+   what each one answers.
+
+   **`--no-tests=error` is not decoration above — carry it into any selection you use as
+   verification evidence, including one you write yourself and not only these three.** Without it,
+   a selector that matches nothing exits 0 and prints "0 tests failed out of 0" - a command that
+   reads as a passing check and asserted nothing. This is not hypothetical: an earlier revision of
+   this skill recommended exactly such a selector with no flag to catch it (issue #304), and it was
+   found by running the command, not by reading it. A CI regression check
+   (`tools/docs-lint/check_documented_test_selectors.py`) now asks a built CTest configuration
+   whether every `-R`/`--tests-regex` example in this file, `AGENTS.md` and
+   `docs/getting-started.md` still matches something - which checks that *these* examples stay
+   live, not that a selection you construct from them at the terminal carries the flag too.
 
 4. **Run an example** directly once built, e.g. `./build/examples/MedicalUiExample`.
 

@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+"""Fails when a documented `ctest -R <selector>` example matches no registered test.
+
+Host-only tool (ADR-004): standard library only, no third-party dependencies.
+
+Issue #304's finding, made mechanical rather than left to the next reader to rediscover:
+`.agents/skills/mdux-build-and-test/SKILL.md` recommended
+`ctest --test-dir build -R MduXUnitTests --output-on-failure`, a name from before
+`mdux_discover_tests()` replaced hand-written suite registrations with one CTest entry per
+`TEST_CASE`, named `<target>::<case>`. Running the documented command against the tree it
+describes returned `Total Tests: 0` - a command that reads as verification evidence and produces
+none, silently, because CTest treats an empty selection as a successful run of nothing unless
+`--no-tests=error` says otherwise.
+
+This tool asks a real, built CTest configuration whether a documented selector still selects
+anything - `ctest --show-only=json-v1 -R <selector>` - rather than keeping a second list of
+expected names in this file for the documentation to drift away from. That second list is
+exactly what issue #304 asks not to be built: the source of truth for "does this selector match a
+test" is the test tree itself, on the day the check runs, not a snapshot of it copied in here.
+
+## What is scanned, and why this set
+
+`AGENTS.md`, every `.agents/skills/*/SKILL.md`, and `docs/getting-started.md` - the documents an
+agent reads to learn *how to run tests*, which is the same set issue #304 audited by hand. Not all
+of `docs/`: `check_named_mechanisms.py` already resolves `ctest -L <label>` citations there
+statically (a label is a literal string attached in CMake or a `TEST_CASE`, so no build is
+needed), and a changelog or roadmap entry quoting a historical command is describing what a past
+release did, not instructing a reader what to run today.
+
+Only fenced code blocks are scanned, which is the opposite convention from
+`check_named_mechanisms.py` and deliberately so: that checker treats a fence as an illustrative
+example exempt from checking prose claims, while a `ctest` invocation in one of these documents
+*is* the claim - it is presented as the command to run, and #304 is exactly the case of a fenced
+example nobody could run correctly.
+
+## What "obsolete" means here, precisely
+
+A selector that CTest's `--show-only=json-v1` reports zero tests for, against the build directory
+given. That is the one fact this tool proves: it does not check that the prose around the command
+is otherwise accurate, that the build directory itself is current, or that a selector matching one
+stale test is the *right* test - see #304's own acceptance criteria for why a mechanical checker
+does not stand in for reading the surrounding text.
+
+Usage:
+    python3 tools/docs-lint/check_documented_test_selectors.py --build-dir PATH [--repo-root PATH]
+
+Exit status 0 when every documented selector matches at least one registered test, 1 otherwise -
+including when `--build-dir` holds no CTest configuration to ask, which would otherwise make an
+empty scan look identical to a clean one.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shlex
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+FENCE_PATTERN_CHARS = ("```", "~~~")
+
+# Long-form `--tests-regex=<value>`. Not `-R=<value>`: CTest's own CLI does not accept `=` on the
+# short spelling, and inventing an accepted form here would recognise something no shell would
+# actually pass through.
+TESTS_REGEX_EQUALS_PREFIX = "--tests-regex="
+
+
+@dataclass(frozen=True)
+class Citation:
+    path: Path
+    line: int
+    selector: str
+
+
+@dataclass(frozen=True)
+class Finding:
+    citation: Citation
+    reason: str
+
+
+def documents_to_scan(root: Path) -> list[Path]:
+    """The fixed set of "how to run tests" documents - see the module docstring for why this set
+    and not all of `docs/`. Skills are discovered by glob rather than named individually, so a
+    skill added later is scanned without editing this function - the one place a hardcoded list
+    would have been tempting and is not needed.
+    """
+    paths = []
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_file():
+        paths.append(agents_md)
+    getting_started = root / "docs" / "getting-started.md"
+    if getting_started.is_file():
+        paths.append(getting_started)
+    skills_root = root / ".agents" / "skills"
+    if skills_root.is_dir():
+        paths.extend(sorted(skills_root.glob("*/SKILL.md")))
+    return paths
+
+
+def fenced_code_lines(text: str) -> list[tuple[int, str]]:
+    """Lines strictly inside a fenced code block, 1-indexed, excluding the fence delimiters
+    themselves. An unterminated fence is treated as open to the end of the file - the same
+    fail-open-to-scanning choice `check_named_mechanisms.py` makes for the opposite case, applied
+    here so a malformed document still gets its fenced content checked rather than none of it.
+    """
+    lines: list[tuple[int, str]] = []
+    in_fence = False
+    for index, line in enumerate(text.splitlines(), start=1):
+        stripped = line.lstrip()
+        if stripped.startswith(FENCE_PATTERN_CHARS):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            lines.append((index, line))
+    return lines
+
+
+def join_shell_continuations(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Merges a line ending in a shell continuation backslash with the line(s) that follow it, so
+    a `ctest` invocation split across lines is matched as the one command it is rather than as two
+    lines neither of which contains both `ctest` and `-R`. The merged result keeps the *first*
+    physical line's number - a citation still points at the line a reader looks for the command on,
+    not at whichever continuation line happened to carry the flag.
+
+    Applies within one fenced block at a time. `fenced_code_lines()` numbers its lines with no gap
+    while a fence stays open and at least one gap (the delimiter lines it drops) between two
+    fences, so a break in the sequence is a fence boundary - a continuation must never be read
+    across it, or a line ending a block coincidentally with a trailing `\\` could absorb the next
+    block's first line.
+    """
+    joined: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        start_line, buffer = lines[index]
+        current_line = start_line
+        while buffer.rstrip().endswith("\\") and index + 1 < len(lines):
+            next_line, next_text = lines[index + 1]
+            if next_line != current_line + 1:
+                break
+            buffer = buffer.rstrip()[:-1].rstrip() + " " + next_text.strip()
+            current_line = next_line
+            index += 1
+        joined.append((start_line, buffer))
+        index += 1
+    return joined
+
+
+def selectors_in_line(line: str) -> list[str]:
+    """Every `-R`/`--tests-regex` value on one already-joined logical line, read by tokenizing it
+    as a shell would rather than by pattern-matching the text.
+
+    This replaced a regex bounding the gap between `ctest` and the flag to 60 characters and
+    excluding punctuation from an unquoted value - both wrong, found by reproduction rather than
+    inspection: a realistic option list before `-R` is longer than 60 characters
+    (`--test-dir build --output-on-failure --no-tests=error --parallel 4 -R ObsoleteSuite` matched
+    nothing at all), and a selector containing a comma is an ordinary CTest regex
+    (`^unit_tests::Version,obsolete$` truncated to `^unit_tests::Version`, which then reported the
+    *wrong* selector as live). `shlex` has neither problem: it tokenizes the whole line regardless
+    of length, and a quoted or unquoted token is returned whole, punctuation included - the shell
+    property this line is actually being read for.
+
+    `#` starts a comment exactly as it does in the shells these examples are written for, which is
+    what lets a trailing `# one suite` annotation fall away without a second rule for it.
+
+    Returns nothing for a line `shlex` cannot tokenize (unbalanced quotes) rather than guessing -
+    the same "ask, don't reconstruct" choice `matching_test_count()` makes about a `ctest` failure.
+    """
+    try:
+        tokens = shlex.split(line, comments=True)
+    except ValueError:
+        return []
+    if "ctest" not in tokens:
+        return []
+
+    found = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ("-R", "--tests-regex"):
+            if index + 1 < len(tokens):
+                found.append(tokens[index + 1])
+            index += 2
+            continue
+        if token.startswith(TESTS_REGEX_EQUALS_PREFIX):
+            found.append(token[len(TESTS_REGEX_EQUALS_PREFIX) :])
+        index += 1
+    return found
+
+
+def find_citations(path: Path) -> list[Citation]:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    citations = []
+    for line_number, line in join_shell_continuations(fenced_code_lines(text)):
+        for selector in selectors_in_line(line):
+            citations.append(Citation(path, line_number, selector))
+    return citations
+
+
+def matching_test_count(ctest_command: str, build_dir: Path, selector: str) -> int:
+    """How many tests `--show-only=json-v1 -R <selector>` reports against `build_dir`.
+
+    `--show-only` applies the same `-R` filtering a real run would (checked empirically: a
+    selector matching zero tests returns an empty `tests` array rather than the whole inventory),
+    so this asks the identical question the documented command would answer, without running
+    anything a test binary does.
+
+    Raises `RuntimeError` for anything that is not "the selector matched N tests" - a missing
+    `ctest`, a build directory with no test configuration, or output this tool does not
+    understand - so a caller can tell "the selector is stale" apart from "the question could not
+    be asked", which is the distinction issue #304's own acceptance criteria ask for.
+    """
+    try:
+        completed = subprocess.run(
+            [ctest_command, "--test-dir", str(build_dir), "--show-only=json-v1", "-R", selector],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(f"'{ctest_command}' could not be run: {error}") from error
+
+    if completed.returncode != 0 or not completed.stdout.strip():
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit status {completed.returncode}"
+        raise RuntimeError(f"'{ctest_command} --test-dir {build_dir} --show-only=json-v1' failed: {detail}")
+
+    try:
+        document = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"'{ctest_command} --show-only=json-v1' did not print JSON: {error}") from error
+
+    tests = document.get("tests")
+    if not isinstance(tests, list):
+        raise RuntimeError("'--show-only=json-v1' output has no 'tests' array - unexpected CTest version or format")
+    return len(tests)
+
+
+def check_repository(root: Path, build_dir: Path, ctest_command: str) -> tuple[list[Finding], int, int]:
+    """Returns (findings, documents checked, citations checked)."""
+    findings: list[Finding] = []
+    citations_checked = 0
+    documents = documents_to_scan(root)
+    for document in documents:
+        for citation in find_citations(document):
+            citations_checked += 1
+            try:
+                count = matching_test_count(ctest_command, build_dir, citation.selector)
+            except RuntimeError as error:
+                findings.append(Finding(citation, str(error)))
+                continue
+            if count == 0:
+                findings.append(
+                    Finding(citation, f"'-R {citation.selector}' matches 0 registered tests in {build_dir}")
+                )
+    return findings, len(documents), citations_checked
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[2],
+        help="repository root (default: inferred from this script's location)",
+    )
+    parser.add_argument(
+        "--build-dir",
+        type=Path,
+        required=True,
+        help="a configured and built CMake binary directory to ask CTest about",
+    )
+    parser.add_argument(
+        "--ctest-command",
+        default="ctest",
+        help="the ctest executable to invoke (default: 'ctest', resolved via PATH)",
+    )
+    args = parser.parse_args(argv)
+
+    root = args.repo_root.resolve()
+    build_dir = args.build_dir.resolve()
+
+    if not (build_dir / "CTestTestfile.cmake").is_file():
+        print(
+            f"mdux-doc-selectors: '{build_dir}' has no CTestTestfile.cmake - pass --build-dir at "
+            "an already configured and built CMake binary directory (e.g. build-gcc)",
+            file=sys.stderr,
+        )
+        return 1
+
+    findings, documents_checked, citations_checked = check_repository(root, build_dir, args.ctest_command)
+
+    if findings:
+        for finding in findings:
+            path = finding.citation.path
+            relative = path.relative_to(root) if path.is_relative_to(root) else path
+            print(f"mdux-doc-selectors: {relative}:{finding.citation.line}: {finding.reason}", file=sys.stderr)
+        print(f"mdux-doc-selectors: {len(findings)} finding(s)", file=sys.stderr)
+        print(
+            "mdux-doc-selectors: update the documented selector to a name or pattern "
+            "'ctest --test-dir <build> -N' actually lists",
+            file=sys.stderr,
+        )
+        return 1
+
+    if documents_checked == 0:
+        # The same vacuous-success guard check_named_mechanisms.py applies: a scan of nothing
+        # printing "OK" is indistinguishable from a scan that found everything correct.
+        print(
+            f"mdux-doc-selectors: no documents found under '{root}' - --repo-root is wrong or the layout moved",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"mdux-doc-selectors: OK ({documents_checked} document(s), {citations_checked} selector(s) checked)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

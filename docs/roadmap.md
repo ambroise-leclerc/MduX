@@ -527,8 +527,17 @@ because closing an epic issue is a separate, manual step from closing its last c
 - #263 S4 Machine-readable `.medui` grammar and `--explain` — **shipped**; `docs/medui/grammar.json`, emitted from the compiler's own tables
 - #264 S5 JSON Schemas for every recipe kind — **shipped**; `docs/recipes/*.schema.json`, checked against every committed report
 - #265 S6 `--dump-ir` JSON and a generated tool manifest — **shipped**; the resolved IR, and a manifest generated from the build's own registration
+- #304 S7 Refresh agent instructions and reject empty documented test selections — **shipped**;
+  a follow-up to #65/#66 rather than a seventh grammar/schema/IR feature. An assessment of
+  `develop` found agent-facing instructions that disagreed with the implementation - a
+  `ctest -R <name>` example naming a suite registration `mdux_discover_tests()` had already
+  replaced with `<target>::<case>` entries, a "five artifacts" count where eight now exist, and two
+  references to issues since closed. Fixed, and closed mechanically rather than left to the next
+  audit to rediscover by hand: `tools/docs-lint/check_documented_test_selectors.py` asks a built
+  CTest configuration whether every documented `-R` example still matches something, wired into
+  the GCC 16 build leg since the question needs a build to ask.
 
-_S1–S6 closed. #19 has no open child._
+_S1–S7 closed. #19 has no open child._
 
 ---
 
