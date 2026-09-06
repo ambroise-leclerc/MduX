@@ -98,13 +98,35 @@ struct Box {
  *
  * Integer cross-products, no division and no float: the coverage each channel implies is the
  * rational `(pixel - ground) / (tint - ground)`, so the intervals are compared by multiplying out.
- * `allowance` is one UNORM step, because the device blends in floating point and quantises back to
- * eight bits; a channel whose tint and ground are equal admits any coverage and only requires the
- * pixel to match within the same step.
+ * A channel whose tint and ground are equal admits any coverage and only requires the pixel to match
+ * within the allowance.
+ *
+ * ## `allowance` is one step per composite, and one is not always enough
+ *
+ * The device blends in floating point and quantises back to eight bits at **every** composite, so a
+ * pixel two layers deep may differ in the last bit twice - which is what `withinSteps()` has always
+ * said for a glyph and what this function assumed away by fixing its allowance at one.
+ *
+ * That assumption held while every node a golden pinned was painted in a single composite, and #261
+ * is the first that is not: a bound button paints its field and then its word, one tint over one
+ * ground at two coverages, which `mdux.medui.screen` argues at length that this check admits. The
+ * argument is right in exact arithmetic and was never run against a GPU, because no committed node
+ * carried `ColorHash` over such a composition until that issue.
+ *
+ * What it meets on real hardware is this: a channel constrains coverage only as tightly as **its own
+ * span** allows, so one UNORM step of device rounding on a narrow span implies a wide interval of
+ * coverage. `Theme.Colors.Fault` over `Theme.Colors.TopbarBackground` spans ten units of red against
+ * 163 of green, so the frame's `(215, 134, 135)` - one step above the ideal red of 214 - demands a
+ * coverage of at least 0.5 from red while green and blue pin it at 0.488, and the intersection is
+ * empty. Two steps admit it; the green and blue intervals still pin the coverage to a hundredth,
+ * because a wide span loses almost nothing to the same slack.
+ *
+ * So this is not a tolerance in the sense this file argues against elsewhere. It is the statement
+ * that a channel carrying little information about coverage should be allowed to constrain it
+ * loosely, and a `ForeignColour` still misses by far more than one step on the channels that carry
+ * the information.
  */
-[[nodiscard]] bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint) noexcept {
-    constexpr std::int64_t allowance = 1;
-
+[[nodiscard]] bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint, std::int64_t allowance) noexcept {
     // The feasible coverage, as a closed interval of rationals, narrowed channel by channel from
     // the whole of [0, 1].
     std::int64_t lowNum  = 0;
@@ -395,8 +417,11 @@ std::optional<ColorRgba8> FramebufferView::pixelAt(Px x, Px y) const noexcept {
     return ColorRgba8{.r = channel(0), .g = channel(1), .b = channel(2), .a = channel(3)};
 }
 
-Result<GoldenExpectation, VerifyError>
-GoldenExpectation::create(const GoldenEntry& entry, const mdux::medui::ScreenPackage& screen, RenderScope scope, ColorRgba8 ground) noexcept {
+Result<GoldenExpectation, VerifyError> GoldenExpectation::create(const GoldenEntry&                entry,
+                                                                 const mdux::medui::ScreenPackage& screen,
+                                                                 RenderScope                       scope,
+                                                                 ColorRgba8                        ground,
+                                                                 std::size_t                       composites) noexcept {
     const mdux::medui::CompiledNode* node = screen.find(entry.nodeId);
     if (node == nullptr) {
         // The verifier's first lookup, and the failure ADR-014's ownership table assigns to it. A
@@ -443,7 +468,9 @@ GoldenExpectation::create(const GoldenEntry& entry, const mdux::medui::ScreenPac
         hasTint = true;
         tint    = mdux::medui::quantise(*resolved);
     }
-    return GoldenExpectation{node, scope, entry.cvChecks, ground, hasTint, tint};
+    // One composite at minimum: a node that painted nothing still had its ground written once, and an
+    // allowance of zero would make every rounding a `ForeignColour`.
+    return GoldenExpectation{node, scope, entry.cvChecks, ground, hasTint, tint, composites == 0 ? 1 : composites};
 }
 
 Result<TextExpectation, VerifyError> TextExpectation::create(const mdux::medui::ScreenPackage& screen,
@@ -678,7 +705,7 @@ CheckOutcome colorHash(const FramebufferView& frame, const GoldenExpectation& ex
             if (!pixel.has_value() || *pixel == ground) {
                 continue;
             }
-            if (!couldBeBlend(*pixel, ground, tint)) {
+            if (!couldBeBlend(*pixel, ground, tint, static_cast<std::int64_t>(expectation.composites()))) {
                 outcome.found           = atPixel(x, y);
                 outcome.foundValid      = true;
                 outcome.foundColor      = *pixel;

@@ -180,9 +180,11 @@ screen raises: what does it look like. `--frame-image-dir=<dir>` does.
   --frame-image-dir=/tmp/mdux-frames
 ```
 
-Every render scope writes `<screen>.<scope>.frame.png` there, pass or fail — the readback exactly as
-it came back, with no dimming and nothing drawn on top, because anything drawn on it would be this
-tool's opinion about the screen rather than the screen. The name carries a `.frame` before the
+Every render scope *attempts* `<screen>.<scope>.frame.png` there, pass or fail — the readback exactly
+as it came back, with no dimming and nothing drawn on top, because anything drawn on it would be this
+tool's opinion about the screen rather than the screen. A directory it cannot create, a frame it
+cannot encode or a file it cannot write is reported as a warning and changes no verdict: the image is
+an attachment for a person, and a full disk must not turn a passing verification into a failing one. The name carries a `.frame` before the
 extension and encodes the scope the same way, so pointing both flags at one directory keeps both
 images. Like `--diff-image-dir`, it chooses a location and never an expectation: the same
 obligations run in the same scopes, and the same exit status comes back, whether or not you pass it.

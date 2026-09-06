@@ -416,6 +416,22 @@ struct TextGround {
  * this would then name the wrong colour. It is unreachable: `TextExpectation::create()` refuses a
  * run with no ink outright, so no check is ever raised for such a node.
  */
+/**
+ * @brief How many layers the runtime paints over the ground for this node, in this scope.
+ *
+ * `colorHash()` allows one UNORM step of device rounding per composite, so this is the number that
+ * keeps a correct frame from reading as a `ForeignColour`. One everywhere except the node that made
+ * the distinction necessary: a `Button` or a `CriticalButton` with a locale bound paints its field
+ * and then its word, which is two.
+ *
+ * `hasText` is what keeps that from being slack granted where none is needed. In a locale-free scope
+ * a button paints an opaque face and nothing over it, which is one composite exactly - and the
+ * default an expectation gets when nobody says otherwise.
+ */
+[[nodiscard]] std::size_t goldenCompositesFor(const mdux::medui::CompiledNode& node, bool hasText) {
+    return hasText && mdux::medui::buttonFace(node.payload).has_value() ? 2U : 1U;
+}
+
 [[nodiscard]] TextGround textGroundFor(const mdux::medui::ScreenPackage& screen, const mdux::medui::CompiledNode& node) {
     const mdux::core::ColorRgba8 under = groundFor(screen, node);
 
@@ -935,7 +951,11 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         const mv::RenderScope scope = hasText ? mv::RenderScope::forLocale(locales[scopeIndex].locale) : mv::RenderScope::localeFree();
         for (const mv::GoldenEntry& golden : goldens) {
             const auto* node        = screen.find(golden.nodeId);
-            const auto  expectation = mv::GoldenExpectation::create(golden, screen, scope, node == nullptr ? clearColor : groundFor(screen, *node));
+            const auto  expectation = mv::GoldenExpectation::create(golden,
+                                                                   screen,
+                                                                   scope,
+                                                                   node == nullptr ? clearColor : groundFor(screen, *node),
+                                                                   node == nullptr ? 1U : goldenCompositesFor(*node, hasText));
             if (!expectation.has_value()) {
                 report(result.diagnostics,
                        screenDirectory / "goldens.json",
@@ -1102,7 +1122,7 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
                 report(result.diagnostics, packagePath, "VUI008", "validated golden node '" + std::string{golden.nodeId} + "' vanished before render");
                 return result;
             }
-            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node));
+            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node), goldenCompositesFor(*node, hasText));
             if (!expectation.has_value()) {
                 report(result.diagnostics,
                        packagePath,

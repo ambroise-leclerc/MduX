@@ -511,6 +511,7 @@ public:
      * @param screen the compiled screen the sidecar was emitted beside
      * @param scope  the render scope this obligation is discharged in
      * @param ground what this node's rectangle shows when the node paints nothing
+     * @param composites how many layers the runtime paints over that ground for this node; see below
      *
      * Refuses a dangling node id, a rectangle or a duplicated name that disagrees with the node, an
      * empty or non-canonical `cvChecks`, a `ColorHash` with no colour token to compare against, and
@@ -519,9 +520,26 @@ public:
      * `ground` is the driver's resolved value - its fixed clear colour, or the tint of the compiled
      * panel beneath this node - and never a colour read back out of the frame under test. See this
      * file's header for why a check needs it as well as the tint.
+     *
+     * ## `composites`, and why one was the wrong constant
+     *
+     * `colorHash()` allows one UNORM step per composite the device performed, because a device blends
+     * in floating point and quantises back to eight bits at every one of them. Until #261 that number
+     * was fixed at one, which was right while every node a golden pinned was painted in a single
+     * composite - and a bound `Button` is the first that is not, painting its field and then its word
+     * as one tint over one ground at two coverages.
+     *
+     * **One is still the default, and still exact enough**, because a wide-span channel loses almost
+     * nothing to the slack: what makes the second step necessary is a channel whose ground and tint
+     * are close, where one step of rounding implies a wide interval of coverage. `couldBeBlend()`
+     * carries the worked example. A caller that does not know the depth should pass nothing rather
+     * than guess high: slack granted where none is needed is a wrong tint waved through.
      */
-    [[nodiscard]] static mdux::core::Result<GoldenExpectation, VerifyError>
-    create(const GoldenEntry& entry, const mdux::medui::ScreenPackage& screen, RenderScope scope, mdux::core::ColorRgba8 ground) noexcept;
+    [[nodiscard]] static mdux::core::Result<GoldenExpectation, VerifyError> create(const GoldenEntry&                entry,
+                                                                                   const mdux::medui::ScreenPackage& screen,
+                                                                                   RenderScope                       scope,
+                                                                                   mdux::core::ColorRgba8            ground,
+                                                                                   std::size_t                       composites = 1) noexcept;
 
     /// The compiled node the golden names. Never null for an expectation that exists.
     [[nodiscard]] const mdux::medui::CompiledNode& node() const noexcept {
@@ -552,6 +570,11 @@ public:
     [[nodiscard]] std::span<const CvCheck> checks() const noexcept {
         return checks_;
     }
+    /// How many layers the runtime paints over the ground for this node, and therefore how many
+    /// UNORM steps of device rounding `colorHash()` allows. Never zero.
+    [[nodiscard]] std::size_t composites() const noexcept {
+        return composites_;
+    }
     /// Whether the author opted this node into `check`.
     [[nodiscard]] bool declares(CvCheck check) const noexcept {
         return std::ranges::find(checks_, check) != checks_.end();
@@ -563,8 +586,9 @@ private:
                       std::span<const CvCheck>         checks,
                       mdux::core::ColorRgba8           ground,
                       bool                             hasTint,
-                      mdux::core::ColorRgba8           tint) noexcept
-        : node_{node}, scope_{scope}, checks_{checks}, ground_{ground}, tint_{tint}, hasTint_{hasTint} {}
+                      mdux::core::ColorRgba8           tint,
+                      std::size_t                      composites) noexcept
+        : node_{node}, scope_{scope}, checks_{checks}, ground_{ground}, tint_{tint}, hasTint_{hasTint}, composites_{composites} {}
 
     const mdux::medui::CompiledNode* node_{nullptr};
     RenderScope                      scope_{RenderScope::localeFree()};
@@ -572,6 +596,7 @@ private:
     mdux::core::ColorRgba8           ground_{};
     mdux::core::ColorRgba8           tint_{};
     bool                             hasTint_{false};
+    std::size_t                      composites_{1};
 };
 
 static_assert(!std::is_aggregate_v<GoldenExpectation>, "a GoldenExpectation must only be obtainable through create()");

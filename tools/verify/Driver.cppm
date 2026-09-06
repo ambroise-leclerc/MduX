@@ -175,11 +175,15 @@ struct RunOptions {
 /// means, and in particular why an empty `artifactRoot` is supported input rather than a mistake.
 [[nodiscard]] RunResult run(const std::filesystem::path& screenDirectory, const RunOptions& options);
 
+/// `frameImageDirectory` is last rather than beside its sibling, and deliberately: this is an
+/// exported aggregate, so a caller may initialise it positionally, and inserting a `path` before
+/// `format` would silently rebind an existing third argument from a `Format` to a path. Appending
+/// leaves every such call site compiling and meaning what it did.
 struct Invocation {
     std::filesystem::path    screenDirectory;
     std::filesystem::path    diffImageDirectory;
-    std::filesystem::path    frameImageDirectory;
     mdux::tools::cli::Format format{mdux::tools::cli::Format::Text};
+    std::filesystem::path    frameImageDirectory;
 };
 
 [[nodiscard]] std::string usage();
