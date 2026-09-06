@@ -143,6 +143,14 @@ struct CompileOutputs {
     std::string screenId;     ///< for the summary line
     std::size_t nodeCount{0};
     std::size_t goldenCount{0};
+
+    /// The resolved intermediate representation as canonical JSON (#265), which `--dump-ir` prints.
+    ///
+    /// Built on every compile and written nowhere unless a caller asks for it. See `Ir.cppm` for why
+    /// it is not computed on demand: a dump produced by a second run of the stages could disagree
+    /// with the artifact beside it, and describing a different compile is the one thing an
+    /// intermediate representation must not do.
+    std::string irJson;
 };
 
 /// Reads a file as bytes. Returns nullopt when it cannot be opened or read.
@@ -159,6 +167,10 @@ struct CompileOutputs {
  * @param recipeBytes the recipe's own bytes, for its digest
  * @param root        the directory the recipe's paths resolve against - the repository root
  * @param diagnostics appended to; a stage that reports anything stops the compile
+ * @param diagnosticIr when non-null, receives the resolved IR as soon as layout succeeds, and is
+ *        refreshed before a successful return - so a compile that a *later* stage refused still
+ *        leaves the working behind. See `Ir.cppm`; `--dump-ir` is what passes it, and a run that
+ *        never reached a box tree leaves it untouched, because there is no working to show.
  *
  * Returns nullopt when any stage rejects the screen, when an input cannot be read, or when the
  * compiled screen fails its own schema.
@@ -167,7 +179,8 @@ struct CompileOutputs {
                                                 std::string_view              recipePath,
                                                 std::span<const std::byte>    recipeBytes,
                                                 const std::filesystem::path&  root,
-                                                std::vector<cli::Diagnostic>& diagnostics);
+                                                std::vector<cli::Diagnostic>& diagnostics,
+                                                std::string*                  diagnosticIr = nullptr);
 
 /// Writes `outputs` into `outputDir`, creating it if needed. All three files, always: ADR-012 makes
 /// them unconditional outputs, so "this screen pins nothing" is an empty array rather than a missing

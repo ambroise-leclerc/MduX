@@ -1,0 +1,568 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "bakes": [
+        {
+          "id": "brand-mark",
+          "kind": "image",
+          "outputs": [
+            "package.json",
+            "pixels.rgba",
+            "report.json"
+          ],
+          "recipe": "recipes/image/brand-mark.toml",
+          "sources": [
+            "recipes/image/brand-mark/brand-mark.qoi"
+          ],
+          "toolchain": [
+            "mdux-imagebake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "IMB000",
+        "IMB001",
+        "IMB002",
+        "IMB003",
+        "IMB004",
+        "IMB005",
+        "IMB006",
+        "IMB007",
+        "IMB008",
+        "IMB009"
+      ],
+      "entryPoint": "tools/image/ImageBakeMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::ImageBakeLib"
+      ],
+      "name": "mdux-imagebake",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/image"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "MDC001",
+        "MDC002",
+        "MDX-E030",
+        "MEDUI-E000",
+        "MEDUI-E001",
+        "MEDUI-E002",
+        "MEDUI-E003",
+        "MEDUI-E004",
+        "MEDUI-E010",
+        "MEDUI-E011",
+        "MEDUI-E012",
+        "MEDUI-E013",
+        "MEDUI-E014",
+        "MEDUI-E015",
+        "MEDUI-E016",
+        "MEDUI-E017",
+        "MEDUI-E030",
+        "MEDUI-E031",
+        "MEDUI-E032",
+        "MEDUI-E033",
+        "MEDUI-E034",
+        "MEDUI-E050",
+        "MEDUI-E051",
+        "MEDUI-E052",
+        "MEDUI-E053",
+        "MEDUI-E070",
+        "MEDUI-E071",
+        "SCE001",
+        "SCE002",
+        "SCE003",
+        "SCP001",
+        "SCP002",
+        "SCP003",
+        "SCP004",
+        "SCP005",
+        "TXT001"
+      ],
+      "entryPoint": "tools/medui/MeduiCheckMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::MeduiLib"
+      ],
+      "name": "mdux-medui-check",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/medui"
+    },
+    {
+      "bakes": [
+        {
+          "id": "endoscope-monitor",
+          "kind": "screen",
+          "outputs": [
+            "goldens.json",
+            "package.json",
+            "report.json",
+            "verification.json"
+          ],
+          "recipe": "recipes/screen/endoscope-monitor.toml",
+          "sources": [
+            "generated/font/dejavu-ui/atlas.bin",
+            "generated/font/dejavu-ui/package.json",
+            "generated/image/brand-mark/package.json",
+            "generated/image/brand-mark/pixels.rgba",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
+            "generated/text/endoscope-monitor-en-us/package.json",
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+          ],
+          "toolchain": [
+            "mdux-meduic",
+            "mdux-verify-bake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "MDC001",
+        "MDC002",
+        "MDX-E030",
+        "MEDUI-E000",
+        "MEDUI-E001",
+        "MEDUI-E002",
+        "MEDUI-E003",
+        "MEDUI-E004",
+        "MEDUI-E010",
+        "MEDUI-E011",
+        "MEDUI-E012",
+        "MEDUI-E013",
+        "MEDUI-E014",
+        "MEDUI-E015",
+        "MEDUI-E016",
+        "MEDUI-E017",
+        "MEDUI-E030",
+        "MEDUI-E031",
+        "MEDUI-E032",
+        "MEDUI-E033",
+        "MEDUI-E034",
+        "MEDUI-E050",
+        "MEDUI-E051",
+        "MEDUI-E052",
+        "MEDUI-E053",
+        "MEDUI-E070",
+        "MEDUI-E071",
+        "SCE001",
+        "SCE002",
+        "SCE003",
+        "SCP001",
+        "SCP002",
+        "SCP003",
+        "SCP004",
+        "SCP005",
+        "TXT001"
+      ],
+      "entryPoint": "tools/medui/MeduicMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::MeduiLib"
+      ],
+      "name": "mdux-meduic",
+      "options": [
+        "--dump-ir",
+        "--explain",
+        "--format",
+        "--grammar",
+        "--help"
+      ],
+      "sourceDirectory": "tools/medui"
+    },
+    {
+      "bakes": [
+        {
+          "id": "ecg-demo",
+          "kind": "model",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "weights.bin"
+          ],
+          "recipe": "recipes/model/ecg-demo.toml",
+          "sources": [
+            "recipes/model/ecg-demo/ecg-demo.safetensors"
+          ],
+          "toolchain": [
+            "mdux-mlbake"
+          ]
+        },
+        {
+          "id": "ecg-demo-alt",
+          "kind": "model",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "weights.bin"
+          ],
+          "recipe": "recipes/model/ecg-demo-alt.toml",
+          "sources": [
+            "recipes/model/ecg-demo/ecg-demo-alt.safetensors"
+          ],
+          "toolchain": [
+            "mdux-mlbake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "MLE001",
+        "MLE002",
+        "MLE003"
+      ],
+      "entryPoint": "tools/ml/MlBakeMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::MlBakeLib"
+      ],
+      "name": "mdux-mlbake",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/ml"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "MLE001",
+        "MLE002",
+        "MLE003"
+      ],
+      "entryPoint": "tools/ml/MlEmitMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::MlBakeLib"
+      ],
+      "name": "mdux-mlemit",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/ml"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "MDC001",
+        "MDC002",
+        "MDX-E030",
+        "MEDUI-E000",
+        "MEDUI-E001",
+        "MEDUI-E002",
+        "MEDUI-E003",
+        "MEDUI-E004",
+        "MEDUI-E010",
+        "MEDUI-E011",
+        "MEDUI-E012",
+        "MEDUI-E013",
+        "MEDUI-E014",
+        "MEDUI-E015",
+        "MEDUI-E016",
+        "MEDUI-E017",
+        "MEDUI-E030",
+        "MEDUI-E031",
+        "MEDUI-E032",
+        "MEDUI-E033",
+        "MEDUI-E034",
+        "MEDUI-E050",
+        "MEDUI-E051",
+        "MEDUI-E052",
+        "MEDUI-E053",
+        "MEDUI-E070",
+        "MEDUI-E071",
+        "SCE001",
+        "SCE002",
+        "SCE003",
+        "SCP001",
+        "SCP002",
+        "SCP003",
+        "SCP004",
+        "SCP005",
+        "TXT001"
+      ],
+      "entryPoint": "tools/medui/ScreenEmitMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::MeduiLib"
+      ],
+      "name": "mdux-screenemit",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/medui"
+    },
+    {
+      "bakes": [
+        {
+          "id": "mdux-ui",
+          "kind": "shader",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "shaders.spv"
+          ],
+          "recipe": "recipes/shader/mdux-ui.toml",
+          "sources": [
+            "recipes/shader/mdux-ui/ui.frag.spv",
+            "recipes/shader/mdux-ui/ui.vert.spv"
+          ],
+          "toolchain": [
+            "mdux-shaderbake"
+          ]
+        },
+        {
+          "id": "triangle",
+          "kind": "shader",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "shaders.spv"
+          ],
+          "recipe": "recipes/shader/triangle.toml",
+          "sources": [
+            "recipes/shader/triangle/triangle.frag.spv",
+            "recipes/shader/triangle/triangle.vert.spv"
+          ],
+          "toolchain": [
+            "mdux-shaderbake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "SHB000",
+        "SHB001",
+        "SHB002",
+        "SHB003",
+        "SHB004",
+        "SHB005",
+        "SHB006",
+        "SHB007",
+        "SHB008",
+        "SHB009",
+        "SHB010",
+        "SHB011",
+        "SHB012",
+        "SHE001",
+        "SHE002",
+        "SHE003",
+        "SHE004",
+        "SHE005"
+      ],
+      "entryPoint": "tools/shader/ShaderBakeMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::ShaderBakeLib"
+      ],
+      "name": "mdux-shaderbake",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/shader"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "SHB000",
+        "SHB001",
+        "SHB002",
+        "SHB003",
+        "SHB004",
+        "SHB005",
+        "SHB006",
+        "SHB007",
+        "SHB008",
+        "SHB009",
+        "SHB010",
+        "SHB011",
+        "SHB012",
+        "SHE001",
+        "SHE002",
+        "SHE003",
+        "SHE004",
+        "SHE005"
+      ],
+      "entryPoint": "tools/shader/ShaderEmitMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::ShaderBakeLib"
+      ],
+      "name": "mdux-shaderemit",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/shader"
+    },
+    {
+      "bakes": [
+        {
+          "id": "dejavu-ui",
+          "kind": "font",
+          "outputs": [
+            "atlas.bin",
+            "package.json",
+            "report.json"
+          ],
+          "recipe": "recipes/font/dejavu-ui.toml",
+          "sources": [
+            "recipes/font/dejavu-ui/DejaVuSans.ttf"
+          ],
+          "toolchain": [
+            "mdux-textbake"
+          ]
+        },
+        {
+          "id": "endoscope-monitor-en-us",
+          "kind": "text",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "runs.bin"
+          ],
+          "recipe": "recipes/text/endoscope-monitor-en-us.toml",
+          "sources": [
+            "generated/font/dejavu-ui/package.json"
+          ],
+          "toolchain": [
+            "mdux-textbake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "TXT000",
+        "TXT001",
+        "TXT002",
+        "TXT003",
+        "TXT004",
+        "TXT005",
+        "TXT006",
+        "TXT007",
+        "TXT008",
+        "TXT009",
+        "TXT010",
+        "TXT011",
+        "TXT012",
+        "TXT013",
+        "TXT014",
+        "TXT015",
+        "TXT016",
+        "TXT017",
+        "TXT018",
+        "TXT019",
+        "TXT020",
+        "TXT021",
+        "TXT022",
+        "TXT023",
+        "TXT024",
+        "TXT025",
+        "TXT026",
+        "TXT027",
+        "TXT028"
+      ],
+      "entryPoint": "tools/text/TextBakeMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::TextBakeLib"
+      ],
+      "name": "mdux-textbake",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/text"
+    },
+    {
+      "bakes": [
+        {
+          "id": "endoscope-monitor",
+          "kind": "screen",
+          "outputs": [
+            "goldens.json",
+            "package.json",
+            "report.json",
+            "verification.json"
+          ],
+          "recipe": "recipes/screen/endoscope-monitor.toml",
+          "sources": [
+            "generated/font/dejavu-ui/atlas.bin",
+            "generated/font/dejavu-ui/package.json",
+            "generated/image/brand-mark/package.json",
+            "generated/image/brand-mark/pixels.rgba",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
+            "generated/text/endoscope-monitor-en-us/package.json",
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+          ],
+          "toolchain": [
+            "mdux-meduic",
+            "mdux-verify-bake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "VUI001",
+        "VUI002",
+        "VUI003",
+        "VUI004",
+        "VUI005",
+        "VUI006",
+        "VUI007",
+        "VUI008",
+        "VUI009",
+        "VUI101"
+      ],
+      "entryPoint": "tools/verify/VerifyBakeMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::VerifyUiLib"
+      ],
+      "name": "mdux-verify-bake",
+      "options": [
+        "--help"
+      ],
+      "sourceDirectory": "tools/verify"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "VUI001",
+        "VUI002",
+        "VUI003",
+        "VUI004",
+        "VUI005",
+        "VUI006",
+        "VUI007",
+        "VUI008",
+        "VUI009",
+        "VUI101"
+      ],
+      "entryPoint": "tools/verify/VerifyUiMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::VerifyUiLib"
+      ],
+      "name": "mdux-verify-ui",
+      "options": [
+        "--diff-image-dir",
+        "--format",
+        "--frame-image-dir",
+        "--help",
+        "--locales",
+        "--screen"
+      ],
+      "sourceDirectory": "tools/verify"
+    }
+  ]
+}

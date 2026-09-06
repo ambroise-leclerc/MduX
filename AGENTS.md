@@ -400,6 +400,14 @@ is one of the things that would have caught that earlier.
 
 Detailed procedures live in the skill files, not here — this table only routes.
 
+Three machine-readable documents answer "what is here" without reading prose, and each is generated
+from the tree rather than written about it: [`docs/tools/manifest.json`](docs/tools/manifest.json)
+(every host tool, its grammar, options, diagnostic-code family and the artifacts it bakes),
+[`docs/medui/grammar.json`](docs/medui/grammar.json) (the `.medui` contract) and
+[`docs/recipes/`](docs/recipes/) (each baker's resolved option set). All three are gated by
+`docs-lint`, so one that stops describing the tree fails a build rather than misleading a reader.
+`mdux-meduic --dump-ir <recipe>` answers the fourth question — what one compile actually resolved.
+
 ## 8. Definition of done
 
 - Relevant build and tests were executed where the environment permits, with results reported

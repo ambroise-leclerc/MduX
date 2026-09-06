@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Tests for the host-tool manifest generator.
+
+The property under test is #265's own acceptance: the manifest is generated from the tools' own
+registration rather than hand-written, so a tool added to the build cannot be missing from it. Two
+kinds of check follow from that - the parsing is exercised on constructed input, and the generated
+manifest is compared against the real tree, which is where a generator that quietly stopped finding
+anything would show up.
+"""
+from __future__ import annotations
+
+import json
+import re
+import tempfile
+import unittest
+from pathlib import Path
+
+import generate_tool_manifest as manifest
+
+
+class ParseBakeCallTests(unittest.TestCase):
+    def test_keywords_and_lists_are_read(self):
+        call = manifest.parse_bake_call(
+            """
+            KIND shader
+            ID mdux-ui
+            TOOL mdux-shaderbake
+            RECIPE recipes/shader/mdux-ui.toml
+            SOURCES
+                a.spv
+                b.spv
+            OUTPUTS
+                package.json
+            """
+        )
+        self.assertEqual("shader", call["KIND"])
+        self.assertEqual("mdux-shaderbake", call["TOOL"])
+        self.assertEqual(["a.spv", "b.spv"], call["SOURCES"])
+        self.assertEqual(["package.json"], call["OUTPUTS"])
+
+    def test_a_comment_does_not_become_a_source(self):
+        # `#` runs to the end of the line, so dropping tokens that *begin* with it keeps every word
+        # of the sentence after it. That turned a six-file SOURCES list into a hundred and
+        # thirty-four entries made mostly of English, and every one of them looked like a file.
+        call = manifest.parse_bake_call(
+            """
+            SOURCES
+                real/path.json
+                # The sidecar too, and not as belt and braces: loadLocales() reads these bytes
+                other/path.bin
+            """
+        )
+        self.assertEqual(["real/path.json", "other/path.bin"], call["SOURCES"])
+
+
+class RealRepositoryTests(unittest.TestCase):
+    """The generator against the tree it describes."""
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[2]
+        self.manifest = manifest.build_manifest(self.root)
+
+    def test_every_built_tool_is_listed(self):
+        # The acceptance, stated directly: the list comes from `add_executable`, so a tool that
+        # exists cannot be absent. Read independently here rather than through the generator's own
+        # regex, so a regex that stopped matching fails instead of agreeing with itself.
+        text = (self.root / manifest.TOOLS_CMAKE).read_text(encoding="utf-8")
+        built = set(re.findall(r"add_executable\((mdux-[\w-]+)", text))
+        listed = {tool["name"] for tool in self.manifest["tools"]}
+        self.assertEqual(built, listed)
+        self.assertGreater(len(built), 1, "the tool list must not be empty or a single accident")
+
+    def test_every_entry_point_exists(self):
+        for tool in self.manifest["tools"]:
+            with self.subTest(tool=tool["name"]):
+                self.assertTrue((self.root / tool["entryPoint"]).is_file())
+
+    def test_every_baked_artifact_names_a_recipe_and_outputs(self):
+        seen = 0
+        for tool in self.manifest["tools"]:
+            for baked in tool["bakes"]:
+                with self.subTest(artifact=f"{baked['kind']}/{baked['id']}"):
+                    self.assertTrue((self.root / baked["recipe"]).is_file())
+                    self.assertTrue(baked["outputs"], "an artifact with no outputs is not an artifact")
+                    for source in baked["sources"]:
+                        # Every source is a path in the tree. A comment leaking into this list
+                        # produced entries that were ordinary English words and passed unnoticed.
+                        self.assertTrue((self.root / source).is_file(), f"'{source}' is not a file")
+                    seen += 1
+        self.assertGreater(seen, 0, "no baked artifact was found, so nothing was checked")
+
+    def test_the_screen_is_attributed_to_the_compiler(self):
+        # `mdux_compile_screen()` is a wrapper over `mdux_bake_artifact()`, so a generator reading
+        # only the direct calls reports that mdux-meduic bakes nothing.
+        meduic = next(t for t in self.manifest["tools"] if t["name"] == "mdux-meduic")
+        screens = [baked for baked in meduic["bakes"] if baked["kind"] == "screen"]
+        self.assertTrue(screens, "the compiler must be credited with the screen it bakes")
+        self.assertEqual(
+            ["goldens.json", "package.json", "report.json", "verification.json"],
+            screens[0]["outputs"],
+            "the four outputs the wrapper fixes, read from it rather than restated here",
+        )
+
+    def test_the_screen_lists_the_source_it_is_compiled_from(self):
+        # `mdux_compile_screen()` reads the `.medui` path out of the recipe and appends it, so it is
+        # in no call site - which is how a manifest came to list a screen's font and text packages
+        # and not the screen.
+        meduic = next(t for t in self.manifest["tools"] if t["name"] == "mdux-meduic")
+        screen = next(b for b in meduic["bakes"] if b["kind"] == "screen")
+        medui_sources = [s for s in screen["sources"] if s.endswith(".medui")]
+        self.assertEqual(1, len(medui_sources), f"the screen's own source is missing: {screen['sources']}")
+        self.assertTrue((self.root / medui_sources[0]).is_file())
+        # And the packages the render half reads, which the wrapper appends for the same reason.
+        self.assertIn("generated/shader/mdux-ui/package.json", screen["sources"])
+
+    def test_the_screen_records_both_halves_of_its_production_sequence(self):
+        # `THEN_TOOLS mdux-verify-bake` writes verification.json and extends the report. A manifest
+        # crediting `mdux-meduic` with all four outputs and leaving `mdux-verify-bake` with none
+        # would tell a consumer how to produce three quarters of a bundle.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        expected = ["mdux-meduic", "mdux-verify-bake"]
+        for name in expected:
+            screens = [b for b in by_name[name]["bakes"] if b["kind"] == "screen"]
+            with self.subTest(tool=name):
+                self.assertTrue(screens, f"{name} is part of the screen sequence and must say so")
+                self.assertEqual(expected, screens[0]["toolchain"], "in the order they run")
+
+    def test_a_single_tool_artifact_names_only_that_tool(self):
+        # The counterweight: a baker that produces its artifact alone must not acquire a sequence.
+        shaderbake = next(t for t in self.manifest["tools"] if t["name"] == "mdux-shaderbake")
+        for baked in shaderbake["bakes"]:
+            self.assertEqual(["mdux-shaderbake"], baked["toolchain"])
+
+    def test_a_shared_grammar_tool_carries_the_shared_options(self):
+        # `--format` and `--help` are spelled in tools/common/Cli.cpp, not in each entry point, so a
+        # manifest reading only the file would be accurate about the source and wrong about the tool.
+        meduic = next(t for t in self.manifest["tools"] if t["name"] == "mdux-meduic")
+        self.assertEqual("shared-bake-verify", meduic["grammar"])
+        for option in ("--format", "--help", "--dump-ir", "--explain", "--grammar"):
+            self.assertIn(option, meduic["options"])
+
+    def test_a_tool_whose_parser_lives_elsewhere_still_lists_its_options(self):
+        # `mdux-verify-ui` hands its command line to `parseArguments()` in `Driver.cpp`, so reading
+        # only the entry point reported a tool with no options at all - checked here against the
+        # flags its own `usage()` prints.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        ui = by_name["mdux-verify-ui"]
+        for option in ("--screen", "--locales", "--format", "--diff-image-dir", "--frame-image-dir"):
+            self.assertIn(option, ui["options"])
+
+        # And the half that keeps the fix from over-reaching. `VerifyBakeMain.cpp` *imports* the same
+        # driver and parses inline, accepting `--help` alone - so a rule that followed imports rather
+        # than the call would credit it with flags it rejects.
+        self.assertEqual(["--help"], by_name["mdux-verify-bake"]["options"])
+
+    def test_no_tool_is_credited_with_a_sibling_tools_options(self):
+        # Three tools share `tools/medui/`, and only one of them takes `--dump-ir`. A directory-wide
+        # scan would give it to all three, which is the shortcut this generator deliberately avoids
+        # for options even though it uses one for diagnostic codes.
+        by_name = {tool["name"]: tool for tool in self.manifest["tools"]}
+        self.assertIn("--dump-ir", by_name["mdux-meduic"]["options"])
+        self.assertNotIn("--dump-ir", by_name["mdux-medui-check"]["options"])
+        self.assertNotIn("--dump-ir", by_name["mdux-screenemit"]["options"])
+
+    def test_diagnostic_codes_are_found_and_well_formed(self):
+        for tool in self.manifest["tools"]:
+            with self.subTest(tool=tool["name"]):
+                self.assertTrue(tool["diagnosticCodes"], "every tool publishes at least one code")
+                for code in tool["diagnosticCodes"]:
+                    self.assertRegex(code, r"^[A-Z][A-Z0-9-]*\d{3}$")
+
+    def test_the_committed_manifest_is_current(self):
+        # The gate `--check` applies in CI, asserted here too so the generator and the file cannot
+        # drift apart in a tree where only the unit tests are run.
+        path = self.root / manifest.MANIFEST
+        self.assertTrue(path.is_file(), f"{manifest.MANIFEST} is not committed")
+        self.assertEqual(
+            path.read_bytes(),
+            manifest.render(self.manifest).encode("utf-8"),
+            "regenerate with: python3 tools/docs-lint/generate_tool_manifest.py",
+        )
+
+    def test_the_freshness_gate_compares_bytes_and_not_decoded_text(self):
+        # The gate was `read_text() != rendered`, which cannot see a carriage return: Python
+        # translates CRLF to LF on read on *every* platform, so a manifest written in text mode on
+        # Windows compares equal to the LF text it came from. `docs/tools/** -text` then keeps those
+        # bytes through every checkout, and all three legs would pass over a file the generator does
+        # not render. Both directions are pinned here, because a comparison that rejects everything
+        # would satisfy half of this.
+        rendered = manifest.render(self.manifest)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_bytes(rendered.encode("utf-8"))
+            self.assertTrue(manifest.committed_matches(path, rendered), "the bytes it renders are current")
+            path.write_bytes(rendered.replace("\n", "\r\n").encode("utf-8"))
+            self.assertFalse(manifest.committed_matches(path, rendered), "the same document with CRLF is not")
+
+    def test_the_manifest_carries_nothing_that_changes_between_runs(self):
+        rendered = manifest.render(self.manifest)
+        self.assertEqual(rendered, manifest.render(manifest.build_manifest(self.root)))
+        self.assertNotIn(str(self.root), rendered, "no absolute path from this machine")
+        self.assertTrue(rendered.endswith("}\n"))
+        # Canonical form: sorted keys, so a diff of two versions reads as the change.
+        self.assertLess(rendered.index('"schemaVersion"'), rendered.index('"tools"'))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -21,6 +21,7 @@ import mdux.tools.cli;
 import mdux.tools.medui.ast;
 import mdux.tools.medui.diagnostics;
 import mdux.tools.medui.goldens;
+import mdux.tools.medui.ir;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.package;
 import mdux.tools.medui.parser;
@@ -720,7 +721,8 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
                                   std::string_view              recipePath,
                                   std::span<const std::byte>    recipeBytes,
                                   const std::filesystem::path&  root,
-                                  std::vector<cli::Diagnostic>& diagnostics) {
+                                  std::vector<cli::Diagnostic>& diagnostics,
+                                  std::string*                  diagnosticIr) {
     std::vector<evidence::FileRecord> inputs;
 
     const std::optional<std::vector<std::byte>> sourceBytes = readFile(root / recipe.source);
@@ -878,6 +880,20 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     //    `surface:` against it, so a screen drawn for another panel is a diagnostic rather than a
     //    silently rescaled frame.
     const LayoutResult layout = resolveLayout(screen, recipe.source, {.surfaceWidth = recipe.surfaceWidth, .surfaceHeight = recipe.surfaceHeight});
+
+    // Filled by the budget stage below when this screen carries text, and left empty when it does
+    // not - which is a screen with no measurement rather than a screen whose measurement is unknown.
+    std::vector<TextMeasurement> measurements;
+
+    // The working, as soon as there is any. A stage after this one may still refuse the screen, and
+    // the box tree is exactly what an author needs to see when it does - so the IR is handed over
+    // here rather than only on the success path, and refreshed below once the budgets are in.
+    const auto captureIr = [&] {
+        if (diagnosticIr != nullptr && layout.ok()) {
+            *diagnosticIr = screenIrJson(recipe.id, *parsed.screen, layout, measurements);
+        }
+    };
+    captureIr();
     if (!layout.ok()) {
         diagnostics.insert(diagnostics.end(), layout.diagnostics.begin(), layout.diagnostics.end());
         return std::nullopt;
@@ -960,6 +976,11 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             diagnostics.insert(diagnostics.end(), budgets.diagnostics.begin(), budgets.diagnostics.end());
             return std::nullopt;
         }
+        // Kept for the IR (#265). `TextBudgetResult::measurements` is what a `MEDUI-E050` was
+        // measured against, and a compiler that discarded it would leave an author inferring the
+        // extent that failed from the diagnostic's prose.
+        measurements = budgets.measurements;
+        captureIr();
     }
 
     // The budget the recipe declared has to be usable for the screen that came out of the solver.
@@ -993,6 +1014,10 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     outputs.screenId    = recipe.id;
     outputs.nodeCount   = package.nodes.size();
     outputs.goldenCount = goldens.size();
+    // Built on every compile rather than only when `--dump-ir` asks, so a dump describes *this*
+    // compile rather than what a second one would - see `Ir.cppm`. It costs one JSON document per
+    // screen and is not written anywhere unless a caller asks for it.
+    outputs.irJson = screenIrJson(recipe.id, *parsed.screen, layout, measurements);
 
     evidence::BakeReport bakeReport;
     bakeReport.tool        = std::string{compilerToolName};
