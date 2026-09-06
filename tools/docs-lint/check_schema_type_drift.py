@@ -320,7 +320,11 @@ def validate(value, schema: dict, where: str) -> list[str]:
     Deliberately a subset, and deliberately written here rather than taken as a dependency - the
     same reasoning ADR-007 applies to SHA-256 and canonical JSON, and ADR-009 to the test framework.
     What the recipe schemas use is `type`, `required`, `properties`, `additionalProperties`, `items`,
-    `enum`, `minimum`, `minLength` and `minItems`, and a validator for that is forty lines.
+    `enum`, `minimum`, `minLength`, `minItems`, `pattern` and `uniqueItems`, and a validator for that
+    is fifty lines. `pattern` and `uniqueItems` were in the supported set before they were
+    implemented, which is exactly the hole `check_recipe_schema_keywords` exists to close and which
+    it could not close about itself - a schema could claim either and the checker would accept a
+    report violating it.
 
     A keyword a schema uses and this does not implement would be silently ignored, which is the one
     failure mode worth naming: `check_recipe_schema_keywords` covers it by refusing a schema that
@@ -343,6 +347,15 @@ def validate(value, schema: dict, where: str) -> list[str]:
         problems.append(f"{where}: shorter than minLength {schema['minLength']}")
     if "minItems" in schema and isinstance(value, list) and len(value) < schema["minItems"]:
         problems.append(f"{where}: has {len(value)} items, minItems is {schema['minItems']}")
+    if "pattern" in schema and isinstance(value, str) and not re.search(schema["pattern"], value):
+        problems.append(f"{where}: {value!r} does not match {schema['pattern']}")
+    if "uniqueItems" in schema and isinstance(value, list) and schema["uniqueItems"]:
+        seen: list = []
+        for item in value:
+            if item in seen:
+                problems.append(f"{where}: {item!r} appears more than once, and uniqueItems is set")
+                break
+            seen.append(item)
 
     if isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -391,6 +404,60 @@ def check_recipe_schema_keywords(schema: dict, where: str) -> list[str]:
     return problems
 
 
+def check_shader_options(options: dict, where: str) -> list[str]:
+    """`moduleIds` and `moduleSources` are parallel arrays, paired by index."""
+    ids = options.get("moduleIds", [])
+    sources = options.get("moduleSources", [])
+    if len(ids) != len(sources):
+        return [
+            f"{where}: {len(ids)} moduleIds against {len(sources)} moduleSources. They are paired "
+            f"by index - `parseRecipe()` refuses a mismatch - and no JSON Schema keyword relates "
+            f"the length of one property to another's"
+        ]
+    return []
+
+
+def check_ranges(ranges, where: str) -> list[str]:
+    """A closed code-point range runs upwards."""
+    problems = []
+    for index, entry in enumerate(ranges):
+        if not isinstance(entry, dict):
+            continue
+        first, last = entry.get("first"), entry.get("last")
+        if isinstance(first, int) and isinstance(last, int) and first > last:
+            problems.append(
+                f"{where}[{index}]: first {first} is above last {last}, so the range is empty. "
+                f"Both bounds are inclusive and the parsers refuse an inverted pair"
+            )
+    return problems
+
+
+def check_font_options(options: dict, where: str) -> list[str]:
+    return check_ranges(options.get("charset", []), f"{where}.charset")
+
+
+def check_screen_options(options: dict, where: str) -> list[str]:
+    problems = []
+    for index, rule in enumerate(options.get("dynamicText", [])):
+        if isinstance(rule, dict):
+            problems.extend(check_ranges(rule.get("produces", []), f"{where}.dynamicText[{index}].produces"))
+    return problems
+
+
+# The invariants a schema cannot state. JSON Schema relates a value to its own subschema, so a
+# constraint *between* two properties - or one that reads a pair of members inside an item - has
+# nowhere to live in the document and would otherwise go unchecked here while the parsers enforce it.
+#
+# Every one below is a rule a baker already refuses at parse time (`ShaderBake.cpp` for the paired
+# arrays and the duplicate id, `Compile.cpp` and `TextBake.cpp` for the ranges), so what this adds is
+# not a second opinion but the same rule applied to the committed artifact.
+SEMANTIC_CHECKS = {
+    "shader": check_shader_options,
+    "font": check_font_options,
+    "screen": check_screen_options,
+}
+
+
 def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
     """Every committed report's resolved options, against the schema for its kind."""
     findings: list[str] = []
@@ -403,6 +470,15 @@ def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
             continue
         schema = json.loads(path.read_text(encoding="utf-8"))
         findings.extend(check_recipe_schema_keywords(schema, relative))
+
+        # A schema's own examples, against itself. Cheap, and it catches the one contradiction a
+        # reader is most likely to be misled by: an example that would not validate. The font
+        # schema shipped with exactly that - `atlas` pinned to `""` and an example saying
+        # `"atlas.bin"` - and nothing noticed, because `examples` is documentation to every other
+        # part of this checker.
+        for index, example in enumerate(schema.get("examples", [])):
+            for problem in validate(example, schema, f"{relative} examples[{index}]"):
+                findings.append(problem)
 
         reports = sorted((root / "generated" / kind).glob("*/report.json"))
         if not reports:
@@ -423,6 +499,9 @@ def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
             checked += 1
             for problem in validate(options, schema, f"{shown} options"):
                 findings.append(problem)
+            semantic = SEMANTIC_CHECKS.get(kind)
+            if semantic is not None:
+                findings.extend(semantic(options, f"{shown} options"))
             # The other direction: a property the schema declares that no report carries and that
             # nobody listed as optional is a schema describing an option no baker resolves.
             for name in sorted(declared - set(options) - set(optional)):

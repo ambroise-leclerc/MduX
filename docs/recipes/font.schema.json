@@ -92,7 +92,7 @@
     {
       "id": "dejavu-ui",
       "source": "inputs/font/DejaVuSans.ttf",
-      "atlas": "atlas.bin",
+      "atlas": "",
       "sidecar": "atlas.bin",
       "pixelSize": 18,
       "locale": "en-US",

@@ -68,7 +68,7 @@
     },
     "fontPackage": {
       "type": "string",
-      "description": "Repository-relative path to the committed font package every box is measured with."
+      "description": "Repository-relative path to the committed font package every box is measured with. **Deliberately without a `minLength`, unlike every other path in this schema**: it is empty for a screen that carries no text, which needs no font to measure against and approves no locale. `Recipe::fontPackage` says the same ('committed font package.json, or empty'), and a floor here would refuse a textless screen the compiler accepts. The member is emitted unconditionally rather than omitted so that every screen report has one shape."
     },
     "textPackages": {
       "type": "array",

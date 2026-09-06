@@ -30,7 +30,8 @@
         "description": "A module id, unique within the package.",
         "minLength": 1
       },
-      "description": "The recipe's `[modules] ids`, in recipe order. Paired with `moduleSources` by index rather than as an array of tables, because the TOML subset this project implements does not have that syntax (tools/common/Toml.cppm)."
+      "description": "The recipe's `[modules] ids`, in recipe order. Paired with `moduleSources` by index rather than as an array of tables, because the TOML subset this project implements does not have that syntax (tools/common/Toml.cppm). Unique within the package: `parseRecipe()` refuses a duplicate, because two modules sharing an id would make a package's own entry points ambiguous.",
+      "uniqueItems": true
     },
     "moduleSources": {
       "type": "array",

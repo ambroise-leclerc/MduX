@@ -330,6 +330,41 @@ class ValidatorTests(unittest.TestCase):
         self.assertTrue(drift.validate("", {"type": "string", "minLength": 1}, "v"))
         self.assertTrue(drift.validate([], {"type": "array", "minItems": 1}, "v"))
 
+    def test_pattern_and_unique_items_are_enforced_not_merely_named(self):
+        # Both were in SUPPORTED_KEYWORDS before they were implemented, which is the one hole
+        # check_recipe_schema_keywords() could not close about itself: a schema could claim either
+        # constraint and the checker would accept a report violating it.
+        self.assertTrue(drift.validate("Xy", {"type": "string", "pattern": "^[a-z]+$"}, "v"))
+        self.assertFalse(drift.validate("xy", {"type": "string", "pattern": "^[a-z]+$"}, "v"))
+        duplicated = drift.validate(["a", "a"], {"type": "array", "uniqueItems": True}, "v")
+        self.assertEqual(1, len(duplicated))
+        self.assertIn("appears more than once", duplicated[0])
+        self.assertFalse(drift.validate(["a", "b"], {"type": "array", "uniqueItems": True}, "v"))
+
+    def test_every_supported_keyword_is_actually_implemented(self):
+        # The list and the validator are two places, so this asserts they agree rather than
+        # trusting that whoever adds a keyword to one remembers the other.
+        probes = {
+            "type": ({"type": "string"}, 1),
+            "enum": ({"enum": ["a"]}, 1),
+            "minimum": ({"minimum": 5}, 4),
+            "minLength": ({"minLength": 2}, "a"),
+            "minItems": ({"minItems": 2}, ["a"]),
+            "pattern": ({"pattern": "^z"}, "a"),
+            "uniqueItems": ({"uniqueItems": True}, ["a", "a"]),
+            "required": ({"required": ["a"]}, {}),
+            "additionalProperties": ({"additionalProperties": False, "properties": {}}, {"a": 1}),
+        }
+        for keyword, (schema, offending) in probes.items():
+            with self.subTest(keyword=keyword):
+                self.assertTrue(
+                    drift.validate(offending, schema, "v"),
+                    f"'{keyword}' is in SUPPORTED_KEYWORDS but constrains nothing",
+                )
+        # The rest are structural or documentation, and carry no constraint to enforce.
+        structural = {"$schema", "$id", "title", "description", "properties", "items", "examples"}
+        self.assertEqual(drift.SUPPORTED_KEYWORDS, set(probes) | structural)
+
     def test_an_unimplemented_keyword_is_refused_rather_than_ignored(self):
         # The failure mode a subset validator actually has: a keyword it does not know constrains
         # nothing, and the schema reads as though it does.
@@ -358,6 +393,32 @@ class RecipeSchemaTests(unittest.TestCase):
         # schema is the gap this catches - the check cannot notice a kind it was never told about.
         kinds = {p.name for p in (self.root / "recipes").iterdir() if p.is_dir()}
         self.assertEqual(kinds, {kind for kind, _, _ in drift.RECIPE_SCHEMAS})
+
+    def test_every_schema_example_validates_against_its_own_schema(self):
+        # An example that would not validate is the contradiction a reader is most likely to be
+        # misled by, and `examples` is documentation to every other part of this checker - so it
+        # went unnoticed until review. The font schema shipped with `atlas` pinned to `""` and an
+        # example saying `"atlas.bin"`.
+        for kind, relative, _ in drift.RECIPE_SCHEMAS:
+            with self.subTest(kind=kind):
+                schema = json.loads((self.root / relative).read_text(encoding="utf-8"))
+                self.assertTrue(schema.get("examples"), f"{relative} carries no example to check")
+                for index, example in enumerate(schema["examples"]):
+                    self.assertEqual([], drift.validate(example, schema, f"examples[{index}]"))
+
+    def test_the_cross_property_invariants_are_checked(self):
+        # What no JSON Schema keyword can state: a constraint relating two properties, or reading a
+        # pair of members inside an item. Each is a rule a baker refuses at parse time.
+        unequal = {"moduleIds": ["a", "b"], "moduleSources": ["x"]}
+        self.assertIn("moduleIds against", drift.check_shader_options(unequal, "r")[0])
+        self.assertEqual([], drift.check_shader_options({"moduleIds": ["a"], "moduleSources": ["x"]}, "r"))
+
+        inverted = {"charset": [{"name": "n", "first": 99, "last": 10}]}
+        self.assertIn("is above last", drift.check_font_options(inverted, "r")[0])
+
+        screen = {"dynamicText": [{"name": "S", "produces": [{"first": 99, "last": 10}]}]}
+        self.assertIn("is above last", drift.check_screen_options(screen, "r")[0])
+        self.assertEqual([], drift.check_screen_options({"dynamicText": []}, "r"))
 
     def test_the_committed_reports_validate(self):
         findings, checked = drift.check_recipe_schemas(self.root)
