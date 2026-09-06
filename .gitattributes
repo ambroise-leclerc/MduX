@@ -18,6 +18,12 @@ generated/** -text
 # alone - which is exactly how this was found.
 tests/medui/fixtures/** -text
 
+# The published `.medui` contract is emitted as canonical JSON - LF line endings, by definition -
+# and `medui-grammar-committed-copy-is-current` compares the committed file against what the
+# compiler emits, byte for byte. Same rule for the same reason, and found the same way: the MSVC leg
+# alone reported 24041 bytes committed against 23235 emitted, which is one carriage return per line.
+docs/medui/** -text
+
 # Rendered-truth fixtures are also parsed and byte-compared as canonical JSON. Keep their bytes
 # identical when Windows checks them out, including fixtures that deliberately contain no golden.
 tests/verify_ui/fixtures/** -text
