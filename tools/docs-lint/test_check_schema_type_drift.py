@@ -463,6 +463,35 @@ class RecipeSchemaTests(unittest.TestCase):
         self.assertIn("is above last", drift.check_screen_options(screen, "r")[0])
         self.assertEqual([], drift.check_screen_options({"dynamicText": []}, "r"))
 
+    def test_a_malformed_report_is_reported_rather_than_crashing(self):
+        """A semantic checker must not run over a value that failed its type contract.
+
+        `moduleIds: null` reached `len(None)` and took the whole lint down with a traceback -
+        the tool crashing on exactly the input it exists to reject. The ordering rule is the fix:
+        schema validation first, semantics only when it found nothing.
+        """
+        root = self.root
+        schema = json.loads((root / "docs/recipes/shader.schema.json").read_text(encoding="utf-8"))
+        broken = {"id": "triangle", "sidecar": "shaders.spv", "moduleIds": None, "moduleSources": []}
+
+        problems = drift.validate(broken, schema, "options")
+        self.assertTrue(problems, "the schema must catch the wrong type")
+        self.assertIn("expected array", problems[0])
+        # The guarantee the ordering gives: the semantic checker is never reached with this value.
+        # Asserted as the contract rather than by calling it, because calling it is what crashed.
+        self.assertIn("shader", drift.SEMANTIC_CHECKS)
+
+    def test_schema_examples_go_through_the_semantic_checks_too(self):
+        # An example carrying unequal shader arrays would otherwise be a published illustration of
+        # something the baker refuses - the schema constraints alone cannot see it.
+        schema = json.loads(
+            (self.root / "docs/recipes/shader.schema.json").read_text(encoding="utf-8")
+        )
+        for index, example in enumerate(schema["examples"]):
+            with self.subTest(example=index):
+                self.assertEqual([], drift.validate(example, schema, f"examples[{index}]"))
+                self.assertEqual([], drift.check_shader_options(example, f"examples[{index}]"))
+
     def test_the_committed_reports_validate(self):
         findings, checked = drift.check_recipe_schemas(self.root)
         self.assertEqual([], findings)

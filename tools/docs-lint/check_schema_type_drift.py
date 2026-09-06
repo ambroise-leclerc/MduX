@@ -460,6 +460,14 @@ def check_screen_options(options: dict, where: str) -> list[str]:
 # constraint *between* two properties - or one that reads a pair of members inside an item - has
 # nowhere to live in the document and would otherwise go unchecked here while the parsers enforce it.
 #
+# **Every one runs only after schema validation found nothing.** That ordering is the contract they
+# are written against: each may assume its inputs are the shape the schema declares, so
+# `check_shader_options()` may take `len()` of `moduleIds` without asking whether it is a list. A
+# semantic checker run over a value that failed its type contract would crash on the input this tool
+# exists to reject - `moduleIds: null` reached `len(None)` before this rule was written down - and
+# even where it did not, it would report consequences rather than causes, which is the same reason
+# `checkScreen()` stops at the first stage that reports an error.
+#
 # Every one below is a rule a baker already refuses at parse time (`ShaderBake.cpp` for the paired
 # arrays and the duplicate id, `Compile.cpp` and `TextBake.cpp` for the ranges), so what this adds is
 # not a second opinion but the same rule applied to the committed artifact.
@@ -488,9 +496,16 @@ def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
         # schema shipped with exactly that - `atlas` pinned to `""` and an example saying
         # `"atlas.bin"` - and nothing noticed, because `examples` is documentation to every other
         # part of this checker.
+        semantic = SEMANTIC_CHECKS.get(kind)
         for index, example in enumerate(schema.get("examples", [])):
-            for problem in validate(example, schema, f"{relative} examples[{index}]"):
-                findings.append(problem)
+            where = f"{relative} examples[{index}]"
+            problems = validate(example, schema, where)
+            findings.extend(problems)
+            # The examples go through the semantic checks too, under the same ordering rule. An
+            # example carrying unequal shader arrays or an inverted range would otherwise be a
+            # published illustration of something the baker refuses.
+            if not problems and semantic is not None:
+                findings.extend(semantic(example, where))
 
         reports = sorted((root / "generated" / kind).glob("*/report.json"))
         if not reports:
@@ -509,10 +524,9 @@ def check_recipe_schemas(root: Path) -> tuple[list[str], int]:
                 findings.append(f"{shown}: has no 'options' object to check")
                 continue
             checked += 1
-            for problem in validate(options, schema, f"{shown} options"):
-                findings.append(problem)
-            semantic = SEMANTIC_CHECKS.get(kind)
-            if semantic is not None:
+            problems = validate(options, schema, f"{shown} options")
+            findings.extend(problems)
+            if not problems and semantic is not None:
                 findings.extend(semantic(options, f"{shown} options"))
             # The other direction: a property the schema declares that no report carries and that
             # nobody listed as optional is a schema describing an option no baker resolves.
