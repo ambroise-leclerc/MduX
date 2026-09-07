@@ -1,0 +1,78 @@
+# Prospective sibling-contract requirements
+
+These are **proposed engineering requirements awaiting maintainer review**, prepared by #312 on
+7 September 2026. They do not describe implemented new behavior, accepted MedUI decisions,
+approved product requirements or a device risk assessment. Their stable local IDs identify this
+design work; they are not fabricated entries in a released ComplianceProgram. Review disposition
+must be recorded before the affected implementation starts. No clinical intent is inferred from
+an example screen, a `requirement` string, or the name TriggerHalt.
+
+Impact: **potentially safety-relevant**. This change defines future interaction and evidence
+contracts but changes no runtime behavior. Affected designs are ADR-011/012 (compile/artifact
+boundary), ADR-014 (rendered checks), ADR-010 (bounded text), and proposed
+[ADR-015](../adr/ADR-015-versioned-sibling-observations.md). Relevant items are `mdux.medui.screen`,
+`.field`, `.reading`, `.trace`, `mdux.verify`, the host compiler/verifier and the future application
+adapter. Existing requirements and evidence remain in force.
+
+## Requirement and verification records
+
+Every row below has status **Proposed / unreviewed**. Acceptance tests listed here are future
+verification obligations, not tests this documentation change claims to have passed.
+
+| ID | Required observable if adopted | Engineering failure addressed | Verification and delivery |
+|---|---|---|---|
+| PAR-REQ-001 | A comparison names both implementation SHAs, exact contract SHA, phase/profile and position precision. Unknown/missing capability cannot imply support. | False parity from unequal input contracts. | #314: reject mismatched/unsupported claims; check positive cases for every declared phase. ADR-015 D1/D4. |
+| PAR-REQ-002 | Extent equality, containment, tint composition and raw RGBA hash have distinct versioned identities with defined applicability, empty policy, ROI and arithmetic. Migration preserves old required checks. | A weaker predicate silently replaces evidence. | #313: empty/inset/exact/overflow rectangles; absent/wrong tint, impossible shared coverage, composite-rounding boundaries; matching/missing/mismatched baselines. D2. |
+| PAR-REQ-003 | Required observations are derived independently from the pinned screen/profile; missing, duplicate, unknown, unsupported or not-run required rows prevent a successful gate. Keys include all scope/provenance fields in D3. | Omitted checks or locale/frame collisions produce a false pass. | #314/#321: remove/duplicate/substitute a row; swap locale, asset, scenario or capture identity; verify rejection. D3. |
+| PAR-REQ-004 | Normalize coordinates once with a specified rounding rule. Proposed hit policy: half-open rectangles, reverse paint order, all-node occlusion; press arms a target and release activates only the same eligible target. Cancel on focus loss/removal/overflow. | Wrong or stale target activates. | #315/#316/#317: exact edges, overlap with a non-control, outside-release, changed target, cancellation. D5; final coordinate rounding still requires #315 review. |
+| PAR-REQ-005 | Events have bounded caller-specified capacity and stable order. Proposed overflow: drop newest, saturating drop count, cancel pending activation. An update consumes one accepted batch, updates state, binds one snapshot, renders then captures. | Lost release triggers an action; replay/capture observes inconsistent state. | #315/#316/#320: zero/full capacities, counter saturation, dropped release, multiple events, recorded order and identical replay snapshot. D5. |
+| PAR-REQ-006 | Critical action resolution returns a closed action and requirement identity; ordinary button source is distinct. The host supplies execution/audit policy. Unknown/untraced critical actions fail explicitly. | Example action semantics become an unreviewed device control. | #315/#318: NoOp, TriggerHalt, invalid action, missing trace and ordinary button; host-policy review before any real-device effect. D5. |
+| PAR-REQ-007 | Editing respects bounded Unicode scalar positions, declared repertoire and length. Invalid encoding/glyphs/oversize edits fail without partial mutation; no on-device shaping or unbounded storage. | Corrupted/truncated text or an unbounded input path. | #316: multibyte caret/delete boundaries, disallowed glyph, full capacity, paste/repeat/focus policy. Review final policies in #315; retain ADR-010 constraints. D5. |
+| PAR-REQ-008 | Normalize binding by screen/node and declared source, with typed limits and a snapshot ID. Replay injects time. State order, number format, trace order and viewport row/bin semantics are explicit. | A capture shows data from a different frame or source. | #319/#320/#322: reordered/unknown binding, range/format boundaries, fixed time, ring wrap and overflow. D5. |
+| PAR-REQ-009 | Exact pixel comparison requires a declared presentation/backend profile and theme/font/image digests. Logical equivalence alone makes no exact-pixel claim. | Different valid renderings are mistaken for equivalence or regressions. | #313/#321/#324/#326: mismatched profile/assets rejected; focused/pressed/neutral state and dynamic content captures under accepted profiles. D2/D3/D5. |
+| PAR-REQ-010 | Editing/source round-trip preserves logical field values, order where observable, safety annotations and trace IDs. Preview uses the same accepted interaction and data profile as replay. | Authoring silently removes an obligation or previews different behavior. | #325/#326/#327: parse/edit/emit/reparse with unknown/invalid values and traced nodes; compare normalized IR, goldens and diagnostics. D1/D5. |
+
+The failure descriptions above are prospective software concerns, **not assigned clinical
+hazards, severity estimates or approved risk controls**. No device-level requirement/risk-control
+entry exists for these new interaction behaviors in this change. The integrating manufacturer
+and domain reviewer must supply that context before a real-device action policy is implemented.
+
+## Decision gates by downstream issue
+
+Local D1–D5 are defined in ADR-015. Accepted shared decisions remain
+[MEDUI-DEC-001–006](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210/decisions).
+New upstream issues are proposals, not assigned decision numbers or accepted capabilities.
+
+| Work | Decisions needed before dependent behavior lands |
+|---|---|
+| #313 verifier semantics | D2/D3/D4; [MedUI #15](https://github.com/Compliatory/MedUI/issues/15), reviewed PAR-REQ-002/003/009. |
+| #314 common corpus gate | D1–D4 and #313; MedUI #15 plus diagnostic/safety cases from existing #2/#3/#4/#8. Only claim phases with complete applicable passing cases. |
+| #315 input design | D5; [MedUI #16](https://github.com/Compliatory/MedUI/issues/16), PAR-REQ-004–008. Resolve event vocabulary, coordinate rounding, paste/repeat/focus and host action policy here. |
+| #316 queue/editing; #317 presentation adapter | Accepted #315 requirements; D5; PAR-REQ-004–007. |
+| #318 interactive monitor | #316/#317 plus reviewed host action policy; PAR-REQ-006/008/009. Example IDs do not approve clinical behavior. |
+| #319 scenario compiler | D3/D5, MedUI #16 and #315 event/update contract; PAR-REQ-005/008. |
+| #320 replay | #319/#316 and accepted update ordering; PAR-REQ-005/007/008. |
+| #321 dynamic evidence | D2/D3, MedUI #15, #313/#318/#320; PAR-REQ-002/003/008/009. |
+| #322 viewport contract | D5, MedUI #16; PAR-REQ-008/009. Resolve dimensions, value range/clamping, row/bin order, overflow and composition before #323. |
+| #323 waterfall; #324 integrated pixels | Accepted #322, then #318 for integration; PAR-REQ-008/009 and D2/D3 capture profile. |
+| #325 editing API | D1/D5 and MedUI #16; PAR-REQ-010. Resolve lossless versus canonical formatting explicitly without losing semantic fields. |
+| #326 previews; #327 Studio | #325/#316/#323, then #326; PAR-REQ-009/010 and D3 capture identity. |
+
+Local design exploration can proceed while upstream discussion is open, but must label any
+extension as implementation-local. It cannot claim an accepted shared profile or silently adopt
+changed verification semantics. Closing #312's documentation work does not accept either
+upstream proposal or remove these downstream gates.
+
+## Review disposition
+
+| Record | Requested reviewer | State |
+|---|---|---|
+| Matrix and D1–D4 | MduX maintainer; MedUI maintainer for the shared contract | Proposed; approval not recorded |
+| D5 and PAR-REQ-004–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Proposed; approval not recorded |
+| Shared rendered profiles | MedUI #15 participants/maintainer | Open proposal |
+| Shared interaction/presentation profiles | MedUI #16 participants/maintainer | Open proposal |
+
+The PR review should record which local requirements are accepted, amended or deferred and link
+the reviewer/date here or in the accepting follow-up. Upstream acceptance requires its own
+decision and corpus revision. [Executed evidence](behavior-matrix.md#executed-observations-and-reproduction)
+supports the current-state comparison only; it does not discharge these future requirements.

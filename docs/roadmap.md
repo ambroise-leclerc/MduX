@@ -87,7 +87,12 @@ record does not authorize its implementation to bypass a dependency. This replac
 practice of waiting for an entire predecessor epic to close before recording its successor's
 children: child-level dependencies now make the next executable step explicit.
 
-The first step is #312. Once its relevant decisions are accepted, input design (#315), viewport
+The first step is #312. Its [pinned behavior matrix](parity/behavior-matrix.md),
+[proposed ADR-015](adr/ADR-015-versioned-sibling-observations.md) and
+[prospective requirements and decision gates](parity/requirements.md) now define the review
+surface. Shared changes are proposed in [MedUI #15](https://github.com/Compliatory/MedUI/issues/15)
+and [#16](https://github.com/Compliatory/MedUI/issues/16); neither is an accepted contract yet.
+Once its relevant decisions are accepted, input design (#315), viewport
 design (#322) and editor API design (#325) can proceed alongside verifier alignment (#313).
 Canonical interfaces land before their consumers. No new version number or release date is assigned
 until a deliverable and its evidence are agreed.
