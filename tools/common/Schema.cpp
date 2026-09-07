@@ -11,6 +11,10 @@ import mdux.evidence.json;
 
 namespace mdux::tools::schema {
 
+// Defined at namespace scope below; forward-declared so the anonymous-namespace validator can call
+// it and so it is the one exported name.
+[[nodiscard]] bool jsonEqual(const mdux::evidence::json::Value& left, const mdux::evidence::json::Value& right);
+
 namespace {
 
 namespace json = mdux::evidence::json;
@@ -30,67 +34,54 @@ constexpr std::array<std::string_view, 21> supportedKeywords{
 
 // --- deep JSON equality, with Python's `True != 1` rule ---------------------
 
+[[nodiscard]] bool isNumberKind(Kind kind) {
+    return kind == Kind::Int || kind == Kind::UInt || kind == Kind::Float32;
+}
+
+/// The integer value of `value`, for schema bounds (`minItems`, `maxItems`, `minLength`) that are
+/// always small nonnegative integers in the contract schemas.
 [[nodiscard]] std::optional<std::int64_t> asIntegerNumber(const Value& value) {
-    if (value.kind() == Kind::Int) {
-        if (const auto number = value.asInt()) {
-            return *number;
-        }
+    if (const auto number = value.asInt()) {
+        return *number;
     }
-    if (value.kind() == Kind::UInt) {
-        if (const auto number = value.asUInt()) {
-            return static_cast<std::int64_t>(*number);
-        }
+    if (const auto number = value.asUInt()) {
+        return static_cast<std::int64_t>(*number);
     }
     return std::nullopt;
 }
 
-[[nodiscard]] bool jsonEqual(const Value& left, const Value& right) {
-    const bool leftNumber  = left.kind() == Kind::Int || left.kind() == Kind::UInt || left.kind() == Kind::Float32;
-    const bool rightNumber = right.kind() == Kind::Int || right.kind() == Kind::UInt || right.kind() == Kind::Float32;
-    if (leftNumber && rightNumber) {
-        const auto li = asIntegerNumber(left);
-        const auto ri = asIntegerNumber(right);
-        if (li && ri) {
-            return *li == *ri;
+/// Numeric equality across the three number kinds, exact for integers of either sign (including
+/// the whole `std::uint64_t` range) and value-based when a float is involved.
+[[nodiscard]] bool numbersEqual(const Value& left, const Value& right) {
+    if (left.kind() != Kind::Float32 && right.kind() != Kind::Float32) {
+        const bool leftUnsigned  = left.kind() == Kind::UInt;
+        const bool rightUnsigned = right.kind() == Kind::UInt;
+        if (leftUnsigned && rightUnsigned) {
+            return left.asUInt() && right.asUInt() && *left.asUInt() == *right.asUInt();
         }
-        return left.asFloat32().value_or(0.0F) == right.asFloat32().value_or(1.0F);
-    }
-    if (left.kind() != right.kind()) {
-        return false;
-    }
-    switch (left.kind()) {
-        case Kind::Null:
-            return true;
-        case Kind::Bool:
-            return left.asBool().value_or(false) == right.asBool().value_or(true);
-        case Kind::String:
-            return left.asString().value_or("") == right.asString().value_or("\x01");
-        case Kind::Array: {
-            if (left.elements().size() != right.elements().size()) {
-                return false;
-            }
-            for (std::size_t i = 0; i < left.elements().size(); ++i) {
-                if (!jsonEqual(left.elements()[i], right.elements()[i])) {
-                    return false;
-                }
-            }
-            return true;
+        if (!leftUnsigned && !rightUnsigned) {
+            return left.asInt() && right.asInt() && *left.asInt() == *right.asInt();
         }
-        case Kind::Object: {
-            if (left.members().size() != right.members().size()) {
-                return false;
-            }
-            for (const json::Member& entry : left.members()) {
-                const Value* other = right.find(entry.key);
-                if (other == nullptr || !jsonEqual(entry.value, *other)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        default:
-            return false;
+        const auto signedValue   = (leftUnsigned ? right : left).asInt();
+        const auto unsignedValue = (leftUnsigned ? left : right).asUInt();
+        return signedValue && unsignedValue && *signedValue >= 0
+               && static_cast<std::uint64_t>(*signedValue) == *unsignedValue;
     }
+    const auto asDouble = [](const Value& value) -> std::optional<double> {
+        if (const auto f = value.asFloat32()) {
+            return static_cast<double>(*f);
+        }
+        if (const auto i = value.asInt()) {
+            return static_cast<double>(*i);
+        }
+        if (const auto u = value.asUInt()) {
+            return static_cast<double>(*u);
+        }
+        return std::nullopt;
+    };
+    const auto l = asDouble(left);
+    const auto r = asDouble(right);
+    return l && r && *l == *r;
 }
 
 // --- local `$ref` resolution ---------------------------------------------------
@@ -148,8 +139,19 @@ void checkSchemaInto(const Value& schema, const Value& root, std::vector<std::st
             problems.push_back(std::format("unsupported schema keyword '{}'", entry.key));
         }
     }
-    if (const Value* type = schema.find("type"); type != nullptr && type->kind() != Kind::String) {
-        problems.emplace_back("only a string `type` is supported");
+    if (const Value* type = schema.find("type"); type != nullptr) {
+        constexpr std::array<std::string_view, 6> known{"object", "array", "string", "boolean", "null", "integer"};
+        const auto                                name = type->asString();
+        if (!name || std::ranges::find(known, *name) == known.end()) {
+            problems.push_back(std::format("unsupported `type` '{}' (this subset knows object, array, string, boolean, null, integer)",
+                                           name.value_or("<non-string>")));
+        }
+    }
+    // `errorsInto` only enforces `additionalProperties: false`; a subschema value would be
+    // silently ignored, so flag it here rather than letting undeclared properties through.
+    if (const Value* additional = schema.find("additionalProperties");
+        additional != nullptr && additional->kind() != Kind::Bool) {
+        problems.emplace_back("only a boolean `additionalProperties` is supported");
     }
     if (const Value* ref = schema.find("$ref"); ref != nullptr) {
         const auto text = ref->asString();
@@ -351,6 +353,49 @@ void errorsInto(const Value&              value,
 }
 
 }  // namespace
+
+bool jsonEqual(const json::Value& left, const json::Value& right) {
+    using Kind = json::Value::Kind;
+    if (isNumberKind(left.kind()) && isNumberKind(right.kind())) {
+        return numbersEqual(left, right);
+    }
+    if (left.kind() != right.kind()) {
+        return false;
+    }
+    switch (left.kind()) {
+        case Kind::Null:
+            return true;
+        case Kind::Bool:
+            return left.asBool().value_or(false) == right.asBool().value_or(true);
+        case Kind::String:
+            return left.asString().value_or("") == right.asString().value_or("\x01");
+        case Kind::Array: {
+            if (left.elements().size() != right.elements().size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < left.elements().size(); ++i) {
+                if (!jsonEqual(left.elements()[i], right.elements()[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        case Kind::Object: {
+            if (left.members().size() != right.members().size()) {
+                return false;
+            }
+            for (const json::Member& entry : left.members()) {
+                const json::Value* other = right.find(entry.key);
+                if (other == nullptr || !jsonEqual(entry.value, *other)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
+}
 
 std::vector<std::string> checkSchema(const json::Value& schema) {
     std::vector<std::string> problems;

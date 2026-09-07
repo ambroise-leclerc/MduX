@@ -45,4 +45,15 @@ export namespace mdux::tools::schema {
 [[nodiscard]] std::vector<std::string> validate(const mdux::evidence::json::Value& value,
                                                 const mdux::evidence::json::Value& schema);
 
+/**
+ * @brief Fieldwise JSON equality, independent of object-key order.
+ *
+ * This is what the contract calls *identity comparison*. Numbers compare by value across the
+ * `Int`/`UInt`/`Float32` kinds - exact for integers of either sign, the whole `std::uint64_t` range
+ * included - and a boolean is never equal to a number (Python's `True != 1` rule). Used for schema
+ * `const`/`enum`/`uniqueItems`, for `spec/profiles.md` E01 (aggregate-evidence) and R04's
+ * capture/baseline identity, and for the embedded-schema drift guard.
+ */
+[[nodiscard]] bool jsonEqual(const mdux::evidence::json::Value& left, const mdux::evidence::json::Value& right);
+
 }  // namespace mdux::tools::schema

@@ -128,62 +128,10 @@ inline void rejectUnknownMembers(const json::Value&                      object,
     }
 }
 
-/// Fieldwise JSON equality, independent of object-key order. This is the comparison the contract
-/// calls identity comparison - `spec/profiles.md` E01 (aggregate-evidence) and R04's
-/// capture/baseline identity both turn on it - and the drift guard for the embedded schema.
-[[nodiscard]] inline bool jsonEqual(const json::Value& left, const json::Value& right) {
-    const auto asNumber = [](const json::Value& value) -> std::optional<std::int64_t> {
-        if (const auto i = value.asInt()) {
-            return *i;
-        }
-        if (const auto u = value.asUInt()) {
-            return static_cast<std::int64_t>(*u);
-        }
-        return std::nullopt;
-    };
-    if (left.kind() != right.kind()) {
-        const auto l = asNumber(left);  // Int and UInt are the same number written two ways
-        const auto r = asNumber(right);
-        return l && r && *l == *r;
-    }
-    switch (left.kind()) {
-        case json::Value::Kind::Null:
-            return true;
-        case json::Value::Kind::Bool:
-            return left.asBool().value_or(false) == right.asBool().value_or(true);
-        case json::Value::Kind::Int:
-        case json::Value::Kind::UInt:
-            return left.asInt().value_or(0) == right.asInt().value_or(1);
-        case json::Value::Kind::Float32:
-            return left.asFloat32().value_or(0.0F) == right.asFloat32().value_or(1.0F);
-        case json::Value::Kind::String:
-            return left.asString().value_or("") == right.asString().value_or("\x01");
-        case json::Value::Kind::Array: {
-            if (left.elements().size() != right.elements().size()) {
-                return false;
-            }
-            for (std::size_t i = 0; i < left.elements().size(); ++i) {
-                if (!jsonEqual(left.elements()[i], right.elements()[i])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        case json::Value::Kind::Object: {
-            if (left.members().size() != right.members().size()) {
-                return false;
-            }
-            for (const json::Member& entry : left.members()) {
-                const json::Value* other = right.find(entry.key);
-                if (other == nullptr || !jsonEqual(entry.value, *other)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-    return false;
-}
+/// Fieldwise JSON equality, key-order independent - the contract's "identity comparison". Lives in
+/// `mdux.tools.schema` so the validator, the E01 aggregate adapter and R04's identity check all run
+/// one implementation; re-exported here so an includer writes `jsonEqual(...)` unqualified.
+using mdux::tools::schema::jsonEqual;
 
 // ---------------------------------------------------------------------------
 // Resolving the checked-out MedUI revision from .git metadata alone

@@ -127,6 +127,52 @@ const mdux::spec::Register failsClosedOnAnUnknownKeyword{
             .Execute();
     }};
 
+const mdux::spec::Register numbersCompareByValue{
+    "const and enum compare numbers by value, and a boolean is not a number",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-subset-numbers")
+            .Given("const 1, an integer enum, and a large unsigned value", [] {})
+            .When("integer and unsigned forms are validated (MduX JSON has no float literal)", [] {})
+            .Then("equal values match, a boolean never does, and the whole uint64 range is exact", [] {
+                mdux::spec::Checks checks;
+                const json::Value one   = parse(R"({"const":1})");
+                const json::Value picks = parse(R"({"enum":[0,5,42]})");
+
+                checks.expect(schema::validate(parse("1"), one).empty(), "the integer 1 matches const 1");
+                checks.expect(!schema::validate(parse("true"), one).empty(), "the boolean true does not match const 1");
+                checks.expect(!schema::validate(parse("2"), one).empty(), "2 does not match const 1");
+                checks.expect(schema::validate(parse("5"), picks).empty(), "5 is in the integer enum");
+                checks.expect(!schema::validate(parse("6"), picks).empty(), "6 is not");
+
+                // The whole std::uint64_t range compares exactly, past INT64_MAX.
+                const json::Value huge = parse(R"({"const":18446744073709551615})");
+                checks.expect(schema::validate(parse("18446744073709551615"), huge).empty(), "UINT64_MAX matches itself");
+                checks.expect(!schema::validate(parse("18446744073709551614"), huge).empty(), "a neighbour does not");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register unsupportedTypeAndAdditionalProperties{
+    "An unknown `type` string or a non-boolean additionalProperties fails closed",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-schema-subset-type-guard")
+            .Given("schemas using `type: number` and a subschema `additionalProperties`", [] {})
+            .When("checkSchema sees them", [] {})
+            .Then("both are reported rather than silently rejecting or admitting documents", [] {
+                mdux::spec::Checks checks;
+                checks.expect(!schema::checkSchema(parse(R"({"type":"number"})")).empty(),
+                              "`type: number` is not in this subset");
+                checks.expect(!schema::checkSchema(parse(R"({"type":"object","additionalProperties":{"type":"string"}})")).empty(),
+                              "a subschema additionalProperties is not supported");
+                checks.expect(schema::checkSchema(parse(R"({"type":"integer"})")).empty(), "`type: integer` is fine");
+                checks.raise();
+            })
+            .Execute();
+    }};
+
 const mdux::spec::Register arrayBoundsAndUniqueness{
     "minItems, maxItems and uniqueItems are enforced",
     "evidence-unit",

@@ -40,8 +40,11 @@ struct Aggregate {
 /// ascending in ASCII byte order. `spec/profiles.md` E01: a malformed identity fails aggregation.
 [[nodiscard]] bool identityMalformed(const json::Value& identity) {
     const json::Value* assets = identity.find("assets");
-    if (assets == nullptr || assets->kind() != json::Value::Kind::Array) {
-        return false;
+    if (assets == nullptr) {
+        return false;  // a structurally absent field is the schema's concern, not this check's
+    }
+    if (assets->kind() != json::Value::Kind::Array) {
+        return true;  // `assets` present but not an array is a malformed identity
     }
     std::string_view previous;
     for (std::size_t i = 0; i < assets->elements().size(); ++i) {
