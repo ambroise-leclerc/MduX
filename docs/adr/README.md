@@ -22,8 +22,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-013](ADR-013-verified-apple-silicon-macos-toolchain.md) | Verified Apple Silicon macOS toolchain | Accepted | 2026-08-23 |
 | [ADR-014](ADR-014-rendered-truth-verification.md) | What rendered-truth verification checks, and what it cannot | Accepted | 2026-08-31 |
 | [ADR-015](ADR-015-versioned-sibling-observations.md) | Versioned sibling observations | Accepted | 2026-09-07 |
+| [ADR-016](ADR-016-locally-versioned-observation-profiles.md) | Locally versioned observation profiles for rendered checks | Proposed | 2026-09-07 |
 
-Every number from 001 to 015 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 016 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
@@ -57,7 +58,7 @@ decision record that lists only benefits documents an advertisement rather than 
 ## Writing a new ADR
 
 1. Copy [`template.md`](template.md).
-2. Take the next free number from the index above — currently **ADR-016**.
+2. Take the next free number from the index above — currently **ADR-017**.
 3. Name the file `ADR-NNN-short-description.md`, lowercase and hyphenated.
 4. Add a row to the index in this file. An ADR that is not indexed does not exist.
 5. If it supersedes an earlier decision, set that ADR's status to `Superseded by ADR-NNN`, link

@@ -1,6 +1,6 @@
 /**
  * @file Verify.cppm
- * @brief Rendered-truth checks: four pure functions over a CPU framebuffer and an artifact-derived
+ * @brief Rendered-truth checks: pure functions over a CPU framebuffer and an artifact-derived
  *        expectation, answering whether a frame shows what the compiled screen said it would.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
@@ -8,6 +8,8 @@
  * @compliance ADR-011 The deterministic `.medui` compile boundary
  * @compliance ADR-012 What a compiled screen emits, and which parts are committed
  * @compliance ADR-014 What rendered-truth verification checks, and what it cannot
+ * @compliance ADR-015 Versioned sibling observations (decision 2: name the predicate, not its alias)
+ * @compliance ADR-016 Locally versioned observation profiles for rendered checks
  *
  * Part of MduXCore, and that placement is ADR-014 decision 1 rather than an inheritance: the checks
  * have the same shape as the screen runtime - bounded arithmetic over caller-owned storage, no
@@ -17,14 +19,15 @@
  *
  * **The driver is not here.** Rendering a frame, reading `goldens.json`, enumerating obligations and
  * writing `verification.json` are what ADR-004 and ADR-005 keep out of this zone; they are #253's
- * and #254's, and they call in. What this module owns is the four questions themselves.
+ * and #254's, and they call in. What this module owns is the questions themselves.
  *
- * ## The four checks, and which are opt-in
+ * ## The checks, and which are opt-in
  *
  * - **`goldenBounds()`** - the golden node's rendered content occupies the declared rectangle;
  * - **`colorHash()`** - that content carries the tint its colour token resolves to;
  * - **`inkContainment()`** - a compiled text node's run stays inside its node bounds;
- * - **`localizedTextPresence()`** - the approved locale's bound run is the one on screen.
+ * - **`localizedTextPresence()`** - the approved locale's bound run is the one on screen;
+ * - **`rawImageDigest()`** - a region's tightly packed RGBA8 hashes to a committed baseline.
  *
  * The first two are `Bounds` and `ColorHash`, the closed `CvCheck` set an author opts into per node.
  * That set belongs to the shared language's `safety` capability, pinned in `medui-conformance.toml`,
@@ -33,11 +36,28 @@
  * `mdux.tools.medui.goldens` rather than declared twice, for the reason ADR-012 decision 4 gives
  * about the golden predicate: two implementations of one closed set agree until the day they matter.
  *
- * The last two are **not** opt-in and are deliberately not `CvCheck` enumerators. They apply to
- * every compiled node whose spec carries a `textKey`, in every approved locale, whether or not that
- * node has a golden entry. A glyph run leaving the box that was budgeted for it is a defect however
- * the author annotated the node, and #195 already measured that box at compile time - these are the
- * same claim, verified against pixels.
+ * `inkContainment()` and `localizedTextPresence()` are **not** opt-in and are deliberately not
+ * `CvCheck` enumerators. They apply to every compiled node whose spec carries a `textKey`, in every
+ * approved locale, whether or not that node has a golden entry. A glyph run leaving the box that was
+ * budgeted for it is a defect however the author annotated the node, and #195 already measured that
+ * box at compile time - these are the same claim, verified against pixels.
+ *
+ * `rawImageDigest()` is neither opt-in nor mandatory: it has **no committed baseline and no
+ * production caller**. It exists so that the observation TrustSC's `ColorHash` actually performs -
+ * a raw-pixel digest - has a name of its own here (ADR-015 decision 2), and so #314 can compare the
+ * two implementations without conflating a tint predicate with a pixel hash. ADR-014 decision 4
+ * keeps a driver-tuple-dependent digest out of the byte-compared bundle; ADR-016 records why that
+ * makes this a fixture-and-future-consumer tool rather than a gate, and why `Finding::NoBaseline`
+ * (its answer for every production call) is distinct from a pass.
+ *
+ * ## Observation profiles
+ *
+ * ADR-015 decision 2: a shared check *name* is not evidence of a shared *observation*. Every
+ * `CheckOutcome` therefore carries an `ObservationProfile` - an id naming what was measured and a
+ * version that moves only on a reviewed change - and `verification.json` records it beside each
+ * outcome. `profileOf()` maps a `CvCheck` or `TextCheck` to its profile; `rawImageDigest()` carries
+ * `rawImageDigestProfile`. The ids are implementation-local (`localProfilePrefix`) until
+ * MEDUI-DEC-007 delivers a canonical set (ADR-016).
  *
  * ## What a check is given, and what it may never be given
  *
@@ -156,6 +176,7 @@ export module mdux.verify;
 import std;
 import mdux.core.result;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
@@ -198,6 +219,7 @@ enum class VerifyError : std::uint8_t {
     UnknownTextKey,             ///< the bound package carries no run for this node's text key
     AtlasSizeMismatch,          ///< the coverage sheet is not the size the font package declares
     GlyphOutsideAtlas,          ///< a glyph's slot leaves the coverage sheet
+    DigestRoiDegenerate,        ///< a raw-image-digest ROI has a non-positive width or height
 };
 
 [[nodiscard]] std::string_view describe(VerifyError error) noexcept;
@@ -304,6 +326,64 @@ private:
 static_assert(!std::is_aggregate_v<FramebufferView>, "a FramebufferView must only be obtainable through create()");
 
 /**
+ * @brief The identity of one rendered-check observation: what it measures, at which revision.
+ *
+ * [ADR-015](../../../docs/adr/ADR-015-versioned-sibling-observations.md) decision 2 is the reason
+ * this type exists: `ColorHash` is one name for two different observations - a tint-composition
+ * predicate here, a raw-pixel digest in TrustSC - and a shared spelling is not evidence of a shared
+ * measurement. Each predicate in this module therefore carries a profile whose `id` names *what* it
+ * observes and whose `version` moves only when a reviewed migration changes the answer it can give.
+ * `verification.json` records the profile beside every outcome, so a reader (and #314's
+ * cross-implementation gate) compares like with like.
+ *
+ * The ids are **implementation-local** - see [ADR-016](../../../docs/adr/ADR-016-locally-versioned-observation-profiles.md).
+ * MEDUI-DEC-007 accepts the *direction* of shared rendered-check profiles but delivers no canonical
+ * identifiers, schema or corpus, so every id here begins with `localProfilePrefix` and no manifest
+ * or pin claims a shared profile. A later reviewed migration maps these onto the canonical set.
+ *
+ * A value type with a string view and an integer: `constexpr`, no allocation, trivially comparable.
+ * The `id` is a pointer into a string literal that outlives every use.
+ */
+class ObservationProfile {
+public:
+    constexpr ObservationProfile() noexcept = default;
+    constexpr ObservationProfile(std::string_view id, std::uint32_t version) noexcept : id_{id}, version_{version} {}
+
+    [[nodiscard]] constexpr std::string_view id() const noexcept {
+        return id_;
+    }
+    [[nodiscard]] constexpr std::uint32_t version() const noexcept {
+        return version_;
+    }
+    /// Whether this names a profile at all. False for a default-constructed one.
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !id_.empty();
+    }
+
+    [[nodiscard]] constexpr bool operator==(const ObservationProfile&) const noexcept = default;
+
+private:
+    std::string_view id_{};
+    std::uint32_t    version_{0};
+};
+
+/// The prefix every profile id in this module carries until MEDUI-DEC-007 delivers canonical ids
+/// (ADR-016). A reader seeing it knows the id is MduX's own, not a shared-contract identifier.
+inline constexpr std::string_view localProfilePrefix = "mdux.local/";
+
+/// `goldenBounds()`: the golden node's content occupies exactly its declared rectangle.
+inline constexpr ObservationProfile extentEqualityProfile{"mdux.local/extent-equality", 1};
+/// `colorHash()`: painted pixels are a blend of ground and tint at one coverage, and one is the tint.
+inline constexpr ObservationProfile tintCompositionProfile{"mdux.local/tint-composition", 1};
+/// `inkContainment()`: a text run's placed ink stays inside the node that names it.
+inline constexpr ObservationProfile inkContainmentProfile{"mdux.local/ink-containment", 1};
+/// `localizedTextPresence()`: the approved locale's run is the shape on screen, per baked coverage.
+inline constexpr ObservationProfile inkCoverageProfile{"mdux.local/ink-coverage", 1};
+/// `rawImageDigest()`: SHA-256 over tightly packed row-major RGBA8 of a rectangle. Uncommitted;
+/// see ADR-016 for why it exists without a committed baseline.
+inline constexpr ObservationProfile rawImageDigestProfile{"mdux.local/raw-image-digest", 1};
+
+/**
  * @brief A verification the shared language lets an author opt a node into.
  *
  * The closed set, defined here and aliased by `mdux.tools.medui.goldens` so that the compiler that
@@ -369,6 +449,65 @@ enum class TextCheck : std::uint8_t {
             return "LocalizedTextPresence";
     }
     return {};
+}
+
+/// The mandatory text check `name` spells, or nothing when the name is not one of the two.
+///
+/// The counterpart of `parseCvCheck` for the checks that have no `CvCheck` enumerator, so a reader
+/// of `verification.json` can resolve any recorded check name back to its kind and its profile.
+[[nodiscard]] constexpr std::optional<TextCheck> parseTextCheck(std::string_view name) noexcept {
+    if (name == spell(TextCheck::InkContainment)) {
+        return TextCheck::InkContainment;
+    }
+    if (name == spell(TextCheck::LocalizedTextPresence)) {
+        return TextCheck::LocalizedTextPresence;
+    }
+    return std::nullopt;
+}
+
+/// The observation profile the golden check `check` reports under (ADR-015 D2 / ADR-016). A pure
+/// mapping: `Bounds` observes extent equality, `ColorHash` observes tint composition. The verifier
+/// and any reader of `verification.json` resolve a check's profile the same way.
+[[nodiscard]] constexpr ObservationProfile profileOf(CvCheck check) noexcept {
+    switch (check) {
+        case CvCheck::Bounds:
+            return extentEqualityProfile;
+        case CvCheck::ColorHash:
+            return tintCompositionProfile;
+    }
+    return {};
+}
+
+/// The observation profile the mandatory text check `check` reports under (ADR-015 D2 / ADR-016).
+[[nodiscard]] constexpr ObservationProfile profileOf(TextCheck check) noexcept {
+    switch (check) {
+        case TextCheck::InkContainment:
+            return inkContainmentProfile;
+        case TextCheck::LocalizedTextPresence:
+            return inkCoverageProfile;
+    }
+    return {};
+}
+
+/// The observation profile a check *spelled* `name` must report under, or nothing when `name` is
+/// not a check this module defines.
+///
+/// One resolver for every consumer, so the driver that sets a profile and the artifact writer that
+/// checks one before committing it cannot disagree about which profile a check name implies. A name
+/// outside the closed set - anything but the four `spell()` strings and `RawImageDigest` - returns
+/// nothing, which the writer treats as a reason to refuse rather than to serialise an
+/// unidentifiable observation.
+[[nodiscard]] constexpr std::optional<ObservationProfile> profileForCheckName(std::string_view name) noexcept {
+    if (const auto cv = parseCvCheck(name); cv.has_value()) {
+        return profileOf(*cv);
+    }
+    if (const auto text = parseTextCheck(name); text.has_value()) {
+        return profileOf(*text);
+    }
+    if (name == "RawImageDigest") {
+        return rawImageDigestProfile;
+    }
+    return std::nullopt;
 }
 
 /// How a locale-free render scope names itself in a report.
@@ -600,6 +739,73 @@ private:
 };
 
 static_assert(!std::is_aggregate_v<GoldenExpectation>, "a GoldenExpectation must only be obtainable through create()");
+
+/**
+ * @brief A rectangle to hash, and the baseline digest to compare it against - if there is one.
+ *
+ * The expectation `rawImageDigest()` consumes, and the whole of what the `raw-image-digest` profile
+ * (`mdux.local/raw-image-digest`, ADR-016) needs: a region of interest, and optionally a committed
+ * SHA-256 to check it against.
+ * This is TrustSC's `ColorHash` observation - a raw-pixel digest - given a name of its own so the
+ * two implementations' `ColorHash` results are never mistaken for each other.
+ *
+ * **There is no production caller that supplies a baseline**, and there is deliberately no committed
+ * one. [ADR-014](../../../docs/adr/ADR-014-rendered-truth-verification.md) decision 4 and its
+ * alternative 6 keep measured pixel values out of the byte-compared bundle: a committed RGBA8
+ * digest is a property of the driver tuple that produced the frame - lavapipe, MoltenVK, Mesa's
+ * Windows build - not of the screen's declared inputs, so it would fail an evidence leg on any
+ * rendering change while every check still held. TrustSC commits none either. So `createWithBaseline()`
+ * exists for the unit suite and for a future consumer that has declared a presentation/backend
+ * profile (PAR-REQ-009); `create()` is the shape everything else uses, and it resolves to
+ * `Finding::NoBaseline`, which never discharges an obligation.
+ *
+ * Obtainable only through a factory, and not an aggregate, so a `roi` that was never bounded cannot
+ * reach the check.
+ */
+class RawImageExpectation {
+public:
+    /// A region to hash with no baseline to compare it to. The result is `Finding::NoBaseline`.
+    ///
+    /// Refuses a non-positive `roi` extent - `VerifyError::DigestRoiDegenerate` - so the check's
+    /// own bounds walk is over a rectangle by construction.
+    [[nodiscard]] static mdux::core::Result<RawImageExpectation, VerifyError>
+    create(std::string_view nodeId, RenderScope scope, mdux::medui::NodeRect roi) noexcept;
+
+    /// A region to hash and the committed digest it must equal. For the unit suite and a future
+    /// declared-profile consumer; there is no such consumer today. Same `roi` refusal as `create()`.
+    [[nodiscard]] static mdux::core::Result<RawImageExpectation, VerifyError>
+    createWithBaseline(std::string_view nodeId, RenderScope scope, mdux::medui::NodeRect roi, mdux::evidence::Digest baseline) noexcept;
+
+    [[nodiscard]] std::string_view nodeId() const noexcept {
+        return nodeId_;
+    }
+    [[nodiscard]] RenderScope scope() const noexcept {
+        return scope_;
+    }
+    [[nodiscard]] mdux::medui::NodeRect roi() const noexcept {
+        return roi_;
+    }
+    /// Whether a baseline was supplied. When false, `rawImageDigest()` reports `NoBaseline`.
+    [[nodiscard]] bool hasBaseline() const noexcept {
+        return hasBaseline_;
+    }
+    /// The committed digest. Meaningless unless `hasBaseline()`.
+    [[nodiscard]] const mdux::evidence::Digest& baseline() const noexcept {
+        return baseline_;
+    }
+
+private:
+    RawImageExpectation(std::string_view nodeId, RenderScope scope, mdux::medui::NodeRect roi, bool hasBaseline, const mdux::evidence::Digest& baseline) noexcept
+        : nodeId_{nodeId}, scope_{scope}, roi_{roi}, baseline_{baseline}, hasBaseline_{hasBaseline} {}
+
+    std::string_view       nodeId_{};
+    RenderScope            scope_{RenderScope::localeFree()};
+    mdux::medui::NodeRect  roi_{};
+    mdux::evidence::Digest baseline_{};
+    bool                   hasBaseline_{false};
+};
+
+static_assert(!std::is_aggregate_v<RawImageExpectation>, "a RawImageExpectation must only be obtainable through a factory");
 
 /**
  * @brief The colour a coverage value paints when the tint is composited over the ground.
@@ -879,6 +1085,8 @@ enum class Finding : std::uint8_t {
     GlyphMissing,        ///< a non-blank record of the approved run painted nothing
     CoverageDiffers,     ///< a glyph's pixels are not what its baked coverage would produce
     InkOutsideTheRun,    ///< the node shows ink where this locale's run paints none
+    NoBaseline,          ///< `rawImageDigest()` had no committed digest to compare against
+    DigestMismatch,      ///< the region's SHA-256 is not the committed baseline's
 };
 
 [[nodiscard]] std::string_view describe(Finding finding) noexcept;
@@ -917,6 +1125,10 @@ enum class Finding : std::uint8_t {
             return "CoverageDiffers";
         case Finding::InkOutsideTheRun:
             return "InkOutsideTheRun";
+        case Finding::NoBaseline:
+            return "NoBaseline";
+        case Finding::DigestMismatch:
+            return "DigestMismatch";
     }
     return {};
 }
@@ -949,6 +1161,9 @@ struct CheckOutcome {
     mdux::core::ColorRgba8 foundColor{};
     bool                   foundColorValid{false};
     std::size_t            glyphIndex{0};  ///< which record, for a glyph-level finding
+    // Appended rather than slotted beside `check`: this is an aggregate a caller may initialise
+    // positionally (see the same note on `Invocation` in the driver), so a new field goes last.
+    ObservationProfile     profile{};  ///< which observation this outcome is: id and version (ADR-016)
 
     [[nodiscard]] constexpr bool held() const noexcept {
         return finding == Finding::Held;
@@ -1032,5 +1247,24 @@ struct CheckOutcome {
  * misses by far more, and a wrong tint by more still.
  */
 [[nodiscard]] CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
+
+/**
+ * @brief `raw-image-digest`: the region's tightly packed RGBA8 hashes to a committed baseline.
+ *
+ * TrustSC's `ColorHash` observation, named separately here so that the two implementations'
+ * `ColorHash` results are never compared as though they measured the same thing (ADR-015 D2). The
+ * digest is SHA-256 over the region of interest's pixels, row by row, four bytes per pixel, with no
+ * stride padding - the same "tightly packed row-major RGBA8" TrustSC hashes.
+ *
+ * **It reports `Finding::NoBaseline` for every production call**, because there is no committed
+ * baseline and deliberately never will be: ADR-014 decision 4 keeps a driver-tuple-dependent
+ * measurement out of the byte-compared bundle, and ADR-016 records why that makes this profile a
+ * fixture-and-future-consumer tool rather than a committed gate. `NoBaseline` never discharges an
+ * obligation - it is distinct from a pass, the way TrustSC's own `NoBaseline` is. With a baseline
+ * (a unit test, or a consumer that has declared a presentation profile) it reports `Held` on a
+ * match and `Finding::DigestMismatch` otherwise. A region outside the frame is
+ * `Finding::RegionOutsideFrame`, a failure rather than a skip.
+ */
+[[nodiscard]] CheckOutcome rawImageDigest(const FramebufferView& frame, const RawImageExpectation& expectation) noexcept;
 
 }  // namespace mdux::verify

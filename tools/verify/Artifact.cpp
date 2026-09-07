@@ -44,17 +44,31 @@ using mdux::core::err;
 }
 
 /**
- * @brief One outcome as the file records it: the obligation, and whether it held.
+ * @brief One outcome as the file records it: the obligation, which observation performed it, and
+ *        whether it held.
  *
- * Four members and no fifth. `check` and `scope` are what keep a claim scoped to the obligation it
- * came from - a node verified in `en-US` and not in `de-DE` shows up as two entries with different
- * findings rather than as one summary - and `finding` is a named reason rather than a boolean so
- * that "nothing was drawn there" and "it was drawn in the wrong colour" stay distinguishable.
+ * `check` and `scope` are what keep a claim scoped to the obligation it came from - a node verified
+ * in `en-US` and not in `de-DE` shows up as two entries with different findings rather than as one
+ * summary - and `finding` is a named reason rather than a boolean so that "nothing was drawn there"
+ * and "it was drawn in the wrong colour" stay distinguishable.
+ *
+ * `observationProfile` is an **identity, not a measurement**: it names *what* the check observed and
+ * at which revision (ADR-015 decision 2, ADR-016), so a reader - and #314's cross-implementation
+ * gate - never mistakes MduX's `ColorHash` (a tint predicate) for TrustSC's (a pixel digest). It is
+ * a fixed property of the check, so it does not turn this file into the driver-tuple-dependent
+ * artifact ADR-014 decision 4 forbids; no measured pixel value is recorded here.
  */
 [[nodiscard]] std::optional<evj::Value> outcomeToJson(const Outcome& outcome) {
+    evj::Value profile = evj::Value::emptyObject();
+    if (!put(profile, "id", evj::Value::string(std::string{outcome.profile.id()}))
+        || !put(profile, "version", evj::Value::unsignedInteger(outcome.profile.version()))) {
+        return std::nullopt;
+    }
+
     evj::Value entry = evj::Value::emptyObject();
     if (!put(entry, "check", evj::Value::string(outcome.check)) || !put(entry, "finding", evj::Value::string(std::string{mdux::verify::spell(outcome.finding)}))
-        || !put(entry, "nodeId", evj::Value::string(outcome.nodeId)) || !put(entry, "scope", evj::Value::string(outcome.scope))) {
+        || !put(entry, "nodeId", evj::Value::string(outcome.nodeId)) || !put(entry, "observationProfile", std::move(profile))
+        || !put(entry, "scope", evj::Value::string(outcome.scope))) {
         return std::nullopt;
     }
     return entry;
@@ -87,6 +101,8 @@ std::string_view describe(ArtifactError error) noexcept {
             return "the run discharged no obligations, and a verification of nothing is not evidence";
         case ArtifactError::OutcomeMismatch:
             return "the run produced a different number of outcomes than it enumerated obligations";
+        case ArtifactError::ObservationProfileInvalid:
+            return "an outcome carries no observation profile, or one that is not the profile its check reports under";
         case ArtifactError::MalformedReport:
             return "the screen bundle's report.json is not a bake report";
         case ArtifactError::ReportRewriteFailed:
@@ -121,6 +137,16 @@ mdux::core::Result<std::string, ArtifactError> writeVerification(const RunResult
         const Outcome&    outcome    = result.outcomes[index];
         if (outcome.nodeId != obligation.nodeId || outcome.scope != obligation.scope || outcome.check != obligation.check) {
             return err(ArtifactError::OutcomeMismatch);
+        }
+        // The same "derive, don't trust" rule ADR-014 decision 2 states for expectations, applied to
+        // the identity ADR-016 adds: the profile the driver attached must be exactly the one this
+        // check reports under. A missing profile (`{"", 0}`) or a digest profile on a `ColorHash`
+        // outcome would put an unidentified or misidentified observation into a byte-compared file,
+        // which is the guarantee this field exists to make. `profileForCheckName()` is the same
+        // resolver the driver used, so this cannot disagree with it by construction.
+        const std::optional<mdux::verify::ObservationProfile> expected = mdux::verify::profileForCheckName(outcome.check);
+        if (!expected.has_value() || !outcome.profile.valid() || outcome.profile != *expected) {
+            return err(ArtifactError::ObservationProfileInvalid);
         }
     }
 

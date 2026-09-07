@@ -789,7 +789,8 @@ private:
             .expectedColor   = outcome.expectedColor,
             .foundColor      = outcome.foundColor,
             .foundColorValid = outcome.foundColorValid,
-            .glyphIndex      = outcome.glyphIndex};
+            .glyphIndex      = outcome.glyphIndex,
+            .profile         = outcome.profile};
 }
 
 [[nodiscard]] std::string rectangle(mdux::medui::NodeRect value) {

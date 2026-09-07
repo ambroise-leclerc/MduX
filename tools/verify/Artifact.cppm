@@ -53,13 +53,14 @@ inline constexpr std::string_view verificationFileName = "verification.json";
 inline constexpr std::string_view artifactToolName = "mdux-verify-bake";
 
 enum class ArtifactError : std::uint8_t {
-    NotRun,               ///< the run could not be made, so there is no outcome set to serialize
-    NoObligations,        ///< a run that verified nothing is not evidence (ADR-014 decision 3)
-    OutcomeMismatch,      ///< outcomes and obligations disagree; the driver's own invariant broke
-    MalformedReport,      ///< the bundle's `report.json` did not parse as a bake report
-    ReportRewriteFailed,  ///< the extended report failed its own validation
-    SerializationFailed,  ///< canonical JSON refused a member this writer built
-    PublishFailed,        ///< a bundle file could not be staged or promoted; the bundle is unchanged
+    NotRun,                    ///< the run could not be made, so there is no outcome set to serialize
+    NoObligations,             ///< a run that verified nothing is not evidence (ADR-014 decision 3)
+    OutcomeMismatch,           ///< outcomes and obligations disagree; the driver's own invariant broke
+    ObservationProfileInvalid, ///< an outcome carries no observation profile, or one that is not its check's (ADR-016)
+    MalformedReport,           ///< the bundle's `report.json` did not parse as a bake report
+    ReportRewriteFailed,       ///< the extended report failed its own validation
+    SerializationFailed,       ///< canonical JSON refused a member this writer built
+    PublishFailed,             ///< a bundle file could not be staged or promoted; the bundle is unchanged
 };
 
 [[nodiscard]] std::string_view describe(ArtifactError error) noexcept;

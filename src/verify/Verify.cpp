@@ -16,6 +16,7 @@ module mdux.verify;
 import std;
 import mdux.core.result;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.medui.schema;
 import mdux.medui.screen;
@@ -240,8 +241,11 @@ struct Box {
 }
 
 /// The outcome every check starts from, so the reporting fields are filled in one place.
-[[nodiscard]] CheckOutcome opened(std::string_view nodeId, RenderScope scope, std::string_view check, NodeRect expected) noexcept {
-    return CheckOutcome{.finding = Finding::Held, .nodeId = nodeId, .scope = scope.name(), .check = check, .expected = expected};
+///
+/// `profile` names the observation this check performs (ADR-015 D2 / ADR-016), and it is set here
+/// rather than by each check so that no check can report an outcome without one.
+[[nodiscard]] CheckOutcome opened(std::string_view nodeId, RenderScope scope, std::string_view check, ObservationProfile profile, NodeRect expected) noexcept {
+    return CheckOutcome{.finding = Finding::Held, .nodeId = nodeId, .scope = scope.name(), .check = check, .expected = expected, .profile = profile};
 }
 
 [[nodiscard]] CheckOutcome failed(CheckOutcome outcome, Finding finding) noexcept {
@@ -303,6 +307,8 @@ std::string_view describe(VerifyError error) noexcept {
             return "the coverage sheet is not the size the font package declares";
         case VerifyError::GlyphOutsideAtlas:
             return "a glyph's slot leaves the coverage sheet";
+        case VerifyError::DigestRoiDegenerate:
+            return "the raw-image-digest region has a non-positive width or height";
     }
     return "unknown verification error";
 }
@@ -333,6 +339,10 @@ std::string_view describe(Finding finding) noexcept {
             return "a glyph's pixels are not what its baked coverage would paint in this tint";
         case Finding::InkOutsideTheRun:
             return "the node shows ink where this locale's run paints none";
+        case Finding::NoBaseline:
+            return "there is no committed digest to compare this region against";
+        case Finding::DigestMismatch:
+            return "the region's SHA-256 is not the committed baseline digest";
     }
     return "unknown verification finding";
 }
@@ -663,7 +673,7 @@ std::uint8_t TextExpectation::coverage(const PlacedGlyph& placed, Px dx, Px dy) 
 }
 
 CheckOutcome goldenBounds(const FramebufferView& frame, const GoldenExpectation& expectation) noexcept {
-    CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), spell(CvCheck::Bounds), expectation.bounds());
+    CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), spell(CvCheck::Bounds), profileOf(CvCheck::Bounds), expectation.bounds());
     if (!frame.contains(expectation.bounds())) {
         return failed(outcome, Finding::RegionOutsideFrame);
     }
@@ -687,7 +697,7 @@ CheckOutcome goldenBounds(const FramebufferView& frame, const GoldenExpectation&
 }
 
 CheckOutcome colorHash(const FramebufferView& frame, const GoldenExpectation& expectation) noexcept {
-    CheckOutcome outcome  = opened(expectation.nodeId(), expectation.scope(), spell(CvCheck::ColorHash), expectation.bounds());
+    CheckOutcome outcome  = opened(expectation.nodeId(), expectation.scope(), spell(CvCheck::ColorHash), profileOf(CvCheck::ColorHash), expectation.bounds());
     outcome.expectedColor = expectation.tint();
     if (!expectation.hasTint()) {
         return failed(outcome, Finding::NoTintToCompare);
@@ -734,7 +744,7 @@ CheckOutcome colorHash(const FramebufferView& frame, const GoldenExpectation& ex
 }
 
 CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation& expectation) noexcept {
-    CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), spell(TextCheck::InkContainment), expectation.bounds());
+    CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), spell(TextCheck::InkContainment), profileOf(TextCheck::InkContainment), expectation.bounds());
     if (!inside(expectation.ink(), expectation.bounds())) {
         // The compile-time claim, failing before a pixel is read. #195 proved this box fits this
         // rectangle for the package it measured; a run that overflows here was bound from a package
@@ -784,7 +794,7 @@ CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation&
 }
 
 CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpectation& expectation) noexcept {
-    CheckOutcome outcome  = opened(expectation.nodeId(), expectation.scope(), spell(TextCheck::LocalizedTextPresence), expectation.bounds());
+    CheckOutcome outcome  = opened(expectation.nodeId(), expectation.scope(), spell(TextCheck::LocalizedTextPresence), profileOf(TextCheck::LocalizedTextPresence), expectation.bounds());
     outcome.expectedColor = expectation.tint();
     if (!frame.contains(expectation.bounds())) {
         return failed(outcome, Finding::RegionOutsideFrame);
@@ -929,6 +939,56 @@ CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpec
     outcome.expectedColor = tint;
     outcome.found         = ink;
     outcome.foundValid    = true;
+    return outcome;
+}
+
+Result<RawImageExpectation, VerifyError> RawImageExpectation::create(std::string_view nodeId, RenderScope scope, NodeRect roi) noexcept {
+    if (roi.width <= 0 || roi.height <= 0) {
+        return err(VerifyError::DigestRoiDegenerate);
+    }
+    return RawImageExpectation{nodeId, scope, roi, false, mdux::evidence::Digest{}};
+}
+
+Result<RawImageExpectation, VerifyError>
+RawImageExpectation::createWithBaseline(std::string_view nodeId, RenderScope scope, NodeRect roi, mdux::evidence::Digest baseline) noexcept {
+    if (roi.width <= 0 || roi.height <= 0) {
+        return err(VerifyError::DigestRoiDegenerate);
+    }
+    return RawImageExpectation{nodeId, scope, roi, true, baseline};
+}
+
+CheckOutcome rawImageDigest(const FramebufferView& frame, const RawImageExpectation& expectation) noexcept {
+    CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), "RawImageDigest", rawImageDigestProfile, expectation.roi());
+    if (!frame.contains(expectation.roi())) {
+        return failed(outcome, Finding::RegionOutsideFrame);
+    }
+
+    // SHA-256 over the region's pixels row by row, four bytes per pixel, no stride padding - the
+    // "tightly packed row-major RGBA8" TrustSC hashes. Streamed a pixel at a time into the fixed
+    // 64-byte block buffer `Sha256` owns, so nothing here allocates.
+    const NodeRect        roi = expectation.roi();
+    mdux::evidence::Sha256 hasher;
+    for (Px y = roi.y; y < roi.y + roi.height; ++y) {
+        for (Px x = roi.x; x < roi.x + roi.width; ++x) {
+            // `contains()` above has already bounded the walk to the frame, so every `pixelAt()`
+            // here is engaged; the `value_or` is defensive and its argument is never reached.
+            const ColorRgba8 pixel = frame.pixelAt(x, y).value_or(ColorRgba8{});
+            const std::array<std::byte, 4> bytes{
+                std::byte{pixel.r}, std::byte{pixel.g}, std::byte{pixel.b}, std::byte{pixel.a}};
+            hasher.update(bytes);
+        }
+    }
+    const mdux::evidence::Digest digest = hasher.finish();
+
+    if (!expectation.hasBaseline()) {
+        // The production answer, and distinct from a pass: ADR-016 keeps a committed baseline out of
+        // the byte-compared bundle, so there is nothing to check against and the obligation stays
+        // undischarged. TrustSC's `NoBaseline` behaves the same way.
+        return failed(outcome, Finding::NoBaseline);
+    }
+    if (digest != expectation.baseline()) {
+        return failed(outcome, Finding::DigestMismatch);
+    }
     return outcome;
 }
 

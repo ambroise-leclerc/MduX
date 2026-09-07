@@ -90,18 +90,30 @@ not an instruction to execute a clinical action or to copy TrustSC's host shutdo
 
 | Check | MduX observation | TrustSC observation | Proposed treatment |
 |---|---|---|---|
-| Bounds / GoldenBounds | Measured content extent must equal golden rectangle; empty fails. Detection is local to the check region and is not proof of no distant overflow. | Ink bbox in a clamped region expanded by 8 pixels must be contained in the expected bounds; no ink passes this check. | Separate extent-equality and containment identities, with explicit empty-content and search policies. |
-| ColorHash | No hash: common-coverage tint/background composition; fully resolved tint must occur. Missing tint fails. | SHA-256 over tightly packed row-major RGBA8 of the golden rectangle. Missing baseline returns NoBaseline, never pass. | Separate tint-composition and RGBA8-digest identities. Never reuse a name to reinterpret old evidence. |
+| Bounds / GoldenBounds | Measured content extent must equal golden rectangle; empty fails. Detection is local to the check region and is not proof of no distant overflow. Named `mdux.local/extent-equality` v1 since #313. | Ink bbox in a clamped region expanded by 8 pixels must be contained in the expected bounds; no ink passes this check. | Separate extent-equality and containment identities, with explicit empty-content and search policies. |
+| ColorHash | No hash: common-coverage tint/background composition; fully resolved tint must occur. Missing tint fails. Named `mdux.local/tint-composition` v1 since #313; the raw-pixel-digest observation is `mdux.local/raw-image-digest` v1, implemented but with no committed baseline. | SHA-256 over tightly packed row-major RGBA8 of the golden rectangle. Missing baseline returns NoBaseline, never pass. | Separate tint-composition and RGBA8-digest identities. Never reuse a name to reinterpret old evidence. |
 | Color tolerance | One UNORM step per modeled composite; existing two-layer fields need two. Channels share a feasible coverage; arbitrary independent channel slack is not permitted. | Exact hash has zero tolerance; ChromeColor uses ±1 per channel in its sampled edge bands. | Profile/check-specific arithmetic and sampling; no global fuzzy tolerance. |
-| TextPresence | Approved atlas coverage and placed glyph checks; ink containment has explicit composite-ground limits. | Glyph-count coverage heuristic (5–70% of estimated glyph area), not a glyph-shape comparison. | Distinct shape/coverage predicates, asset identity and applicability. |
+| TextPresence | Approved atlas coverage and placed glyph checks; ink containment has explicit composite-ground limits. Named `mdux.local/ink-containment` and `mdux.local/ink-coverage`, both v1, since #313. | Glyph-count coverage heuristic (5–70% of estimated glyph area), not a glyph-shape comparison. | Distinct shape/coverage predicates, asset identity and applicability. |
 | Ink/background | Resolved ground/tint and baked placements; bounds and ink checks have documented local limits. | Ink delta threshold 8; containment/search margins 8; local panel/chrome background handling. | Record thresholds, ground resolution and ROI in the profile; do not transfer one sibling's constants into the other silently. |
-| Report scope | Artifact provenance and node/check with explicit locale-free or locale scope; driver enforces complete obligations. | Check IDs such as node::golden_bounds; locale/scenario/clock also carried by the enclosing report. | A common observation key must include scope and provenance, not just the local check ID. |
+| Report scope | Artifact provenance and node/check with explicit locale-free or locale scope; driver enforces complete obligations. Each outcome in `verification.json` now records an `observationProfile` {id, version} (#313). | Check IDs such as node::golden_bounds; locale/scenario/clock also carried by the enclosing report. | A common observation key must include scope and provenance, not just the local check ID. |
 
 Sources: [MduX predicates][m-verify], [implementation arithmetic][m-arithmetic],
 [MduX fixtures][m-tests], [TrustSC checks][t-checks], [report types][t-verify] and
 [TrustSC fixtures][t-tests]. No committed TrustSC hash baselines exist at this assessed head;
 the ability to compute/compare a hash is not evidence of a committed image regression gate.
 [MedUI #15](https://github.com/Compliatory/MedUI/issues/15) requests the versioned resolution.
+
+**Update, 7 September 2026 — [#313](https://github.com/ambroise-leclerc/MduX/issues/313) delivered
+the local half of the "Proposed treatment" column above.** MduX's four rendered checks each carry an
+implementation-local `ObservationProfile` (id + version), recorded per outcome in `verification.json`,
+and `mdux.verify::rawImageDigest()` implements the RGBA8 SHA-256 observation TrustSC's `ColorHash`
+performs — as its own profile, so the two `ColorHash` results are never conflated. Per
+[ADR-016](../adr/ADR-016-locally-versioned-observation-profiles.md) and ADR-014 decision 4 it has
+**no committed baseline** (a driver-tuple-dependent digest cannot live in a byte-compared artifact),
+still returns `NoBaseline` on every production call, and is fixture-tested only. The profile ids are
+`mdux.local/*` until MEDUI-DEC-007 delivers canonical identifiers; the shared schema/corpus and the
+cross-implementation gate remain [#314](https://github.com/ambroise-leclerc/MduX/issues/314). This is
+not a parity claim.
 
 ## Intentional differences
 

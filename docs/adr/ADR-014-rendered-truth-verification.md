@@ -3,6 +3,18 @@
 ## Status
 Accepted (2026-08-31)
 
+> **Amendment — 2026-09-07, [#313](https://github.com/ambroise-leclerc/MduX/issues/313),
+> [ADR-016](ADR-016-locally-versioned-observation-profiles.md).**
+> [ADR-015](ADR-015-versioned-sibling-observations.md) decision 2 introduces separately versioned
+> observation profiles. ADR-016 gives each of the four checks below an implementation-local
+> `ObservationProfile` (id and version), recorded per outcome in `verification.json`, and implements
+> the RGBA8 SHA-256 raw-image-digest predicate ADR-015 decision 2 names — the observation TrustSC's
+> `ColorHash` actually performs. **Decision 4 is unchanged, and is the reason that predicate is
+> *not* wired as a committed check on any screen**: a committed RGBA8 baseline is exactly the
+> driver-tuple-dependent measured value decision 4 and alternative 6 reject. A profile *identity* is
+> the name of an observation, not a measured value, so recording it per outcome is consistent with
+> decision 4. `schemaVersion` stays `1`.
+
 ## Shared contract
 
 No MedUI shared decision covers verification, so MduX decides it locally and this ADR carries no
@@ -491,6 +503,10 @@ the frame.
 - ADR-011: The deterministic `.medui` compile boundary — the golden predicate and its inputs
 - ADR-012: What a compiled screen emits — decision 4, the sidecar and the single-implementation rule
 - ADR-013: Verified Apple Silicon macOS toolchain — why the pixel-labelled suite may not be skipped
+- ADR-015: Versioned sibling observations — decision 2, why a shared check name is not a shared
+  observation
+- ADR-016: Locally versioned observation profiles — the profile identities added to these checks,
+  the RGBA8 SHA-256 predicate, and why it has no committed baseline (see the amendment above)
 - `tools/medui/Goldens.cppm` — `collectGoldens()` and the closed `CvCheck` set
 - `tests/render/PixelTests.cpp` and `tests/render/ScreenPixelTests.cpp` — the exact comparator, and
   the rendered golden consumer that replaced the tripwire when decision 5 landed
@@ -511,5 +527,8 @@ the frame.
   current screen; and again when #255 added decisions 5 and 6, which turned those three findings into
   `Held` and put the gate on three CI legs; and again when #282 made that four by asserting the gate
   on Windows/MSVC as a named step, which ADR-007 decision 6 records as a gain in diagnosis rather
-  than in coverage — the check already ran there inside the full suite. Review again when #257 and #258 draw a reading inside a field, since
+  than in coverage — the check already ran there inside the full suite. Reviewed again on 2026-09-07
+  for #313: ADR-016 adds a per-outcome observation-profile identity and the RGBA8 SHA-256 predicate
+  without changing any check's semantics, and the amendment at the top of this record confirms
+  decision 4 is unchanged. Review again when #257 and #258 draw a reading inside a field, since
   decision 5's `ColorHash` consequence constrains how they may.

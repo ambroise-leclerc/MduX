@@ -65,17 +65,20 @@ struct PlanResult {
 
 /// An owning copy of the governed outcome, suitable for #254's later serialization stage.
 struct Outcome {
-    mdux::verify::Finding  finding{mdux::verify::Finding::Held};
-    std::string            nodeId;
-    std::string            scope;
-    std::string            check;
-    mdux::medui::NodeRect  expected{};
-    mdux::medui::NodeRect  found{};
-    bool                   foundValid{false};
-    mdux::core::ColorRgba8 expectedColor{};
-    mdux::core::ColorRgba8 foundColor{};
-    bool                   foundColorValid{false};
-    std::size_t            glyphIndex{0};
+    mdux::verify::Finding   finding{mdux::verify::Finding::Held};
+    std::string             nodeId;
+    std::string             scope;
+    std::string             check;
+    mdux::medui::NodeRect   expected{};
+    mdux::medui::NodeRect   found{};
+    bool                    foundValid{false};
+    mdux::core::ColorRgba8  expectedColor{};
+    mdux::core::ColorRgba8  foundColor{};
+    bool                    foundColorValid{false};
+    std::size_t             glyphIndex{0};
+    // Appended, not slotted beside `check`: this is an exported aggregate a caller may initialise
+    // positionally, the same reason `Invocation`'s `frameImageDirectory` is last.
+    mdux::verify::ObservationProfile profile{};  ///< which observation produced this outcome (ADR-016)
 
     [[nodiscard]] bool held() const noexcept {
         return finding == mdux::verify::Finding::Held;
