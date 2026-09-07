@@ -403,6 +403,15 @@ consistency rather than truth: the expectation and the frame come from one sourc
 `NothingPainted` findings between #254 and #255, because an artifact that hid them would have been
 worse than none; #255 resolved them by drawing the fields rather than by removing the obligations.
 
+Since #313 each outcome also names an `observationProfile` — an id and version identifying *which*
+observation the check performs (`mdux.local/extent-equality`, `tint-composition`, `ink-containment`,
+`ink-coverage`), so a reader never mistakes MduX's `ColorHash` (a tint-composition predicate) for
+TrustSC's (a raw-pixel digest). That id is an identity rather than a measurement, so it does not
+change what ADR-014 decision 4 keeps out. `mdux.verify` also exposes `rawImageDigest()`, the RGBA8
+SHA-256 predicate ADR-015 decision 2 names; it has no committed baseline by design
+([ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md)), returns `NoBaseline` on every
+production call, and is exercised only by `tests/verify/RawImageDigestTests.cpp`.
+
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an
 `evidence.<kind>.<id>` test, and membership in `mdux-bake-all` / `mdux-bake-update`.

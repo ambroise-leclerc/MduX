@@ -685,3 +685,37 @@ const mdux::spec::Register aTintClaimNeedsATintToMake{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register eachGoldenCheckNamesItsOwnObservation{
+    "Bounds and ColorHash carry distinct, versioned observation profiles",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-golden-observation-profile")
+            .Given("a golden opted into both checks, and a frame that draws its node", [] {})
+            .When("goldenBounds and colorHash run over it", [] {})
+            .Then("each outcome names the profile its check reports under, and the two differ",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // ADR-015 decision 2: MduX's `ColorHash` is a tint-composition predicate, not
+                      // the raw-pixel digest TrustSC's `ColorHash` is. The profile on the outcome is
+                      // what keeps the two from being compared as one observation.
+                      checks.expect(mv::profileOf(mv::CvCheck::Bounds) == mv::extentEqualityProfile, "Bounds maps to extent-equality");
+                      checks.expect(mv::profileOf(mv::CvCheck::ColorHash) == mv::tintCompositionProfile, "ColorHash maps to tint-composition");
+                      checks.expect(mv::profileOf(mv::CvCheck::Bounds) != mv::profileOf(mv::CvCheck::ColorHash), "and the two are not the same observation");
+                      checks.expect(mv::extentEqualityProfile.id().starts_with(mv::localProfilePrefix), "the ids are implementation-local (ADR-016)");
+                      checks.expect(mv::tintCompositionProfile.version() == 1, "at version 1");
+
+                      Canvas canvas{16, 20, ground};
+                      canvas.fill({4, 4, 8, 6}, tintOf(readoutToken));
+
+                      const mv::GoldenExpectation expectation = expect(readoutGolden, textlessScreen, mv::RenderScope::localeFree());
+                      const mv::CheckOutcome      bounds      = mv::goldenBounds(canvas.view(), expectation);
+                      const mv::CheckOutcome      colour      = mv::colorHash(canvas.view(), expectation);
+
+                      checks.expect(bounds.profile == mv::extentEqualityProfile, "the goldenBounds outcome carries extent-equality");
+                      checks.expect(colour.profile == mv::tintCompositionProfile, "the colorHash outcome carries tint-composition");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

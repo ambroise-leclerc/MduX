@@ -134,6 +134,9 @@ Existing ADR-010/011/012/014 and runtime checks remain authoritative until an ac
 ## References
 
 - [Phase 2 roadmap](../roadmap.md)
+- [ADR-016](ADR-016-locally-versioned-observation-profiles.md) — the local delivery of decision D2:
+  implementation-local observation-profile identities for the four rendered checks and the RGBA8
+  SHA-256 predicate (#313). The shared schema/corpus half remains #314.
 - [Compatibility matrix and evidence](../parity/behavior-matrix.md)
 - [Requirements, review disposition and downstream mapping](../parity/requirements.md)
 - [Pinned MedUI decisions](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210/decisions)

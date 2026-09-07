@@ -46,7 +46,7 @@ allocate profile identifiers or establish consumer capabilities.
 
 | Work | Decisions needed before dependent behavior lands |
 |---|---|
-| #313 verifier semantics | D2/D3/D4; [MedUI #15](https://github.com/Compliatory/MedUI/issues/15), reviewed PAR-REQ-002/003/009. |
+| #313 verifier semantics | D2/D3/D4 (accepted); [MedUI #15](https://github.com/Compliatory/MedUI/issues/15), reviewed PAR-REQ-002/003/009. **Local half delivered** by [ADR-016](../adr/ADR-016-locally-versioned-observation-profiles.md): implementation-local observation-profile identities for the four rendered checks and the RGBA8 SHA-256 predicate, per-outcome in `verification.json`, no committed baseline. The shared schema/corpus half and the PAR-REQ dispositions remain open. |
 | #314 common corpus gate | D1–D4 and #313; MedUI #15 plus diagnostic/safety cases from existing #2/#3/#4/#8. Only claim phases with complete applicable passing cases. |
 | #315 input design | D5; [MedUI #16](https://github.com/Compliatory/MedUI/issues/16), PAR-REQ-004–008. Resolve event vocabulary, coordinate rounding, paste/repeat/focus and host action policy here. |
 | #316 queue/editing; #317 presentation adapter | Accepted #315 requirements; D5; PAR-REQ-004–007. |
@@ -81,7 +81,8 @@ their profile/schema/corpus delivery and consumer adoption gates remain in force
 | Record | Requested reviewer | State |
 |---|---|---|
 | ADR-015 D1–D5 | MduX maintainer | Accepted by Ambroise Leclerc, 2026-09-07 |
-| PAR-REQ-001–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Individual dispositions pending |
+| ADR-016 (local observation profiles) | MduX maintainer; domain reviewer (safety-relevant verifier area) | Proposed 2026-09-07 (#313); no check semantics or runtime behaviour changed |
+| PAR-REQ-001–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Individual dispositions pending. #313 delivers the **local** half of PAR-REQ-002 (four named profiles + the RGBA8 digest predicate + adversarial fixtures); the shared-schema/corpus half and the disposition itself remain open. |
 | Shared rendered profiles | MedUI #15 participants/maintainer | MEDUI-DEC-007 accepted, 2026-09-07; profile delivery pending |
 | Shared interaction/presentation profiles | MedUI #16 participants/maintainer | MEDUI-DEC-008 accepted, 2026-09-07; profile delivery pending |
 

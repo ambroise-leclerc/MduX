@@ -857,3 +857,35 @@ const mdux::spec::Register aProductionExpectationIsAuthorisedByArtifacts{
                 })
             .Execute();
     }};
+
+const mdux::spec::Register eachTextCheckNamesItsOwnObservation{
+    "InkContainment and LocalizedTextPresence carry distinct, versioned observation profiles",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-text-observation-profile")
+            .Given("a label whose approved run is drawn where the runtime would draw it", [] {})
+            .When("both mandatory text checks run", [] {})
+            .Then("each outcome names the profile its check reports under (ADR-015 D2 / ADR-016)",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      checks.expect(mv::profileOf(mv::TextCheck::InkContainment) == mv::inkContainmentProfile, "InkContainment maps to ink-containment");
+                      checks.expect(mv::profileOf(mv::TextCheck::LocalizedTextPresence) == mv::inkCoverageProfile, "LocalizedTextPresence maps to ink-coverage");
+                      checks.expect(mv::profileOf(mv::TextCheck::InkContainment) != mv::profileOf(mv::TextCheck::LocalizedTextPresence), "and the two are distinct observations");
+                      checks.expect(mv::inkContainmentProfile.id().starts_with(mv::localProfilePrefix), "the ids are implementation-local");
+                      checks.expect(mv::inkCoverageProfile.version() == 1, "at version 1");
+
+                      const mdux::font::FontPackage font    = twoGlyphFont();
+                      const std::vector<std::byte>  atlas   = syntheticAtlas();
+                      const std::vector<std::byte>  records = abRun();
+                      const mv::TextExpectation     title   = expect(titleNode(), records, font, atlas);
+
+                      Canvas canvas{64, 48, ground};
+                      paintRun(canvas, title, tintOf(titleToken));
+
+                      checks.expect(mv::inkContainment(canvas.view(), title).profile == mv::inkContainmentProfile, "the InkContainment outcome carries ink-containment");
+                      checks.expect(mv::localizedTextPresence(canvas.view(), title).profile == mv::inkCoverageProfile, "the LocalizedTextPresence outcome carries ink-coverage");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

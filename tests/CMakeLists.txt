@@ -876,6 +876,7 @@ add_executable(verify_spec
     verify/FramebufferTests.cpp
     verify/GoldenCheckTests.cpp
     verify/TextCheckTests.cpp
+    verify/RawImageDigestTests.cpp
 )
 
 target_link_libraries(verify_spec PRIVATE MduX::Core speclab::speclab)

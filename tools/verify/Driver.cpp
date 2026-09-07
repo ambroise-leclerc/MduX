@@ -783,6 +783,7 @@ private:
             .nodeId          = std::string{outcome.nodeId},
             .scope           = std::string{outcome.scope},
             .check           = std::string{outcome.check},
+            .profile         = outcome.profile,
             .expected        = outcome.expected,
             .found           = outcome.found,
             .foundValid      = outcome.foundValid,
