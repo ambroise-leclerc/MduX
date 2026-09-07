@@ -160,6 +160,16 @@ jobs:
         # point of this job is that it ran.
         ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' --output-on-failure --no-tests=error
 
+    # Shared MedUI observation-profile conformance (#314), broken out with -V so the vector count and
+    # pinned SHA are visible, and run under the sanitizers because the R04 ROI slicing and the JSON
+    # walk are exactly the kind of index arithmetic ASan is here to check. --no-tests=error: an empty
+    # label must fail this job, whose whole point is that it ran.
+    - name: Verify MedUI profile conformance under ASan and UBSan
+      env:
+        ASAN_OPTIONS: detect_leaks=1
+        UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      run: ctest --test-dir build-asan -L conformance -V --no-tests=error
+
     # offscreen_tests, verify_ui_pixel_test and the verify.screen.<id> gates all run against
     # lavapipe, and the Vulkan ICD leaks 512
     # bytes once, on a thread it starts itself, through pthread_once - a stack with no MduX frame in

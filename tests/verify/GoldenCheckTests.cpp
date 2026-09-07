@@ -719,3 +719,39 @@ const mdux::spec::Register eachGoldenCheckNamesItsOwnObservation{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register theExportedRenderedLeavesHoldTheirContracts{
+    "The rendered-check leaves exported for the shared corpus decide as documented",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-rendered-leaves")
+            .Given("rectContainedBy, inflate and couldBeBlend, now on the module interface", [] {})
+            .When("they are exercised at the edges rule R02/R03 turn on", [] {})
+            .Then("containment allows the touching edge, inflate widens each side, and a real "
+                  "half-coverage blend lies on the line couldBeBlend accepts",
+                  [] {
+                      mdux::spec::Checks checks;
+                      using ms::NodeRect;
+
+                      // rectContainedBy: touching the outer edge is inside; a pixel past it is not.
+                      checks.expect(mv::rectContainedBy(NodeRect{2, 2, 4, 4}, NodeRect{2, 2, 4, 4}), "an exact fit is contained");
+                      checks.expect(!mv::rectContainedBy(NodeRect{1, 2, 4, 4}, NodeRect{2, 2, 4, 4}), "one pixel left of the box is not");
+
+                      // inflate: R02's margin grows every side, and the containment then holds.
+                      const NodeRect grown = mv::inflate(NodeRect{2, 2, 4, 4}, 1);
+                      checks.expect(grown == NodeRect{1, 1, 6, 6}, "inflate(_, 1) moves the origin out and adds 2 to each extent");
+                      checks.expect(mv::rectContainedBy(NodeRect{1, 1, 6, 6}, grown), "ink flush with the inflated edge is contained (R02)");
+
+                      // couldBeBlend over the precondition both callers meet: opaque ground and
+                      // opaque tint. A real half-coverage blend() output is on the line; a channel
+                      // no single coverage explains is not.
+                      const mdux::core::ColorRgba8 opaqueGround{10, 20, 30, 255};
+                      const mdux::core::ColorRgba8 opaqueTint{200, 60, 60, 255};
+                      const mdux::core::ColorRgba8 painted = mv::blend(opaqueGround, opaqueTint, 128);
+                      checks.expect(mv::couldBeBlend(painted, opaqueGround, opaqueTint, 1), "a real half-coverage blend is on the line");
+                      const mdux::core::ColorRgba8 offLine{painted.r, static_cast<std::uint8_t>(painted.g + 40), painted.b, 255};
+                      checks.expect(!mv::couldBeBlend(offLine, opaqueGround, opaqueTint, 1), "a channel 40 units off the line is not");
+                      checks.raise();
+                  })
+            .Execute();
+    }};

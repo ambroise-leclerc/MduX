@@ -72,109 +72,8 @@ struct Box {
     return NodeRect{.x = x, .y = y, .width = 1, .height = 1};
 }
 
-/// Whether `inner` lies wholly inside `outer`. 64-bit, for `containedBy()`'s reason: two `int32_t`
-/// at their extremes overflow on addition, and an overflowed comparison admits what it should refuse.
-[[nodiscard]] bool inside(NodeRect inner, NodeRect outer) noexcept {
-    const auto innerRight  = static_cast<std::int64_t>(inner.x) + inner.width;
-    const auto innerBottom = static_cast<std::int64_t>(inner.y) + inner.height;
-    const auto outerRight  = static_cast<std::int64_t>(outer.x) + outer.width;
-    const auto outerBottom = static_cast<std::int64_t>(outer.y) + outer.height;
-    return inner.x >= outer.x && inner.y >= outer.y && innerRight <= outerRight && innerBottom <= outerBottom;
-}
-
 [[nodiscard]] bool holds(NodeRect rect, Px x, Px y) noexcept {
     return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
-}
-
-/**
- * @brief Whether `pixel` could be the tint composited over the ground at *one* coverage.
- *
- * Channel-wise membership of the interval between ground and tint is necessary and not sufficient,
- * which is the whole reason this is a function rather than four comparisons. Alpha blending applies
- * one coverage to every channel, so each channel constrains that coverage to an interval, and the
- * pixel is possible exactly when those intervals intersect. With a black ground and
- * `Theme.Colors.ScoreDigits` at `(33, 184, 107)`, the pixel `(33, 0, 107)` lies inside every
- * channel's range while demanding full coverage of red and blue and none of green - a per-channel
- * test accepts it and no blend can produce it.
- *
- * Integer cross-products, no division and no float: the coverage each channel implies is the
- * rational `(pixel - ground) / (tint - ground)`, so the intervals are compared by multiplying out.
- * A channel whose tint and ground are equal admits any coverage and only requires the pixel to match
- * within the allowance.
- *
- * ## `allowance` is one step per composite, and one is not always enough
- *
- * The device blends in floating point and quantises back to eight bits at **every** composite, so a
- * pixel two layers deep may differ in the last bit twice - which is what `withinSteps()` has always
- * said for a glyph and what this function assumed away by fixing its allowance at one.
- *
- * That assumption held while every node a golden pinned was painted in a single composite, and #261
- * is the first that is not: a bound button paints its field and then its word, one tint over one
- * ground at two coverages, which `mdux.medui.screen` argues at length that this check admits. The
- * argument is right in exact arithmetic and was never run against a GPU, because no committed node
- * carried `ColorHash` over such a composition until that issue.
- *
- * What it meets on real hardware is this: a channel constrains coverage only as tightly as **its own
- * span** allows, so one UNORM step of device rounding on a narrow span implies a wide interval of
- * coverage. `Theme.Colors.Fault` over `Theme.Colors.TopbarBackground` spans ten units of red against
- * 163 of green, so the frame's `(215, 134, 135)` - one step above the ideal red of 214 - demands a
- * coverage of at least 0.5 from red while green and blue pin it at 0.488, and the intersection is
- * empty. Two steps admit it; the green and blue intervals still pin the coverage to a hundredth,
- * because a wide span loses almost nothing to the same slack.
- *
- * So this is not a tolerance in the sense this file argues against elsewhere. It is the statement
- * that a channel carrying little information about coverage should be allowed to constrain it
- * loosely, and a `ForeignColour` still misses by far more than one step on the channels that carry
- * the information.
- */
-[[nodiscard]] bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint, std::int64_t allowance) noexcept {
-    // The feasible coverage, as a closed interval of rationals, narrowed channel by channel from
-    // the whole of [0, 1].
-    std::int64_t lowNum  = 0;
-    std::int64_t lowDen  = 1;
-    std::int64_t highNum = 1;
-    std::int64_t highDen = 1;
-
-    const std::array<std::int64_t, 4> pixels{pixel.r, pixel.g, pixel.b, pixel.a};
-    const std::array<std::int64_t, 4> grounds{ground.r, ground.g, ground.b, ground.a};
-    const std::array<std::int64_t, 4> tints{tint.r, tint.g, tint.b, tint.a};
-
-    for (std::size_t channel = 0; channel < pixels.size(); ++channel) {
-        const std::int64_t span     = tints[channel] - grounds[channel];
-        const std::int64_t distance = pixels[channel] - grounds[channel];
-        if (span == 0) {
-            // Every coverage produces the ground on this channel, so the channel says nothing about
-            // the coverage - and everything about the pixel.
-            if (distance > allowance || distance < -allowance) {
-                return false;
-            }
-            continue;
-        }
-
-        // coverage * span is distance, to within one step: coverage lies between the two bounds
-        // below, in whichever order the sign of `span` puts them.
-        std::int64_t candidateLowNum  = distance - allowance;
-        std::int64_t candidateHighNum = distance + allowance;
-        std::int64_t denominator      = span;
-        if (denominator < 0) {
-            denominator                = -denominator;
-            const std::int64_t swapped = -candidateLowNum;
-            candidateLowNum            = -candidateHighNum;
-            candidateHighNum           = swapped;
-        }
-        if (candidateLowNum * lowDen > lowNum * denominator) {
-            lowNum = candidateLowNum;
-            lowDen = denominator;
-        }
-        if (candidateHighNum * highDen < highNum * denominator) {
-            highNum = candidateHighNum;
-            highDen = denominator;
-        }
-        if (lowNum * highDen > highNum * lowDen) {
-            return false;
-        }
-    }
-    return true;
 }
 
 /// Whether every channel of `pixel` is within `steps` UNORM steps of `expected`.
@@ -362,6 +261,82 @@ ColorRgba8 blend(ColorRgba8 ground, ColorRgba8 tint, std::uint8_t coverage) noex
     // The alpha channel is the destination's: the target is opaque and the blend writes coverage
     // into the source's alpha, not into the frame's.
     return ColorRgba8{.r = mix(ground.r, tint.r), .g = mix(ground.g, tint.g), .b = mix(ground.b, tint.b), .a = ground.a};
+}
+
+// The geometry and blend predicates the rendered checks share with MEDUI-PROFILE-RENDERED's
+// corpus. See Verify.cppm for what each one decides and why it is exported rather than kept local.
+
+bool rectContainedBy(NodeRect inner, NodeRect outer) noexcept {
+    const auto innerRight  = static_cast<std::int64_t>(inner.x) + inner.width;
+    const auto innerBottom = static_cast<std::int64_t>(inner.y) + inner.height;
+    const auto outerRight  = static_cast<std::int64_t>(outer.x) + outer.width;
+    const auto outerBottom = static_cast<std::int64_t>(outer.y) + outer.height;
+    return inner.x >= outer.x && inner.y >= outer.y && innerRight <= outerRight && innerBottom <= outerBottom;
+}
+
+NodeRect inflate(NodeRect rect, std::int32_t margin) noexcept {
+    // 64-bit throughout, then a saturating narrow: an extent close to INT32_MAX plus twice a large
+    // margin must not wrap into a small rectangle that then "contains" ink it does not.
+    constexpr auto lo   = static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::min());
+    constexpr auto hi   = static_cast<std::int64_t>(std::numeric_limits<std::int32_t>::max());
+    const auto     clip = [](std::int64_t value) noexcept {
+        return static_cast<std::int32_t>(value < lo ? lo : (value > hi ? hi : value));
+    };
+    const auto m = static_cast<std::int64_t>(margin);
+    return NodeRect{.x      = clip(static_cast<std::int64_t>(rect.x) - m),
+                    .y      = clip(static_cast<std::int64_t>(rect.y) - m),
+                    .width  = clip(static_cast<std::int64_t>(rect.width) + 2 * m),
+                    .height = clip(static_cast<std::int64_t>(rect.height) + 2 * m)};
+}
+
+bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint, std::int64_t allowance) noexcept {
+    // The feasible coverage, as a closed interval of rationals, narrowed channel by channel from
+    // the whole of [0, 1].
+    std::int64_t lowNum  = 0;
+    std::int64_t lowDen  = 1;
+    std::int64_t highNum = 1;
+    std::int64_t highDen = 1;
+
+    const std::array<std::int64_t, 4> pixels{pixel.r, pixel.g, pixel.b, pixel.a};
+    const std::array<std::int64_t, 4> grounds{ground.r, ground.g, ground.b, ground.a};
+    const std::array<std::int64_t, 4> tints{tint.r, tint.g, tint.b, tint.a};
+
+    for (std::size_t channel = 0; channel < pixels.size(); ++channel) {
+        const std::int64_t span     = tints[channel] - grounds[channel];
+        const std::int64_t distance = pixels[channel] - grounds[channel];
+        if (span == 0) {
+            // Every coverage produces the ground on this channel, so the channel says nothing about
+            // the coverage - and everything about the pixel.
+            if (distance > allowance || distance < -allowance) {
+                return false;
+            }
+            continue;
+        }
+
+        // coverage * span is distance, to within one step: coverage lies between the two bounds
+        // below, in whichever order the sign of `span` puts them.
+        std::int64_t candidateLowNum  = distance - allowance;
+        std::int64_t candidateHighNum = distance + allowance;
+        std::int64_t denominator      = span;
+        if (denominator < 0) {
+            denominator                = -denominator;
+            const std::int64_t swapped = -candidateLowNum;
+            candidateLowNum            = -candidateHighNum;
+            candidateHighNum           = swapped;
+        }
+        if (candidateLowNum * lowDen > lowNum * denominator) {
+            lowNum = candidateLowNum;
+            lowDen = denominator;
+        }
+        if (candidateHighNum * highDen < highNum * denominator) {
+            highNum = candidateHighNum;
+            highDen = denominator;
+        }
+        if (lowNum * highDen > highNum * lowDen) {
+            return false;
+        }
+    }
+    return true;
 }
 
 
@@ -745,7 +720,7 @@ CheckOutcome colorHash(const FramebufferView& frame, const GoldenExpectation& ex
 
 CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation& expectation) noexcept {
     CheckOutcome outcome = opened(expectation.nodeId(), expectation.scope(), spell(TextCheck::InkContainment), profileOf(TextCheck::InkContainment), expectation.bounds());
-    if (!inside(expectation.ink(), expectation.bounds())) {
+    if (!rectContainedBy(expectation.ink(), expectation.bounds())) {
         // The compile-time claim, failing before a pixel is read. #195 proved this box fits this
         // rectangle for the package it measured; a run that overflows here was bound from a package
         // nobody measured against this screen.
@@ -785,7 +760,7 @@ CheckOutcome inkContainment(const FramebufferView& frame, const TextExpectation&
 
     // With no composites in the ground the two boxes are the same box, so this is the equality it
     // has always been - which is what keeps every existing expectation checked exactly as before.
-    if (!inside(outcome.found, expectation.ink()) || !possible.inked || !inside(expectation.ink(), asRect(possible))) {
+    if (!rectContainedBy(outcome.found, expectation.ink()) || !possible.inked || !rectContainedBy(expectation.ink(), asRect(possible))) {
         // The rendered half. A run that was clipped at the node's edge, displaced, or drawn from a
         // different package leaves ink whose extent is not the one the committed records predict.
         return failed(outcome, Finding::InkExtentDiffers);

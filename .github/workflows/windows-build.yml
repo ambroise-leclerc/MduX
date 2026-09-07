@@ -216,6 +216,13 @@ jobs:
       run: ctest --preset ninja-msvc -L verify -V --no-tests=error
       shell: cmd
 
+    # Shared MedUI observation-profile conformance (#314): the RENDERED vectors and the manifest
+    # cases against the corpus checked out at the pinned commit. -V for the vector count and SHA in
+    # the log; --no-tests=error so an empty label fails rather than passing over nothing.
+    - name: Verify MedUI profile conformance
+      run: ctest --preset ninja-msvc -L conformance -V --no-tests=error
+      shell: cmd
+
     # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
     # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a
     # *cross-toolchain* contract - the Linux/GCC step is the other. Neither leg alone can falsify

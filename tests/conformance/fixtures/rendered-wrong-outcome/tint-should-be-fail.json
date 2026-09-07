@@ -1,0 +1,17 @@
+{
+  "id": "MDUX-FIXTURE-TINT-WRONG-OUTCOME",
+  "note": "R03 with a foreign green channel in the first sample: no single coverage explains it, so the adapter must say fail while this file says pass.",
+  "profile": { "id": "MEDUI-PROFILE-RENDERED", "version": 1 },
+  "rules": ["R03"],
+  "inputs": {
+    "operation": "rendered-check",
+    "check": "tint-composition",
+    "tint": [200, 100, 0],
+    "composites": 1,
+    "samples": [
+      { "background": [0, 0, 0], "rgb": [100, 100, 0] },
+      { "background": [0, 0, 0], "rgb": [200, 100, 0] }
+    ]
+  },
+  "expected": { "outcome": "pass" }
+}

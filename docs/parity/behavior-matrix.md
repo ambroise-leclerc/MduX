@@ -117,6 +117,16 @@ still returns `NoBaseline` on every production call, and is fixture-tested only.
 cross-implementation gate remain [#314](https://github.com/ambroise-leclerc/MduX/issues/314). This is
 not a parity claim.
 
+**Update, 7 September 2026 — #314 Stage B gated the shared RENDERED corpus for MduX.**
+`medui-conformance.toml` now carries `profiles = ["MEDUI-PROFILE-RENDERED"]`, and the new
+`conformance_spec` suite runs MedUI `v0.3.0-rc.1`'s 33 `rendered-check` vectors (rules R01–R04)
+against `mdux.verify`'s own exported predicates — `rectContainedBy`, `inflate` and `couldBeBlend` —
+with the ROI digest from `mdux.evidence`'s `sha256`, plus the 10 `consumer-manifest` contract cases
+and committed negative failure-mode fixtures, on all five CI legs. The `mdux.local/*` ids and the committed
+`verification.json` are unchanged; canonical `MEDUI-PROFILE-RENDERED` appears only in the manifest
+claim and the corpus harness. TrustSC stays on the old pin, so this is still not a cross-implementation
+parity claim. EVIDENCE (E01–E03) is #314c; the full results table is #314d.
+
 ## Intentional differences
 
 - MduX keeps its supported Windows/Linux/Apple Silicon tuples and cross-toolchain evidence.

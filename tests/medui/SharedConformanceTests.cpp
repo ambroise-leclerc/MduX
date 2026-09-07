@@ -45,209 +45,17 @@ import mdux.tools.medui.semantic;
 import mdux.tools.toml;
 
 #include "../framework/SpecLabBridge.hpp"
+#include "../conformance/CorpusFixture.hpp"
 
 namespace {
 
 namespace md   = mdux::tools::medui;
 namespace cli  = mdux::tools::cli;
 namespace json = mdux::evidence::json;
-namespace toml = mdux::tools::toml;
 
-/// Phases this file can genuinely observe. Anything else in `capabilities` is a claim with no
-/// adapter behind it.
-constexpr std::array<std::string_view, 4> runnableCapabilities{"syntax", "semantics", "layout", "safety"};
-
-[[noreturn]] void fail(std::string message, std::source_location where = std::source_location::current()) {
-    throw speclab::core::AssertionFailure(std::move(message), where);
-}
-
-[[nodiscard]] const char* env(const char* name) {
-    return std::getenv(name);
-}
-
-[[nodiscard]] bool isSet(const char* name) {
-    const char* value = env(name);
-    return value != nullptr && *value != '\0';
-}
-
-[[nodiscard]] std::string readFile(const std::filesystem::path& path) {
-    std::ifstream in{path, std::ios::binary};
-    if (!in) {
-        fail(std::format("could not open {}", path.generic_string()));
-    }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
-[[nodiscard]] std::string trim(std::string value) {
-    const auto isWhitespace = [](unsigned char c) {
-        return std::isspace(c) != 0;
-    };
-    const auto first = std::ranges::find_if_not(value, isWhitespace);
-    const auto last  = std::ranges::find_if_not(value | std::views::reverse, isWhitespace).base();
-    if (first >= last) {
-        return {};
-    }
-    return std::string{first, last};
-}
-
-void rejectUnknownMembers(const json::Value&                      object,
-                          std::initializer_list<std::string_view> known,
-                          std::string_view                        context,
-                          const std::filesystem::path&            path) {
-    for (const json::Member& entry : object.members()) {
-        if (std::ranges::find(known, entry.key) == known.end()) {
-            fail(std::format("{}: unknown {} member '{}'; shared inputs are rejected unless this "
-                             "adapter consumes them",
-                             path.generic_string(),
-                             context,
-                             entry.key));
-        }
-    }
-}
-
-[[nodiscard]] bool isCommitSha(std::string_view value) {
-    return value.size() == 40 && std::ranges::all_of(value, [](unsigned char c) {
-               return std::isxdigit(c) != 0;
-           });
-}
-
-[[nodiscard]] std::filesystem::path resolveGitDirectory(const std::filesystem::path& root) {
-    const std::filesystem::path dotGit = root / ".git";
-    if (std::filesystem::is_directory(dotGit)) {
-        return dotGit;
-    }
-    if (!std::filesystem::is_regular_file(dotGit)) {
-        fail(std::format("{} has no .git metadata; cannot verify the checked-out MedUI revision", root.generic_string()));
-    }
-
-    constexpr std::string_view prefix{"gitdir: "};
-    const std::string          metadata = trim(readFile(dotGit));
-    if (!metadata.starts_with(prefix)) {
-        fail(std::format("{} has malformed gitdir metadata", dotGit.generic_string()));
-    }
-    std::filesystem::path directory{metadata.substr(prefix.size())};
-    if (directory.is_relative()) {
-        directory = root / directory;
-    }
-    return directory.lexically_normal();
-}
-
-[[nodiscard]] std::filesystem::path resolveCommonGitDirectory(const std::filesystem::path& gitDirectory) {
-    const std::filesystem::path marker = gitDirectory / "commondir";
-    if (!std::filesystem::is_regular_file(marker)) {
-        return gitDirectory;
-    }
-
-    std::filesystem::path common{trim(readFile(marker))};
-    if (common.is_relative()) {
-        common = gitDirectory / common;
-    }
-    return common.lexically_normal();
-}
-
-[[nodiscard]] std::string checkoutRevision(const std::filesystem::path& root) {
-    const std::filesystem::path gitDirectory = resolveGitDirectory(root);
-    const std::string           head         = trim(readFile(gitDirectory / "HEAD"));
-    if (isCommitSha(head)) {
-        return head;
-    }
-
-    constexpr std::string_view prefix{"ref: "};
-    if (!head.starts_with(prefix)) {
-        fail(std::format("{} has malformed HEAD metadata", gitDirectory.generic_string()));
-    }
-    const std::string reference = head.substr(prefix.size());
-    if (!reference.starts_with("refs/") || reference.contains("..") || reference.contains('\\')) {
-        fail(std::format("{} names an unsafe HEAD reference '{}'", gitDirectory.generic_string(), reference));
-    }
-
-    const std::filesystem::path commonDirectory = resolveCommonGitDirectory(gitDirectory);
-    for (const std::filesystem::path& directory : {gitDirectory, commonDirectory}) {
-        const std::filesystem::path looseReference = directory / reference;
-        if (std::filesystem::is_regular_file(looseReference)) {
-            const std::string revision = trim(readFile(looseReference));
-            if (isCommitSha(revision)) {
-                return revision;
-            }
-            fail(std::format("{} does not contain a commit SHA", looseReference.generic_string()));
-        }
-    }
-
-    const std::filesystem::path packedReferences = commonDirectory / "packed-refs";
-    if (std::filesystem::is_regular_file(packedReferences)) {
-        std::istringstream lines{readFile(packedReferences)};
-        for (std::string line; std::getline(lines, line);) {
-            const std::size_t separator = line.find(' ');
-            if (separator != std::string::npos && line.substr(separator + 1) == reference) {
-                const std::string revision = line.substr(0, separator);
-                if (isCommitSha(revision)) {
-                    return revision;
-                }
-                fail(std::format("{} has a malformed entry for '{}'", packedReferences.generic_string(), reference));
-            }
-        }
-    }
-    fail(std::format("could not resolve HEAD reference '{}' under {}", reference, gitDirectory.generic_string()));
-}
-
-// ---------------------------------------------------------------------------
-// medui-conformance.toml
-// ---------------------------------------------------------------------------
-
-/// The declared diagnostic position precision from `spec/diagnostics.md`. MduX's lexer carries
-/// exact columns, so it declares `full`; the other two exist because the manifest may name them
-/// and a declaration this file ignored would be a declaration nothing checks.
-enum class Positions : std::uint8_t { Full, LineOnly, None };
-
-struct Manifest {
-    std::string              commit;
-    std::vector<std::string> capabilities;
-    Positions                positions{Positions::Full};
-};
-
-/// `governance/versioning.md` makes an unknown key an error rather than something to ignore, so a
-/// misspelled `capabilties` fails here instead of silently claiming nothing.
-constexpr std::array<std::string_view, 5> knownManifestKeys{"repository", "version", "commit", "capabilities", "positions"};
-
-[[nodiscard]] Manifest manifest() {
-    const std::filesystem::path path     = std::filesystem::path{MDUX_REPO_ROOT} / "medui-conformance.toml";
-    const std::string           text     = readFile(path);
-    const toml::Document        document = toml::parse(text);
-    const toml::Table&          root     = document.root();
-
-    Manifest result{.commit = root.require("commit").asString(), .capabilities = root.require("capabilities").asStringArray(), .positions = Positions::Full};
-
-    for (const auto& entry : root.entries()) {
-        if (std::ranges::find(knownManifestKeys, entry.first) == knownManifestKeys.end()) {
-            fail(std::format("{}: unknown key '{}'; the consumer manifest rejects keys it does "
-                             "not define",
-                             path.generic_string(),
-                             entry.first));
-        }
-    }
-
-    const std::string declared = root.require("positions").asString();
-    if (declared == "full") {
-        result.positions = Positions::Full;
-    } else if (declared == "line-only") {
-        result.positions = Positions::LineOnly;
-    } else if (declared == "none") {
-        result.positions = Positions::None;
-    } else {
-        fail(std::format("{}: positions must be \"full\", \"line-only\" or \"none\", got '{}'", path.generic_string(), declared));
-    }
-
-    if (!isCommitSha(result.commit)) {
-        fail(std::format("{} must pin a 40-character commit SHA, got '{}'", path.generic_string(), result.commit));
-    }
-    if (result.capabilities.empty()) {
-        // An empty claim would make this whole suite assert nothing while still looking green.
-        fail(std::format("{} claims no capabilities, so nothing would be checked", path.generic_string()));
-    }
-    return result;
-}
+// The corpus location, the checkout-revision reader, the consumer-manifest reader and validator,
+// and the JSON helpers are shared with `conformance_spec`; see `tests/conformance/CorpusFixture.hpp`.
+using namespace mdux::conformance;
 
 // ---------------------------------------------------------------------------
 // conformance/**/case.json
@@ -275,52 +83,6 @@ struct Case {
     std::vector<std::string>        templates;  ///< resolvable NumericDisplay template ids (MEDUI-E035)
     std::vector<std::string>        imageIds;   ///< resolvable img("ID") ids (MEDUI-E035)
 };
-
-[[nodiscard]] const json::Value& member(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
-    const json::Value* found = object.find(key);
-    if (found == nullptr) {
-        fail(std::format("{}: missing required member '{}'", path.generic_string(), key));
-    }
-    return *found;
-}
-
-[[nodiscard]] std::string requireString(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
-    const auto text = member(object, key, path).asString();
-    if (!text) {
-        fail(std::format("{}: member '{}' is not a string", path.generic_string(), key));
-    }
-    return std::string{*text};
-}
-
-[[nodiscard]] std::size_t requirePosition(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
-    const auto number = member(object, key, path).asInt();
-    if (!number) {
-        fail(std::format("{}: member '{}' is not an integer", path.generic_string(), key));
-    }
-    if (*number < 0) {
-        fail(std::format("{}: member '{}' is negative", path.generic_string(), key));
-    }
-    return static_cast<std::size_t>(*number);
-}
-
-/// `Value::elements()` yields an empty span for anything that is not an array, so a `diagnostics`
-/// member of the wrong shape would silently read as "no expectations" and the case would assert
-/// almost nothing. Check the kind instead of trusting the span.
-[[nodiscard]] std::span<const json::Value> requireArray(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
-    const json::Value& found = member(object, key, path);
-    if (found.kind() != json::Value::Kind::Array) {
-        fail(std::format("{}: member '{}' is not an array", path.generic_string(), key));
-    }
-    return found.elements();
-}
-
-[[nodiscard]] bool requireBool(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
-    const auto flag = member(object, key, path).asBool();
-    if (!flag) {
-        fail(std::format("{}: member '{}' is not a boolean", path.generic_string(), key));
-    }
-    return *flag;
-}
 
 [[nodiscard]] Case readCase(const std::filesystem::path& path) {
     const std::string text     = readFile(path);
@@ -797,20 +559,13 @@ const mdux::spec::Register pinnedCasesPass{"The parser satisfies every pinned ca
                                                              mdux::spec::Checks checks;
                                                              const Manifest     pinned = manifest();
 
-                                                             const char* root = env("MEDUI_CONFORMANCE_DIR");
-                                                             if (root == nullptr || *root == '\0') {
-                                                                 // Never a silent skip: in CI this is the failure that keeps the claim honest,
-                                                                 // and offline it says out loud that nothing shared was checked.
-                                                                 checks.expect(!isSet("CI"),
-                                                                               "MEDUI_CONFORMANCE_DIR is set in CI, so the capabilities "
-                                                                               "claimed in medui-conformance.toml are actually substantiated");
+                                                             const std::optional<std::filesystem::path> root = corpusRootOrSkip(checks);
+                                                             if (!root) {
                                                                  checks.raise();
-                                                                 std::cerr << "MedUI conformance: SKIPPED - set MEDUI_CONFORMANCE_DIR to a "
-                                                                              "checkout of the pinned commit to run the shared cases locally.\n";
                                                                  return;
                                                              }
 
-                                                             const std::filesystem::path checkout{root};
+                                                             const std::filesystem::path checkout = *root;
                                                              const std::string           actualCommit = checkoutRevision(checkout);
                                                              checks.expect(actualCommit == pinned.commit,
                                                                            std::format("MEDUI_CONFORMANCE_DIR is checked out at {}, but "

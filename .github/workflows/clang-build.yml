@@ -233,6 +233,12 @@ jobs:
       shell: bash
       run: ctest --preset ninja-clang -L verify -V --no-tests=error
 
+    # Shared MedUI observation-profile conformance (#314): the RENDERED vectors and the manifest
+    # cases against the corpus checked out at the pinned commit. -V for the vector count and SHA in
+    # the log; --no-tests=error so an empty label fails rather than passing over nothing.
+    - name: Verify MedUI profile conformance
+      run: ctest --preset ninja-clang -L conformance -V --no-tests=error
+
     # Only on failure, and only then. The image is a measurement of the frame rather than a property
     # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an
     # attachment instead - which is worth nothing unless it is actually attached. `if-no-files-found`

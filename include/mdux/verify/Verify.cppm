@@ -808,6 +808,63 @@ private:
 static_assert(!std::is_aggregate_v<RawImageExpectation>, "a RawImageExpectation must only be obtainable through a factory");
 
 /**
+ * @brief Whether `inner` lies wholly inside `outer`. Touching an edge counts as inside.
+ *
+ * 64-bit intermediates so two `int32_t` rectangles at their extremes cannot overflow on the
+ * right/bottom edge addition and admit a containment that does not hold. A non-positive extent on
+ * `inner` still tests by edges - a zero-area rectangle at a point inside `outer` is inside it.
+ *
+ * `goldenBounds()` and the text checks use this to ask whether measured ink stayed in the box that
+ * authorises it. It is exported because MedUI's `MEDUI-PROFILE-RENDERED` rule R02 (ink-containment)
+ * is the same predicate over `inflate(golden, margin)`, and the shared corpus must run the check
+ * this module ships rather than a harness copy of it (ADR-008 decision 1, applied to the verifier).
+ */
+[[nodiscard]] bool rectContainedBy(mdux::medui::NodeRect inner, mdux::medui::NodeRect outer) noexcept;
+
+/**
+ * @brief `rect` grown by `margin` pixels on every side: `{x - m, y - m, width + 2m, height + 2m}`.
+ *
+ * `margin` is expected to be nonnegative, matching `MEDUI-PROFILE-RENDERED` rule R02's margin, which
+ * is a nonnegative integer; a negative value shrinks the rectangle and is left to the caller to rule
+ * out. 64-bit intermediates, then a checked narrow back to `int32_t`: a hostile extent that would
+ * overflow saturates rather than wrapping into a smaller rectangle that wrongly contains its ink.
+ */
+[[nodiscard]] mdux::medui::NodeRect inflate(mdux::medui::NodeRect rect, std::int32_t margin) noexcept;
+
+/**
+ * @brief Whether `pixel` could be `tint` composited over `ground` at a single coverage in [0, 1].
+ *
+ * Channel-wise membership of the interval between ground and tint is necessary and not sufficient:
+ * alpha blending applies one coverage to every channel, so each channel constrains that coverage to
+ * an interval and the pixel is possible exactly when those intervals intersect within [0, 1]. With a
+ * black ground and `Theme.Colors.ScoreDigits` at `(33, 184, 107)`, the pixel `(33, 0, 107)` lies in
+ * every channel's range while demanding full coverage of red and blue and none of green - a
+ * per-channel test accepts it and no blend can produce it. Integer cross-products, no division and
+ * no float.
+ *
+ * `allowance` is the UNORM slack per composite the device performed (one for a single blend, more
+ * for a stacked one): a channel constrains coverage only as tightly as its own span allows, so one
+ * step of device rounding on a narrow span implies a wide coverage interval. A channel whose tint
+ * and ground are equal admits any coverage and only requires the pixel to match within `allowance`.
+ *
+ * **Precondition: `ground` and `tint` share their alpha** - both `colorHash()` (opaque governed
+ * theme colours) and rule R03 (opaque RGB8 samples, per `spec/profiles.md`) meet it. Alpha then
+ * contributes an equal-endpoints channel and drops out. This function models `blend()`, which
+ * preserves the framebuffer's alpha rather than interpolating it, only under that precondition; a
+ * caller passing mismatched alphas gets the fourth channel treated as interpolated, which `blend()`
+ * is not - correcting that is a separate reviewed change with its own profile version.
+ *
+ * `colorHash()` uses this. It is exported because `MEDUI-PROFILE-RENDERED` rule R03
+ * (tint-composition) is this predicate per sample, with `allowance` = the vector's `composites`
+ * count; the spec's R03 `n/2` -> `n` amendment was written against this exact arithmetic and the
+ * MduX narrow-red regression it produced.
+ */
+[[nodiscard]] bool couldBeBlend(mdux::core::ColorRgba8 pixel,
+                                mdux::core::ColorRgba8 ground,
+                                mdux::core::ColorRgba8 tint,
+                                std::int64_t           allowance) noexcept;
+
+/**
  * @brief The colour a coverage value paints when the tint is composited over the ground.
  *
  * The blend the coverage draw path performs, written down where a check can compute it:
