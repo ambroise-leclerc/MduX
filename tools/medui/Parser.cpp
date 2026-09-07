@@ -137,6 +137,22 @@ private:
         }
     }
 
+    /// Recovery after a field value that no `;` followed. Consumes the stray tokens the author
+    /// wrote where the `;` belongs (`width: 100px 100px;`), but stops at the next field boundary
+    /// (`name :`) so that field is still parsed by the caller's loop, and at the block's `}`.
+    void recoverAfterMissingFieldTerminator() {
+        while (!at(TokenKind::EndOfFile) && !at(TokenKind::RBrace)) {
+            if (at(TokenKind::Semicolon)) {
+                static_cast<void>(advance());
+                return;
+            }
+            if (at(TokenKind::Identifier) && peekIs(TokenKind::Colon)) {
+                return;
+            }
+            static_cast<void>(advance());
+        }
+    }
+
     /// Rejects a control-flow word wherever an identifier may appear. Returns true if it fired.
     bool rejectIfForbidden() {
         if (at(TokenKind::Identifier) && isForbidden(current().text)) {
@@ -373,11 +389,12 @@ private:
 
         if (terminated && expect(TokenKind::Semicolon, "';' after the field") == nullptr) {
             // The field value parsed but a stray token sits where the ';' belongs
-            // (`width: 100px 100px;`). Skip to the next sync point here rather than returning
-            // with the cursor still on it: the caller's member loop would otherwise re-enter
-            // parseField and report the same token a second time as a bad field name, and the
-            // shared conformance corpus pins exactly one MEDUI-E010 for this shape.
-            recover();
+            // (`width: 100px 100px;`). Consume it here rather than returning with the cursor still
+            // on it: the caller's member loop would otherwise re-enter parseField and report the
+            // same token a second time as a bad field name, and the shared conformance corpus pins
+            // exactly one MEDUI-E010 for this shape. Recovery stops at the next `name :` so a
+            // following field (`width: 100px height: 20px;`) is still parsed.
+            recoverAfterMissingFieldTerminator();
         }
         return field;
     }

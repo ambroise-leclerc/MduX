@@ -49,6 +49,7 @@
       "diagnosticCodes": [
         "MDC001",
         "MDC002",
+        "MDC003",
         "MDX-E030",
         "MEDUI-E000",
         "MEDUI-E001",
@@ -130,6 +131,7 @@
       "diagnosticCodes": [
         "MDC001",
         "MDC002",
+        "MDC003",
         "MDX-E030",
         "MEDUI-E000",
         "MEDUI-E001",
@@ -258,6 +260,7 @@
       "diagnosticCodes": [
         "MDC001",
         "MDC002",
+        "MDC003",
         "MDX-E030",
         "MEDUI-E000",
         "MEDUI-E001",

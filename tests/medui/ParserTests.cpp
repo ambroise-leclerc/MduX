@@ -488,6 +488,48 @@ const mdux::spec::Register severalProblemsInOneRun{
             .Execute();
     }};
 
+const mdux::spec::Register missingSemicolonKeepsTheNextField{
+    "A field missing its terminator is one MEDUI-E010 and keeps the next field",
+    "evidence-unit",
+    [] {
+        // The recovery a stray token triggers must not swallow the next field: `width: 100px 100px`
+        // and `width: 100px height: 20px` are both a missing terminator, and only the first has
+        // tokens worth skipping.
+        return speclab::Test("medui-parse-missing-semicolon")
+            .Given("a Label whose width field omits its ';' before the next field", [] {})
+            .When("it is parsed", [] {})
+            .Then("one MEDUI-E010 is reported and both width and height survive in the AST", [] {
+                mdux::spec::Checks    checks;
+                const md::ParseResult r = md::parse(
+                    "Screen A {\n"
+                    "  surface: 800px, 600px;\n"
+                    "  Label {\n"
+                    "    id: only;\n"
+                    "    width: 100px height: 20px;\n"
+                    "    text: t(\"STR-A\");\n"
+                    "    color: Theme.Colors.Title;\n"
+                    "  }\n"
+                    "}\n",
+                    "missing-semi.medui");
+                const auto count = std::ranges::count_if(
+                    r.diagnostics, [](const cli::Diagnostic& d) { return d.code == "MEDUI-E010"; });
+                checks.expect(count == 1,
+                              std::format("exactly one MEDUI-E010, got {}", codesOf(r.diagnostics)));
+                if (r.screen && !r.screen->nodes.empty()) {
+                    const auto& fields = r.screen->nodes.front().fields;
+                    const auto  named  = [&](std::string_view name) {
+                        return std::ranges::any_of(fields, [name](const md::ast::Field& f) { return f.name == name; });
+                    };
+                    checks.expect(named("width") && named("height"),
+                                  "the field after the missing ';' was not swallowed by recovery");
+                } else {
+                    checks.expect(false, "the screen parsed to at least one node");
+                }
+                checks.raise();
+            })
+            .Execute();
+    }};
+
 // ---------------------------------------------------------------------------
 // Regressions. Each of these parsed clean before review on #209.
 // ---------------------------------------------------------------------------

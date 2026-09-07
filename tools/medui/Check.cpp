@@ -26,8 +26,9 @@ namespace ms = mdux::medui;
 /// Codes for what a run could not cover. Local to this tool, in the sense `SHE0NN` and `SCP0NN` are:
 /// the `MEDUI-E0NN` registry is the shared contract for what a screen may *say*, and "this run did
 /// not check X" is a statement about the run rather than about the screen.
-constexpr std::string_view textNotChecked   = "MDC001";
-constexpr std::string_view layoutNotChecked = "MDC002";
+constexpr std::string_view textNotChecked      = "MDC001";
+constexpr std::string_view layoutNotChecked    = "MDC002";
+constexpr std::string_view resourcesNotChecked = "MDC003";
 
 void note(std::vector<cli::Diagnostic>& diagnostics, std::string file, std::string_view code, std::string message, std::string fixHint) {
     cli::Diagnostic entry;
@@ -121,6 +122,16 @@ CheckResult checkScreen(std::string_view source, std::string file) {
          "text keys and text budgets were not checked: a single file names no approved locale",
          "compile through a recipe with a [text] table to check keys against every approved locale and "
          "boxes against the widest translation");
+
+    // The same statement for resource identifiers: a standalone file names no recipe, so there is no
+    // baked image-package or numeric-template table to resolve an `img()` or `template:` against, and
+    // MEDUI-E035 could not run. A clean result here is not evidence those references resolve.
+    note(result.diagnostics,
+         file,
+         resourcesNotChecked,
+         "img() and template: identifiers were not checked: a single file names no baked resources",
+         "compile through a recipe that approves the image packages and declares the numeric templates "
+         "this screen references");
 
     return result;
 }
