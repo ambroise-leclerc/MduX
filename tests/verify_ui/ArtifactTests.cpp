@@ -32,8 +32,8 @@ namespace vu  = mdux::tools::verify;
         {  .kind = vu::ObligationKind::Text, .nodeId = "title", .scope = "en-US", .check = "InkContainment"}
     };
     result.outcomes = {
-        {.finding = mv::Finding::NothingPainted,  .nodeId = "dial", .scope = "en-US",         .check = "Bounds"},
-        {          .finding = mv::Finding::Held, .nodeId = "title", .scope = "en-US", .check = "InkContainment"}
+        {.finding = mv::Finding::NothingPainted, .nodeId = "dial", .scope = "en-US", .check = "Bounds", .profile = mv::profileOf(mv::CvCheck::Bounds)},
+        {.finding = mv::Finding::Held, .nodeId = "title", .scope = "en-US", .check = "InkContainment", .profile = mv::profileOf(mv::TextCheck::InkContainment)}
     };
     result.inputs = {
         {.role = "screenPackage",       .id = "demo",      .locale = {}, .sha256 = std::string(64, 'a')},
@@ -107,7 +107,14 @@ const mdux::spec::Register noMeasurementReachesTheArtifact{
                       }
                       checks.expect(!text->contains("found"), "no measured rectangle or colour is recorded");
                       checks.expect(!text->contains("expected"), "not even the expectation's own numbers, which goldens.json already carries");
-                      checks.expect(!text->contains("/") && !text->contains("\\\\"), "no path, absolute or otherwise");
+                      // No filesystem path: not an absolute one, not a relative one, and not a
+                      // committed-artifact filename or the build tree it is baked into. The `/` in a
+                      // `mdux.local/...` profile id is a namespace separator, not a path, so the
+                      // check names what a path actually looks like rather than banning the byte.
+                      checks.expect(!text->contains("\"/") && !text->contains("\"./") && !text->contains("\"../") && !text->contains("\\\\"),
+                                    "no path value, absolute or otherwise");
+                      checks.expect(!text->contains("generated") && !text->contains("mdux_bake") && !text->contains(".json"),
+                                    "and no artifact filename or build-tree location");
                       checks.expect(!text->contains("duration") && !text->contains("elapsed"), "no duration");
                       checks.raise();
                   })
@@ -164,6 +171,52 @@ const mdux::spec::Register aRunThatCouldNotBeMadeIsNotWritable{
                       vu::RunResult wrongCheck     = completedRun();
                       wrongCheck.outcomes[0].check = "ColorHash";
                       checks.expect(!vu::writeVerification(wrongCheck, "demo").has_value(), "and one that would turn a bounds obligation into a tint claim");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register everyOutcomeMustCarryItsOwnObservationProfile{
+    "An outcome with no observation profile, or the wrong one, is refused rather than serialized",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-artifact-observation-profile")
+            .Given("a completed run, and copies of it whose outcomes carry a wrong or missing profile", [] {})
+            .When("each is offered to the writer", [] {})
+            .Then("the coherent one records each outcome's profile, and the incoherent ones are refused",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // The happy path: every outcome carries the profile its check reports under,
+                      // and the writer records it (ADR-016).
+                      const auto text = vu::writeVerification(completedRun(), "demo");
+                      checks.expect(text.has_value(), "a run whose profiles match its checks is written");
+                      if (text.has_value()) {
+                          checks.expect(text->contains("mdux.local/extent-equality"), "the Bounds outcome records the extent-equality profile");
+                          checks.expect(text->contains("mdux.local/ink-containment"), "the InkContainment outcome records the ink-containment profile");
+                          checks.expect(text->contains("\"version\""), "with a version beside the id");
+                      }
+
+                      // A default-constructed profile - what an outcome built without one carries -
+                      // names no observation, so the writer cannot say what was measured.
+                      vu::RunResult unidentified            = completedRun();
+                      unidentified.outcomes[0].profile      = mv::ObservationProfile{};
+                      const auto refusedUnidentified        = vu::writeVerification(unidentified, "demo");
+                      checks.expect(!refusedUnidentified.has_value() && refusedUnidentified.error() == vu::ArtifactError::ObservationProfileInvalid,
+                                    "an outcome with no profile is refused");
+
+                      // A profile that belongs to a different check - here the raw-pixel digest on a
+                      // tint predicate's outcome - is the misidentification the field exists to stop.
+                      vu::RunResult misidentified           = completedRun();
+                      misidentified.outcomes[0].profile     = mv::rawImageDigestProfile;
+                      const auto refusedMisidentified       = vu::writeVerification(misidentified, "demo");
+                      checks.expect(!refusedMisidentified.has_value() && refusedMisidentified.error() == vu::ArtifactError::ObservationProfileInvalid,
+                                    "and one carrying another check's profile is refused too");
+
+                      // Even the right id at an unrecognised version is not this build's observation.
+                      vu::RunResult wrongVersion            = completedRun();
+                      wrongVersion.outcomes[1].profile      = mv::ObservationProfile{"mdux.local/ink-containment", 99};
+                      checks.expect(!vu::writeVerification(wrongVersion, "demo").has_value(), "and so is a known id at a version this build does not produce");
                       checks.raise();
                   })
             .Execute();

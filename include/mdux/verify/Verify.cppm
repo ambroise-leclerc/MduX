@@ -451,6 +451,20 @@ enum class TextCheck : std::uint8_t {
     return {};
 }
 
+/// The mandatory text check `name` spells, or nothing when the name is not one of the two.
+///
+/// The counterpart of `parseCvCheck` for the checks that have no `CvCheck` enumerator, so a reader
+/// of `verification.json` can resolve any recorded check name back to its kind and its profile.
+[[nodiscard]] constexpr std::optional<TextCheck> parseTextCheck(std::string_view name) noexcept {
+    if (name == spell(TextCheck::InkContainment)) {
+        return TextCheck::InkContainment;
+    }
+    if (name == spell(TextCheck::LocalizedTextPresence)) {
+        return TextCheck::LocalizedTextPresence;
+    }
+    return std::nullopt;
+}
+
 /// The observation profile the golden check `check` reports under (ADR-015 D2 / ADR-016). A pure
 /// mapping: `Bounds` observes extent equality, `ColorHash` observes tint composition. The verifier
 /// and any reader of `verification.json` resolve a check's profile the same way.
@@ -473,6 +487,27 @@ enum class TextCheck : std::uint8_t {
             return inkCoverageProfile;
     }
     return {};
+}
+
+/// The observation profile a check *spelled* `name` must report under, or nothing when `name` is
+/// not a check this module defines.
+///
+/// One resolver for every consumer, so the driver that sets a profile and the artifact writer that
+/// checks one before committing it cannot disagree about which profile a check name implies. A name
+/// outside the closed set - anything but the four `spell()` strings and `RawImageDigest` - returns
+/// nothing, which the writer treats as a reason to refuse rather than to serialise an
+/// unidentifiable observation.
+[[nodiscard]] constexpr std::optional<ObservationProfile> profileForCheckName(std::string_view name) noexcept {
+    if (const auto cv = parseCvCheck(name); cv.has_value()) {
+        return profileOf(*cv);
+    }
+    if (const auto text = parseTextCheck(name); text.has_value()) {
+        return profileOf(*text);
+    }
+    if (name == "RawImageDigest") {
+        return rawImageDigestProfile;
+    }
+    return std::nullopt;
 }
 
 /// How a locale-free render scope names itself in a report.

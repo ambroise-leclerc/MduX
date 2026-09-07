@@ -145,6 +145,15 @@ legs, not JSON-schema-validated, and `docs/recipes/screen.schema.json` describes
 resolved `options`, not `verification.json` — it is unaffected. The regenerated bundle is committed
 through `mdux-bake-update` like any other artifact change.
 
+`writeVerification()` validates the profile before it serialises one, the same way it already checks
+that each outcome pairs with its obligation: an outcome whose profile is missing
+(`{"", 0}`) or is not the one its check reports under is refused with
+`ArtifactError::ObservationProfileInvalid`, not written. `mdux::verify::profileForCheckName()` is the
+single resolver both the driver and the writer use, so the check cannot drift from the value the
+driver set. This is ADR-014 decision 2's "derive, don't trust" applied to the identity: the writer
+is the boundary that turns a `RunResult` into committed evidence, and an unidentified or
+misidentified observation must not cross it.
+
 ## Alternatives Considered
 
 - **Add `CvCheck::RawImageDigest`.** Rejected: the set is closed and contract-owned, and ADR-014
@@ -196,8 +205,11 @@ through `mdux-bake-update` like any other artifact change.
   `DigestRoiDegenerate`; `spell(Finding)` gets two cases (the committed serialisation), `describe()`
   is free to reword.
 - `tools/verify/Driver.cppm`'s `Outcome` and `Artifact.cpp`'s `outcomeToJson()` carry the profile
-  through; the obligation loop and `writeVerification()`'s pairing invariant are unchanged because
-  `rawImageDigest()` is not an obligation.
+  through; the obligation loop is unchanged because `rawImageDigest()` is not an obligation.
+  `writeVerification()` gains one check beside its existing pairing check —
+  `ArtifactError::ObservationProfileInvalid` for a missing or mismatched profile — and
+  `mdux.verify` gains `parseTextCheck()` and `profileForCheckName()` so the writer resolves a
+  check's expected profile through the same code the driver used to set it.
 - PAR-REQ-002/003/009 dispositions remain pending; this record delivers the local half of
   PAR-REQ-002 (four named profiles + the digest predicate + adversarial fixtures) and does not
   discharge the shared-schema/corpus half.

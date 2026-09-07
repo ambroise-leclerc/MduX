@@ -101,6 +101,8 @@ std::string_view describe(ArtifactError error) noexcept {
             return "the run discharged no obligations, and a verification of nothing is not evidence";
         case ArtifactError::OutcomeMismatch:
             return "the run produced a different number of outcomes than it enumerated obligations";
+        case ArtifactError::ObservationProfileInvalid:
+            return "an outcome carries no observation profile, or one that is not the profile its check reports under";
         case ArtifactError::MalformedReport:
             return "the screen bundle's report.json is not a bake report";
         case ArtifactError::ReportRewriteFailed:
@@ -135,6 +137,16 @@ mdux::core::Result<std::string, ArtifactError> writeVerification(const RunResult
         const Outcome&    outcome    = result.outcomes[index];
         if (outcome.nodeId != obligation.nodeId || outcome.scope != obligation.scope || outcome.check != obligation.check) {
             return err(ArtifactError::OutcomeMismatch);
+        }
+        // The same "derive, don't trust" rule ADR-014 decision 2 states for expectations, applied to
+        // the identity ADR-016 adds: the profile the driver attached must be exactly the one this
+        // check reports under. A missing profile (`{"", 0}`) or a digest profile on a `ColorHash`
+        // outcome would put an unidentified or misidentified observation into a byte-compared file,
+        // which is the guarantee this field exists to make. `profileForCheckName()` is the same
+        // resolver the driver used, so this cannot disagree with it by construction.
+        const std::optional<mdux::verify::ObservationProfile> expected = mdux::verify::profileForCheckName(outcome.check);
+        if (!expected.has_value() || !outcome.profile.valid() || outcome.profile != *expected) {
+            return err(ArtifactError::ObservationProfileInvalid);
         }
     }
 
