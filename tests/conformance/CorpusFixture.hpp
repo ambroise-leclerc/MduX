@@ -452,4 +452,115 @@ struct Manifest {
     return rules;
 }
 
+// ---------------------------------------------------------------------------
+// MEDUI-PROFILE-EVIDENCE aggregation (spec/profiles.md E01-E03)
+// ---------------------------------------------------------------------------
+
+/// The `$defs/identity` sub-schema of a parsed `evidence.schema.json`, or nullptr when absent.
+[[nodiscard]] inline const json::Value* identitySchemaFromEvidence(const json::Value& evidenceSchema) {
+    const json::Value* defs = evidenceSchema.find("$defs");
+    return defs != nullptr ? defs->find("identity") : nullptr;
+}
+
+struct Aggregate {
+    std::string              outcome;      ///< "pass", "fail" or "not-run"
+    std::vector<std::string> rowOutcomes;  ///< each row's own outcome, in order
+};
+
+/// `spec/profiles.md` E01: a malformed identity fails aggregation. Two layers - the structural
+/// shape (`evidence.schema.json`'s `$defs/identity`, when `identitySchema` is supplied), and the
+/// constraint the schema delegates to the harness: `assets` ids unique and strictly ascending in
+/// ASCII byte order.
+[[nodiscard]] inline bool identityMalformed(const json::Value& identity, const json::Value* identitySchema) {
+    if (identitySchema != nullptr && !mdux::tools::schema::validate(identity, *identitySchema).empty()) {
+        return true;
+    }
+    const json::Value* assets = identity.find("assets");
+    if (assets == nullptr) {
+        return false;
+    }
+    if (assets->kind() != json::Value::Kind::Array) {
+        return true;  // `assets` present but not an array is a malformed identity
+    }
+    std::string_view previous;
+    for (std::size_t i = 0; i < assets->elements().size(); ++i) {
+        const json::Value*              id = assets->elements()[i].find("id");
+        std::optional<std::string_view> text;
+        if (id != nullptr) {
+            if (const auto value = id->asString()) {
+                text = *value;
+            }
+        }
+        if (!text) {
+            return true;
+        }
+        if (i > 0 && !(previous < *text)) {  // strictly ascending also rules out a duplicate id
+            return true;
+        }
+        previous = *text;
+    }
+    return false;
+}
+
+/// E01-E03 over `obligations` (each an identity) and `rows` (each `{ identity, outcome }`).
+/// `identitySchema` is `evidence.schema.json`'s `$defs/identity`; each identity is validated
+/// against it before any matching (E01). `label` names the source in any parse error.
+[[nodiscard]] inline Aggregate aggregateEvidence(std::span<const json::Value> obligations,
+                                                 std::span<const json::Value> rows,
+                                                 const json::Value*           identitySchema,
+                                                 const std::filesystem::path& label) {
+    Aggregate aggregate;
+    for (const json::Value& row : rows) {
+        aggregate.rowOutcomes.emplace_back(requireString(row, "outcome", label));
+    }
+
+    // E03: an empty obligation set with no rows is not-run, never pass.
+    if (obligations.empty() && rows.empty()) {
+        aggregate.outcome = "not-run";
+        return aggregate;
+    }
+
+    // E01: a malformed identity fails aggregation before any comparison.
+    for (const json::Value& obligation : obligations) {
+        if (identityMalformed(obligation, identitySchema)) {
+            aggregate.outcome = "fail";
+            return aggregate;
+        }
+    }
+    for (const json::Value& row : rows) {
+        if (identityMalformed(member(row, "identity", label), identitySchema)) {
+            aggregate.outcome = "fail";
+            return aggregate;
+        }
+    }
+
+    // E02: exactly one matching row per obligation, and exactly one matching obligation per row.
+    bool complete = obligations.size() == rows.size();
+    if (complete) {
+        for (const json::Value& obligation : obligations) {
+            const auto matches = std::ranges::count_if(rows, [&](const json::Value& row) {
+                return jsonEqual(member(row, "identity", label), obligation);
+            });
+            complete = complete && matches == 1;
+        }
+        for (const json::Value& row : rows) {
+            const auto matches = std::ranges::count_if(obligations, [&](const json::Value& obligation) {
+                return jsonEqual(member(row, "identity", label), obligation);
+            });
+            complete = complete && matches == 1;
+        }
+    }
+    if (!complete) {
+        aggregate.outcome = "fail";
+        return aggregate;
+    }
+
+    // E03: pass only when every row's own outcome is pass.
+    const bool allPassed = !rows.empty() && std::ranges::all_of(aggregate.rowOutcomes, [](const std::string& outcome) {
+        return outcome == "pass";
+    });
+    aggregate.outcome = allPassed ? "pass" : "fail";
+    return aggregate;
+}
+
 }  // namespace mdux::conformance

@@ -23,9 +23,11 @@
 #
 # A commit SHA is still fine for *diagnostic, non-compared* output - e.g. a future tool's
 # `--version` string - which is a different use case with no self-reference problem, since that
-# output is never checked byte-for-byte against a committed copy. This file does not currently
-# provide one; add it back under a name that makes the distinction obvious (e.g.
-# MDUX_BUILD_DIAGNOSTIC_SHA) if that need arises, and never plumb it into BakeReport.
+# output is never checked byte-for-byte against a committed copy. Provided as
+# MDUX_BUILD_DIAGNOSTIC_SHA, first used by #314's `mdux-verify-ui --medui-evidence-out` for the
+# `producer.source` field of a *derived, uncommitted* MEDUI-PROFILE-RENDERED evidence envelope
+# (ADR-014 decision 4, ADR-016). It is a placeholder of forty zeros when HEAD cannot be read (a
+# tarball build, a shallow checkout with no `.git`). Never plumb it into BakeReport.
 #
 # Usage:
 #   include(cmake/MduXBuildInfo.cmake)
@@ -37,9 +39,25 @@ function(mdux_define_build_info)
     add_library(MduX_buildinfo INTERFACE)
     add_library(MduX::BuildInfo ALIAS MduX_buildinfo)
     set_target_properties(MduX_buildinfo PROPERTIES EXPORT_NAME BuildInfo)
+    # Diagnostic, never byte-compared: the current commit, for the derived evidence envelope's
+    # `producer.source`. Forty zeros when HEAD is unavailable so a consumer sees a placeholder
+    # rather than a build failure. See the header comment for why this must never reach BakeReport.
+    set(_mdux_diagnostic_sha "0000000000000000000000000000000000000000")
+    execute_process(
+        COMMAND git -C "${CMAKE_SOURCE_DIR}" rev-parse HEAD
+        OUTPUT_VARIABLE _mdux_head
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _mdux_head_rc
+        ERROR_QUIET)
+    string(LENGTH "${_mdux_head}" _mdux_head_len)
+    if(_mdux_head_rc EQUAL 0 AND _mdux_head_len EQUAL 40 AND _mdux_head MATCHES "^[0-9a-f]+$")
+        set(_mdux_diagnostic_sha "${_mdux_head}")
+    endif()
+
     target_compile_definitions(MduX_buildinfo INTERFACE
         MDUX_TOOL_VERSION="${PROJECT_VERSION}"
+        MDUX_BUILD_DIAGNOSTIC_SHA="${_mdux_diagnostic_sha}"
     )
 
-    message(STATUS "MduX build info: version ${PROJECT_VERSION}")
+    message(STATUS "MduX build info: version ${PROJECT_VERSION}, diagnostic SHA ${_mdux_diagnostic_sha}")
 endfunction()

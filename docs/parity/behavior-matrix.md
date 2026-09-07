@@ -133,8 +133,16 @@ parity claim. The full results table is #314d.
 obligation, `pass`/`fail`/`not-run` aggregation) plus the 29 `evidence` contract documents. Every
 `conformance/contracts` document — `consumer-manifest` and `evidence` — is now validated by
 `mdux.tools.schema`, a JSON-Schema-subset engine ported from MedUI's `tools/schema_check.py` that
-fails closed on an unimplemented keyword. This is the aggregate-and-schema half; MduX emitting its
-own E01 envelope from a real verify run is the Stage C-emitter follow-up.
+fails closed on an unimplemented keyword.
+
+**Update, 7 September 2026 — #314 Stage C-emitter: MduX emits its own RENDERED evidence.**
+`mdux-verify-ui --medui-evidence-out=<dir>` writes `<screen>.medui-evidence.json`, the
+`MEDUI-PROFILE-RENDERED` E01 envelope derived from a real verify run — obligations synthesized from
+the screen and its checks, `Bounds`/`ColorHash`/`InkContainment` mapped to
+`extent-equality`/`tint-composition`/`ink-containment`, `LocalizedTextPresence` excluded as
+implementation-local. The `backend` is the Vulkan `deviceName` and `producer.source` is the build
+commit, so the envelope is **derived and uncommitted** (ADR-014 D4, ADR-007 D5) — never committed,
+never byte-compared. A GPU leg checks it is `evidence.schema.json`-valid and aggregates to `pass`.
 
 ## Intentional differences
 

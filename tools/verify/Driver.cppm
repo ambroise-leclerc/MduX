@@ -114,6 +114,15 @@ struct RunResult {
     std::vector<BoundArtifact>                inputs;
     std::vector<mdux::tools::cli::Diagnostic> diagnostics;
 
+    /// The `VkPhysicalDeviceProperties.deviceName` of the device the run rendered on, verbatim.
+    /// Empty when the run never reached a device. Not committed to any artifact - `verification.json`
+    /// is byte-compared and a device name is host-dependent (ADR-007 decision 5) - but the derived
+    /// MEDUI-PROFILE-RENDERED evidence envelope (#314, uncommitted) records it as its `backend`.
+    std::string  backend;
+    /// The rendered surface, for the derived envelope's producer-scoped `configuration` token.
+    std::int32_t surfaceWidth{0};
+    std::int32_t surfaceHeight{0};
+
     /// Diff images this run wrote, one per render scope that had a failure. Empty when nothing
     /// failed, and empty when no destination was configured.
     ///
@@ -187,6 +196,10 @@ struct Invocation {
     std::filesystem::path    diffImageDirectory;
     mdux::tools::cli::Format format{mdux::tools::cli::Format::Text};
     std::filesystem::path    frameImageDirectory;
+    /// Where to write `<screen>.medui-evidence.json`, the derived MEDUI-PROFILE-RENDERED envelope
+    /// (#314). Empty means write none. Appended for the same positional-init reason as
+    /// `frameImageDirectory`. Never committed and never byte-compared (ADR-014 D4, ADR-007 D5).
+    std::filesystem::path    meduiEvidenceDirectory;
 };
 
 [[nodiscard]] std::string usage();

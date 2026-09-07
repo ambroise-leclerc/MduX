@@ -257,6 +257,27 @@ on any keyword it does not implement so a constraint the contract adds cannot si
 checked. It replaces the hand-coded consumer-manifest reader, so there is now one validator for the
 `medui-conformance.toml` shape and every `conformance/contracts` document.
 
+### Amendment — #314 Stage C-emitter: the derived RENDERED evidence envelope
+
+`mdux-verify-ui --medui-evidence-out=<dir>` writes `<screen>.medui-evidence.json`, MduX's own
+`MEDUI-PROFILE-RENDERED` E01 envelope (`schemas/evidence.schema.json`) derived from a real verify
+run. It is **the RENDERED subset**: `Bounds`, `ColorHash` and `InkContainment` map to the shared
+rendered-check ids `extent-equality`, `tint-composition` and `ink-containment`;
+`LocalizedTextPresence` (`mdux.local/ink-coverage`) has no shared id and its outcomes are excluded
+and counted (an implementation-local check runs alongside the shared ones, it does not become one).
+
+The envelope is **derived and uncommitted** — ADR-014 decision 4 and ADR-007 decision 5: it carries
+host-dependent values (the Vulkan `deviceName` as `backend`, the current commit as
+`producer.source`) that must never enter a byte-compared artifact. It is written to the build tree,
+never committed, never byte-compared; `verification.json` keeps its own byte-compared local shape.
+
+`producer.source` is `MDUX_BUILD_DIAGNOSTIC_SHA`, a configure-time `git rev-parse HEAD`
+(`cmake/MduXBuildInfo.cmake`), which is only ever legal in output of exactly this kind — the file's
+comment records why a commit SHA cannot enter `BakeReport` and why it is fine here. The
+producer-scoped `configuration` token is a SHA-256 over `{backend, format, producerVersion,
+surface}` — `spec/profiles.md` leaves the payload to the named producer, requiring only that it
+bind the settings that determine what is rendered.
+
 ## References
 
 - [ADR-014](ADR-014-rendered-truth-verification.md) — decision 4 (no measured pixel in the
