@@ -526,6 +526,12 @@
       "summary": "a named value is outside the closed set its field admits"
     },
     {
+      "code": "MEDUI-E035",
+      "fixHint": "the identifiers a screen may use are the ones the product baked; declare the image package or the numeric-template table entry, or correct the name",
+      "severity": "error",
+      "summary": "an img() or template identifier does not resolve to a baked resource"
+    },
+    {
       "code": "MEDUI-E050",
       "fixHint": "widen the component or shorten the translation. The check is against the widest approved locale, not the authoring one",
       "severity": "error",
@@ -548,6 +554,12 @@
       "fixHint": "restrict the format, or extend the charset in the font recipe and re-bake. The charset is what makes \"no shaping on device\" checkable rather than conventional (ADR-010)",
       "severity": "error",
       "summary": "dynamic text could produce a character outside the restricted charset"
+    },
+    {
+      "code": "MEDUI-E054",
+      "fixHint": "give a positioned node fixed pixel dimensions. Distinct from MEDUI-E051: nothing overflowed, the node's geometry simply cannot be resolved out of flow",
+      "severity": "error",
+      "summary": "a positioned node has Fill for its width or height"
     },
     {
       "code": "MEDUI-E070",

@@ -68,7 +68,14 @@ CheckResult checkScreen(std::string_view source, std::string file) {
 
     // The one caller that asks for the partial mode, and the reason the mode is a request rather
     // than something inferred from an empty package list: this file may belong to no recipe at all.
-    const SemanticResult semantic = analyze(screen, file, {.themeTokens = themeTokens, .textPackages = {}, .locales = LocalePolicy::Skipped});
+    const SemanticResult semantic = analyze(screen,
+                                            file,
+                                            {.themeTokens          = themeTokens,
+                                             .textPackages         = {},
+                                             .numericTemplateNames = {},
+                                             .imageIds             = {},
+                                             .locales              = LocalePolicy::Skipped,
+                                             .resources            = ResourcePolicy::Skipped});
     if (!semantic.ok()) {
         result.diagnostics = semantic.diagnostics;
         return result;

@@ -26,7 +26,7 @@ using cli::Severity;
 // Numbers are assigned in blocks, with gaps left inside each block on purpose: a new grammar rule
 // should land next to the grammar rules rather than at the end of the table, and it can only do
 // that if its block has room. The blocks are documented on the enum in Diagnostics.cppm.
-constexpr std::array<CodeInfo, 24> table{{
+constexpr std::array<CodeInfo, 26> table{{
     {Code::RecipeUnreadable, "MEDUI-E000", Severity::Error,
      "the recipe file could not be opened",
      "check the path passed on the command line, and that the file is readable"},
@@ -89,6 +89,10 @@ constexpr std::array<CodeInfo, 24> table{{
      "use one of the members the shared component model lists for this field. This is not "
      "MEDUI-E033: the value is a well-formed identifier, so its kind is right and only its "
      "membership is wrong"},
+    {Code::UnknownResourceId, "MEDUI-E035", Severity::Error,
+     "an img() or template identifier does not resolve to a baked resource",
+     "the identifiers a screen may use are the ones the product baked; declare the image package "
+     "or the numeric-template table entry, or correct the name"},
 
     {Code::TextBudgetExceeded, "MEDUI-E050", Severity::Error,
      "a component's bounds cannot contain the widest approved translation",
@@ -104,6 +108,10 @@ constexpr std::array<CodeInfo, 24> table{{
      "dynamic text could produce a character outside the restricted charset",
      "restrict the format, or extend the charset in the font recipe and re-bake. The charset is "
      "what makes \"no shaping on device\" checkable rather than conventional (ADR-010)"},
+    {Code::PositionRequiresFixedSize, "MEDUI-E054", Severity::Error,
+     "a positioned node has Fill for its width or height",
+     "give a positioned node fixed pixel dimensions. Distinct from MEDUI-E051: nothing overflowed, "
+     "the node's geometry simply cannot be resolved out of flow"},
 
     {Code::SafetyCriticalWithoutRequirement, "MEDUI-E070", Severity::Error,
      "a @safety_critical node carries no requirement:",

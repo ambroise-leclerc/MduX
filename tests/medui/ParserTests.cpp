@@ -298,7 +298,8 @@ const mdux::spec::Register duplicateIdRejected{
                 if (d != nullptr) {
                     checks.expect(d->line == 8, std::format("at the second id, line 8, got {}",
                                                             d->line));
-                    checks.expect(d->column == 9, std::format("at column 9, got {}", d->column));
+                    checks.expect(d->column == 13,
+                                  std::format("at the duplicated name value, column 13, got {}", d->column));
                     // Naming only the duplicate would leave an author hunting for the original.
                     checks.expect(d->message.find("line 4") != std::string::npos,
                                   std::format("the message cites the first, got '{}'", d->message));
@@ -433,18 +434,24 @@ const mdux::spec::Register invalidUtf8Rejected{
     "A source that is not valid UTF-8 is rejected whole, with MEDUI-E004",
     "evidence-unit",
     [] {
-        // Whole rather than at the byte: past an invalid sequence there are no defined character
-        // boundaries, so every column after it would be invented.
+        // The source is rejected whole - past an invalid sequence there are no defined character
+        // boundaries - but the position points at the first bad byte, whose line and byte column
+        // are exact because everything before it is valid UTF-8.
         return speclab::Test("medui-lex-bad-utf8")
-            .Given("a source containing a lone continuation byte", [] {})
+            .Given("a source containing a lone continuation byte on the second line", [] {})
             .When("it is lexed", [] {})
-            .Then("MEDUI-E004 is reported and no tokens are produced", [] {
+            .Then("MEDUI-E004 is reported at the bad byte and no tokens are produced", [] {
                 mdux::spec::Checks checks;
                 std::string source = "Screen A { }\n";
                 source += '\x80';
                 const md::LexResult r = md::lex(source, "bad.medui");
                 checks.expect(has(r.diagnostics, md::Code::SourceNotUtf8),
                               std::format("MEDUI-E004 reported, got {}", codesOf(r.diagnostics)));
+                const cli::Diagnostic* d = find(r.diagnostics, md::Code::SourceNotUtf8);
+                if (d != nullptr) {
+                    checks.expect(d->line == 2 && d->column == 1,
+                                  std::format("at the first bad byte, 2:1, got {}:{}", d->line, d->column));
+                }
                 checks.expect(r.tokens.empty(), "no tokens, so no invented positions");
                 checks.raise();
             })

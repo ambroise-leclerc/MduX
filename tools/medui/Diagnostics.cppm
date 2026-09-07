@@ -89,12 +89,14 @@ enum class Code : std::uint8_t {
     TextKeyMissingForLocale,
     FieldValueKind,
     NamedValueOutsideSet,
+    UnknownResourceId,
 
     // 050-069: the bounds and budgets that make the runtime's job finite.
     TextBudgetExceeded,
     LayoutOverflow,
     SurfaceExceeded,
     CharsetEscape,
+    PositionRequiresFixedSize,
 
     // 070-089: safety-critical annotation rules, per the skill and ADR-012 decision 1.
     SafetyCriticalWithoutRequirement,

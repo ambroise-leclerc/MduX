@@ -371,8 +371,13 @@ private:
         }
         field.value = std::move(value);
 
-        if (terminated) {
-            static_cast<void>(expect(TokenKind::Semicolon, "';' after the field"));
+        if (terminated && expect(TokenKind::Semicolon, "';' after the field") == nullptr) {
+            // The field value parsed but a stray token sits where the ';' belongs
+            // (`width: 100px 100px;`). Skip to the next sync point here rather than returning
+            // with the cursor still on it: the caller's member loop would otherwise re-enter
+            // parseField and report the same token a second time as a bad field name, and the
+            // shared conformance corpus pins exactly one MEDUI-E010 for this shape.
+            recover();
         }
         return field;
     }
@@ -555,11 +560,14 @@ private:
                 if (id.empty()) {
                     continue;
                 }
-                const auto [it, inserted] = seen.emplace(id, field.namePosition);
+                // Pointed at the id *value*, not the `id` keyword: the shared conformance corpus
+                // pins MEDUI-E014 at the duplicated name itself, which is also what an author
+                // scans for.
+                const ast::Position where = field.value->position;
+                const auto [it, inserted] = seen.emplace(id, where);
                 if (!inserted) {
                     diagnostics_.push_back(diagnose(
-                        Code::DuplicateNodeId, file_, field.namePosition.line,
-                        field.namePosition.column,
+                        Code::DuplicateNodeId, file_, where.line, where.column,
                         std::format("node id '{}' is already used at line {}, column {}", id,
                                     it->second.line, it->second.column)));
                 }

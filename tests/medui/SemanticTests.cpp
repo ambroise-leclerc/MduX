@@ -38,7 +38,26 @@ namespace cli = mdux::tools::cli;
     if (!parsed.screen || !parsed.diagnostics.empty()) {
         throw speclab::core::AssertionFailure("semantic test source did not parse", std::source_location::current());
     }
-    return md::analyze(*parsed.screen, "semantic-test.medui", md::SemanticInputs{.themeTokens = themes, .textPackages = packages});
+    // Resource-identifier resolution (MEDUI-E035) is off unless a scenario supplies lists via the
+    // overload below: most scenarios exercise value forms and domains, not `img()`/`template:`
+    // resolution, and would otherwise have to declare every reference.
+    return md::analyze(*parsed.screen,
+                       "semantic-test.medui",
+                       md::SemanticInputs{.themeTokens = themes, .textPackages = packages, .resources = md::ResourcePolicy::Skipped});
+}
+
+[[nodiscard]] md::SemanticResult analyze(std::string_view                         source,
+                                         std::span<const std::string_view>        themes,
+                                         std::span<const mdux::text::TextPackage>  packages,
+                                         std::span<const std::string_view>        templateNames,
+                                         std::span<const std::string_view>        imageIds) {
+    md::ParseResult parsed = md::parse(source, "semantic-test.medui");
+    if (!parsed.screen || !parsed.diagnostics.empty()) {
+        throw speclab::core::AssertionFailure("semantic test source did not parse", std::source_location::current());
+    }
+    return md::analyze(*parsed.screen,
+                       "semantic-test.medui",
+                       md::SemanticInputs{.themeTokens = themes, .textPackages = packages, .numericTemplateNames = templateNames, .imageIds = imageIds});
 }
 
 [[nodiscard]] const cli::Diagnostic* find(const md::SemanticResult& result, md::Code code) {
@@ -316,6 +335,37 @@ const mdux::spec::Register semanticSpecialValueForms{"Image references, positive
                                                                    })
                                                              .Execute();
                                                      }};
+
+const mdux::spec::Register semanticUnknownResourceId{
+    "An img() or template: that names no baked resource is MEDUI-E035 at the reference",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-semantic-unknown-resource-id")
+            .Given("Image and NumericDisplay references, one resolvable and one not", [] {})
+            .When("analysis runs with the declared resource lists", [] {})
+            .Then("the unresolved identifiers report MEDUI-E035 and the resolvable ones do not",
+                  [] {
+                      mdux::spec::Checks checks;
+                      constexpr std::string_view source = R"(Screen Resources {
+    layout: Vertical { spacing: 0px; padding: 0px; }
+    Image { id: good; width: 32px; height: 32px; source: img("LOGO"); }
+    Image { id: bad; width: 32px; height: 32px; source: img("MISSING"); }
+    NumericDisplay { id: n1; width: 64px; height: 24px; requirement: "R"; template: "TPL-OK"; source: "S"; color: Theme.Colors.Title; }
+    NumericDisplay { id: n2; width: 64px; height: 24px; requirement: "R"; template: "TPL-GONE"; source: "S"; color: Theme.Colors.Title; }
+})";
+                      const std::array<std::string_view, 1>        themes{"Theme.Colors.Title"};
+                      const std::array<mdux::text::TextPackage, 0> packages{};
+                      const std::array<std::string_view, 1>        templates{"TPL-OK"};
+                      const std::array<std::string_view, 1>        images{"LOGO"};
+                      const md::SemanticResult                     result = analyze(source, themes, packages, templates, images);
+
+                      checks.expect(count(result, md::Code::UnknownResourceId) == 2, "the two unresolved references report E035");
+                      const cli::Diagnostic* first = find(result, md::Code::UnknownResourceId);
+                      checks.expect(first != nullptr && first->line == 4, "the first E035 points at the unresolved img() reference on line 4");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
 
 const mdux::spec::Register semanticHardcodedTextList{"A literal inside a text-key list is reported as hardcoded text at that element", "evidence-unit", [] {
                                                          return speclab::Test("medui-semantic-hardcoded-text-list")

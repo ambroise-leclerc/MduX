@@ -138,7 +138,7 @@ const mdux::spec::Register positionedNodeMustFitSurface{"A positioned node must 
                                                             return speclab::Test("medui-layout-positioned-surface-containment")
                                                                 .Given("a 20px node at 81px,80px on a 100px square surface", [] {})
                                                                 .When("the positioned rectangle is checked", [] {})
-                                                                .Then("MEDUI-E052 is fail-closed with no resolved nodes",
+                                                                .Then("MEDUI-E051 is fail-closed with no resolved nodes",
                                                                       [] {
                                                                           mdux::spec::Checks checks;
                                                                           const std::string  source = sourceWithBody(
@@ -146,8 +146,10 @@ const mdux::spec::Register positionedNodeMustFitSurface{"A positioned node must 
                                                                                "position: 81px, 80px; text: t(\"STR-OUTSIDE\"); "
                                                                                "color: Theme.Colors.Title; }\n");
                                                                           const md::LayoutResult result = layout(source, 100, 100);
-                                                                          checks.expect(find(result, md::Code::SurfaceExceeded) != nullptr,
-                                                                                        "MEDUI-E052 is reported");
+                                                                          checks.expect(find(result, md::Code::LayoutOverflow) != nullptr,
+                                                                                        "MEDUI-E051 is reported: a positioned node left its containing box");
+                                                                          checks.expect(find(result, md::Code::SurfaceExceeded) == nullptr,
+                                                                                        "and not MEDUI-E052");
                                                                           checks.expect(!result.ok() && result.nodes.empty(),
                                                                                         "the rejected screen exposes no partial layout");
                                                                           checks.raise();
@@ -276,7 +278,7 @@ const mdux::spec::Register positionedFillIsRejected{"A positioned component cann
                                                         return speclab::Test("medui-layout-positioned-fill")
                                                             .Given("a component whose exact position contradicts a Fill width", [] {})
                                                             .When("layout preflight runs", [] {})
-                                                            .Then("MEDUI-E051 points at position rather than inventing a rectangle",
+                                                            .Then("MEDUI-E054 points at position rather than inventing a rectangle",
                                                                   [] {
                                                                       mdux::spec::Checks     checks;
                                                                       const std::string      source     = sourceWithBody("    Label {\n"
@@ -288,9 +290,10 @@ const mdux::spec::Register positionedFillIsRejected{"A positioned component cann
                                                                                                                          "        color: Theme.Colors.Title;\n"
                                                                                                                          "    }\n");
                                                                       const md::LayoutResult result     = layout(source, 100, 100);
-                                                                      const cli::Diagnostic* diagnostic = find(result, md::Code::LayoutOverflow);
+                                                                      const cli::Diagnostic* diagnostic = find(result, md::Code::PositionRequiresFixedSize);
                                                                       checks.expect(!result.ok() && result.nodes.empty(), "no partial rectangle is returned");
-                                                                      checks.expect(diagnostic != nullptr, "MEDUI-E051 is reported");
+                                                                      checks.expect(diagnostic != nullptr, "MEDUI-E054 is reported");
+                                                                      checks.expect(find(result, md::Code::LayoutOverflow) == nullptr, "and not MEDUI-E051 - nothing overflowed");
                                                                       if (diagnostic != nullptr) {
                                                                           checks.expect(
                                                                               diagnostic->line == 8 && diagnostic->column == 9,
@@ -390,8 +393,8 @@ const mdux::spec::Register syntheticIdsAreRechecked{
                       const cli::Diagnostic* diagnostic = find(result, md::Code::DuplicateNodeId);
                       checks.expect(diagnostic != nullptr, "MEDUI-E014 is reported after synthesis");
                       if (diagnostic != nullptr) {
-                          checks.expect(diagnostic->line == 5 && diagnostic->column == 13,
-                                        std::format("the authored colliding id is 5:13, got {}:{}", diagnostic->line, diagnostic->column));
+                          checks.expect(diagnostic->line == 5 && diagnostic->column == 17,
+                                        std::format("the authored colliding id value is 5:17, got {}:{}", diagnostic->line, diagnostic->column));
                       }
                       checks.expect(!result.ok(), "the colliding flat node set is rejected");
                       checks.raise();

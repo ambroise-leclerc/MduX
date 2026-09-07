@@ -84,17 +84,33 @@ enum class LocalePolicy : std::uint8_t {
     Skipped,   ///< the caller has no approved locale set and accepts that keys go unchecked
 };
 
+/// The same request/inference distinction for `img()` and `template:` resource identifiers: a
+/// caller with no baked-resource lists (a standalone file check with no recipe) asks for the check
+/// to be skipped rather than seeing every reference reported as `MEDUI-E035`.
+enum class ResourcePolicy : std::uint8_t {
+    Required,  ///< resource identifiers must resolve against the supplied lists; empty lists mean none resolve
+    Skipped,   ///< the caller has no recipe context and accepts that resource identifiers go unchecked
+};
+
 /**
  * @brief External name tables against which one screen is checked.
  *
  * Text packages are prevalidated, one per approved locale, with unique locale names. The
  * analyzer reads only each package's locale and run IDs. Theme tokens are full names such as
  * `Theme.Colors.Title`; their concrete colour values belong to the later emitter stage.
+ *
+ * `numericTemplateNames` and `imageIds` are the resolvable resource identifiers a `NumericDisplay`
+ * `template:` and an `Image` `source:` may name (`spec/component-model.md`, "Resource identifiers").
+ * An identifier outside them is `MEDUI-E035`. Both empty means no resource resolves, which is the
+ * fail-closed reading for a screen that declares none.
  */
 struct SemanticInputs {
-    std::span<const std::string_view>        themeTokens;
-    std::span<const mdux::text::TextPackage> textPackages;
+    std::span<const std::string_view>        themeTokens{};
+    std::span<const mdux::text::TextPackage> textPackages{};
+    std::span<const std::string_view>        numericTemplateNames{};
+    std::span<const std::string_view>        imageIds{};
     LocalePolicy                             locales{LocalePolicy::Required};
+    ResourcePolicy                           resources{ResourcePolicy::Required};
 };
 
 /// Accumulated semantic diagnostics; an empty result admits the screen to the next stage.
