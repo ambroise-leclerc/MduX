@@ -783,14 +783,14 @@ private:
             .nodeId          = std::string{outcome.nodeId},
             .scope           = std::string{outcome.scope},
             .check           = std::string{outcome.check},
-            .profile         = outcome.profile,
             .expected        = outcome.expected,
             .found           = outcome.found,
             .foundValid      = outcome.foundValid,
             .expectedColor   = outcome.expectedColor,
             .foundColor      = outcome.foundColor,
             .foundColorValid = outcome.foundColorValid,
-            .glyphIndex      = outcome.glyphIndex};
+            .glyphIndex      = outcome.glyphIndex,
+            .profile         = outcome.profile};
 }
 
 [[nodiscard]] std::string rectangle(mdux::medui::NodeRect value) {

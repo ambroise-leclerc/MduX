@@ -1154,7 +1154,6 @@ struct CheckOutcome {
     std::string_view       nodeId{};
     std::string_view       scope{};     ///< the locale tag, or `localeFreeScopeName`
     std::string_view       check{};     ///< the check's spelling, e.g. `Bounds`
-    ObservationProfile     profile{};   ///< which observation this outcome is: id and version (ADR-016)
     mdux::medui::NodeRect  expected{};  ///< the rectangle the expectation named
     mdux::medui::NodeRect  found{};     ///< what the frame showed, when the finding measured it
     bool                   foundValid{false};
@@ -1162,6 +1161,9 @@ struct CheckOutcome {
     mdux::core::ColorRgba8 foundColor{};
     bool                   foundColorValid{false};
     std::size_t            glyphIndex{0};  ///< which record, for a glyph-level finding
+    // Appended rather than slotted beside `check`: this is an aggregate a caller may initialise
+    // positionally (see the same note on `Invocation` in the driver), so a new field goes last.
+    ObservationProfile     profile{};  ///< which observation this outcome is: id and version (ADR-016)
 
     [[nodiscard]] constexpr bool held() const noexcept {
         return finding == Finding::Held;

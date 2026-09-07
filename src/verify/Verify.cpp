@@ -245,7 +245,7 @@ struct Box {
 /// `profile` names the observation this check performs (ADR-015 D2 / ADR-016), and it is set here
 /// rather than by each check so that no check can report an outcome without one.
 [[nodiscard]] CheckOutcome opened(std::string_view nodeId, RenderScope scope, std::string_view check, ObservationProfile profile, NodeRect expected) noexcept {
-    return CheckOutcome{.finding = Finding::Held, .nodeId = nodeId, .scope = scope.name(), .check = check, .profile = profile, .expected = expected};
+    return CheckOutcome{.finding = Finding::Held, .nodeId = nodeId, .scope = scope.name(), .check = check, .expected = expected, .profile = profile};
 }
 
 [[nodiscard]] CheckOutcome failed(CheckOutcome outcome, Finding finding) noexcept {

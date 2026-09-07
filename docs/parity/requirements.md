@@ -81,7 +81,7 @@ their profile/schema/corpus delivery and consumer adoption gates remain in force
 | Record | Requested reviewer | State |
 |---|---|---|
 | ADR-015 D1–D5 | MduX maintainer | Accepted by Ambroise Leclerc, 2026-09-07 |
-| ADR-016 (local observation profiles) | MduX maintainer; domain reviewer (safety-relevant verifier area) | Proposed 2026-09-07 (#313); no check semantics or runtime behaviour changed |
+| ADR-016 (local observation profiles) | MduX maintainer; domain reviewer (safety-relevant verifier area) | Proposed 2026-09-07 (#313). The four required rendered checks (`Bounds`, `ColorHash`, `InkContainment`, `LocalizedTextPresence`) keep their exact semantics; each gains an implementation-local `ObservationProfile` id recorded per outcome. `mdux.verify::rawImageDigest()` is an exported, fixture-tested predicate with a defined `NoBaseline` outcome that never discharges an obligation — it is **not** a `CvCheck`, has **no production caller**, and is **outside driver obligation enumeration**. Production-driver behaviour is unchanged; the committed `verification.json` differs only by the additive `observationProfile` member. |
 | PAR-REQ-001–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Individual dispositions pending. #313 delivers the **local** half of PAR-REQ-002 (four named profiles + the RGBA8 digest predicate + adversarial fixtures); the shared-schema/corpus half and the disposition itself remain open. |
 | Shared rendered profiles | MedUI #15 participants/maintainer | MEDUI-DEC-007 accepted, 2026-09-07; profile delivery pending |
 | Shared interaction/presentation profiles | MedUI #16 participants/maintainer | MEDUI-DEC-008 accepted, 2026-09-07; profile delivery pending |
