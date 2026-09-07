@@ -11,6 +11,11 @@ on trust.
 compliance.** MduX is an experimental proof-of-concept. See
 [`regulatory-compliance.md`](regulatory-compliance.md) for the scope limits the project claims.
 
+For the pinned TrustSC comparison and accepted Phase 2 architectural direction, see the
+[sibling behavior matrix](parity/behavior-matrix.md) and
+[ADR-015](adr/ADR-015-versioned-sibling-observations.md). Its acceptance does not establish
+implemented interaction/verification APIs or accepted shared-contract capabilities.
+
 ## Verified platforms
 
 Windows and Linux use native Vulkan implementations. Apple Silicon macOS is also a verified target
