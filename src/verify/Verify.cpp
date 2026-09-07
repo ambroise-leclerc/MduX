@@ -970,8 +970,8 @@ CheckOutcome rawImageDigest(const FramebufferView& frame, const RawImageExpectat
     mdux::evidence::Sha256 hasher;
     for (Px y = roi.y; y < roi.y + roi.height; ++y) {
         for (Px x = roi.x; x < roi.x + roi.width; ++x) {
-            // `contains()` above bounds the walk, so `pixelAt()` is never empty here; the ground
-            // colour is a safe stand-in that cannot arise for an in-range pixel.
+            // `contains()` above has already bounded the walk to the frame, so every `pixelAt()`
+            // here is engaged; the `value_or` is defensive and its argument is never reached.
             const ColorRgba8 pixel = frame.pixelAt(x, y).value_or(ColorRgba8{});
             const std::array<std::byte, 4> bytes{
                 std::byte{pixel.r}, std::byte{pixel.g}, std::byte{pixel.b}, std::byte{pixel.a}};

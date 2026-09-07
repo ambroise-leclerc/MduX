@@ -743,8 +743,9 @@ static_assert(!std::is_aggregate_v<GoldenExpectation>, "a GoldenExpectation must
 /**
  * @brief A rectangle to hash, and the baseline digest to compare it against - if there is one.
  *
- * The expectation `rawImageDigest()` consumes, and the whole of what the `raw-rgba8-sha256` profile
- * (ADR-016) needs: a region of interest, and optionally a committed SHA-256 to check it against.
+ * The expectation `rawImageDigest()` consumes, and the whole of what the `raw-image-digest` profile
+ * (`mdux.local/raw-image-digest`, ADR-016) needs: a region of interest, and optionally a committed
+ * SHA-256 to check it against.
  * This is TrustSC's `ColorHash` observation - a raw-pixel digest - given a name of its own so the
  * two implementations' `ColorHash` results are never mistaken for each other.
  *
@@ -1246,7 +1247,7 @@ struct CheckOutcome {
 [[nodiscard]] CheckOutcome localizedTextPresence(const FramebufferView& frame, const TextExpectation& expectation) noexcept;
 
 /**
- * @brief `raw-rgba8-sha256`: the region's tightly packed RGBA8 hashes to a committed baseline.
+ * @brief `raw-image-digest`: the region's tightly packed RGBA8 hashes to a committed baseline.
  *
  * TrustSC's `ColorHash` observation, named separately here so that the two implementations'
  * `ColorHash` results are never compared as though they measured the same thing (ADR-015 D2). The
