@@ -9,7 +9,7 @@ an example screen, a `requirement` string, or the name TriggerHalt.
 
 Impact: **potentially safety-relevant**. This change defines future interaction and evidence
 contracts but changes no runtime behavior. Affected designs are ADR-011/012 (compile/artifact
-boundary), ADR-014 (rendered checks), ADR-010 (bounded text), and proposed
+boundary), ADR-014 (rendered checks), ADR-010 (bounded text), and accepted
 [ADR-015](../adr/ADR-015-versioned-sibling-observations.md). Relevant items are `mdux.medui.screen`,
 `.field`, `.reading`, `.trace`, `mdux.verify`, the host compiler/verifier and the future application
 adapter. Existing requirements and evidence remain in force.
@@ -41,7 +41,8 @@ and domain reviewer must supply that context before a real-device action policy 
 
 Local D1–D5 are defined in ADR-015. Accepted shared decisions remain
 [MEDUI-DEC-001–006](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210/decisions).
-New upstream issues are proposals, not assigned decision numbers or accepted capabilities.
+MedUI #15/#16 now have accepted architectural decisions MEDUI-DEC-007/008; this does not
+allocate profile identifiers or establish consumer capabilities.
 
 | Work | Decisions needed before dependent behavior lands |
 |---|---|
@@ -70,16 +71,21 @@ The [maintainer's detailed review](https://github.com/ambroise-leclerc/MduX/pull
 verified the matrix against the pinned sources and approved its substance, while explicitly
 leaving formal acceptance of the prospective requirements pending. These reviews do not assign
 accepted/amended/deferred dispositions to individual requirements or accept the upstream profiles;
-the pending states below therefore remain unchanged.
+individual requirement dispositions remained pending at that review.
+
+Subsequently on the same date, Ambroise Leclerc explicitly accepted ADR-015's D1–D5 architectural
+direction. This acceptance does not assign dispositions to the individual PAR-REQ records.
+The upstream decisions MEDUI-DEC-007/008 were also explicitly accepted by the maintainer;
+their profile/schema/corpus delivery and consumer adoption gates remain in force.
 
 | Record | Requested reviewer | State |
 |---|---|---|
-| Matrix and D1–D4 | MduX maintainer; MedUI maintainer for the shared contract | Proposed; approval not recorded |
-| D5 and PAR-REQ-004–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Proposed; approval not recorded |
-| Shared rendered profiles | MedUI #15 participants/maintainer | Open proposal |
-| Shared interaction/presentation profiles | MedUI #16 participants/maintainer | Open proposal |
+| ADR-015 D1–D5 | MduX maintainer | Accepted by Ambroise Leclerc, 2026-09-07 |
+| PAR-REQ-001–010 | MduX maintainer; domain reviewer for any device action/risk-control interpretation | Individual dispositions pending |
+| Shared rendered profiles | MedUI #15 participants/maintainer | MEDUI-DEC-007 accepted, 2026-09-07; profile delivery pending |
+| Shared interaction/presentation profiles | MedUI #16 participants/maintainer | MEDUI-DEC-008 accepted, 2026-09-07; profile delivery pending |
 
 The PR review should record which local requirements are accepted, amended or deferred and link
-the reviewer/date here or in the accepting follow-up. Upstream acceptance requires its own
-decision and corpus revision. [Executed evidence](behavior-matrix.md#executed-observations-and-reproduction)
+the reviewer/date here or in the accepting follow-up. Upstream architectural acceptance is recorded in ADR-015; consumer adoption still requires
+the applicable schema and corpus revision. [Executed evidence](behavior-matrix.md#executed-observations-and-reproduction)
 supports the current-state comparison only; it does not discharge these future requirements.

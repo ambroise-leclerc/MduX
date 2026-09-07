@@ -2,10 +2,12 @@
 
 ## Status
 
-**Proposed**, 2026-09-07, for #312. Maintainer review is pending. This changes no runtime behavior,
-shared pin or accepted ADR. The upstream changes are proposals
-[MedUI #15](https://github.com/Compliatory/MedUI/issues/15) and
-[#16](https://github.com/Compliatory/MedUI/issues/16).
+**Accepted**, 2026-09-07, for #312, by maintainer instruction. Acceptance establishes MduX's
+architectural direction; it changes no runtime behavior or shared pin and supersedes no earlier ADR.
+The upstream decisions were introduced in [MedUI PR #25](https://github.com/Compliatory/MedUI/pull/25)
+and [PR #26](https://github.com/Compliatory/MedUI/pull/26). MEDUI-DEC-007/008 were subsequently accepted by the same maintainer instruction in
+[MedUI commit 80961fd](https://github.com/Compliatory/MedUI/commit/80961fd7274992d75c8f86016be04b177c581857).
+Profile identifiers, schemas, corpus delivery and consumer adoption remain follow-up work.
 
 ## Context
 
@@ -26,7 +28,8 @@ must precede safety-relevant implementation; no new security or platform permiss
 
 ## Decision
 
-The following decisions are proposed for review, not claims of upstream agreement.
+The following decisions are accepted for MduX. The corresponding upstream architectural decisions are also accepted;
+this does not assert consumer conformance; D4's adoption gates remain in force.
 
 **D1 — Normalize declared observations.** Name the implementation SHA, exact MedUI SHA and claimed
 phase/precision before comparing outputs. Stable compiler observables are acceptance/rejection
@@ -44,9 +47,9 @@ and integer arithmetic/rounding. Current MduX one-step-per-composite and TrustSC
 rules are documented observations, not a newly agreed common tolerance. Exact hashes allow zero
 byte difference within a declared render profile. There is no global fuzzy tolerance. Adding a
 common profile must preserve existing required checks unless a reviewed migration explicitly
-replaces them with justified evidence. ADR-014 is not superseded by this proposal.
+replaces them with justified evidence. ADR-014 is not superseded by this decision.
 
-**D3 — Scope and identify every result.** The proposed normalized envelope contains contract SHA,
+**D3 — Scope and identify every result.** The normalized envelope design contains contract SHA,
 producer name/version/source SHA, observation profile ID/version, screen artifact digest, ordered
 asset identities/digests, screen ID, and render configuration/backend identity where relevant.
 Within that envelope the result key is `(node ID, scope, scenario digest or static, capture ID,
@@ -77,8 +80,8 @@ set, not only a version string. #314 will implement the shared gate; this ADR do
 already exists.
 
 **D5 — Separate interaction, data and appearance profiles.** MedUI #16 requests versioned logical
-events/update order, source-to-node binding and presentation observations. The proposed local
-requirements choose bounded storage, explicit cancellation/overflow, half-open reverse-paint
+events/update order, source-to-node binding and presentation observations. The accepted local
+design chooses bounded storage, explicit cancellation/overflow, half-open reverse-paint
 occlusion, traced action outputs, scalar-safe bounded editing and injected time for replay.
 Issue #315 must finalize event vocabulary, coordinate rounding and editing policy; #322 must finalize
 viewport numeric/composition rules; #325 must finalize source-round-trip rules. Font/field/control
@@ -105,7 +108,7 @@ claims into C++.
 
 - Differences are reproducible and separately named, preserving current evidence.
 - Downstream work has [requirement IDs and decision gates](../parity/requirements.md), with
-  upstream proposals linked rather than implied agreement.
+  upstream decisions linked with their acceptance and rollout scope.
 
 ### Negative
 
@@ -134,9 +137,15 @@ Existing ADR-010/011/012/014 and runtime checks remain authoritative until an ac
 - [Compatibility matrix and evidence](../parity/behavior-matrix.md)
 - [Requirements, review disposition and downstream mapping](../parity/requirements.md)
 - [Pinned MedUI decisions](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210/decisions)
+- [MEDUI-DEC-007 accepted direction](https://github.com/Compliatory/MedUI/blob/80961fd7274992d75c8f86016be04b177c581857/decisions/MEDUI-DEC-007-rendered-check-profiles.md)
+- [MEDUI-DEC-008 accepted direction](https://github.com/Compliatory/MedUI/blob/80961fd7274992d75c8f86016be04b177c581857/decisions/MEDUI-DEC-008-interaction-profiles.md)
 
 ## Approval
 
 - **Proposal date:** 2026-09-07
-- **Approved by:** Not yet recorded; MduX maintainer review requested through the implementation PR.
-- **Shared contract approval:** Not yet recorded; MedUI #15/#16 remain proposals.
+- **Decision date:** 2026-09-07
+- **Approved by:** Ambroise Leclerc, maintainer, by explicit instruction to mark ADR-015 accepted.
+- **Scope:** D1–D5 architectural direction. Individual prospective requirement dispositions and
+  device-specific action/risk-control review remain separate from this ADR acceptance.
+- **Shared decision approval:** MEDUI-DEC-007/008 accepted on 2026-09-07 by Ambroise Leclerc;
+  concrete profiles and consumer capability claims remain subject to the rollout gates.

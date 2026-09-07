@@ -2,9 +2,11 @@
 
 Assessed **7 September 2026** for [#312](https://github.com/ambroise-leclerc/MduX/issues/312).
 This is an implementation comparison and a proposed compatibility boundary, not a declaration
-that the siblings conform to the same rendered or interactive contract. Proposed requirements,
+that the siblings conform to the same rendered or interactive contract. Prospective requirements,
 review gates and migration rules are in [ADR-015](../adr/ADR-015-versioned-sibling-observations.md)
 and the [design records](requirements.md). No runtime behavior or conformance pin changes here.
+ADR-015 was subsequently accepted on the assessment date; this matrix retains its pinned
+implementation observations. The ADR records the separately accepted upstream architectural decisions.
 
 ## Immutable comparison inputs
 

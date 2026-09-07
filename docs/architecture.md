@@ -11,10 +11,10 @@ on trust.
 compliance.** MduX is an experimental proof-of-concept. See
 [`regulatory-compliance.md`](regulatory-compliance.md) for the scope limits the project claims.
 
-For the pinned TrustSC comparison and proposed Phase 2 compatibility boundary, see the
+For the pinned TrustSC comparison and accepted Phase 2 architectural direction, see the
 [sibling behavior matrix](parity/behavior-matrix.md) and
-[ADR-015](adr/ADR-015-versioned-sibling-observations.md). Their proposed interaction and
-verification profiles are not implemented APIs or accepted shared-contract capabilities.
+[ADR-015](adr/ADR-015-versioned-sibling-observations.md). Its acceptance does not establish
+implemented interaction/verification APIs or accepted shared-contract capabilities.
 
 ## Verified platforms
 
