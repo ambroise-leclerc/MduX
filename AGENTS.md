@@ -270,8 +270,10 @@ look-alike command line; they are not needed to build by hand, and each uses its
   screen by `mdux_compile_screen()`; asserted as a named step on all four CI legs since `#282`, and
   distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes),
   `conformance` (`conformance_spec` runs the pinned MedUI observation-profile corpus — the
-  `MEDUI-PROFILE-RENDERED` vectors and the `consumer-manifest` cases — asserted as a named step on
-  all five CI legs since `#314`).
+  `MEDUI-PROFILE-RENDERED` and `MEDUI-PROFILE-EVIDENCE` vectors, the `consumer-manifest` and
+  `evidence` contract cases, and negative failure-mode fixtures — validated with
+  `mdux.tools.schema` (a JSON-Schema-subset engine in `MduX::ToolsCommon`); asserted as a named step
+  on all five CI legs since `#314`).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

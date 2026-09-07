@@ -23,9 +23,11 @@ target_sources(MduXToolsCommon
         FILES
             common/Toml.cppm
             common/Cli.cppm
+            common/Schema.cppm
     PRIVATE
         common/Toml.cpp
         common/Cli.cpp
+        common/Schema.cpp
 )
 
 target_compile_features(MduXToolsCommon PUBLIC cxx_std_23)

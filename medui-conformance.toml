@@ -7,6 +7,6 @@ capabilities = ["syntax", "semantics", "layout", "safety"]
 positions = "full"
 # Optional observation profiles (MEDUI-DEC-007). A string array, not `[[profiles]]`: `mdux.tools.toml`
 # has no array-of-tables, and `conformance_spec` synthesizes the schema's `{ id, version: 1 }` shape.
-# RENDERED (R01-R04) is gated by `conformance_spec` against `mdux.verify`'s own arithmetic; EVIDENCE
-# is #314c.
-profiles = ["MEDUI-PROFILE-RENDERED"]
+# RENDERED (R01-R04) is gated against `mdux.verify`'s own arithmetic; EVIDENCE (E01-E03) is gated as
+# aggregate list logic over the 31 aggregate-evidence vectors and the 29 evidence contract cases.
+profiles = ["MEDUI-PROFILE-RENDERED", "MEDUI-PROFILE-EVIDENCE"]

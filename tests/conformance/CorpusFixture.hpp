@@ -6,16 +6,17 @@
  * @compliance ADR-014 What rendered-truth verification checks, and what it cannot
  *
  * Two suites read the same pinned checkout: `medui_tools_spec`'s `SharedConformanceTests.cpp` runs
- * the compiler case corpus, and `conformance_spec` runs the `MEDUI-PROFILE-RENDERED` observation
- * vectors and the `conformance/contracts` manifest cases.
- * Everything both need lives here so there is one reader of `medui-conformance.toml`, one way to
- * resolve the checked-out revision, and one consumer-manifest validator.
+ * the compiler case corpus, and `conformance_spec` runs the observation-profile vectors and the
+ * `conformance/contracts` documents. Everything both need lives here so there is one reader of
+ * `medui-conformance.toml`, one checkout-revision resolver, one fieldwise JSON comparison, and one
+ * document validator (`mdux.tools.schema` over the schemas the contract ships).
  *
  * `MEDUI-DEC-005` forbids silently skipping a claimed phase or profile, so `corpusRootOrSkip()`
  * turns a missing checkout into a hard failure under `CI` and a stderr notice otherwise.
  *
  * Include after `import std;`, `import speclab;`, `import mdux.evidence.json;`,
- * `import mdux.tools.toml;` and `"../framework/SpecLabBridge.hpp"`. Needs `MDUX_REPO_ROOT` defined.
+ * `import mdux.tools.toml;`, `import mdux.tools.schema;` and `"../framework/SpecLabBridge.hpp"`.
+ * Needs `MDUX_REPO_ROOT` defined.
  */
 #pragma once
 
@@ -125,6 +126,63 @@ inline void rejectUnknownMembers(const json::Value&                      object,
                              entry.key));
         }
     }
+}
+
+/// Fieldwise JSON equality, independent of object-key order. This is the comparison the contract
+/// calls identity comparison - `spec/profiles.md` E01 (aggregate-evidence) and R04's
+/// capture/baseline identity both turn on it - and the drift guard for the embedded schema.
+[[nodiscard]] inline bool jsonEqual(const json::Value& left, const json::Value& right) {
+    const auto asNumber = [](const json::Value& value) -> std::optional<std::int64_t> {
+        if (const auto i = value.asInt()) {
+            return *i;
+        }
+        if (const auto u = value.asUInt()) {
+            return static_cast<std::int64_t>(*u);
+        }
+        return std::nullopt;
+    };
+    if (left.kind() != right.kind()) {
+        const auto l = asNumber(left);  // Int and UInt are the same number written two ways
+        const auto r = asNumber(right);
+        return l && r && *l == *r;
+    }
+    switch (left.kind()) {
+        case json::Value::Kind::Null:
+            return true;
+        case json::Value::Kind::Bool:
+            return left.asBool().value_or(false) == right.asBool().value_or(true);
+        case json::Value::Kind::Int:
+        case json::Value::Kind::UInt:
+            return left.asInt().value_or(0) == right.asInt().value_or(1);
+        case json::Value::Kind::Float32:
+            return left.asFloat32().value_or(0.0F) == right.asFloat32().value_or(1.0F);
+        case json::Value::Kind::String:
+            return left.asString().value_or("") == right.asString().value_or("\x01");
+        case json::Value::Kind::Array: {
+            if (left.elements().size() != right.elements().size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < left.elements().size(); ++i) {
+                if (!jsonEqual(left.elements()[i], right.elements()[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        case json::Value::Kind::Object: {
+            if (left.members().size() != right.members().size()) {
+                return false;
+            }
+            for (const json::Member& entry : left.members()) {
+                const json::Value* other = right.find(entry.key);
+                if (other == nullptr || !jsonEqual(entry.value, *other)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +313,7 @@ inline constexpr std::array<std::string_view, 6> knownProfileIds{"MEDUI-PROFILE-
 
 /// Profiles `conformance_spec` has adapters for. A claim outside this fails the "runnable" check
 /// the same way an unobservable capability does.
-inline constexpr std::array<std::string_view, 1> runnableProfiles{"MEDUI-PROFILE-RENDERED"};
+inline constexpr std::array<std::string_view, 2> runnableProfiles{"MEDUI-PROFILE-RENDERED", "MEDUI-PROFILE-EVIDENCE"};
 
 /// The claimed profile ids this suite cannot substantiate - none of them are in `runnableProfiles`.
 /// Empty means every claim is backed by an adapter here; a non-empty result must fail the gate.
@@ -276,98 +334,91 @@ struct Manifest {
     std::vector<std::string> profiles;  ///< claimed profile ids; the contract fixes version at 1
 };
 
-/// `nullopt` when `document` satisfies `schemas/consumer-manifest.schema.json`, otherwise the first
-/// rule it breaks. One validator for MduX's own manifest (converted to this shape by `manifest()`)
-/// and for the `conformance/contracts` `consumer-manifest` cases.
+/// Reads and parses `<checkout>/schemas/<name>.schema.json` from the pinned MedUI checkout.
+[[nodiscard]] inline json::Value pinnedSchema(const std::filesystem::path& checkout, std::string_view name) {
+    const std::filesystem::path path     = checkout / "schemas" / std::format("{}.schema.json", name);
+    auto                        document = json::parse(readFile(path));
+    if (!document) {
+        fail(std::format("{}: is not valid JSON", path.generic_string()));
+    }
+    return std::move(*document);
+}
+
+/// `schemas/consumer-manifest.schema.json`, verbatim, embedded so `manifest()` and the negative
+/// scenarios need no checkout. `medui-consumer-manifest-contract` asserts this still equals the
+/// pinned file byte-structure, so it cannot drift.
+[[nodiscard]] inline const json::Value& consumerManifestSchema() {
+    static const json::Value schema = [] {
+        auto parsed = json::parse(R"JSON({
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Compliatory/MedUI/schemas/0.3/consumer-manifest.schema.json",
+  "title": "MedUI consumer manifest",
+  "description": "The parsed structure of a consumer's medui-conformance.toml. The file on disk is TOML; this describes what a harness sees after parsing it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repository", "commit", "capabilities", "positions"],
+  "properties": {
+    "repository": {
+      "const": "https://github.com/Compliatory/MedUI",
+      "description": "The contract repository being pinned, not the consumer's own."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Informational label for the pinned revision. Never consulted; `commit` identifies the contract."
+    },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["syntax", "semantics", "layout", "safety"] }
+    },
+    "positions": { "enum": ["full", "line-only", "none"] },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version"],
+        "properties": {
+          "id": {
+            "enum": [
+              "MEDUI-PROFILE-RENDERED",
+              "MEDUI-PROFILE-EVIDENCE",
+              "MEDUI-PROFILE-INTERACTION",
+              "MEDUI-PROFILE-BINDING",
+              "MEDUI-PROFILE-PRESENTATION",
+              "MEDUI-PROFILE-PIXELS"
+            ]
+          },
+          "version": { "const": 1 }
+        }
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  }
+})JSON");
+        return parsed ? std::move(*parsed) : json::Value::null();
+    }();
+    return schema;
+}
+
+/// `nullopt` when `document` satisfies the consumer-manifest schema, otherwise the joined list of
+/// rules it breaks. One validator - `mdux.tools.schema` over the schema the contract ships - for
+/// MduX's own manifest (converted to this shape by `manifest()`) and the `conformance/contracts`
+/// `consumer-manifest` cases.
 [[nodiscard]] inline std::optional<std::string> validateConsumerManifest(const json::Value& document) {
-    if (document.kind() != json::Value::Kind::Object) {
-        return "the manifest is not an object";
+    const std::vector<std::string> problems = mdux::tools::schema::validate(document, consumerManifestSchema());
+    if (problems.empty()) {
+        return std::nullopt;
     }
-
-    constexpr std::array<std::string_view, 6> known{"repository", "version", "commit", "capabilities", "positions", "profiles"};
-    for (const json::Member& entry : document.members()) {
-        if (std::ranges::find(known, entry.key) == known.end()) {
-            return std::format("unknown key '{}'; the consumer manifest rejects keys it does not define", entry.key);
-        }
+    std::string joined;
+    for (const std::string& problem : problems) {
+        joined += (joined.empty() ? "" : "; ") + problem;
     }
-    for (std::string_view required : {std::string_view{"repository"}, std::string_view{"commit"},
-                                     std::string_view{"capabilities"}, std::string_view{"positions"}}) {
-        if (document.find(required) == nullptr) {
-            return std::format("missing required key '{}'", required);
-        }
-    }
-
-    const auto repository = document.find("repository")->asString();
-    if (!repository || *repository != "https://github.com/Compliatory/MedUI") {
-        return "repository must be \"https://github.com/Compliatory/MedUI\"";
-    }
-    const auto commit = document.find("commit")->asString();
-    if (!commit || !isCommitSha(*commit)) {
-        return "commit must be a 40-character lowercase hex SHA";
-    }
-    if (const json::Value* version = document.find("version"); version != nullptr) {
-        const auto text = version->asString();
-        if (!text || text->empty()) {
-            return "version, when present, must be a non-empty string";
-        }
-    }
-
-    const json::Value& capabilities = *document.find("capabilities");
-    if (capabilities.kind() != json::Value::Kind::Array || capabilities.elements().empty()) {
-        return "capabilities must be a non-empty array";
-    }
-    constexpr std::array<std::string_view, 4> capabilityEnum{"syntax", "semantics", "layout", "safety"};
-    std::vector<std::string_view>             seenCapabilities;
-    for (const json::Value& capability : capabilities.elements()) {
-        const auto name = capability.asString();
-        if (!name || std::ranges::find(capabilityEnum, *name) == capabilityEnum.end()) {
-            return "capabilities must each be one of syntax, semantics, layout, safety";
-        }
-        if (std::ranges::find(seenCapabilities, *name) != seenCapabilities.end()) {
-            return std::format("capability '{}' is claimed twice", *name);
-        }
-        seenCapabilities.push_back(*name);
-    }
-
-    const auto positions = document.find("positions")->asString();
-    if (!positions || (*positions != "full" && *positions != "line-only" && *positions != "none")) {
-        return "positions must be \"full\", \"line-only\" or \"none\"";
-    }
-
-    if (const json::Value* profiles = document.find("profiles"); profiles != nullptr) {
-        if (profiles->kind() != json::Value::Kind::Array || profiles->elements().empty()) {
-            return "profiles, when present, must be a non-empty array";
-        }
-        std::vector<std::string_view> seenProfiles;
-        for (const json::Value& claim : profiles->elements()) {
-            if (claim.kind() != json::Value::Kind::Object) {
-                return "each profile claim is an { id, version } object";
-            }
-            for (const json::Member& field : claim.members()) {
-                if (field.key != "id" && field.key != "version") {
-                    return std::format("a profile claim carries an unexpected key '{}'", field.key);
-                }
-            }
-            const json::Value* id      = claim.find("id");
-            const json::Value* version = claim.find("version");
-            if (id == nullptr || version == nullptr) {
-                return "a profile claim needs both id and version";
-            }
-            const auto name = id->asString();
-            if (!name || std::ranges::find(knownProfileIds, *name) == knownProfileIds.end()) {
-                return "a profile claim names an id outside the contract's set";
-            }
-            const auto number = version->asInt();
-            if (!number || *number != 1) {
-                return std::format("profile '{}' claims version {}, but the contract fixes it at 1", *name, number ? *number : 0);
-            }
-            if (std::ranges::find(seenProfiles, *name) != seenProfiles.end()) {
-                return std::format("profile '{}' is claimed twice", *name);
-            }
-            seenProfiles.push_back(*name);
-        }
-    }
-    return std::nullopt;
+    return joined;
 }
 
 /// Rebuilds a parsed `medui-conformance.toml` as the JSON shape `schemas/consumer-manifest.schema.json`

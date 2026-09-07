@@ -17,6 +17,7 @@
 import std;
 import speclab;
 import mdux.evidence.json;
+import mdux.tools.schema;
 import mdux.tools.toml;
 
 #include "../framework/SpecLabBridge.hpp"
@@ -52,6 +53,11 @@ const mdux::spec::Register manifestContractCases{
                       }
                       checks.expect(checkoutRevision(*root) == manifest().commit,
                                     "the checkout is at the revision medui-conformance.toml pins");
+
+                      // The consumer-manifest schema is embedded (so `manifest()` needs no checkout);
+                      // this is the guard that it has not drifted from the file the contract ships.
+                      checks.expect(jsonEqual(consumerManifestSchema(), pinnedSchema(*root, "consumer-manifest")),
+                                    "the embedded consumer-manifest schema equals schemas/consumer-manifest.schema.json");
 
                       const std::filesystem::path directory = *root / "conformance" / "contracts";
                       if (!std::filesystem::is_directory(directory)) {

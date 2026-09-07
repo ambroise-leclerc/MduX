@@ -42,6 +42,7 @@ import mdux.tools.medui.goldens;
 import mdux.tools.medui.layout;
 import mdux.tools.medui.parser;
 import mdux.tools.medui.semantic;
+import mdux.tools.schema;
 import mdux.tools.toml;
 
 #include "../framework/SpecLabBridge.hpp"

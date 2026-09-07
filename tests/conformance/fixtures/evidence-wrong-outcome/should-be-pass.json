@@ -1,0 +1,12 @@
+{
+  "id": "MDUX-FIXTURE-EVIDENCE-WRONG-PASS",
+  "note": "One obligation with one matching row whose own outcome is pass: E02/E03 aggregate to pass, so the adapter must say pass while this file says fail. The negative scenario asserts the gate would catch the disagreement. Identities are minimal - the adapter compares them fieldwise, it does not schema-check them.",
+  "profile": { "id": "MEDUI-PROFILE-EVIDENCE", "version": 1 },
+  "rules": ["E02", "E03"],
+  "inputs": {
+    "operation": "aggregate-evidence",
+    "obligations": [ { "screen": "s", "node": "n", "check": { "id": "extent-equality", "version": 1 } } ],
+    "rows": [ { "identity": { "screen": "s", "node": "n", "check": { "id": "extent-equality", "version": 1 } }, "outcome": "pass" } ]
+  },
+  "expected": { "outcome": "fail" }
+}

@@ -25,6 +25,7 @@ import mdux.core.units;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.medui.schema;
+import mdux.tools.schema;
 import mdux.tools.toml;
 import mdux.verify;
 
@@ -90,63 +91,6 @@ using mdux::medui::NodeRect;
 
 [[nodiscard]] bool isNull(const json::Value* value) {
     return value == nullptr || value->kind() == json::Value::Kind::Null;
-}
-
-/// Fieldwise JSON equality, independent of object-key order - E01's identity-comparison rule, which
-/// R04 requires between `captureIdentity` and `baselineIdentity` before a digest is compared.
-[[nodiscard]] bool jsonEqual(const json::Value& left, const json::Value& right) {
-    if (left.kind() != right.kind()) {
-        // Int vs UInt are the same number written two ways; nothing else crosses kinds.
-        const auto asNumber = [](const json::Value& value) -> std::optional<std::int64_t> {
-            if (const auto i = value.asInt()) {
-                return *i;
-            }
-            if (const auto u = value.asUInt()) {
-                return static_cast<std::int64_t>(*u);
-            }
-            return std::nullopt;
-        };
-        const auto l = asNumber(left);
-        const auto r = asNumber(right);
-        return l && r && *l == *r;
-    }
-    switch (left.kind()) {
-        case json::Value::Kind::Null:
-            return true;
-        case json::Value::Kind::Bool:
-            return left.asBool().value_or(false) == right.asBool().value_or(true);
-        case json::Value::Kind::Int:
-        case json::Value::Kind::UInt:
-            return left.asInt().value_or(0) == right.asInt().value_or(1);
-        case json::Value::Kind::Float32:
-            return left.asFloat32().value_or(0.0F) == right.asFloat32().value_or(1.0F);
-        case json::Value::Kind::String:
-            return left.asString().value_or("") == right.asString().value_or("x");
-        case json::Value::Kind::Array: {
-            if (left.elements().size() != right.elements().size()) {
-                return false;
-            }
-            for (std::size_t i = 0; i < left.elements().size(); ++i) {
-                if (!jsonEqual(left.elements()[i], right.elements()[i])) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        case json::Value::Kind::Object: {
-            if (left.members().size() != right.members().size()) {
-                return false;
-            }
-            for (const json::Member& entry : left.members()) {
-                const json::Value* other = right.find(entry.key);
-                if (other == nullptr || !jsonEqual(entry.value, *other)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,23 +285,19 @@ const mdux::spec::Register renderedProfileVectors{
                       checks.expect(renderedVectors == 33,
                                     std::format("all 33 pinned rendered-check vectors ran, saw {}", renderedVectors));
 
-                      // Every profile the manifest actually claims must have an adapter here, and
-                      // every rule its registry entry declares must have been exercised by a vector
-                      // that ran. Analogue of SharedConformanceTests' capability machinery: a claim
-                      // with nothing behind it fails here rather than passing quietly.
-                      const std::vector<std::string> unrunnable = unrunnableProfiles(pinned.profiles);
-                      for (const std::string& id : unrunnable) {
+                      // A claim with no adapter here fails rather than passing quietly (analogue of
+                      // SharedConformanceTests' capability machinery). The per-profile "ran its
+                      // rules" check belongs to each profile's own scenario - RENDERED's is below,
+                      // EVIDENCE's is in EvidenceVectorTests.
+                      for (const std::string& id : unrunnableProfiles(pinned.profiles)) {
                           checks.expect(false, std::format("medui-conformance.toml claims '{}', which conformance_spec has no adapter for", id));
                       }
-                      for (const std::string& claimed : pinned.profiles) {
-                          if (std::ranges::find(runnableProfiles, claimed) == runnableProfiles.end()) {
-                              continue;  // already reported above
-                          }
-                          const std::vector<std::string> rules = registryRulesFor(*root, claimed);
-                          checks.expect(!rules.empty(), std::format("registry.json lists rules for claimed profile '{}'", claimed));
+                      if (std::ranges::find(pinned.profiles, "MEDUI-PROFILE-RENDERED") != pinned.profiles.end()) {
+                          const std::vector<std::string> rules = registryRulesFor(*root, "MEDUI-PROFILE-RENDERED");
+                          checks.expect(!rules.empty(), "registry.json lists rules for MEDUI-PROFILE-RENDERED");
                           for (const std::string& rule : rules) {
                               checks.expect(rulesExercised.contains(rule),
-                                            std::format("claimed profile '{}' rule '{}' was exercised by a vector that ran", claimed, rule));
+                                            std::format("claimed RENDERED rule {} was exercised by a vector that ran", rule));
                           }
                       }
 
@@ -420,25 +360,24 @@ const mdux::spec::Register aClaimedProfileWithoutAnAdapterIsRejected{
         return speclab::Test("medui-profile-runnable-guard")
             .Given("the profiles medui-conformance.toml actually claims and the ones with adapters here", [] {})
             .When("each claim is checked against the runnable set", [] {})
-            .Then("the real manifest is all-runnable, and adding an EVIDENCE claim would be rejected",
+            .Then("the real manifest is all-runnable, and adding an INTERACTION claim would be rejected",
                   [] {
                       mdux::spec::Checks checks;
 
-                      // The rejection path itself: unrunnableProfiles() is what the vector scenario
-                      // fails on, so a claim it cannot substantiate is caught here rather than
-                      // passing quietly with the hard-coded R01-R04 list.
+                      // The rejection path itself: unrunnableProfiles() is what the vector scenarios
+                      // fail on, so a claim it cannot substantiate is caught here rather than passing
+                      // quietly against a hard-coded rule list.
                       const std::vector<std::string> asShipped = mdux::conformance::manifest().profiles;
                       checks.expect(unrunnableProfiles(asShipped).empty(),
                                     "every profile medui-conformance.toml claims has an adapter in conformance_spec");
 
-                      const std::array<std::string, 2> withEvidence{"MEDUI-PROFILE-RENDERED", "MEDUI-PROFILE-EVIDENCE"};
-                      const std::vector<std::string>   rejected = unrunnableProfiles(withEvidence);
-                      checks.expect(rejected == std::vector<std::string>{"MEDUI-PROFILE-EVIDENCE"},
-                                    "an added EVIDENCE claim is flagged as unsupported here (its adapter is #314c)");
+                      const std::array<std::string, 2> withInteraction{"MEDUI-PROFILE-RENDERED", "MEDUI-PROFILE-INTERACTION"};
+                      checks.expect(unrunnableProfiles(withInteraction) == std::vector<std::string>{"MEDUI-PROFILE-INTERACTION"},
+                                    "an added INTERACTION claim is flagged as unsupported here (#314 stops at RENDERED and EVIDENCE)");
 
-                      // EVIDENCE is a real contract profile - it is a missing adapter, not a typo.
-                      checks.expect(std::ranges::find(knownProfileIds, "MEDUI-PROFILE-EVIDENCE") != knownProfileIds.end(),
-                                    "EVIDENCE is a profile the contract defines");
+                      // INTERACTION is a real contract profile - it is a missing adapter, not a typo.
+                      checks.expect(std::ranges::find(knownProfileIds, "MEDUI-PROFILE-INTERACTION") != knownProfileIds.end(),
+                                    "INTERACTION is a profile the contract defines");
                       for (std::string_view id : runnableProfiles) {
                           checks.expect(std::ranges::find(knownProfileIds, id) != knownProfileIds.end(),
                                         std::format("runnable profile '{}' is in the contract's set", id));
