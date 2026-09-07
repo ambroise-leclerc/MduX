@@ -5,3 +5,8 @@ capabilities = ["syntax", "semantics", "layout", "safety"]
 # Diagnostic position precision, per `spec/diagnostics.md`. The lexer carries exact 1-based UTF-8
 # byte columns, so every pinned position is matched in full.
 positions = "full"
+# Optional observation profiles (MEDUI-DEC-007). A string array, not `[[profiles]]`: `mdux.tools.toml`
+# has no array-of-tables, and `conformance_spec` synthesizes the schema's `{ id, version: 1 }` shape.
+# RENDERED (R01-R04) is gated by `conformance_spec` against `mdux.verify`'s own arithmetic; EVIDENCE
+# is #314c.
+profiles = ["MEDUI-PROFILE-RENDERED"]

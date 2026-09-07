@@ -1,0 +1,13 @@
+{
+  "id": "MDUX-FIXTURE-EXTENT-WRONG-OUTCOME",
+  "note": "A well-formed R01 vector whose stated outcome is deliberately wrong: ink equals golden, so the adapter must say pass while this file says fail. The negative scenario asserts the gate would catch the disagreement.",
+  "profile": { "id": "MEDUI-PROFILE-RENDERED", "version": 1 },
+  "rules": ["R01"],
+  "inputs": {
+    "operation": "rendered-check",
+    "check": "extent-equality",
+    "golden": [2, 2, 4, 4],
+    "ink": [2, 2, 4, 4]
+  },
+  "expected": { "outcome": "fail" }
+}

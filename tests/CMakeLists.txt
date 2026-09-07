@@ -1052,6 +1052,46 @@ endif()
 
 mdux_discover_tests(medui_tools_spec)
 
+# Shared MedUI observation-profile conformance (#314 Stage B).
+#
+# Runs MedUI's `MEDUI-PROFILE-RENDERED` vectors and `conformance/contracts` manifest cases from the
+# pinned checkout named by `medui-conformance.toml`. Links MduX::ToolsCommon for the TOML/JSON
+# readers and, through MduX::Core, `mdux.verify`'s exported rendered-check arithmetic - no Vulkan and
+# no compiler, so it is kept out of both verify_spec (needs a framebuffer) and medui_tools_spec
+# (links the compiler). `tests/conformance/CorpusFixture.hpp` is shared with medui_tools_spec's
+# SharedConformanceTests. The `conformance` label is what the per-leg `ctest -L conformance` step
+# selects on; the suite also runs as part of the full `ctest`.
+add_executable(conformance_spec
+    conformance/ConformanceSpecMain.cpp
+    conformance/RenderedCheckTests.cpp
+    conformance/ManifestContractTests.cpp
+)
+
+target_link_libraries(conformance_spec PRIVATE MduX::ToolsCommon speclab::speclab)
+target_include_directories(conformance_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# RenderedCheckTests reads its negative fixtures from tests/conformance/fixtures/, committed .json
+# vectors an author can open, the same rationale as the parser fixture corpus.
+target_compile_definitions(conformance_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
+set_target_properties(conformance_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(conformance_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # CorpusFixture.hpp reads MEDUI_CONFORMANCE_DIR and CI through getenv(); suppress MSVC's blanket
+    # deprecation at the target boundary, as medui_tools_spec does for the same reason.
+    target_compile_options(conformance_spec PRIVATE /experimental:module /std:c++latest /wd4996)
+endif()
+
+mdux_discover_tests(conformance_spec)
+
 # mdux_compile_screen()'s recipe reading (issue #198)
 #
 # Script-mode CMake, because what is under test is a pure function of the recipe text: which

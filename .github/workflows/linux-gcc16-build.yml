@@ -203,6 +203,14 @@ jobs:
       shell: bash
       run: ctest --preset ninja-gcc -L verify -V --no-tests=error
 
+    # Shared MedUI observation-profile conformance (#314). MEDUI_CONFORMANCE_DIR is set for this job
+    # and the corpus is checked out at the pinned commit, so the RENDERED vectors and the manifest
+    # cases must run - `corpusRootOrSkip()` turns a missing checkout into a failure under CI. -V so
+    # the vector count and pinned SHA are visible in the log; --no-tests=error so a label that
+    # matched nothing fails rather than passing over zero vectors.
+    - name: Verify MedUI profile conformance
+      run: ctest --preset ninja-gcc -L conformance -V --no-tests=error
+
     # Issue #304: a documented `ctest -R <selector>` example that matches nothing reads as
     # verification evidence and produces none - `.agents/skills/mdux-build-and-test/SKILL.md`
     # recommended one until this found it. Run here rather than in Documentation Lint because the

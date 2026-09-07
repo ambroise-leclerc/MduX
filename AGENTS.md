@@ -256,19 +256,22 @@ look-alike command line; they are not needed to build by hand, and each uses its
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
-- Tests: twenty-seven executables. Nine on the in-repository MduXTest framework (`core_tests`,
+- Tests: twenty-eight executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and seventeen on SpecLab
+  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and eighteen on SpecLab
   (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`, `image_spec`, `image_tools_spec`,
   `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
-  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`) — see ADR-009 — plus the
-  dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest entry per case, so
-  `ctest -R <scenario>` selects an individual test.
+  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`, `conformance_spec`) — see
+  ADR-009 — plus the dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest
+  entry per case, so `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
   `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
   screen by `mdux_compile_screen()`; asserted as a named step on all four CI legs since `#282`, and
-  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes).
+  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes),
+  `conformance` (`conformance_spec` runs the pinned MedUI observation-profile corpus — the
+  `MEDUI-PROFILE-RENDERED` vectors and the `consumer-manifest` cases — asserted as a named step on
+  all five CI legs since `#314`).
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

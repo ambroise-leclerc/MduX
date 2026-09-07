@@ -125,6 +125,13 @@ jobs:
       shell: bash
       run: ctest --preset ninja-macos-clang -L verify -V --no-tests=error
 
+    # Shared MedUI observation-profile conformance (#314): the RENDERED vectors and the manifest
+    # cases against the corpus checked out at the pinned commit. -V for the vector count and SHA in
+    # the log; --no-tests=error so an empty label fails rather than passing over nothing.
+    - name: Verify MedUI profile conformance
+      shell: bash
+      run: ctest --preset ninja-macos-clang -L conformance -V --no-tests=error
+
 
     - name: Smoke-test Vulkan presentation
       run: ./build-macos-clang/examples/VulkanSCTriangleExample --smoke-test

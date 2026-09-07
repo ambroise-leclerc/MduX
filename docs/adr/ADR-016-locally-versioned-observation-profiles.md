@@ -214,6 +214,28 @@ misidentified observation must not cross it.
   PAR-REQ-002 (four named profiles + the digest predicate + adversarial fixtures) and does not
   discharge the shared-schema/corpus half.
 
+### Amendment — #314 Stage B: the exported rendered-check leaves
+
+The shared-corpus half of PAR-REQ-002 landed in #314 Stage B. MduX's manifest now claims
+`MEDUI-PROFILE-RENDERED` and `conformance_spec` runs MedUI's 33 `rendered-check` vectors (rules
+R01-R04) from the pinned checkout. To keep the local `mdux.local/*` profiles and the shared corpus
+running **one** implementation of the arithmetic rather than two that agree until they matter
+(ADR-008 decision 1, applied to the verifier), three pure predicates moved from the anonymous
+namespace of `src/verify/Verify.cpp` into the `mdux.verify` module interface:
+
+- `rectContainedBy(NodeRect inner, NodeRect outer)` — was `inside()`; `goldenBounds()` and the text
+  checks already used it, and rule R02 is the same predicate over an inflated golden.
+- `inflate(NodeRect, std::int32_t margin)` — new, for R02's nonnegative margin; saturating narrow
+  from 64-bit intermediates.
+- `couldBeBlend(ColorRgba8 pixel, ground, tint, std::int64_t allowance)` — `colorHash()`'s
+  interval-intersection test; rule R03 is this predicate per sample with `allowance` set to the
+  vector's composite count.
+
+This is a visibility change only — the four required checks compute exactly what they computed
+before, and `verify_spec` proves it. The `mdux.local/*` ids and versions are unchanged; the
+`profiles` key in `medui-conformance.toml` names the canonical `MEDUI-PROFILE-RENDERED`, and the
+migration mapping the two remains future work.
+
 ## References
 
 - [ADR-014](ADR-014-rendered-truth-verification.md) — decision 4 (no measured pixel in the

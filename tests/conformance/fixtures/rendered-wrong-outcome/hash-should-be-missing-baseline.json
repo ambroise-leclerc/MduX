@@ -1,0 +1,17 @@
+{
+  "id": "MDUX-FIXTURE-HASH-WRONG-OUTCOME",
+  "note": "R04 with a null baseline: the adapter must report missing-baseline and never pass, while this file claims pass.",
+  "profile": { "id": "MEDUI-PROFILE-RENDERED", "version": 1 },
+  "rules": ["R04"],
+  "inputs": {
+    "operation": "rendered-check",
+    "check": "rgba8-sha256",
+    "surface": [2, 2],
+    "rgba8": [255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255],
+    "golden": [0, 0, 2, 2],
+    "baseline": null,
+    "captureIdentity": { "backend": "synthetic" },
+    "baselineIdentity": { "backend": "synthetic" }
+  },
+  "expected": { "outcome": "pass" }
+}
