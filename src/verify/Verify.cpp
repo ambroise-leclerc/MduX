@@ -290,6 +290,15 @@ NodeRect inflate(NodeRect rect, std::int32_t margin) noexcept {
 }
 
 bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint, std::int64_t allowance) noexcept {
+    // Alpha is not one of the interpolated channels: `blend()` writes coverage into the source's
+    // alpha and preserves the framebuffer's, so a painted pixel carries the ground's alpha whatever
+    // the tint's is. Including it in the coverage intersection would reject a valid blend of an
+    // opaque ground with a non-opaque tint. Check it directly, then intersect over RGB only.
+    if (const std::int64_t alphaDistance = static_cast<std::int64_t>(pixel.a) - ground.a;
+        alphaDistance > allowance || alphaDistance < -allowance) {
+        return false;
+    }
+
     // The feasible coverage, as a closed interval of rationals, narrowed channel by channel from
     // the whole of [0, 1].
     std::int64_t lowNum  = 0;
@@ -297,9 +306,9 @@ bool couldBeBlend(ColorRgba8 pixel, ColorRgba8 ground, ColorRgba8 tint, std::int
     std::int64_t highNum = 1;
     std::int64_t highDen = 1;
 
-    const std::array<std::int64_t, 4> pixels{pixel.r, pixel.g, pixel.b, pixel.a};
-    const std::array<std::int64_t, 4> grounds{ground.r, ground.g, ground.b, ground.a};
-    const std::array<std::int64_t, 4> tints{tint.r, tint.g, tint.b, tint.a};
+    const std::array<std::int64_t, 3> pixels{pixel.r, pixel.g, pixel.b};
+    const std::array<std::int64_t, 3> grounds{ground.r, ground.g, ground.b};
+    const std::array<std::int64_t, 3> tints{tint.r, tint.g, tint.b};
 
     for (std::size_t channel = 0; channel < pixels.size(); ++channel) {
         const std::int64_t span     = tints[channel] - grounds[channel];

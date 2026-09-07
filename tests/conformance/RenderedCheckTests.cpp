@@ -62,6 +62,15 @@ using mdux::medui::NodeRect;
     return *number;
 }
 
+/// One 8-bit channel value, rejecting anything outside [0, 255] rather than silently wrapping it.
+[[nodiscard]] std::uint8_t byteAt(const json::Value& array, std::size_t index, const std::filesystem::path& path) {
+    const std::int64_t value = intAt(array, index, path);
+    if (value < 0 || value > 255) {
+        fail(std::format("{}: channel {} is {}, outside [0, 255]", path.generic_string(), index, value));
+    }
+    return static_cast<std::uint8_t>(value);
+}
+
 [[nodiscard]] NodeRect rectOf(const json::Value& array, const std::filesystem::path& path) {
     if (array.kind() != json::Value::Kind::Array || array.elements().size() != 4) {
         fail(std::format("{}: a rectangle is [x, y, width, height]", path.generic_string()));
@@ -76,10 +85,7 @@ using mdux::medui::NodeRect;
     if (array.kind() != json::Value::Kind::Array || array.elements().size() != 3) {
         fail(std::format("{}: an RGB8 sample is [r, g, b]", path.generic_string()));
     }
-    return ColorRgba8{.r = static_cast<std::uint8_t>(intAt(array, 0, path)),
-                      .g = static_cast<std::uint8_t>(intAt(array, 1, path)),
-                      .b = static_cast<std::uint8_t>(intAt(array, 2, path)),
-                      .a = 255};
+    return ColorRgba8{.r = byteAt(array, 0, path), .g = byteAt(array, 1, path), .b = byteAt(array, 2, path), .a = 255};
 }
 
 [[nodiscard]] bool isNull(const json::Value* value) {
@@ -160,9 +166,12 @@ using mdux::medui::NodeRect;
     if (isNull(ink)) {
         return "pass";  // R02: empty ink passes.
     }
-    const NodeRect golden = rectOf(member(inputs, "golden", path), path);
-    const auto     margin = static_cast<std::int32_t>(scalarInt(member(inputs, "margin", path), "margin", path));
-    return mv::rectContainedBy(rectOf(*ink, path), mv::inflate(golden, margin)) ? "pass" : "fail";
+    const NodeRect     golden = rectOf(member(inputs, "golden", path), path);
+    const std::int64_t margin = scalarInt(member(inputs, "margin", path), "margin", path);
+    if (margin < 0 || margin > std::numeric_limits<std::int32_t>::max()) {
+        fail(std::format("{}: R02 margin is a nonnegative integer, got {}", path.generic_string(), margin));
+    }
+    return mv::rectContainedBy(rectOf(*ink, path), mv::inflate(golden, static_cast<std::int32_t>(margin))) ? "pass" : "fail";
 }
 
 [[nodiscard]] std::string tintComposition(const json::Value& inputs, const std::filesystem::path& path) {
@@ -215,7 +224,7 @@ using mdux::medui::NodeRect;
         for (std::int32_t col = golden.x; col < golden.x + golden.width; ++col) {
             const std::size_t base = (static_cast<std::size_t>(row) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(col)) * 4;
             for (std::size_t channel = 0; channel < 4; ++channel) {
-                roi.push_back(static_cast<std::byte>(intAt(rgba8, base + channel, path)));
+                roi.push_back(static_cast<std::byte>(byteAt(rgba8, base + channel, path)));
             }
         }
     }

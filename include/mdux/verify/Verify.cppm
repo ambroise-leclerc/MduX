@@ -835,12 +835,13 @@ static_assert(!std::is_aggregate_v<RawImageExpectation>, "a RawImageExpectation 
  * @brief Whether `pixel` could be `tint` composited over `ground` at a single coverage in [0, 1].
  *
  * Channel-wise membership of the interval between ground and tint is necessary and not sufficient:
- * alpha blending applies one coverage to every channel, so each channel constrains that coverage to
- * an interval and the pixel is possible exactly when those intervals intersect within [0, 1]. With a
+ * alpha blending applies one coverage to every RGB channel, so each constrains that coverage to an
+ * interval and the pixel is possible exactly when those intervals intersect within [0, 1]. With a
  * black ground and `Theme.Colors.ScoreDigits` at `(33, 184, 107)`, the pixel `(33, 0, 107)` lies in
  * every channel's range while demanding full coverage of red and blue and none of green - a
  * per-channel test accepts it and no blend can produce it. Integer cross-products, no division and
- * no float.
+ * no float. The alpha channel is not interpolated - `blend()` preserves the framebuffer's alpha -
+ * so it is only required to match `ground`'s within `allowance`, not folded into the intersection.
  *
  * `allowance` is the UNORM slack per composite the device performed (one for a single blend, more
  * for a stacked one): a channel constrains coverage only as tightly as its own span allows, so one

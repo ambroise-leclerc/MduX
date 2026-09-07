@@ -132,8 +132,10 @@ inline void rejectUnknownMembers(const json::Value&                      object,
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] inline bool isCommitSha(std::string_view value) {
+    // Lowercase only, matching `schemas/consumer-manifest.schema.json`'s `^[0-9a-f]{40}$` and git's
+    // own object-name spelling: an uppercase SHA is not what the contract pins.
     return value.size() == 40 && std::ranges::all_of(value, [](unsigned char c) {
-               return std::isxdigit(c) != 0;
+               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
            });
 }
 
@@ -389,7 +391,10 @@ struct Manifest {
         } else if (raw.kind() == toml::Value::Kind::String) {
             put(key, json::Value::string(raw.asString()));
         } else {
-            put(key, json::Value::string("<non-string>"));  // let validateConsumerManifest name the offending key
+            // A non-string scalar where the schema wants a string (`version = 1`, `commit = true`):
+            // pass a JSON null through so validateConsumerManifest() reports the type error rather
+            // than a placeholder string accidentally satisfying "non-empty".
+            put(key, json::Value::null());
         }
     }
     return view;

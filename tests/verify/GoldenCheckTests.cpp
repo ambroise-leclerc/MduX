@@ -719,3 +719,41 @@ const mdux::spec::Register eachGoldenCheckNamesItsOwnObservation{
                   })
             .Execute();
     }};
+
+const mdux::spec::Register theExportedRenderedLeavesHoldTheirContracts{
+    "The rendered-check leaves exported for the shared corpus decide as documented",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-rendered-leaves")
+            .Given("rectContainedBy, inflate and couldBeBlend, now on the module interface", [] {})
+            .When("they are exercised at the edges rule R02/R03 turn on", [] {})
+            .Then("containment allows the touching edge, inflate widens each side, and a blend's "
+                  "preserved alpha does not defeat the coverage intersection",
+                  [] {
+                      mdux::spec::Checks checks;
+                      using ms::NodeRect;
+
+                      // rectContainedBy: touching the outer edge is inside; a pixel past it is not.
+                      checks.expect(mv::rectContainedBy(NodeRect{2, 2, 4, 4}, NodeRect{2, 2, 4, 4}), "an exact fit is contained");
+                      checks.expect(!mv::rectContainedBy(NodeRect{1, 2, 4, 4}, NodeRect{2, 2, 4, 4}), "one pixel left of the box is not");
+
+                      // inflate: R02's margin grows every side, and the containment then holds.
+                      const NodeRect grown = mv::inflate(NodeRect{2, 2, 4, 4}, 1);
+                      checks.expect(grown == NodeRect{1, 1, 6, 6}, "inflate(_, 1) moves the origin out and adds 2 to each extent");
+                      checks.expect(mv::rectContainedBy(NodeRect{1, 1, 6, 6}, grown), "ink flush with the inflated edge is contained (R02)");
+
+                      // couldBeBlend: a real blend() of an opaque ground with a non-opaque tint
+                      // keeps the ground's alpha; that must not force the coverage interval to zero.
+                      const mdux::core::ColorRgba8 opaqueGround{0, 0, 0, 255};
+                      const mdux::core::ColorRgba8 halfTint{255, 0, 0, 128};
+                      const mdux::core::ColorRgba8 painted = mv::blend(opaqueGround, halfTint, 255);
+                      checks.expect(painted.a == opaqueGround.a, "blend() preserves the framebuffer alpha");
+                      checks.expect(mv::couldBeBlend(painted, opaqueGround, halfTint, 1),
+                                    "and couldBeBlend() accepts it - alpha is checked against the ground, not intersected");
+                      // A foreign green channel no single coverage explains is still rejected.
+                      checks.expect(!mv::couldBeBlend(mdux::core::ColorRgba8{128, 40, 0, 255}, opaqueGround, halfTint, 1),
+                                    "a channel off the blend line still fails");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
