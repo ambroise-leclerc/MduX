@@ -922,7 +922,10 @@ if(TARGET __CMAKE::CXX23)
     set_target_properties(verify_ui_spec PROPERTIES CXX_MODULE_STD ON)
 endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(verify_ui_spec PRIVATE /experimental:module /std:c++latest)
+    # /wd4996: MeduiEvidenceTests.cpp includes CorpusFixture.hpp, which reads MEDUI_CONFORMANCE_DIR
+    # and CI through getenv() - the same boundary suppression medui_tools_spec and conformance_spec
+    # apply for the same header.
+    target_compile_options(verify_ui_spec PRIVATE /experimental:module /std:c++latest /wd4996)
 endif()
 mdux_discover_tests(verify_ui_spec)
 
