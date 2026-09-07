@@ -58,7 +58,7 @@ shared schema; this ADR does not invent a second canonical JSON implementation.
 
 Outcomes distinguish pass, fail, unsupported/not-run and missing baseline. Only pass discharges a
 required obligation. Derive the expected set independently from the pinned bundle/profile;
-missing, duplicate, unknown or substituted required rows fail the report gate. Producer identity
+missing, duplicate, unknown, unsupported, not-run or substituted required rows fail the report gate. Producer identity
 is retained for audit but excluded when pairing sibling observations; pair only compatible
 profiles and equal logical inputs/scopes. Different native artifact digests are allowed, with
 each proven to resolve to those equal logical inputs. Never compare a bare `node::check` key
@@ -80,7 +80,7 @@ already exists.
 events/update order, source-to-node binding and presentation observations. The proposed local
 requirements choose bounded storage, explicit cancellation/overflow, half-open reverse-paint
 occlusion, traced action outputs, scalar-safe bounded editing and injected time for replay.
-#315 must finalize event vocabulary, coordinate rounding and editing policy; #322 must finalize
+Issue #315 must finalize event vocabulary, coordinate rounding and editing policy; #322 must finalize
 viewport numeric/composition rules; #325 must finalize source-round-trip rules. Font/field/control
 appearance and pressed/focused states need declared presentation profiles before exact-pixel
 comparisons. Platform ownership, windowing and host action execution remain implementation/host

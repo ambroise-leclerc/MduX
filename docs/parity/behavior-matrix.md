@@ -140,7 +140,10 @@ ColorHash=NoBaseline. The node-free synthetic package isolates those golden pred
 not claim an empty real screen would pass every applicable check.
 
 To reproduce, extract the exact TrustSC SHA above into `/tmp/trustsc-parity-20260906` and the
-MduX-pinned MedUI SHA into `/tmp/medui-312` (GitHub commit archives suffice), then run from MduX:
+MduX-pinned MedUI SHA into `/tmp/medui-312` (GitHub commit archives suffice), then run from MduX.
+The nested-Row `source.medui` fixture is byte-identical at both MedUI pins (Git blob
+`3ee73d7e4287b30bbb50d2554a95b414dc71a4b1`), so using this copy with TrustSC introduces no
+fixture-version difference:
 
 ```sh
 cargo test --offline --locked --manifest-path /tmp/trustsc-parity-20260906/Cargo.toml --target-dir /tmp/mdux-312-trustsc-target -p trustsc-ui-verify

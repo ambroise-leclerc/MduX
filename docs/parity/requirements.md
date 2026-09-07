@@ -65,6 +65,13 @@ upstream proposal or remove these downstream gates.
 
 ## Review disposition
 
+On 7 September 2026, [AM-L approved the PR](https://github.com/ambroise-leclerc/MduX/pull/329#pullrequestreview-5130548324).
+The [maintainer's detailed review](https://github.com/ambroise-leclerc/MduX/pull/329#pullrequestreview-5130673890)
+verified the matrix against the pinned sources and approved its substance, while explicitly
+leaving formal acceptance of the prospective requirements pending. These reviews do not assign
+accepted/amended/deferred dispositions to individual requirements or accept the upstream profiles;
+the pending states below therefore remain unchanged.
+
 | Record | Requested reviewer | State |
 |---|---|---|
 | Matrix and D1–D4 | MduX maintainer; MedUI maintainer for the shared contract | Proposed; approval not recorded |

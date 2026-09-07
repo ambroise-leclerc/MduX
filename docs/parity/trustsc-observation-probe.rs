@@ -1,11 +1,13 @@
 //! Pinned sibling observation probe for MduX #312; see behavior-matrix.md for reproduction.
 //! Calls TrustSC's real parser and verifier; contains no replacement checking algorithm.
+//! Deliberately outside the build/CI; issue #314 will implement the executable shared corpus gate.
 
 use trustsc_ui::{
     CompiledScreenPackage, CvCheckKind, GoldenReferenceEntry, LayoutKind, LayoutSpec, Rect,
 };
 use trustsc_ui_verify::{CheckKind, CheckOutcome, FrameExpectations, FramePixels, verify_frame};
 
+/// Checks the supplied nested-Row fixture and isolated golden outcomes against pinned TrustSC.
 fn main() {
     let source = std::fs::read_to_string(std::env::args().nth(1).expect("nested-row fixture path"))
         .expect("read fixture");
