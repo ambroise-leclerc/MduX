@@ -229,7 +229,12 @@ namespace of `src/verify/Verify.cpp` into the `mdux.verify` module interface:
   from 64-bit intermediates.
 - `couldBeBlend(ColorRgba8 pixel, ground, tint, std::int64_t allowance)` — `colorHash()`'s
   interval-intersection test; rule R03 is this predicate per sample with `allowance` set to the
-  vector's composite count.
+  vector's composite count. Its body is unchanged. Its docstring now states the precondition both
+  callers already meet — `ground` and `tint` share their alpha (opaque in every production and
+  corpus case) — under which alpha drops out of the intersection. `couldBeBlend` treats alpha as an
+  interpolated channel, which `blend()` does not; correcting that for mismatched-alpha callers would
+  change what `colorHash()` can report and so is deferred to a change that moves
+  `mdux.local/tint-composition` to version 2.
 
 This is a visibility change only — the four required checks compute exactly what they computed
 before, and `verify_spec` proves it. The `mdux.local/*` ids and versions are unchanged; the

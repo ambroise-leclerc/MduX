@@ -340,9 +340,25 @@ const mdux::spec::Register renderedProfileVectors{
 
                       checks.expect(renderedVectors == 33,
                                     std::format("all 33 pinned rendered-check vectors ran, saw {}", renderedVectors));
-                      for (std::string_view rule : {"R01", "R02", "R03", "R04"}) {
-                          checks.expect(rulesExercised.contains(std::string{rule}),
-                                        std::format("rule {} is backed by at least one vector that ran", rule));
+
+                      // Every profile the manifest actually claims must have an adapter here, and
+                      // every rule its registry entry declares must have been exercised by a vector
+                      // that ran. Analogue of SharedConformanceTests' capability machinery: a claim
+                      // with nothing behind it fails here rather than passing quietly.
+                      const std::vector<std::string> unrunnable = unrunnableProfiles(pinned.profiles);
+                      for (const std::string& id : unrunnable) {
+                          checks.expect(false, std::format("medui-conformance.toml claims '{}', which conformance_spec has no adapter for", id));
+                      }
+                      for (const std::string& claimed : pinned.profiles) {
+                          if (std::ranges::find(runnableProfiles, claimed) == runnableProfiles.end()) {
+                              continue;  // already reported above
+                          }
+                          const std::vector<std::string> rules = registryRulesFor(*root, claimed);
+                          checks.expect(!rules.empty(), std::format("registry.json lists rules for claimed profile '{}'", claimed));
+                          for (const std::string& rule : rules) {
+                              checks.expect(rulesExercised.contains(rule),
+                                            std::format("claimed profile '{}' rule '{}' was exercised by a vector that ran", claimed, rule));
+                          }
                       }
 
                       std::cerr << std::format("MedUI RENDERED profile: {} vector(s) at {}\n", renderedVectors, pinned.commit);
@@ -397,26 +413,35 @@ const mdux::spec::Register renderedGateCatchesAWrongOutcome{
             .Execute();
     }};
 
-const mdux::spec::Register anUnadaptedProfileCannotBeClaimed{
-    "A profile with no adapter here is caught before it can be claimed",
+const mdux::spec::Register aClaimedProfileWithoutAnAdapterIsRejected{
+    "An unsupported profile claim in medui-conformance.toml fails the gate",
     "conformance",
     [] {
         return speclab::Test("medui-profile-runnable-guard")
-            .Given("the closed profile set and the profiles this suite has adapters for", [] {})
-            .When("an EVIDENCE claim is checked against the runnable set", [] {})
-            .Then("it is a known contract profile but not one this suite can substantiate",
+            .Given("the profiles medui-conformance.toml actually claims and the ones with adapters here", [] {})
+            .When("each claim is checked against the runnable set", [] {})
+            .Then("the real manifest is all-runnable, and adding an EVIDENCE claim would be rejected",
                   [] {
                       mdux::spec::Checks checks;
+
+                      // The rejection path itself: unrunnableProfiles() is what the vector scenario
+                      // fails on, so a claim it cannot substantiate is caught here rather than
+                      // passing quietly with the hard-coded R01-R04 list.
+                      const std::vector<std::string> asShipped = mdux::conformance::manifest().profiles;
+                      checks.expect(unrunnableProfiles(asShipped).empty(),
+                                    "every profile medui-conformance.toml claims has an adapter in conformance_spec");
+
+                      const std::array<std::string, 2> withEvidence{"MEDUI-PROFILE-RENDERED", "MEDUI-PROFILE-EVIDENCE"};
+                      const std::vector<std::string>   rejected = unrunnableProfiles(withEvidence);
+                      checks.expect(rejected == std::vector<std::string>{"MEDUI-PROFILE-EVIDENCE"},
+                                    "an added EVIDENCE claim is flagged as unsupported here (its adapter is #314c)");
+
+                      // EVIDENCE is a real contract profile - it is a missing adapter, not a typo.
                       checks.expect(std::ranges::find(knownProfileIds, "MEDUI-PROFILE-EVIDENCE") != knownProfileIds.end(),
                                     "EVIDENCE is a profile the contract defines");
-                      checks.expect(std::ranges::find(runnableProfiles, "MEDUI-PROFILE-EVIDENCE") == runnableProfiles.end(),
-                                    "but conformance_spec has no EVIDENCE adapter, so claiming it would fail the runnable check (#314c)");
-                      checks.expect(std::ranges::find(runnableProfiles, "MEDUI-PROFILE-RENDERED") != runnableProfiles.end(),
-                                    "RENDERED is runnable, which is why medui-conformance.toml may claim it");
-                      // Every runnable profile must be a real contract profile.
                       for (std::string_view id : runnableProfiles) {
                           checks.expect(std::ranges::find(knownProfileIds, id) != knownProfileIds.end(),
-                                        std::format("'{}' is in the contract's profile set", id));
+                                        std::format("runnable profile '{}' is in the contract's set", id));
                       }
                       checks.raise();
                   })

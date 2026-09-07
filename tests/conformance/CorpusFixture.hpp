@@ -257,6 +257,18 @@ inline constexpr std::array<std::string_view, 6> knownProfileIds{"MEDUI-PROFILE-
 /// the same way an unobservable capability does.
 inline constexpr std::array<std::string_view, 1> runnableProfiles{"MEDUI-PROFILE-RENDERED"};
 
+/// The claimed profile ids this suite cannot substantiate - none of them are in `runnableProfiles`.
+/// Empty means every claim is backed by an adapter here; a non-empty result must fail the gate.
+[[nodiscard]] inline std::vector<std::string> unrunnableProfiles(std::span<const std::string> claimed) {
+    std::vector<std::string> unmatched;
+    for (const std::string& id : claimed) {
+        if (std::ranges::find(runnableProfiles, id) == runnableProfiles.end()) {
+            unmatched.push_back(id);
+        }
+    }
+    return unmatched;
+}
+
 struct Manifest {
     std::string              commit;
     std::vector<std::string> capabilities;
@@ -420,6 +432,25 @@ struct Manifest {
         result.profiles = profiles->asStringArray();
     }
     return result;
+}
+
+/// The rules `profiles/registry.json` lists for `profileId`. Empty when the registry names no such
+/// profile - a claim the "every claimed rule ran" check must then fail on.
+[[nodiscard]] inline std::vector<std::string> registryRulesFor(const std::filesystem::path& checkout, std::string_view profileId) {
+    const std::filesystem::path path     = checkout / "profiles" / "registry.json";
+    const auto                  document = json::parse(readFile(path));
+    if (!document) {
+        fail(std::format("{}: is not valid JSON", path.generic_string()));
+    }
+    std::vector<std::string> rules;
+    for (const json::Value& entry : requireArray(*document, "profiles", path)) {
+        if (requireString(entry, "id", path) == profileId) {
+            for (const json::Value& rule : requireArray(entry, "rules", path)) {
+                rules.emplace_back(rule.asString().value_or("?"));
+            }
+        }
+    }
+    return rules;
 }
 
 }  // namespace mdux::conformance
