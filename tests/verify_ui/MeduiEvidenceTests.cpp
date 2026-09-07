@@ -179,6 +179,7 @@ const mdux::spec::Register derivationIsPureAndSchemaValid{
 
                       // A ForeignColour finding -> fail.
                       const auto foreign = vu::deriveRenderedEvidence(syntheticRun(mdux::verify::Finding::ForeignColour), "demo", manifestPath);
+                      checks.expect(foreign.has_value(), "derive succeeds for a ForeignColour outcome");
                       if (foreign.has_value()) {
                           checks.expect(foreign->envelope.find("rows")->elements()[0].find("outcome")->asString().value_or("") == "fail",
                                         "a ForeignColour Bounds outcome becomes fail");
@@ -210,6 +211,29 @@ const mdux::spec::Register derivationRefusesUnusableRuns{
                 const auto mapless = vu::deriveRenderedEvidence(localOnly, "demo", manifestPath);
                 checks.expect(!mapless.has_value() && mapless.error() == vu::EvidenceError::NoMappableObligation,
                               "a run of only LocalizedTextPresence has no shared obligation");
+
+                // A missing outcome (fewer than the enumerated obligations) is refused, not
+                // published as a smaller-but-self-consistent envelope.
+                vu::RunResult dropped = syntheticRun(mdux::verify::Finding::Held);
+                dropped.outcomes.pop_back();
+                const auto mismatch = vu::deriveRenderedEvidence(dropped, "demo", manifestPath);
+                checks.expect(!mismatch.has_value() && mismatch.error() == vu::EvidenceError::OutcomeMismatch,
+                              "an incomplete outcome set is OutcomeMismatch");
+
+                // A substituted outcome for the wrong node is refused.
+                vu::RunResult substituted   = syntheticRun(mdux::verify::Finding::Held);
+                substituted.outcomes[0].nodeId = "someone-else";
+                const auto substituteResult = vu::deriveRenderedEvidence(substituted, "demo", manifestPath);
+                checks.expect(!substituteResult.has_value() && substituteResult.error() == vu::EvidenceError::OutcomeMismatch,
+                              "an outcome paired to the wrong obligation is OutcomeMismatch");
+
+                // An unrecognised check name is refused, not silently excluded.
+                vu::RunResult unknown       = syntheticRun(mdux::verify::Finding::Held);
+                unknown.obligations[0].check = "SomethingElse";
+                unknown.outcomes[0].check    = "SomethingElse";
+                const auto unknownResult    = vu::deriveRenderedEvidence(unknown, "demo", manifestPath);
+                checks.expect(!unknownResult.has_value() && unknownResult.error() == vu::EvidenceError::UnknownCheck,
+                              "an unrecognised check name is UnknownCheck");
                 checks.raise();
             })
             .Execute();

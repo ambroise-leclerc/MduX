@@ -22,19 +22,27 @@ namespace json = mdux::evidence::json;
 namespace toml = mdux::tools::toml;
 using mdux::core::err;
 
-/// The shared rendered-check id a local check reports under, or empty when the check has none
-/// (`LocalizedTextPresence` / `mdux.local/ink-coverage` - implementation-local, ADR-016).
-[[nodiscard]] std::string_view sharedCheckId(std::string_view localCheck) {
-    if (localCheck == mdux::verify::spell(mdux::verify::CvCheck::Bounds)) {
-        return "extent-equality";
+/// How a run's check name is treated when deriving the shared envelope.
+enum class Classification : std::uint8_t { Mapped, ImplementationLocal, Unknown };
+
+struct CheckClass {
+    Classification   kind{Classification::Unknown};
+    std::string_view sharedId{};  ///< the shared rendered-check id when `kind == Mapped`
+};
+
+/// Every check name the run may carry falls in exactly one bucket: mapped to a shared rendered-check
+/// id, a known implementation-local check (`LocalizedTextPresence`, ADR-016), or unrecognised - in
+/// which case the deriver refuses rather than quietly dropping it.
+[[nodiscard]] CheckClass classify(std::string_view localCheck) {
+    if (const auto cv = mdux::verify::parseCvCheck(localCheck)) {
+        return {.kind = Classification::Mapped, .sharedId = *cv == mdux::verify::CvCheck::Bounds ? "extent-equality" : "tint-composition"};
     }
-    if (localCheck == mdux::verify::spell(mdux::verify::CvCheck::ColorHash)) {
-        return "tint-composition";
+    if (const auto text = mdux::verify::parseTextCheck(localCheck)) {
+        return *text == mdux::verify::TextCheck::InkContainment
+                   ? CheckClass{.kind = Classification::Mapped, .sharedId = "ink-containment"}
+                   : CheckClass{.kind = Classification::ImplementationLocal};
     }
-    if (localCheck == mdux::verify::spell(mdux::verify::TextCheck::InkContainment)) {
-        return "ink-containment";
-    }
-    return {};
+    return {.kind = Classification::Unknown};
 }
 
 [[nodiscard]] std::string_view rowOutcome(mdux::verify::Finding finding) {
@@ -142,7 +150,11 @@ std::string_view describe(EvidenceError error) noexcept {
         case EvidenceError::NotRun:
             return "the run did not render and evaluate, so there is no evidence to publish";
         case EvidenceError::NoMappableObligation:
-            return "the run produced no outcome that maps to a shared rendered-check id";
+            return "every outcome was implementation-local, so the shared envelope would be empty";
+        case EvidenceError::OutcomeMismatch:
+            return "the run's outcomes and obligations are not a complete one-to-one set";
+        case EvidenceError::UnknownCheck:
+            return "an outcome names a check this deriver does not recognise";
         case EvidenceError::ManifestUnreadable:
             return "medui-conformance.toml could not be read for the contract revision";
         case EvidenceError::SerializationFailed:
@@ -153,8 +165,27 @@ std::string_view describe(EvidenceError error) noexcept {
 
 mdux::core::Result<RenderedEvidence, EvidenceError>
 deriveRenderedEvidence(const RunResult& result, std::string_view screenId, const std::filesystem::path& manifestPath) {
-    if (result.state != RunState::Passed && result.state != RunState::ChecksFailed) {
+    // A run that never rendered and evaluated - an absent device, an unreadable artifact, or a
+    // zero-obligation screen that failed before any render - has no evidence to publish.
+    if ((result.state != RunState::Passed && result.state != RunState::ChecksFailed)
+        || result.renderCount == 0 || result.outcomes.empty()) {
         return err(EvidenceError::NotRun);
+    }
+    // The driver appends one outcome per enumerated obligation in one pass; a set that is not a
+    // complete one-to-one pairing (a hand-built RunResult, or a future driver change) must not be
+    // published as evidence - the same "derive, don't trust" rule `writeVerification()` applies.
+    if (result.outcomes.size() != result.obligations.size()) {
+        return err(EvidenceError::OutcomeMismatch);
+    }
+    for (std::size_t index = 0; index < result.outcomes.size(); ++index) {
+        const Outcome&    outcome    = result.outcomes[index];
+        const Obligation& obligation = result.obligations[index];
+        if (outcome.nodeId != obligation.nodeId || outcome.scope != obligation.scope || outcome.check != obligation.check) {
+            return err(EvidenceError::OutcomeMismatch);
+        }
+        if (classify(outcome.check).kind == Classification::Unknown) {
+            return err(EvidenceError::UnknownCheck);
+        }
     }
 
     std::string contract;
@@ -182,14 +213,15 @@ deriveRenderedEvidence(const RunResult& result, std::string_view screenId, const
     std::size_t              excluded = 0;
 
     for (std::size_t index = 0; index < result.outcomes.size(); ++index) {
-        const Outcome& outcome = result.outcomes[index];
-        const std::string_view checkId = sharedCheckId(outcome.check);
-        if (checkId.empty()) {
+        const Outcome&   outcome    = result.outcomes[index];
+        const CheckClass checkClass = classify(outcome.check);
+        if (checkClass.kind == Classification::ImplementationLocal) {
             ++excluded;
             continue;
         }
+        const std::string_view checkId = checkClass.sharedId;
 
-        const std::string_view scope    = index < result.obligations.size() ? std::string_view{result.obligations[index].scope} : std::string_view{outcome.scope};
+        const std::string_view scope      = result.obligations[index].scope;
         const bool             localeFree = scope == mdux::verify::localeFreeScopeName;
         const std::string_view locale     = localeFree ? std::string_view{} : scope;
 

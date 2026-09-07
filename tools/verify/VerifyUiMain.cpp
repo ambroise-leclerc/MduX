@@ -50,21 +50,21 @@ int main(int argc, char** argv) {
         // path relative to CWD, which every real invocation runs from the repo root.
         const std::filesystem::path manifest = invocation.screenDirectory.parent_path().parent_path().parent_path() / "medui-conformance.toml";
         const auto                  derived  = verify::deriveRenderedEvidence(result, invocation.screenDirectory.filename().string(), manifest);
+        const std::filesystem::path path =
+            invocation.meduiEvidenceDirectory / (invocation.screenDirectory.filename().string() + ".medui-evidence.json");
+        std::error_code             ec;
+        std::filesystem::create_directories(invocation.meduiEvidenceDirectory, ec);
         if (!derived.has_value()) {
             std::println(std::cerr, "{}: could not derive MEDUI evidence: {}", verify::toolName, verify::describe(derived.error()));
         } else if (const auto text = evj::write(derived->envelope); !text.has_value()) {
             std::println(std::cerr, "{}: could not serialize MEDUI evidence", verify::toolName);
-        } else {
-            std::error_code ec;
-            std::filesystem::create_directories(invocation.meduiEvidenceDirectory, ec);
-            const std::filesystem::path path =
-                invocation.meduiEvidenceDirectory / (invocation.screenDirectory.filename().string() + ".medui-evidence.json");
-            std::ofstream out{path, std::ios::binary};
-            out << *text;
-            if (invocation.format == cli::Format::Text) {
-                std::println(std::cout, "{}: wrote MEDUI evidence {} ({} excluded, implementation-local)",
-                             verify::toolName, path.generic_string(), derived->excludedOutcomes);
-            }
+        } else if (ec) {
+            std::println(std::cerr, "{}: could not create {}: {}", verify::toolName, invocation.meduiEvidenceDirectory.generic_string(), ec.message());
+        } else if (std::ofstream out{path, std::ios::binary}; !(out << *text) || (out.flush(), !out)) {
+            std::println(std::cerr, "{}: could not write MEDUI evidence to {}", verify::toolName, path.generic_string());
+        } else if (invocation.format == cli::Format::Text) {
+            std::println(std::cout, "{}: wrote MEDUI evidence {} ({} excluded, implementation-local)",
+                         verify::toolName, path.generic_string(), derived->excludedOutcomes);
         }
     }
 

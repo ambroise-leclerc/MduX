@@ -37,7 +37,9 @@ export namespace mdux::tools::verify {
 
 enum class EvidenceError : std::uint8_t {
     NotRun,                ///< the run did not render and evaluate, so there is nothing to publish
-    NoMappableObligation,  ///< the run produced no outcome that maps to a shared rendered-check id
+    NoMappableObligation,  ///< every outcome was implementation-local, so the envelope would be empty
+    OutcomeMismatch,       ///< the run's outcomes and obligations are not a complete one-to-one set
+    UnknownCheck,          ///< an outcome names a check this deriver does not recognise
     ManifestUnreadable,    ///< `medui-conformance.toml` could not be read for the contract SHA
     SerializationFailed,   ///< assembling the JSON value failed
 };

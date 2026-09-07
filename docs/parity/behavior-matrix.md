@@ -144,6 +144,12 @@ implementation-local. The `backend` is the Vulkan `deviceName` and `producer.sou
 commit, so the envelope is **derived and uncommitted** (ADR-014 D4, ADR-007 D5) — never committed,
 never byte-compared. A GPU leg checks it is `evidence.schema.json`-valid and aggregates to `pass`.
 
+`deriveRenderedEvidence()` **fails closed**: it derives one obligation per enumerated obligation
+(not per report row), refuses a run whose outcomes and obligations are not a complete one-to-one
+pairing (`OutcomeMismatch`), refuses an unrecognised check name (`UnknownCheck` — only
+`LocalizedTextPresence` may be excluded), and refuses a run that never rendered (`NotRun`). A
+missing, duplicate or substituted observation cannot become a smaller-but-self-consistent envelope.
+
 ## Intentional differences
 
 - MduX keeps its supported Windows/Linux/Apple Silicon tuples and cross-toolchain evidence.
