@@ -1,0 +1,71 @@
+{
+  "obligations": [
+    {
+      "contract": "not-a-sha",
+      "producer": {
+        "name": "fixture",
+        "version": "1",
+        "source": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "profile": {
+        "id": "MEDUI-PROFILE-RENDERED",
+        "version": 1
+      },
+      "artifact": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "assets": [
+        {
+          "id": "font/main",
+          "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "screen": "screen",
+      "node": "node",
+      "locale": null,
+      "scenario": "static",
+      "capture": "capture",
+      "frame": 0,
+      "check": {
+        "id": "extent-equality",
+        "version": 1
+      },
+      "backend": "synthetic",
+      "configuration": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "rows": [
+    {
+      "identity": {
+        "contract": "not-a-sha",
+        "producer": {
+          "name": "fixture",
+          "version": "1",
+          "source": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        },
+        "artifact": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "assets": [
+          {
+            "id": "font/main",
+            "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ],
+        "screen": "screen",
+        "node": "node",
+        "locale": null,
+        "scenario": "static",
+        "capture": "capture",
+        "frame": 0,
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "backend": "synthetic",
+        "configuration": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "outcome": "pass"
+    }
+  ]
+}

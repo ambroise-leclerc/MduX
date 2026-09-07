@@ -125,7 +125,16 @@ with the ROI digest from `mdux.evidence`'s `sha256`, plus the 10 `consumer-manif
 and committed negative failure-mode fixtures, on all five CI legs. The `mdux.local/*` ids and the committed
 `verification.json` are unchanged; canonical `MEDUI-PROFILE-RENDERED` appears only in the manifest
 claim and the corpus harness. TrustSC stays on the old pin, so this is still not a cross-implementation
-parity claim. EVIDENCE (E01–E03) is #314c; the full results table is #314d.
+parity claim. The full results table is #314d.
+
+**Update, 7 September 2026 — #314 Stage C added `MEDUI-PROFILE-EVIDENCE` to the gate.**
+`medui-conformance.toml` also claims `MEDUI-PROFILE-EVIDENCE`, and `conformance_spec` runs the 31
+`aggregate-evidence` vectors (rules E01–E03: fieldwise identity match, one report row per derived
+obligation, `pass`/`fail`/`not-run` aggregation) plus the 29 `evidence` contract documents. Every
+`conformance/contracts` document — `consumer-manifest` and `evidence` — is now validated by
+`mdux.tools.schema`, a JSON-Schema-subset engine ported from MedUI's `tools/schema_check.py` that
+fails closed on an unimplemented keyword. This is the aggregate-and-schema half; MduX emitting its
+own E01 envelope from a real verify run is the Stage C-emitter follow-up.
 
 ## Intentional differences
 

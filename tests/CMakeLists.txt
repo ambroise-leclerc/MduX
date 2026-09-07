@@ -993,6 +993,7 @@ add_executable(medui_tools_spec
     medui/CompileTests.cpp
     medui/CheckTests.cpp
     medui/GrammarTests.cpp
+    medui/SchemaSubsetTests.cpp
     medui/SharedConformanceTests.cpp
 )
 
@@ -1064,7 +1065,9 @@ mdux_discover_tests(medui_tools_spec)
 add_executable(conformance_spec
     conformance/ConformanceSpecMain.cpp
     conformance/RenderedCheckTests.cpp
+    conformance/EvidenceVectorTests.cpp
     conformance/ManifestContractTests.cpp
+    conformance/EvidenceContractTests.cpp
 )
 
 target_link_libraries(conformance_spec PRIVATE MduX::ToolsCommon speclab::speclab)

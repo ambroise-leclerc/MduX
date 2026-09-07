@@ -1,0 +1,20 @@
+{
+  "id": "MDUX-FIXTURE-EVIDENCE-WRONG-NOT-RUN",
+  "note": "No obligations and no rows: E03 says not-run, never pass. The adapter must say not-run while this file claims pass.",
+  "profile": {
+    "id": "MEDUI-PROFILE-EVIDENCE",
+    "version": 1
+  },
+  "rules": [
+    "E02",
+    "E03"
+  ],
+  "inputs": {
+    "operation": "aggregate-evidence",
+    "obligations": [],
+    "rows": []
+  },
+  "expected": {
+    "outcome": "pass"
+  }
+}

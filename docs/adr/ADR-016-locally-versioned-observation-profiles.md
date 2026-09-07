@@ -241,6 +241,22 @@ before, and `verify_spec` proves it. The `mdux.local/*` ids and versions are unc
 `profiles` key in `medui-conformance.toml` names the canonical `MEDUI-PROFILE-RENDERED`, and the
 migration mapping the two remains future work.
 
+### Amendment — #314 Stage C: the `MEDUI-PROFILE-EVIDENCE` gate
+
+`medui-conformance.toml` now also claims `MEDUI-PROFILE-EVIDENCE`. `conformance_spec` gates it as
+pure list logic — the 31 `aggregate-evidence` vectors (rules E01–E03: identity match, one row per
+obligation, outcome aggregation) and the 29 `conformance/contracts` `evidence`-schema documents.
+No governed code and no runtime behaviour change: this is the aggregate-and-schema half of
+MEDUI-PROFILE-EVIDENCE, not yet a *derived envelope* — MduX emitting its own E01 envelope from a
+real `RunResult` is a separate, GPU-gated change (Stage C-emitter).
+
+The evidence and consumer-manifest documents are validated by a new
+[`mdux.tools.schema`](../../tools/common/Schema.cppm) — a JSON-Schema-subset engine in
+`MduX::ToolsCommon`, ported from `Compliatory/MedUI`'s `tools/schema_check.py`, that **fails closed**
+on any keyword it does not implement so a constraint the contract adds cannot silently stop being
+checked. It replaces the hand-coded consumer-manifest reader, so there is now one validator for the
+`medui-conformance.toml` shape and every `conformance/contracts` document.
+
 ## References
 
 - [ADR-014](ADR-014-rendered-truth-verification.md) — decision 4 (no measured pixel in the
