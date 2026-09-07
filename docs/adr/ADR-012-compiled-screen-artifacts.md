@@ -118,8 +118,9 @@ MEDUI-DEC-003 characterises a compiled screen as *locale-free layout data* and c
 "committed artifact layouts" to implementations, with conformance comparing "observable meaning, not
 output encoding"; the ranges are locale-free, are not glyph data, and are integers the compiler
 computed. And it is checkable rather than only arguable: the four claimed capabilities are `syntax`,
-`semantics`, `layout` and `safety`, none of which reads a compiled package, and all eighteen pinned
-cases at `265df19` pass unchanged.
+`semantics`, `layout` and `safety`, none of which reads a compiled package, and all twenty-seven
+pinned compiler cases at the revision `medui-conformance.toml` pins (`v0.3.0-rc.1`, `9a57f64`)
+pass.
 
 What it *is* is a portability difference worth recording rather than discovering: the same `.medui`
 source compiled by an implementation that does not carry the ranges will display a character this one

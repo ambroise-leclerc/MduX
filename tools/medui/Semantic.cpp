@@ -312,6 +312,30 @@ private:
         }
     }
 
+    /// `spec/component-model.md`, "Resource identifiers": an `Image` `source:` and a
+    /// `NumericDisplay` `template:` name a baked resource. One that does not resolve against the
+    /// declared set is `MEDUI-E035`, with the kind named. `charset` deliberately stays outside this
+    /// check - an unresolved charset is fatal with no code assigned, because a case cannot yet
+    /// declare which character sets exist.
+    void analyzeResourceId(std::string_view component, const ast::Field& field, FieldDomain domain) {
+        if (inputs_.resources == ResourcePolicy::Skipped) {
+            return;
+        }
+        const auto unresolved = [](std::span<const std::string_view> declared, std::string_view id) {
+            return std::ranges::find(declared, id) == declared.end();
+        };
+        if (domain == ImageRef && field.value->kind == ast::ValueKind::ImageRef && unresolved(inputs_.imageIds, field.value->text)) {
+            report(Code::UnknownResourceId, field.value->position, std::format("image identifier '{}' does not resolve to a baked image", field.value->text));
+            return;
+        }
+        if (component == "NumericDisplay" && field.name == "template" && field.value->kind == ast::ValueKind::String
+            && unresolved(inputs_.numericTemplateNames, field.value->text)) {
+            report(Code::UnknownResourceId,
+                   field.value->position,
+                   std::format("template identifier '{}' does not resolve to a baked numeric template", field.value->text));
+        }
+    }
+
     void analyzeNode(const ast::Node& node) {
         const ComponentRule* component = ruleFor(node.component);
         if (component == nullptr) {
@@ -349,6 +373,8 @@ private:
                                        fieldValue.value->text,
                                        fieldValue.name,
                                        members(fieldRule->domain)));
+                } else {
+                    analyzeResourceId(node.component, fieldValue, fieldRule->domain);
                 }
             }
         }

@@ -154,7 +154,7 @@ bounded vertex, index and command buffers with a compiler-computed budget, and
 [issue #15](https://github.com/ambroise-leclerc/MduX/issues/15). The implementation pins the shared
 contract in `medui-conformance.toml`. This skill records MduX status and integration; canonical
 grammar, component semantics, diagnostics, and portable guidance live in
-[`Compliatory/MedUI` at `265df19`](https://github.com/Compliatory/MedUI/tree/265df1925a672bd556f69123e287215b45cfd210).
+[`Compliatory/MedUI` at `9a57f64`](https://github.com/Compliatory/MedUI/tree/9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb) (`v0.3.0-rc.1`).
 A `.medui` file builds something in MduX today, and it reaches the screen: register it with
 `mdux_compile_screen()` and it becomes a committed, byte-compared artifact plus generated C++ a
 device links, which the governed runtime draws and `ScreenPixelTests` compares pixel by pixel under
@@ -333,9 +333,12 @@ bounded layout with its overflow and containment rules plus the golden set that 
 names, and a single file names none. Rather than reporting every `t("STR-KEY")` as absent from every
 locale — a vacuous truth dressed as a finding — the checker skips those and emits a note, `MDC001`.
 A screen with no `surface:` gets `MDC002` for the same reason: layout, overflow and golden bounds
-went unchecked. Notes do not fail the run; they are what makes a clean result visibly *partial*
-rather than silently so.
+went unchecked. `MDC003` is the same statement for `img()` and `template:` identifiers: a standalone
+file names no recipe, so there is no baked image-package or numeric-template table to resolve them
+against and `MEDUI-E035` could not run. Notes do not fail the run; they are what makes a clean
+result visibly *partial* rather than silently so.
 
-For the two it cannot cover, compile the screen through `mdux-meduic` with a recipe carrying a
-`[text]` table: that checks every key against every approved locale, and every box against the
-widest translation of the text it holds.
+For the three it cannot cover, compile the screen through `mdux-meduic` with a recipe carrying a
+`[text]` table and the image/template approvals it references: that checks every key against every
+approved locale, every box against the widest translation of the text it holds, and every resource
+identifier against what the product baked.

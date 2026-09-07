@@ -895,7 +895,25 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
         themeTokens.push_back(colour.token);
     }
 
-    const SemanticResult semantic = analyze(screen, recipe.source, {.themeTokens = themeTokens, .textPackages = textPackages});
+    // The resource identifiers a screen may name: the image packages it approves and the numeric
+    // templates the recipe declares. An `img()` or `template:` outside these is `MEDUI-E035`.
+    std::vector<std::string_view> imageIds;
+    imageIds.reserve(imageApprovals.size());
+    for (const ms::ImagePackageApproval& approval : imageApprovals) {
+        imageIds.push_back(approval.packageId);
+    }
+    std::vector<std::string_view> templateNames;
+    templateNames.reserve(recipe.numericTemplates.size());
+    for (const NumericTemplate& rule : recipe.numericTemplates) {
+        templateNames.push_back(rule.name);
+    }
+
+    const SemanticResult semantic = analyze(screen,
+                                            recipe.source,
+                                            {.themeTokens          = themeTokens,
+                                             .textPackages         = textPackages,
+                                             .numericTemplateNames = templateNames,
+                                             .imageIds             = imageIds});
     if (!semantic.ok()) {
         diagnostics.insert(diagnostics.end(), semantic.diagnostics.begin(), semantic.diagnostics.end());
         return std::nullopt;

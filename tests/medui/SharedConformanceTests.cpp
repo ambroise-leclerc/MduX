@@ -272,6 +272,8 @@ struct Case {
     std::vector<ExpectedDiagnostic> diagnostics;
     std::vector<std::string>        themeTokens;
     std::vector<TextPackageInput>   textPackages;
+    std::vector<std::string>        templates;  ///< resolvable NumericDisplay template ids (MEDUI-E035)
+    std::vector<std::string>        imageIds;   ///< resolvable img("ID") ids (MEDUI-E035)
 };
 
 [[nodiscard]] const json::Value& member(const json::Value& object, std::string_view key, const std::filesystem::path& path) {
@@ -348,7 +350,19 @@ struct Case {
         if (inputs->kind() != json::Value::Kind::Object) {
             fail(std::format("{}: member 'inputs' is not an object", path.generic_string()));
         }
-        rejectUnknownMembers(*inputs, {"themeTokens", "textPackages"}, "inputs", path);
+        rejectUnknownMembers(*inputs, {"themeTokens", "textPackages", "templates", "imageIds"}, "inputs", path);
+        const auto readStringList = [&](std::string_view key, std::vector<std::string>& into) {
+            if (inputs->find(key) == nullptr) {
+                return;
+            }
+            for (const json::Value& entry : requireArray(*inputs, key, path)) {
+                const auto value = entry.asString();
+                if (!value) {
+                    fail(std::format("{}: {} contains a non-string", path.generic_string(), key));
+                }
+                into.emplace_back(*value);
+            }
+        };
         if (inputs->find("themeTokens") != nullptr) {
             for (const json::Value& token : requireArray(*inputs, "themeTokens", path)) {
                 const auto value = token.asString();
@@ -358,6 +372,8 @@ struct Case {
                 result.themeTokens.emplace_back(*value);
             }
         }
+        readStringList("templates", result.templates);
+        readStringList("imageIds", result.imageIds);
         if (inputs->find("textPackages") != nullptr) {
             for (const json::Value& package : requireArray(*inputs, "textPackages", path)) {
                 if (package.kind() != json::Value::Kind::Object) {
@@ -541,13 +557,19 @@ void checkComponentDictionary(const std::filesystem::path& checkout, mdux::spec:
 }
 
 /// Collects authored external names so layout cases can pass the semantic shape gate without
-/// inventing theme or locale failures that belong to the semantics phase.
-void collectLayoutSemanticNames(const md::ast::Node& node, std::set<std::string>& themeTokens, std::set<std::string>& textKeys) {
+/// inventing theme, locale, or resource-identifier failures that belong to the semantics phase.
+void collectLayoutSemanticNames(const md::ast::Node&   node,
+                                std::set<std::string>& themeTokens,
+                                std::set<std::string>& textKeys,
+                                std::set<std::string>& imageIds,
+                                std::set<std::string>& templateIds) {
     const auto collectValue = [&](auto&& self, const md::ast::Value& value) -> void {
         if (value.kind == md::ast::ValueKind::ColorToken) {
             themeTokens.insert(value.text);
         } else if (value.kind == md::ast::ValueKind::TextKey) {
             textKeys.insert(value.text);
+        } else if (value.kind == md::ast::ValueKind::ImageRef) {
+            imageIds.insert(value.text);
         }
         for (const std::shared_ptr<md::ast::Value>& element : value.list) {
             if (element != nullptr) {
@@ -559,11 +581,33 @@ void collectLayoutSemanticNames(const md::ast::Node& node, std::set<std::string>
     for (const md::ast::Field& field : node.fields) {
         if (field.value != nullptr) {
             collectValue(collectValue, *field.value);
+            if (node.component == "NumericDisplay" && field.name == "template" && field.value->kind == md::ast::ValueKind::String) {
+                templateIds.insert(field.value->text);
+            }
         }
     }
     for (const md::ast::Node& child : node.children) {
-        collectLayoutSemanticNames(child, themeTokens, textKeys);
+        collectLayoutSemanticNames(child, themeTokens, textKeys, imageIds, templateIds);
     }
+}
+
+/// Views over an owning string container, for the `SemanticInputs` spans.
+[[nodiscard]] std::vector<std::string_view> asViews(const std::vector<std::string>& values) {
+    std::vector<std::string_view> views;
+    views.reserve(values.size());
+    for (const std::string& value : values) {
+        views.push_back(value);
+    }
+    return views;
+}
+
+[[nodiscard]] std::vector<std::string_view> asViews(const std::set<std::string>& values) {
+    std::vector<std::string_view> views;
+    views.reserve(values.size());
+    for (const std::string& value : values) {
+        views.push_back(value);
+    }
+    return views;
 }
 
 /// `spec/diagnostics.md`, "Positions in conformance cases": a pinned position is matched as far as
@@ -609,11 +653,9 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
     std::vector<cli::Diagnostic> diagnostics = parsed.diagnostics;
 
     if (item.phase == "semantics" && parsed.screen) {
-        std::vector<std::string_view> themeTokens;
-        themeTokens.reserve(item.themeTokens.size());
-        for (const std::string& token : item.themeTokens) {
-            themeTokens.push_back(token);
-        }
+        const std::vector<std::string_view> themeTokens  = asViews(item.themeTokens);
+        const std::vector<std::string_view> templateIds  = asViews(item.templates);
+        const std::vector<std::string_view> imageIds     = asViews(item.imageIds);
 
         std::vector<mdux::text::TextPackage> packages;
         packages.reserve(item.textPackages.size());
@@ -629,21 +671,26 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
             packages.push_back(std::move(package));
         }
 
-        md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = packages});
+        md::SemanticResult semantic = md::analyze(*parsed.screen,
+                                                 file,
+                                                 md::SemanticInputs{.themeTokens         = themeTokens,
+                                                                    .textPackages        = packages,
+                                                                    .numericTemplateNames = templateIds,
+                                                                    .imageIds            = imageIds});
         diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
     }
     if (item.phase == "layout" && parsed.screen && diagnostics.empty()) {
         std::set<std::string> themeTokenStorage;
         std::set<std::string> textKeyStorage;
+        std::set<std::string> imageIdStorage;
+        std::set<std::string> templateIdStorage;
         for (const md::ast::Node& node : parsed.screen->nodes) {
-            collectLayoutSemanticNames(node, themeTokenStorage, textKeyStorage);
+            collectLayoutSemanticNames(node, themeTokenStorage, textKeyStorage, imageIdStorage, templateIdStorage);
         }
 
-        std::vector<std::string_view> themeTokens;
-        themeTokens.reserve(themeTokenStorage.size());
-        for (const std::string& token : themeTokenStorage) {
-            themeTokens.push_back(token);
-        }
+        const std::vector<std::string_view> themeTokens  = asViews(themeTokenStorage);
+        const std::vector<std::string_view> layoutImages = asViews(imageIdStorage);
+        const std::vector<std::string_view> layoutTmpls  = asViews(templateIdStorage);
 
         mdux::text::TextPackage textPackage;
         textPackage.header.id   = "shared-layout-semantic-gate";
@@ -655,7 +702,12 @@ void runCase(const Case& item, Positions positions, mdux::spec::Checks& checks) 
         }
         const std::array textPackages{textPackage};
 
-        md::SemanticResult semantic = md::analyze(*parsed.screen, file, md::SemanticInputs{.themeTokens = themeTokens, .textPackages = textPackages});
+        md::SemanticResult semantic = md::analyze(*parsed.screen,
+                                                 file,
+                                                 md::SemanticInputs{.themeTokens          = themeTokens,
+                                                                    .textPackages         = textPackages,
+                                                                    .numericTemplateNames = layoutTmpls,
+                                                                    .imageIds             = layoutImages});
         diagnostics.insert(diagnostics.end(), std::make_move_iterator(semantic.diagnostics.begin()), std::make_move_iterator(semantic.diagnostics.end()));
 
         if (diagnostics.empty()) {

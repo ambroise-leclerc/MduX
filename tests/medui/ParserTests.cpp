@@ -298,7 +298,8 @@ const mdux::spec::Register duplicateIdRejected{
                 if (d != nullptr) {
                     checks.expect(d->line == 8, std::format("at the second id, line 8, got {}",
                                                             d->line));
-                    checks.expect(d->column == 9, std::format("at column 9, got {}", d->column));
+                    checks.expect(d->column == 13,
+                                  std::format("at the duplicated name value, column 13, got {}", d->column));
                     // Naming only the duplicate would leave an author hunting for the original.
                     checks.expect(d->message.find("line 4") != std::string::npos,
                                   std::format("the message cites the first, got '{}'", d->message));
@@ -433,18 +434,24 @@ const mdux::spec::Register invalidUtf8Rejected{
     "A source that is not valid UTF-8 is rejected whole, with MEDUI-E004",
     "evidence-unit",
     [] {
-        // Whole rather than at the byte: past an invalid sequence there are no defined character
-        // boundaries, so every column after it would be invented.
+        // The source is rejected whole - past an invalid sequence there are no defined character
+        // boundaries - but the position points at the first bad byte, whose line and byte column
+        // are exact because everything before it is valid UTF-8.
         return speclab::Test("medui-lex-bad-utf8")
-            .Given("a source containing a lone continuation byte", [] {})
+            .Given("a source containing a lone continuation byte on the second line", [] {})
             .When("it is lexed", [] {})
-            .Then("MEDUI-E004 is reported and no tokens are produced", [] {
+            .Then("MEDUI-E004 is reported at the bad byte and no tokens are produced", [] {
                 mdux::spec::Checks checks;
                 std::string source = "Screen A { }\n";
                 source += '\x80';
                 const md::LexResult r = md::lex(source, "bad.medui");
                 checks.expect(has(r.diagnostics, md::Code::SourceNotUtf8),
                               std::format("MEDUI-E004 reported, got {}", codesOf(r.diagnostics)));
+                const cli::Diagnostic* d = find(r.diagnostics, md::Code::SourceNotUtf8);
+                if (d != nullptr) {
+                    checks.expect(d->line == 2 && d->column == 1,
+                                  std::format("at the first bad byte, 2:1, got {}:{}", d->line, d->column));
+                }
                 checks.expect(r.tokens.empty(), "no tokens, so no invented positions");
                 checks.raise();
             })
@@ -476,6 +483,48 @@ const mdux::spec::Register severalProblemsInOneRun{
                 checks.expect(count >= 2,
                               std::format("at least two findings, got {}",
                                           codesOf(r.diagnostics)));
+                checks.raise();
+            })
+            .Execute();
+    }};
+
+const mdux::spec::Register missingSemicolonKeepsTheNextField{
+    "A field missing its terminator is one MEDUI-E010 and keeps the next field",
+    "evidence-unit",
+    [] {
+        // The recovery a stray token triggers must not swallow the next field: `width: 100px 100px`
+        // and `width: 100px height: 20px` are both a missing terminator, and only the first has
+        // tokens worth skipping.
+        return speclab::Test("medui-parse-missing-semicolon")
+            .Given("a Label whose width field omits its ';' before the next field", [] {})
+            .When("it is parsed", [] {})
+            .Then("one MEDUI-E010 is reported and both width and height survive in the AST", [] {
+                mdux::spec::Checks    checks;
+                const md::ParseResult r = md::parse(
+                    "Screen A {\n"
+                    "  surface: 800px, 600px;\n"
+                    "  Label {\n"
+                    "    id: only;\n"
+                    "    width: 100px height: 20px;\n"
+                    "    text: t(\"STR-A\");\n"
+                    "    color: Theme.Colors.Title;\n"
+                    "  }\n"
+                    "}\n",
+                    "missing-semi.medui");
+                const auto count = std::ranges::count_if(
+                    r.diagnostics, [](const cli::Diagnostic& d) { return d.code == "MEDUI-E010"; });
+                checks.expect(count == 1,
+                              std::format("exactly one MEDUI-E010, got {}", codesOf(r.diagnostics)));
+                if (r.screen && !r.screen->nodes.empty()) {
+                    const auto& fields = r.screen->nodes.front().fields;
+                    const auto  named  = [&](std::string_view name) {
+                        return std::ranges::any_of(fields, [name](const md::ast::Field& f) { return f.name == name; });
+                    };
+                    checks.expect(named("width") && named("height"),
+                                  "the field after the missing ';' was not swallowed by recovery");
+                } else {
+                    checks.expect(false, "the screen parsed to at least one node");
+                }
                 checks.raise();
             })
             .Execute();

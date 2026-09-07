@@ -21,10 +21,9 @@ No MedUI shared decision covers verification, so MduX decides it locally and thi
 shared identity the way [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) and
 [ADR-012](ADR-012-compiled-screen-artifacts.md) do. One part of the mechanism is *not* local,
 however, and decision 3 depends on it: the `cv_check` names an author may write belong to the shared
-language's `safety` capability, pinned in `medui-conformance.toml` at
-`265df1925a672bd556f69123e287215b45cfd210`, and `MEDUI-E071` is
-what rejects a name outside the set. Adding a check name is an upstream change followed by a re-pin,
-never a change to the verifier.
+language's `safety` capability, pinned at the revision `medui-conformance.toml` records, and
+`MEDUI-E071` is what rejects a name outside the set. Adding a check name is an upstream change
+followed by a re-pin, never a change to the verifier.
 
 ## Context
 

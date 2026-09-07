@@ -108,6 +108,8 @@ const mdux::spec::Register aGoodScreenPassesWithItsGapsNamed{
                       // "nothing is wrong", which is worse than not existing.
                       checks.expect(!result.textChecked, "text keys were not checked without a recipe");
                       checks.expect(carries(result, "MDC001"), std::format("and the run says so, got {}", codes(result)));
+                      checks.expect(carries(result, "MDC003"),
+                                    std::format("resource identifiers were not checked without a recipe, and the run says so, got {}", codes(result)));
                       checks.raise();
                   })
             .Execute();
@@ -191,7 +193,7 @@ const mdux::spec::Register theCheckerStopsAtTheCause{"The checker stops at the f
                                                                        // A later stage reading a screen an earlier one rejected reports consequences
                                                                        // rather than causes - and the notes about uncovered checks are not emitted
                                                                        // either, since the run did not get far enough to have gaps worth naming.
-                                                                       checks.expect(!carries(result, "MDC001") && !carries(result, "MDC002"),
+                                                                       checks.expect(!carries(result, "MDC001") && !carries(result, "MDC002") && !carries(result, "MDC003"),
                                                                                      std::format("no notes about later stages, got {}", codes(result)));
                                                                        checks.raise();
                                                                    })

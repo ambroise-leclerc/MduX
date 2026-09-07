@@ -35,7 +35,9 @@ implementations. This assessment does not turn those implementations into confor
 | Artifact envelope | Screen ID/version, surface extent, text/locale/digest and image approvals, nodes and draw budget; separate golden sidecar. | Screen ID, layout kind/spacing/padding, nodes and golden references. | Normalize logical fields; retain native envelope and provenance. Native bytes/layout are intentionally different. |
 | Binding identity | Readings, status and field values bind by node ID; trace binds caller-owned source data. | Frame inputs generally route numbers, text, states and streams by source name. | Normalize screen/node plus declared source mapping. Never assume source and node identifiers are interchangeable. |
 
-The newer shared corpus has 18 cases (2 syntax, 14 semantics, 1 layout, 1 safety). This is not
+The shared corpus this matrix was written against had 18 cases (2 syntax, 14 semantics, 1 layout,
+1 safety). MduX #314 Stage A re-pinned to `v0.3.0-rc.1` (`9a57f64`), whose compiler corpus is 27
+cases (5 syntax, 17 semantics, 3 layout, 2 safety); the full matrix refresh is #314d. This is not
 exhaustive coverage of the compiler. [MedUI #4](https://github.com/Compliatory/MedUI/issues/4)
 tracks missing cases; its original count predates this pin. MEDUI-DEC-003/004/005 define compiled
 observables, golden selection and diagnostic declarations, respectively; none establishes pixel

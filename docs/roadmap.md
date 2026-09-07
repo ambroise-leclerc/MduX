@@ -108,6 +108,11 @@ Publish an agreed, versioned compatibility boundary, adopt its verification sema
 | [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
 | [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
 
+Stage A of #314 is landed: `medui-conformance.toml` is re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`)
+and the shared-conformance test is green over all 27 compiler cases at `positions = "full"`, adding
+`MEDUI-E035` and `MEDUI-E054`. The RENDERED/EVIDENCE profile gates, the per-capability results table
+and the TrustSC-side re-pin are tracked as #314b/c/d.
+
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 
 Deliver one interactive monitor whose platform events flow through a bounded governed model into the existing screen bindings and real Vulkan presentation, with a deterministic headless path using the same application logic.

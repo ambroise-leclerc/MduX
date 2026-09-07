@@ -123,6 +123,18 @@ Concretely:
      record, so per-node work stays a constant a device knows before it runs, and the
      no-heap property is verified the three ways #63 established.
 
+   **Amended by #314 (MedUI `v0.3.0-rc.1`): the diagnostic for a `template:` that names no baked
+   entry moves.** #258 caught an unresolved `NumericDisplay` `template:` in the budget stage and
+   reported it as `MEDUI-E053`. The shared contract, from MedUI 0.2.0, defines `MEDUI-E035`
+   ("unknown resource identifier") for exactly this — an `img()` or `template` name that does not
+   resolve against the identifiers the recipe baked — and emits it at **semantics**, alongside the
+   unknown theme token and text key it now sits beside. MduX follows the contract: `md::analyze`
+   reports `MEDUI-E035` at the reference, the budget stage returns early once the name is known not
+   to resolve, and `MEDUI-E053` reverts to its charset-escape meaning only (the reading in
+   ADR-012's "third category" section is unaffected — that `MEDUI-E053` is the charset/font check,
+   not the template one). The resolution mechanism — a name looked up in a table a recipe supplies
+   — is unchanged; only the code and the phase are.
+
    **Extended by #260: the same exception, over a grid rather than a pattern.** A `TextInput`
    displays a value from an open-ended charset, so the pattern form above does not fit it: no
    fixed string of literals describes what an operator types. What does fit is the clause the

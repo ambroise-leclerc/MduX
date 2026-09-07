@@ -460,11 +460,11 @@ private:
      * that rule, so the template becomes measurable - through the same table mechanism `charset:`
      * already resolves through, and the same envelope a clock is measured with.
      *
-     * A template with no rule behind it is `MEDUI-E053`, and it is the same fail-closed reading
-     * `checkDynamicText()` gives an unknown charset name: "this name does not resolve" means the
-     * compiler cannot bound what it produces, which from here is indistinguishable from a name that
-     * produces something unbakeable. Passing it over in silence is how a device-time overflow gets a
-     * compiler's signature on it.
+     * A template with no rule behind it does not resolve to a baked resource, which since MedUI
+     * 0.2.0 is `MEDUI-E035` (unknown resource identifier), reported by `analyze()` at the semantics
+     * phase - see ADR-010 decision 4's amendment. This stage measures a template it can find and
+     * says nothing about one it cannot, the way `checkFieldLength()` defers a non-positive length
+     * to the `MEDUI-E033` `analyze()` already emitted.
      */
     void checkNumericTemplate(const ResolvedNode& node, const ast::Field& field, const ast::Value& value) {
         if (value.kind != ast::ValueKind::Identifier && value.kind != ast::ValueKind::String) {
@@ -473,10 +473,7 @@ private:
 
         const auto rule = std::ranges::find(inputs_.numericTemplates, value.text, &NumericTemplateRule::name);
         if (rule == inputs_.numericTemplates.end()) {
-            report(Code::CharsetEscape,
-                   value.position,
-                   std::format("template '{}' has no rendering in the numeric-template table, so its widest reading cannot be measured", value.text));
-            return;
+            return;  // MEDUI-E035, reported by analyze(): an unknown template does not resolve to a baked resource.
         }
 
         // Structure before geometry, and through the runtime's own counter rather than a second

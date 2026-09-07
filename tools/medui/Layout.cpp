@@ -47,10 +47,12 @@ namespace {
     return field->value->text;
 }
 
-/// Returns the authored `id` field position, falling back for malformed directly-built ASTs.
+/// Returns the authored `id` *value* position, falling back for malformed directly-built ASTs.
+/// Matches the parser's MEDUI-E014 anchor and the shared conformance corpus: the duplicated name
+/// itself, not the `id` keyword.
 [[nodiscard]] ast::Position idFieldPosition(const ast::Node& node) noexcept {
     if (const ast::Field* field = fieldFor(node, "id")) {
-        return field->namePosition;
+        return field->value != nullptr ? field->value->position : field->namePosition;
     }
     return node.position;
 }
@@ -158,7 +160,12 @@ public:
             if (const ast::Point* position = positionOf(node)) {
                 const LayoutRect bounds{.x = position->x, .y = position->y, .width = fixedSize(node, "width"), .height = fixedSize(node, "height")};
                 if (!contains(content, bounds)) {
-                    report(Code::SurfaceExceeded, positionFieldPosition(node), std::format("component '{}' exceeds the padded surface", idOf(node)));
+                    // MEDUI-E051 (layout overflow): a positioned node has left its containing box.
+                    // Distinct from MEDUI-E052, which is a flow node the surface itself cannot hold
+                    // (`spec/component-model.md`, "Resource identifiers"/positioning).
+                    report(Code::LayoutOverflow,
+                           positionFieldPosition(node),
+                           std::format("positioned component '{}' does not fit inside the padded surface", idOf(node)));
                     return std::move(result_);
                 }
                 appendLeaf(node, bounds, true);
@@ -167,8 +174,17 @@ public:
 
             const ast::Size&   width         = sizeOf(node, "width");
             const std::int64_t resolvedWidth = width.fill ? content.width : width.pixels;
-            if (resolvedWidth <= 0 || resolvedWidth > content.width) {
-                report(Code::LayoutOverflow, width.position, std::format("component '{}' is wider than the vertical layout", idOf(node)));
+            if (resolvedWidth <= 0) {
+                // A non-positive resolved width; preflightPositiveDimensions already rejects a
+                // fixed one, so this is the degenerate content box. MEDUI-E051, as elsewhere.
+                report(Code::LayoutOverflow, width.position, std::format("component '{}' has no room in the padded surface", idOf(node)));
+                return std::move(result_);
+            }
+            if (resolvedWidth > content.width) {
+                // MEDUI-E052 (surface exceeded): a top-level flow node is wider than the padded
+                // surface can hold. A node overflowing a nested container (a Row child, a Fill with
+                // no room) is MEDUI-E051 and reported on those paths.
+                report(Code::SurfaceExceeded, width.position, std::format("component '{}' is wider than the padded surface", idOf(node)));
                 return std::move(result_);
             }
             const LayoutRect bounds{.x = content.x, .y = cursorY, .width = resolvedWidth, .height = (*resolvedHeights)[flowIndex]};
@@ -202,9 +218,10 @@ private:
     bool preflightPositionedFill(std::span<const ast::Node> nodes) {
         for (const ast::Node& node : nodes) {
             if (positionOf(node) != nullptr && (sizeOf(node, "width").fill || sizeOf(node, "height").fill)) {
-                // The common MedUI conformance case pins this declaration to MEDUI-E051. Keep the
-                // shared diagnostic even though the failure is detected before axis resolution.
-                report(Code::LayoutOverflow,
+                // MEDUI-E054 since MedUI 0.2.0, distinct from MEDUI-E051 (`spec/component-model.md`,
+                // "Resource identifiers"/positioning): nothing overflowed, the node's geometry
+                // simply cannot be resolved out of flow. Detected before axis resolution.
+                report(Code::PositionRequiresFixedSize,
                        positionFieldPosition(node),
                        std::format("component '{}': position requires fixed width and height; "
                                    "Fill is flow-only",

@@ -139,10 +139,21 @@ LexResult lex(std::string_view source, std::string file) {
     LexResult result;
 
     if (const std::optional<std::size_t> bad = firstInvalidUtf8(source)) {
-        // Rejected whole rather than at the offending byte. Past an invalid sequence there are no
-        // defined character boundaries, so every column after it would be a guess.
+        // The source is rejected whole - past an invalid sequence there are no defined character
+        // boundaries - but everything *before* the first bad byte is valid UTF-8 by construction,
+        // so its 1-based line and byte column are exact and that is what the position points at.
+        std::size_t line   = 1;
+        std::size_t column = 1;
+        for (std::size_t i = 0; i < *bad; ++i) {
+            if (source[i] == '\n') {
+                ++line;
+                column = 1;
+            } else {
+                ++column;
+            }
+        }
         result.diagnostics.push_back(diagnose(
-            Code::SourceNotUtf8, std::move(file), 0, 0,
+            Code::SourceNotUtf8, std::move(file), line, column,
             std::format("not valid UTF-8: the first invalid byte sequence begins at offset {}",
                         *bad)));
         return result;
