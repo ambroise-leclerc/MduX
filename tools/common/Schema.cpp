@@ -32,10 +32,76 @@ constexpr std::array<std::string_view, 21> supportedKeywords{
     return std::ranges::find(supportedKeywords, keyword) != supportedKeywords.end();
 }
 
-// --- deep JSON equality, with Python's `True != 1` rule ---------------------
+// --- number comparison, exact for integers of either sign -------------------
 
 [[nodiscard]] bool isNumberKind(Kind kind) {
     return kind == Kind::Int || kind == Kind::UInt || kind == Kind::Float32;
+}
+
+[[nodiscard]] std::optional<double> asDouble(const Value& value) {
+    if (const auto f = value.asFloat32()) {
+        return static_cast<double>(*f);
+    }
+    if (const auto i = value.asInt()) {
+        return static_cast<double>(*i);
+    }
+    if (const auto u = value.asUInt()) {
+        return static_cast<double>(*u);
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Orders two JSON numbers.
+ *
+ * Exact for integers of either sign across the whole `std::int64_t` / `std::uint64_t` range - a
+ * signed value and an unsigned one are ordered by sign first, then by magnitude, without narrowing
+ * either through the other. Only a genuine float operand falls to a `double` comparison, and MduX
+ * canonical JSON has no float literal, so that path is reachable only from a constructed `Value`.
+ * `std::partial_ordering::unordered` when a value is not a number this reader can read.
+ */
+[[nodiscard]] std::partial_ordering compareNumbers(const Value& left, const Value& right) {
+    if (left.kind() != Kind::Float32 && right.kind() != Kind::Float32) {
+        const bool leftUnsigned  = left.kind() == Kind::UInt;
+        const bool rightUnsigned = right.kind() == Kind::UInt;
+        if (leftUnsigned && rightUnsigned) {
+            const auto l = left.asUInt();
+            const auto r = right.asUInt();
+            return (l && r) ? (*l <=> *r) : std::partial_ordering::unordered;
+        }
+        if (!leftUnsigned && !rightUnsigned) {
+            const auto l = left.asInt();
+            const auto r = right.asInt();
+            return (l && r) ? (*l <=> *r) : std::partial_ordering::unordered;
+        }
+        // One signed, one unsigned: order the signed value against the unsigned one, then re-orient.
+        const auto signedValue   = (leftUnsigned ? right : left).asInt();
+        const auto unsignedValue = (leftUnsigned ? left : right).asUInt();
+        if (!signedValue || !unsignedValue) {
+            return std::partial_ordering::unordered;
+        }
+        const std::partial_ordering signedVsUnsigned =
+            (*signedValue < 0) ? std::partial_ordering::less
+                               : (static_cast<std::uint64_t>(*signedValue) <=> *unsignedValue);
+        if (!leftUnsigned) {
+            return signedVsUnsigned;  // left was the signed value
+        }
+        // `signedVsUnsigned` ordered right (signed) against left (unsigned); reverse it.
+        if (signedVsUnsigned == std::partial_ordering::less) {
+            return std::partial_ordering::greater;
+        }
+        if (signedVsUnsigned == std::partial_ordering::greater) {
+            return std::partial_ordering::less;
+        }
+        return signedVsUnsigned;
+    }
+    const auto l = asDouble(left);
+    const auto r = asDouble(right);
+    return (l && r) ? (*l <=> *r) : std::partial_ordering::unordered;
+}
+
+[[nodiscard]] bool numbersEqual(const Value& left, const Value& right) {
+    return compareNumbers(left, right) == std::partial_ordering::equivalent;
 }
 
 /// The integer value of `value`, for schema bounds (`minItems`, `maxItems`, `minLength`) that are
@@ -48,40 +114,6 @@ constexpr std::array<std::string_view, 21> supportedKeywords{
         return static_cast<std::int64_t>(*number);
     }
     return std::nullopt;
-}
-
-/// Numeric equality across the three number kinds, exact for integers of either sign (including
-/// the whole `std::uint64_t` range) and value-based when a float is involved.
-[[nodiscard]] bool numbersEqual(const Value& left, const Value& right) {
-    if (left.kind() != Kind::Float32 && right.kind() != Kind::Float32) {
-        const bool leftUnsigned  = left.kind() == Kind::UInt;
-        const bool rightUnsigned = right.kind() == Kind::UInt;
-        if (leftUnsigned && rightUnsigned) {
-            return left.asUInt() && right.asUInt() && *left.asUInt() == *right.asUInt();
-        }
-        if (!leftUnsigned && !rightUnsigned) {
-            return left.asInt() && right.asInt() && *left.asInt() == *right.asInt();
-        }
-        const auto signedValue   = (leftUnsigned ? right : left).asInt();
-        const auto unsignedValue = (leftUnsigned ? left : right).asUInt();
-        return signedValue && unsignedValue && *signedValue >= 0
-               && static_cast<std::uint64_t>(*signedValue) == *unsignedValue;
-    }
-    const auto asDouble = [](const Value& value) -> std::optional<double> {
-        if (const auto f = value.asFloat32()) {
-            return static_cast<double>(*f);
-        }
-        if (const auto i = value.asInt()) {
-            return static_cast<double>(*i);
-        }
-        if (const auto u = value.asUInt()) {
-            return static_cast<double>(*u);
-        }
-        return std::nullopt;
-    };
-    const auto l = asDouble(left);
-    const auto r = asDouble(right);
-    return l && r && *l == *r;
 }
 
 // --- local `$ref` resolution ---------------------------------------------------
@@ -207,18 +239,6 @@ void checkSchemaInto(const Value& schema, const Value& root, std::vector<std::st
     return false;
 }
 
-[[nodiscard]] std::optional<double> asNumber(const Value& value) {
-    if (const auto integer = asIntegerNumber(value)) {
-        return static_cast<double>(*integer);
-    }
-    if (value.kind() == Kind::Float32) {
-        if (const auto number = value.asFloat32()) {
-            return static_cast<double>(*number);
-        }
-    }
-    return std::nullopt;
-}
-
 void errorsInto(const Value&              value,
                 const Value&              schema,
                 const Value&              root,
@@ -338,14 +358,14 @@ void errorsInto(const Value&              value,
         }
     }
 
-    if (const auto number = asNumber(value)) {
-        if (const Value* minimum = schema.find("minimum")) {
-            if (const auto bound = asNumber(*minimum); bound && *number < *bound) {
+    if (isNumberKind(value.kind())) {
+        if (const Value* minimum = schema.find("minimum"); minimum != nullptr) {
+            if (compareNumbers(value, *minimum) == std::partial_ordering::less) {
                 result.push_back(std::format("{}: below minimum", path));
             }
         }
-        if (const Value* maximum = schema.find("maximum")) {
-            if (const auto bound = asNumber(*maximum); bound && *number > *bound) {
+        if (const Value* maximum = schema.find("maximum"); maximum != nullptr) {
+            if (compareNumbers(value, *maximum) == std::partial_ordering::greater) {
                 result.push_back(std::format("{}: above maximum", path));
             }
         }
@@ -355,7 +375,6 @@ void errorsInto(const Value&              value,
 }  // namespace
 
 bool jsonEqual(const json::Value& left, const json::Value& right) {
-    using Kind = json::Value::Kind;
     if (isNumberKind(left.kind()) && isNumberKind(right.kind())) {
         return numbersEqual(left, right);
     }

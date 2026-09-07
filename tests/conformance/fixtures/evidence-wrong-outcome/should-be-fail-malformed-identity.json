@@ -1,0 +1,27 @@
+{
+  "id": "MDUX-FIXTURE-EVIDENCE-MALFORMED-IDENTITY",
+  "note": "An empty identity object on the obligation and the row: E01 rejects a malformed identity, so the adapter must say fail even though obligation and row match and the row outcome is pass.",
+  "profile": {
+    "id": "MEDUI-PROFILE-EVIDENCE",
+    "version": 1
+  },
+  "rules": [
+    "E01",
+    "E02"
+  ],
+  "inputs": {
+    "operation": "aggregate-evidence",
+    "obligations": [
+      {}
+    ],
+    "rows": [
+      {
+        "identity": {},
+        "outcome": "pass"
+      }
+    ]
+  },
+  "expected": {
+    "outcome": "pass"
+  }
+}

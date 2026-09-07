@@ -27,7 +27,8 @@ import mdux.tools.toml;
 
 namespace {
 
-namespace json = mdux::evidence::json;
+namespace json   = mdux::evidence::json;
+namespace schema = mdux::tools::schema;
 using namespace mdux::conformance;
 
 struct Aggregate {
@@ -35,13 +36,17 @@ struct Aggregate {
     std::vector<std::string> rowOutcomes;
 };
 
-/// The identity constraint `evidence.schema.json` delegates to the harness ("ordering and ID
-/// uniqueness are semantic identity constraints"): `assets` ids must be unique and strictly
-/// ascending in ASCII byte order. `spec/profiles.md` E01: a malformed identity fails aggregation.
-[[nodiscard]] bool identityMalformed(const json::Value& identity) {
+/// `spec/profiles.md` E01: a malformed identity fails aggregation. Two layers - the structural
+/// shape (`evidence.schema.json`'s `$defs/identity`, when `identitySchema` is supplied), and the
+/// constraint the schema delegates to the harness: `assets` ids unique and strictly ascending in
+/// ASCII byte order.
+[[nodiscard]] bool identityMalformed(const json::Value& identity, const json::Value* identitySchema) {
+    if (identitySchema != nullptr && !schema::validate(identity, *identitySchema).empty()) {
+        return true;
+    }
     const json::Value* assets = identity.find("assets");
     if (assets == nullptr) {
-        return false;  // a structurally absent field is the schema's concern, not this check's
+        return false;
     }
     if (assets->kind() != json::Value::Kind::Array) {
         return true;  // `assets` present but not an array is a malformed identity
@@ -67,8 +72,11 @@ struct Aggregate {
 }
 
 /// E02 + E03 over `obligations` (each an identity) and `rows` (each `{ identity, outcome }`).
+/// `identitySchema` is `evidence.schema.json`'s `$defs/identity`; each obligation and each row
+/// identity is validated against it before any matching (E01).
 [[nodiscard]] Aggregate aggregateEvidence(std::span<const json::Value> obligations,
                                           std::span<const json::Value> rows,
+                                          const json::Value*           identitySchema,
                                           const std::filesystem::path& path) {
     Aggregate aggregate;
     for (const json::Value& row : rows) {
@@ -83,13 +91,13 @@ struct Aggregate {
 
     // E01: a malformed identity fails aggregation before any comparison.
     for (const json::Value& obligation : obligations) {
-        if (identityMalformed(obligation)) {
+        if (identityMalformed(obligation, identitySchema)) {
             aggregate.outcome = "fail";
             return aggregate;
         }
     }
     for (const json::Value& row : rows) {
-        if (identityMalformed(member(row, "identity", path))) {
+        if (identityMalformed(member(row, "identity", path), identitySchema)) {
             aggregate.outcome = "fail";
             return aggregate;
         }
@@ -146,6 +154,12 @@ const mdux::spec::Register evidenceProfileVectors{
                       checks.expect(std::ranges::find(pinned.profiles, "MEDUI-PROFILE-EVIDENCE") != pinned.profiles.end(),
                                     "medui-conformance.toml claims MEDUI-PROFILE-EVIDENCE");
 
+                      const json::Value  evidenceSchema = pinnedSchema(*root, "evidence");
+                      const json::Value* identitySchema = evidenceSchema.find("$defs") != nullptr
+                                                              ? evidenceSchema.find("$defs")->find("identity")
+                                                              : nullptr;
+                      checks.expect(identitySchema != nullptr, "evidence.schema.json defines $defs/identity");
+
                       const std::filesystem::path vectorsDir = *root / "conformance" / "profiles";
                       std::vector<std::filesystem::path> paths;
                       for (const auto& entry : std::filesystem::directory_iterator{vectorsDir}) {
@@ -178,6 +192,7 @@ const mdux::spec::Register evidenceProfileVectors{
 
                           const Aggregate     got = aggregateEvidence(requireArray(inputs, "obligations", path),
                                                                       requireArray(inputs, "rows", path),
+                                                                      identitySchema,
                                                                       path);
                           const json::Value&  expected = member(*document, "expected", path);
                           checks.expect(got.outcome == requireString(expected, "outcome", path),
@@ -217,7 +232,18 @@ const mdux::spec::Register evidenceGateCatchesAWrongOutcome{
             .When("it is run through the same list logic the real gate uses", [] {})
             .Then("the adapter's answer differs from the fixture's",
                   [] {
-                      mdux::spec::Checks           checks;
+                      mdux::spec::Checks checks;
+
+                      const std::optional<std::filesystem::path> root = corpusRootOrSkip(checks);
+                      if (!root) {
+                          checks.raise();
+                          return;
+                      }
+                      const json::Value  evidenceSchema = pinnedSchema(*root, "evidence");
+                      const json::Value* identitySchema = evidenceSchema.find("$defs") != nullptr
+                                                              ? evidenceSchema.find("$defs")->find("identity")
+                                                              : nullptr;
+
                       const std::filesystem::path directory =
                           std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "conformance" / "fixtures" / "evidence-wrong-outcome";
                       checks.expect(std::filesystem::is_directory(directory), "the negative fixture tree is committed");
@@ -239,7 +265,7 @@ const mdux::spec::Register evidenceGateCatchesAWrongOutcome{
                           }
                           const json::Value& inputs = member(*document, "inputs", path);
                           const Aggregate    got    = aggregateEvidence(requireArray(inputs, "obligations", path),
-                                                                        requireArray(inputs, "rows", path), path);
+                                                                        requireArray(inputs, "rows", path), identitySchema, path);
                           const std::string  stated = requireString(member(*document, "expected", path), "outcome", path);
                           checks.expect(got.outcome != stated,
                                         std::format("{}: adapter says '{}', which differs from the wrong stated '{}'",

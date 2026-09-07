@@ -149,6 +149,14 @@ const mdux::spec::Register numbersCompareByValue{
                 const json::Value huge = parse(R"({"const":18446744073709551615})");
                 checks.expect(schema::validate(parse("18446744073709551615"), huge).empty(), "UINT64_MAX matches itself");
                 checks.expect(!schema::validate(parse("18446744073709551614"), huge).empty(), "a neighbour does not");
+
+                // Bounds keep integer exactness: minimum/maximum are not compared through double.
+                const json::Value nonneg = parse(R"({"type":"integer","minimum":0})");
+                checks.expect(schema::validate(parse("18446744073709551615"), nonneg).empty(), "UINT64_MAX is >= 0");
+                const json::Value atMost = parse(R"({"type":"integer","maximum":100})");
+                checks.expect(!schema::validate(parse("18446744073709551615"), atMost).empty(), "UINT64_MAX is not <= 100");
+                const json::Value cap = parse(R"({"type":"integer","maximum":9007199254740992})");
+                checks.expect(!schema::validate(parse("9007199254740993"), cap).empty(), "one past a 2^53 cap is above maximum");
                 checks.raise();
             })
             .Execute();
