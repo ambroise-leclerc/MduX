@@ -58,7 +58,13 @@ static_assert(std::is_trivially_copyable_v<ms::ActionTrace>);
 // hold one per focusable region without thinking about it.
 static_assert(sizeof(ms::PressLatch) <= sizeof(std::string_view) + alignof(std::string_view));
 
-static_assert(noexcept(ms::PressLatch{}.release("x")));
+// The latch operations are noexcept. The argument is a pre-built string_view, because
+// `string_view(const char*)` is not itself noexcept on every standard library (libc++ leaves the
+// `char_traits::length` call unmarked), and that is not what is under test here.
+inline constexpr std::string_view sampleNodeId{"stop-button"};
+static_assert(noexcept(ms::PressLatch{}.arm(sampleNodeId)));
+static_assert(noexcept(ms::PressLatch{}.release(sampleNodeId)));
+static_assert(noexcept(ms::PressLatch{}.cancel()));
 static_assert(noexcept(ms::normalizeSurfacePoint(0, 0, 1, 1, 0, 0)));
 static_assert(noexcept(ms::editWouldBeAccepted(U'x', {}, 0, 1)));
 
