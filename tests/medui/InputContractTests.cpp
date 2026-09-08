@@ -66,7 +66,7 @@ static_assert(noexcept(ms::PressLatch{}.arm(sampleNodeId)));
 static_assert(noexcept(ms::PressLatch{}.release(sampleNodeId)));
 static_assert(noexcept(ms::PressLatch{}.cancel()));
 static_assert(noexcept(ms::normalizeSurfacePoint(0, 0, 1, 1, 0, 0)));
-static_assert(noexcept(ms::editWouldBeAccepted(U'x', {}, 0, 1)));
+static_assert(noexcept(ms::editWouldBeAccepted(U'x', {}, {}, 0, 1)));
 
 // The wire spellings are constant-evaluable, and the aggregate default never round-trips.
 static_assert(ms::toWire(ms::PointerKind::Down) == "Down");
@@ -219,14 +219,14 @@ const mdux::spec::Register normalizeFloorsTowardNegativeInfinity{
             .Execute();
     }};
 
-const mdux::spec::Register normalizeRefusesANonPositiveScale{
-    "A coordinate scale with a non-positive term is refused, not divided by",
+const mdux::spec::Register normalizeFailsClosedOnBadInput{
+    "normalizeSurfacePoint fails closed on a malformed scale or an out-of-range result, never wrapping",
     "evidence-unit",
     [] {
-        return speclab::Test("medui-input-normalize-refuses-a-non-positive-scale")
-            .Given("scales with a zero denominator and a negative numerator", [] {})
+        return speclab::Test("medui-input-normalize-fails-closed")
+            .Given("a zero denominator, a negative numerator, an oversized scale, and a coordinate that overflows Px", [] {})
             .When("a point is normalized against each", [] {})
-            .Then("both are refused with MalformedScale",
+            .Then("each is refused with the error that names it, and none returns a silently wrapped coordinate",
                   [] {
                       mdux::spec::Checks checks;
 
@@ -237,6 +237,16 @@ const mdux::spec::Register normalizeRefusesANonPositiveScale{
                       const auto negNum = ms::normalizeSurfacePoint(1, 1, -1, 1, 0, 0);
                       checks.expect(!negNum.has_value() && negNum.error() == ms::InputError::MalformedScale,
                                     "a negative numerator is MalformedScale");
+
+                      const auto hugeScale = ms::normalizeSurfacePoint(1, 1, ms::maxCoordinateScale + 1, 1, 0, 0);
+                      checks.expect(!hugeScale.has_value() && hugeScale.error() == ms::InputError::MalformedScale,
+                                    "a numerator past maxCoordinateScale is MalformedScale");
+
+                      // The largest Px physical coordinate, magnified so the result leaves Px.
+                      const auto overflows = ms::normalizeSurfacePoint(
+                          std::numeric_limits<mdux::core::Px>::max(), 0, ms::maxCoordinateScale, 1, 0, 0);
+                      checks.expect(!overflows.has_value() && overflows.error() == ms::InputError::CoordinateOutOfRange,
+                                    "a result past INT32_MAX is CoordinateOutOfRange, not a wrapped value");
 
                       checks.raise();
                   })
@@ -312,12 +322,12 @@ const mdux::spec::Register aLatchDoesNotActivateAcrossAStorageRebuild{
 // ---------------------------------------------------------------------------
 
 const mdux::spec::Register editRefusesWithoutMutating{
-    "editWouldBeAccepted refuses an out-of-charset scalar and a full field, and mutates nothing",
+    "editWouldBeAccepted applies both charset bounds and a capacity bound, and mutates nothing",
     "evidence-unit",
     [] {
         return speclab::Test("medui-input-edit-refuses-without-mutating")
-            .Given("a caller's value and caret, and a digits-only narrowed charset", [] {})
-            .When("a letter, then a digit into a full field, then a digit with room are checked", [] {})
+            .Given("a caller's value and caret, an ASCII-only font, and a digits-only node charset", [] {})
+            .When("a scalar the font cannot draw, a scalar the node excludes, a full field, and a valid digit are checked", [] {})
             .Then("each refusal names its reason, the accepted one passes, and the value is never touched",
                   [] {
                       mdux::spec::Checks checks;
@@ -326,23 +336,38 @@ const mdux::spec::Register editRefusesWithoutMutating{
                       std::u32string value = U"12";
                       std::size_t    caret = 2;
 
+                      // The committed dejavu-ui package draws printable ASCII; a real font would carry
+                      // more ranges, but one is enough to prove the bound is applied.
+                      static constexpr std::array<font::CharsetRange, 1> asciiFont{
+                          font::CharsetRange{.first = U' ', .last = U'~'}};
                       static constexpr std::array<font::CharsetRange, 1> digitsOnly{
                           font::CharsetRange{.first = U'0', .last = U'9'}};
 
-                      const auto aLetter = ms::editWouldBeAccepted(U'A', digitsOnly, value.size(), 8);
+                      // An emoji the font has no glyph for — the physical limit, asked first.
+                      const auto anEmoji = ms::editWouldBeAccepted(U'\U0001F642', asciiFont, digitsOnly, value.size(), 8);
+                      checks.expect(!anEmoji.has_value() && anEmoji.error() == ms::InputError::ScalarNotInFont,
+                                    "a scalar outside the font's charset is ScalarNotInFont, even though the node narrows nothing further");
+
+                      // A letter the font draws but the digits-only node excludes — the policy limit.
+                      const auto aLetter = ms::editWouldBeAccepted(U'A', asciiFont, digitsOnly, value.size(), 8);
                       checks.expect(!aLetter.has_value() && aLetter.error() == ms::InputError::ScalarNotPermitted,
-                                    "a letter is outside a digits-only charset");
+                                    "a letter the font can draw but the node excludes is ScalarNotPermitted");
 
-                      const auto whenFull = ms::editWouldBeAccepted(U'3', digitsOnly, /*currentLength=*/4, /*maxLength=*/4);
+                      const auto whenFull = ms::editWouldBeAccepted(U'3', asciiFont, digitsOnly, /*currentLength=*/4, /*maxLength=*/4);
                       checks.expect(!whenFull.has_value() && whenFull.error() == ms::InputError::FieldAtCapacity,
-                                    "a digit into a field at max_length is FieldAtCapacity");
+                                    "a digit into a field at max_length is FieldAtCapacity — checked before the charset");
 
-                      const auto whenRoom = ms::editWouldBeAccepted(U'3', digitsOnly, value.size(), 8);
-                      checks.expect(whenRoom.has_value(), "a digit with room and in-charset is accepted");
+                      const auto whenRoom = ms::editWouldBeAccepted(U'3', asciiFont, digitsOnly, value.size(), 8);
+                      checks.expect(whenRoom.has_value(), "a digit the font draws, in the node's charset, with room, is accepted");
 
-                      // An empty narrowed set narrows nothing and admits any scalar (the #297 rule).
-                      const auto noNarrowing = ms::editWouldBeAccepted(U'@', {}, 0, 4);
-                      checks.expect(noNarrowing.has_value(), "an empty charset admits everything within capacity");
+                      // An empty node charset narrows nothing; the font bound still applies.
+                      const auto noNarrowing = ms::editWouldBeAccepted(U'@', asciiFont, {}, 0, 4);
+                      checks.expect(noNarrowing.has_value(), "with no node narrowing, any scalar the font can draw is accepted");
+
+                      // An empty font charset is a malformed package and draws nothing.
+                      const auto noFont = ms::editWouldBeAccepted(U'3', {}, {}, 0, 4);
+                      checks.expect(!noFont.has_value() && noFont.error() == ms::InputError::ScalarNotInFont,
+                                    "an empty font charset refuses everything rather than admitting all");
 
                       checks.expect(value == U"12" && caret == 2, "the caller's value and caret are untouched");
                       checks.raise();

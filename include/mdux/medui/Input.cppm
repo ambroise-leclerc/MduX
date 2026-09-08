@@ -230,20 +230,24 @@ inline constexpr std::size_t maxInputEvents = 64;
 /// Why a pure input operation was refused. Every one leaves the caller's value and caret exactly as
 /// they were found — there is no partial mutation (clause 5).
 enum class InputError : std::uint8_t {
-    MalformedScale,      ///< a coordinate scale with a non-positive numerator or denominator
-    CaretOutOfRange,     ///< a caret position outside `[0, length]`
-    ScalarNotPermitted,  ///< a scalar the node's `charset:` excludes
-    FieldAtCapacity,     ///< an insertion into a field already holding `max_length` scalars
-    EmptyEdit,           ///< a delete with nothing on the side it would remove from
+    MalformedScale,        ///< a coordinate scale term that is non-positive or past `maxCoordinateScale`
+    CoordinateOutOfRange,  ///< a normalized coordinate that does not fit in `core::Px`
+    CaretOutOfRange,       ///< a caret position outside `[0, length]`
+    ScalarNotInFont,       ///< the font package has no glyph for the scalar — the physical limit
+    ScalarNotPermitted,    ///< the font can draw it, but the node's `charset:` excludes it — the policy limit
+    FieldAtCapacity,       ///< an insertion into a field already holding `max_length` scalars
+    EmptyEdit,             ///< a delete with nothing on the side it would remove from
 };
 
 [[nodiscard]] constexpr std::string_view describe(InputError error) noexcept {
     switch (error) {
-        case InputError::MalformedScale:     return "the coordinate scale is not strictly positive";
-        case InputError::CaretOutOfRange:    return "the caret is outside [0, length]";
-        case InputError::ScalarNotPermitted: return "the scalar is outside the node's charset";
-        case InputError::FieldAtCapacity:    return "the field already holds max_length scalars";
-        case InputError::EmptyEdit:          return "the delete has nothing to remove";
+        case InputError::MalformedScale:       return "the coordinate scale is not strictly positive or is too large";
+        case InputError::CoordinateOutOfRange: return "the normalized coordinate does not fit in a surface pixel";
+        case InputError::CaretOutOfRange:      return "the caret is outside [0, length]";
+        case InputError::ScalarNotInFont:      return "the font package has no glyph for the scalar";
+        case InputError::ScalarNotPermitted:   return "the scalar is outside the node's charset";
+        case InputError::FieldAtCapacity:      return "the field already holds max_length scalars";
+        case InputError::EmptyEdit:            return "the delete has nothing to remove";
     }
     return {};
 }
@@ -260,8 +264,15 @@ struct SurfacePoint {
     [[nodiscard]] constexpr bool operator==(const SurfacePoint&) const noexcept = default;
 };
 
-/// `floor(value * num / den)` toward -inf, in 64-bit, with `num > 0` and `den > 0` assumed by the
-/// caller of `normalizeSurfacePoint()`. Split out so the flooring is tested directly.
+/// The largest scale-ratio term `normalizeSurfacePoint()` accepts, each way. 4096 is far past any
+/// real physical-to-authored ratio, and capping it keeps every intermediate `normalizeSurfacePoint()`
+/// computes inside `std::int64_t`: the `core::Px` inputs bound `value` to ±2³³, and `value * num`
+/// then stays under 2⁴⁵.
+inline constexpr std::int32_t maxCoordinateScale = 4096;
+
+/// `floor(value * num / den)` toward -inf, in 64-bit. The caller of `normalizeSurfacePoint()`
+/// guarantees `num`/`den` in `[1, maxCoordinateScale]` and `value` in `core::Px` range, so
+/// `value * num` cannot overflow. Split out so the flooring is tested directly.
 [[nodiscard]] constexpr std::int64_t floorScaled(std::int64_t value, std::int64_t num, std::int64_t den) noexcept {
     const std::int64_t scaled   = value * num;
     const std::int64_t quotient = scaled / den;
@@ -280,20 +291,29 @@ struct SurfacePoint {
  * and would map two physical rows onto authored row 0 once a control sits at a negative authored
  * coordinate.
  *
- * @param physX,physY   the physical coordinate
- * @param scaleNum,scaleDen  authored pixels per physical pixel, as a ratio; both must be `> 0`
+ * Fails closed: a non-positive or oversized scale term is `MalformedScale`, and a normalized
+ * coordinate that does not fit in `core::Px` is `CoordinateOutOfRange` rather than a value silently
+ * wrapped by the narrowing cast — a wrapped coordinate could land on a real control.
+ *
+ * @param physX,physY   the physical coordinate, in device pixels
+ * @param scaleNum,scaleDen  authored pixels per physical pixel, as a ratio; each must be in
+ *                           `[1, maxCoordinateScale]`
  * @param originX,originY  the physical coordinate of the surface's authored origin
  */
 [[nodiscard]] constexpr mdux::core::Result<SurfacePoint, InputError>
-normalizeSurfacePoint(std::int64_t physX, std::int64_t physY, std::int64_t scaleNum, std::int64_t scaleDen,
-                      std::int64_t originX, std::int64_t originY) noexcept {
-    if (scaleNum <= 0 || scaleDen <= 0) {
+normalizeSurfacePoint(mdux::core::Px physX, mdux::core::Px physY, std::int32_t scaleNum, std::int32_t scaleDen,
+                      mdux::core::Px originX, mdux::core::Px originY) noexcept {
+    if (scaleNum <= 0 || scaleDen <= 0 || scaleNum > maxCoordinateScale || scaleDen > maxCoordinateScale) {
         return mdux::core::err(InputError::MalformedScale);
     }
-    return SurfacePoint{
-        .x = static_cast<mdux::core::Px>(floorScaled(physX - originX, scaleNum, scaleDen)),
-        .y = static_cast<mdux::core::Px>(floorScaled(physY - originY, scaleNum, scaleDen)),
-    };
+    const std::int64_t nx = floorScaled(static_cast<std::int64_t>(physX) - originX, scaleNum, scaleDen);
+    const std::int64_t ny = floorScaled(static_cast<std::int64_t>(physY) - originY, scaleNum, scaleDen);
+    constexpr std::int64_t pxMin = std::numeric_limits<mdux::core::Px>::min();
+    constexpr std::int64_t pxMax = std::numeric_limits<mdux::core::Px>::max();
+    if (nx < pxMin || nx > pxMax || ny < pxMin || ny > pxMax) {
+        return mdux::core::err(InputError::CoordinateOutOfRange);
+    }
+    return SurfacePoint{.x = static_cast<mdux::core::Px>(nx), .y = static_cast<mdux::core::Px>(ny)};
 }
 
 // ===========================================================================
@@ -391,27 +411,44 @@ struct EditOp {
 }
 
 /**
- * @brief Whether inserting `scalar` into a field is allowed — charset and capacity, no mutation.
+ * @brief Whether inserting `scalar` into a field is allowed — capacity, then the same two charset
+ *        bounds `mdux.medui.field` applies, no mutation.
  *
- * ADR-018 clause 5. The charset question is `mdux::medui::admits()` (from `mdux.medui.field`,
- * #297), reused rather than reimplemented: an empty `narrowed` set is a node that narrows nothing
- * and admits every scalar the font package can draw. Capacity is the node's `max_length`.
+ * ADR-018 clause 5. `mdux.medui.field` asks two charset questions in one order and this asks the
+ * same two, so a scalar this accepts is one `recordField()` will also draw rather than reject with
+ * `GlyphNotInPackage` after the caller has already committed the edit:
  *
- * A rejected edit produces no partial mutation, because this function mutates nothing: the caller
- * holds the value and caret and does not touch them when this returns an error.
+ * 1. **`fontCharset`** — the font package's `restrictedCharset`, the set it *can draw*. A scalar
+ *    outside it is `ScalarNotInFont` (the physical limit; there is no glyph and ADR-010 leaves no
+ *    fallback). An empty `fontCharset` is a malformed package and refuses everything.
+ * 2. **`nodeCharset`** — the node's narrowed `charsetRanges`, via `mdux::medui::admits()` (#297),
+ *    reused rather than reimplemented: empty means the node narrows nothing and every scalar the
+ *    font can draw is in policy. A scalar the font draws but this set excludes is
+ *    `ScalarNotPermitted` (the policy limit — a different fact, so a different error).
+ *
+ * Capacity is checked first, against the node's `max_length`. A rejected edit produces no partial
+ * mutation, because this function mutates nothing: the caller holds the value and caret and does
+ * not touch them when this returns an error.
  *
  * @param scalar         the candidate Unicode scalar
- * @param narrowed       the node's `charsetRanges`, or empty for a node that narrows nothing
+ * @param fontCharset    the bound font package's `restrictedCharset`
+ * @param nodeCharset    the node's `charsetRanges`, or empty for a node that narrows nothing
  * @param currentLength  how many scalars the field currently holds
  * @param maxLength      the node's `max_length`
  */
 [[nodiscard]] constexpr mdux::core::Result<void, InputError>
-editWouldBeAccepted(char32_t scalar, std::span<const mdux::font::CharsetRange> narrowed,
-                    std::size_t currentLength, std::size_t maxLength) noexcept {
+editWouldBeAccepted(char32_t scalar, std::span<const mdux::font::CharsetRange> fontCharset,
+                    std::span<const mdux::font::CharsetRange> nodeCharset, std::size_t currentLength,
+                    std::size_t maxLength) noexcept {
     if (currentLength >= maxLength) {
         return mdux::core::err(InputError::FieldAtCapacity);
     }
-    if (!admits(narrowed, scalar)) {
+    // The font's set is asked first — the physical limit, `mdux.medui.field`'s ordering. `admits()`
+    // reads an empty set as "narrows nothing", which is wrong for a font, so refuse that here.
+    if (fontCharset.empty() || !admits(fontCharset, scalar)) {
+        return mdux::core::err(InputError::ScalarNotInFont);
+    }
+    if (!admits(nodeCharset, scalar)) {
         return mdux::core::err(InputError::ScalarNotPermitted);
     }
     return {};

@@ -150,6 +150,13 @@ would both land on authored row 0 — harmless while authored coordinates are no
 latent wrong-target bug the moment an out-of-flow `position:` puts a control at a negative
 coordinate, which the schema permits (`core::Px` is signed for exactly that reason).
 
+The function **fails closed rather than wrapping**. Physical coordinates and the origin are
+`core::Px`, and each scale term is bounded to `[1, maxCoordinateScale]` (`MalformedScale`
+otherwise), which keeps every intermediate inside `std::int64_t`. A normalized coordinate that
+does not fit back in `core::Px` is `CoordinateOutOfRange`, not a value silently truncated by the
+narrowing conversion — a wrapped coordinate could land inside a real control's rectangle, which is
+the wrong-target failure this whole clause exists to prevent.
+
 Governed code works only in integer authored `core::Px`. It never sees a physical coordinate, a
 scale factor or a sub-pixel value.
 
@@ -180,16 +187,21 @@ existing rules and are not restated in a second place.
 
 The caret and every edit position are indexed in **Unicode scalar boundaries** over the closed
 interval `[0, length]`. The edit vocabulary is `EditOp` ∈ {`InsertScalar(char32_t)`,
-`DeleteBack`, `DeleteForward`, `MoveCaret(to)`}. An edit is bounded by two things already in the
-schema: the node's `charset:` (via `mdux::medui::admits()`, reused, not reimplemented) and its
-`max_length`. A rejected edit — a scalar the charset excludes, an insertion into a full field, a
-caret moved out of range — produces **no partial mutation**: the value and caret the caller holds
-are untouched and an `InputError` is returned.
+`DeleteBack`, `DeleteForward`, `MoveCaret(to)`}. An edit is bounded by the node's `max_length` and
+by the **same two charset questions `mdux.medui.field` asks, in the same order** (#297): first the
+font package's `restrictedCharset` — the set it *can draw*, a scalar outside it is
+`ScalarNotInFont` (the physical limit, no glyph, no fallback) — then the node's narrowed
+`charsetRanges` via `mdux::medui::admits()`, reused not reimplemented, a scalar outside that is
+`ScalarNotPermitted` (the policy limit). Asking only the node's set would accept a scalar the
+committed font has no glyph for, and the caller would commit an edit that `recordField()` then
+rejects with `GlyphNotInPackage`. A rejected edit — either charset bound, an insertion into a full
+field, a caret moved out of range — produces **no partial mutation**: the value and caret the
+caller holds are untouched and an `InputError` is returned.
 
-`editWouldBeAccepted(scalar, narrowed, currentLen, maxLen)` — the pure predicate, charset plus
-capacity, no mutation — is implemented in this PR. `applyEdit()`, which produces the next
-`(value, caret)` over caller storage, lands in #316 against this contract. There is no on-device
-text shaping and no unbounded storage (ADR-010, ADR-004).
+`editWouldBeAccepted(scalar, fontCharset, nodeCharset, currentLen, maxLen)` — the pure predicate,
+both charset bounds plus capacity, no mutation — is implemented in this PR. `applyEdit()`, which
+produces the next `(value, caret)` over caller storage, lands in #316 against this contract. There
+is no on-device text shaping and no unbounded storage (ADR-010, ADR-004).
 
 ### 6. One update consumes one batch, in a fixed order
 
@@ -300,10 +312,11 @@ deferred list is out.
   module graph stays acyclic; the armed target is a bare node-id `string_view`.
 - `tests/medui/InputContractTests.cpp`, added to the `medui_spec` target (links `MduX::Core`
   only), covers: `toWire`/`fromWire` round-trips and closed-set completeness; `normalizeSurfacePoint`
-  at pixel boundaries and negative authored coordinates; `PressLatch` arm/activate/cancel/overflow
-  and the string-view-invalidation case; `editWouldBeAccepted` for a permitted scalar, an excluded
-  glyph, a full field and an empty (admits-all) charset; and trivial-copyability / `noexcept`
-  static checks.
+  at pixel boundaries and negative authored coordinates, plus an oversized scale and an
+  out-of-`Px`-range result; `PressLatch` arm/activate/cancel/overflow and the
+  string-view-invalidation case; `editWouldBeAccepted` for a permitted scalar, one the font cannot
+  draw (`ScalarNotInFont`), one the node's charset excludes (`ScalarNotPermitted`), a full field,
+  and an empty font charset; and trivial-copyability / `noexcept` static checks.
 - No `MDX-E` diagnostic, no `medui-conformance.toml`, no compiled-screen schema and no baked
   artifact changes. `docs/architecture.md`'s module table and `docs/roadmap.md`'s #308 section
   gain the module; `docs/parity/requirements.md` and `docs/parity/behavior-matrix.md` record the
