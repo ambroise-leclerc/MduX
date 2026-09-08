@@ -25,7 +25,8 @@
  *   stateful `FieldEditor` (#316) — the realization of ADR-018's `applyEdit()` over caller storage;
  * - clause 7: the `ActionTrace` value.
  *
- * All of it is `constexpr`, allocation-free and `noexcept`, so the module is header-only like
+ * All of it is `inline`, allocation-free and `noexcept`, and all but `FieldEditor::create()`
+ * (which does one overlap-safe `std::memmove`) is `constexpr`, so the module is header-only like
  * `mdux.medui.schema`. The `EventQueue` and `FieldEditor` state lives in caller-owned spans; the
  * types themselves are small value objects.
  *
@@ -560,9 +561,14 @@ public:
      *
      * Refused when `maxLength` exceeds `storage.size()` or `maxFieldCells`, when `initial` is
      * longer than `maxLength`, or when `initial` carries a scalar the font or node charset
-     * excludes. On success `initial` is copied into `storage` and `caret()` is `nullopt`.
+     * excludes. **A refused `create()` never writes `storage`** — the whole of `initial` is
+     * validated before anything is copied — so a caller's existing buffer contents survive a
+     * rejection intact. On success `initial` is copied into `storage` (overlap-safe: `initial`
+     * may legitimately be a view of `storage` the caller is adopting in place) and `caret()` is
+     * `nullopt`. Not `constexpr` for the same reason `TextInputBinding::create()` is not — the
+     * copy is an overlap-safe `std::memmove`.
      */
-    [[nodiscard]] static constexpr mdux::core::Result<FieldEditor, InputError>
+    [[nodiscard]] static mdux::core::Result<FieldEditor, InputError>
     create(std::string_view nodeId, std::span<char32_t> storage, std::span<const char32_t> initial,
            std::span<const mdux::font::CharsetRange> fontCharset,
            std::span<const mdux::font::CharsetRange> nodeCharset, std::size_t maxLength) noexcept {
@@ -572,13 +578,20 @@ public:
         if (initial.size() > maxLength) {
             return mdux::core::err(InputError::FieldAtCapacity);
         }
-        for (std::size_t i = 0; i < initial.size(); ++i) {
-            // Charset only: capacity is `i < maxLength` here by construction. Ask against a spare
-            // capacity so `editWouldBeAccepted` never returns `FieldAtCapacity` for this check.
-            if (auto ok = editWouldBeAccepted(initial[i], fontCharset, nodeCharset, 0, maxLength); !ok) {
+        // Validate the whole value first, writing nothing: a rejected create() must leave the
+        // caller's buffer exactly as it found it.
+        for (const char32_t scalar : initial) {
+            // Charset only — capacity is `initial.size() <= maxLength` by the check above, so ask
+            // against a fresh field so `editWouldBeAccepted` never answers `FieldAtCapacity` here.
+            if (auto ok = editWouldBeAccepted(scalar, fontCharset, nodeCharset, 0, maxLength); !ok) {
                 return mdux::core::err(ok.error());
             }
-            storage[i] = initial[i];
+        }
+        // Overlap-safe: `initial` and `storage` may alias (a caller adopting a value already at
+        // the front of its buffer, or a sub-view of it). `std::memmove` is correct for every
+        // overlap; a forward element copy would read scalars it had already overwritten.
+        if (!initial.empty()) {
+            std::memmove(storage.data(), initial.data(), initial.size() * sizeof(char32_t));
         }
         return FieldEditor{nodeId, storage, initial.size(), fontCharset, nodeCharset, maxLength};
     }

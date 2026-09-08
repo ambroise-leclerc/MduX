@@ -203,10 +203,12 @@ caller holds are untouched and an `InputError` is returned.
 `editWouldBeAccepted(scalar, fontCharset, nodeCharset, currentLen, maxLen)` — the pure predicate,
 both charset bounds plus capacity, no mutation — was delivered by #315.
 
-**#316 delivered the mutation as `FieldEditor`**: a `constexpr` class over a caller-owned
-`std::span<char32_t>` buffer, holding the length and the caret (`std::optional`, `nullopt` = not
-being edited, which is exactly `TextInputSlot::caret`'s no-caret state). `create()` validates the
-initial value against both charsets and `max_length`; `apply(EditOp)` runs `editWouldBeAccepted`
+**#316 delivered the mutation as `FieldEditor`**: a class over a caller-owned `std::span<char32_t>`
+buffer, holding the length and the caret (`std::optional`, `nullopt` = not being edited, which is
+exactly `TextInputSlot::caret`'s no-caret state). `create()` validates the **whole** initial value
+against both charsets and `max_length` before it writes anything, so a rejected `create()` leaves
+the caller's buffer intact, and it copies with an overlap-safe `std::memmove` so `initial` may be
+a view of `storage` the caller is adopting in place; `apply(EditOp)` runs `editWouldBeAccepted`
 then shifts scalars inside the caller's buffer, all-or-nothing; `focus(FocusEvent)` starts and
 ends editing, ignoring an event for another node; `handleKey` / `handleText` route the contract's
 events to edits and report a non-edit key (`Commit`, `Cancel`, focus traversal) as not-consumed
@@ -317,8 +319,9 @@ deferred list is out.
 ## Implementation Notes
 
 - The module `include/mdux/medui/Input.cppm` (`mdux.medui.input`) stays header-only like
-  `mdux.medui.schema`: everything, `EventQueue` and `FieldEditor` included, is `constexpr` /
-  `inline`, with state in caller-owned spans. No `src/` file and no `PRIVATE` source entry.
+  `mdux.medui.schema`: `EventQueue`, `FieldEditor` and the rest are `inline` with state in
+  caller-owned spans, and all but `FieldEditor::create()` (one overlap-safe `std::memmove`) is
+  `constexpr`. No `src/` file and no `PRIVATE` source entry.
 - Imports `std`, `mdux.core.units`, `mdux.core.result`, `mdux.medui.schema`,
   `mdux.medui.field`, `mdux.font.schema`. It does **not** import `mdux.medui.screen`, so the
   module graph stays acyclic; the armed target is a bare node-id `string_view` and `FieldEditor`

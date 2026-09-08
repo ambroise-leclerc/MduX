@@ -548,6 +548,67 @@ const mdux::spec::Register editorCreateEnforcesItsBounds{
             .Execute();
     }};
 
+const mdux::spec::Register editorCreateNeverWritesOnRejection{
+    "A rejected FieldEditor::create leaves the caller's buffer exactly as it found it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-create-rejection-does-not-write")
+            .Given("a buffer already holding \"9999\" and a digits-only node charset", [] {})
+            .When("create is called with the value \"1A\" (a digit then a letter)", [] {})
+            .Then("it is refused for the letter, and the buffer is still \"9999\"",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      std::array<char32_t, 8>      storage{U'9', U'9', U'9', U'9', 0, 0, 0, 0};
+                      static constexpr std::array<char32_t, 2> oneLetter{U'1', U'A'};
+
+                      const auto r = ms::FieldEditor::create("id", storage, oneLetter, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(!r.has_value() && r.error() == ms::InputError::ScalarNotPermitted,
+                                    "the letter is rejected");
+                      checks.expect(storage[0] == U'9' && storage[1] == U'9' && storage[2] == U'9' && storage[3] == U'9',
+                                    "not one scalar of the caller's buffer was overwritten");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register editorCreateCopiesOverlapSafely{
+    "FieldEditor::create copies an initial value that is a view of its own storage without corrupting it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-create-overlap-safe")
+            .Given("one buffer where the initial value \"12\" sits one scalar ahead of the destination", [] {})
+            .When("create copies it into the overlapping destination", [] {})
+            .Then("the value is \"12\", not the \"11\" a forward element copy would produce",
+                  [] {
+                      mdux::spec::Checks       checks;
+                      std::array<char32_t, 10> buffer{U'1', U'2', U'3', 0, 0, 0, 0, 0, 0, 0};
+
+                      // destination overlaps the source: storage[0] is buffer[1], initial[1].
+                      const std::span<char32_t>       storage{buffer.data() + 1, 8};
+                      const std::span<const char32_t> initial{buffer.data(), 2};
+
+                      const auto r = ms::FieldEditor::create("id", storage, initial, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(r.has_value(), "an overlapping in-buffer initial value is accepted");
+                      if (r.has_value()) {
+                          const auto v = r->value();
+                          checks.expect(std::u32string_view{v.data(), v.size()} == U"12",
+                                        "memmove shifted it left without reading an already-overwritten scalar");
+                      }
+
+                      // And the rejection path is overlap-safe too: "1A" must fail on the letter,
+                      // not be silently turned into "11" by a corrupting copy.
+                      std::array<char32_t, 10> withLetter{U'1', U'A', 0, 0, 0, 0, 0, 0, 0, 0};
+                      const std::span<char32_t>       dst{withLetter.data() + 1, 8};
+                      const std::span<const char32_t> src{withLetter.data(), 2};
+                      const auto bad = ms::FieldEditor::create("id", dst, src, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(!bad.has_value() && bad.error() == ms::InputError::ScalarNotPermitted,
+                                    "\"1A\" is rejected for the letter, never accepted as \"11\"");
+                      checks.expect(withLetter[0] == U'1' && withLetter[1] == U'A', "and nothing was copied");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register editorInsertsDeletesAndMovesTheCaret{
     "A focused FieldEditor inserts at the caret, backspaces, deletes forward, and moves the caret",
     "evidence-unit",
