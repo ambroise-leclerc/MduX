@@ -15,7 +15,7 @@
 > [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's head is unchanged at
 > `4f114dd`, so the Phase-2 comparison below still stands as assessed.
 >
-> **#335 adoption candidate, 8 September 2026:** TrustSC `b7fe0e1` now pins the same MedUI
+> **#335 adoption candidate, 8 September 2026:** TrustSC `b21c423` now pins the same MedUI
 > revision as MduX. The [paired adoption results](#335-paired-adoption-results) below record a
 > shared syntax baseline at line precision. The earlier comparison remains historical;
 > unclaimed phases/profiles and joint sign-off remain explicit gaps.
@@ -171,8 +171,8 @@ on a work branch, not yet integrated into `main`.
 
 | Consumer | Assessed implementation head | Manifest claims |
 |---|---|---|
-| MduX | [`abdf771`](https://github.com/ambroise-leclerc/MduX/commit/abdf77182638735adf47c6d125c53581bc9d4f3d) on `develop`; this record changes documentation only | syntax, semantics, layout, safety; full positions; RENDERED and EVIDENCE |
-| TrustSC | [`b7fe0e1`](https://github.com/ambroise-leclerc/TrustSC/commit/b7fe0e18304b2156520b4268e2943d23afb2c77b) on `335-shared-conformance-baseline` | syntax; line-only positions; no profiles |
+| MduX | [`a722784`](https://github.com/ambroise-leclerc/MduX/commit/a722784de5c958cec9ede7903bdf577eb10fe09f) on the #335 issue branch; documentation only since `183a6da` | syntax, semantics, layout, safety; full positions; RENDERED and EVIDENCE |
+| TrustSC | [`b21c423`](https://github.com/ambroise-leclerc/TrustSC/commit/b21c423f590d37c98625e3101ef41787ee4fb13c) on `335-shared-conformance-baseline` | syntax; line-only positions; no profiles |
 
 | Capability / profile | MduX | TrustSC | Paired conclusion |
 |---|---|---|---|
@@ -187,19 +187,20 @@ on a work branch, not yet integrated into `main`.
 
 Local verification: MduX's GCC selection of `verify_spec`, `medui_tools_spec`, `medui_spec` and
 `conformance_spec` passed **313 tests** with the pinned checkout supplied. TrustSC's parser/checker
-selection passed **68 tests** (59 library, 6 CLI, 3 conformance-harness tests), including the five
+selection passed **70 tests** (61 library, 6 CLI, 3 conformance-harness tests), including the five
 corpus-derived syntax cases, an inverted-expectation negative and refusal of an unsupported phase
-claim. Its full local workspace build and **316 tests with no failures or ignored tests** also
-passed, using Rust/Cargo 1.96.0. The [TrustSC adoption CI run](https://github.com/ambroise-leclerc/TrustSC/actions/runs/34209241880)
-completed successfully, including its named conformance gate, workspace build/tests,
+claim. The Studio selection passed **36 tests**, including invalid-encoding versus I/O failures
+on detail, frame and proposal endpoints. Its full local workspace build and **319 tests with no failures or ignored tests** also
+passed, using Rust/Cargo 1.96.0. The [TrustSC adoption CI run](https://github.com/ambroise-leclerc/TrustSC/actions/runs/34229297866)
+completed successfully for `b21c423`, including the conformance gate, workspace build/tests,
 documentation lint, artifact verification, headless smoke tests, Studio preview, lavapipe UI
 verification and evidence upload.
-MduX `abdf771` has successful published
-[GCC](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432100),
-[MSVC](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432189),
-[Linux Clang](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432093),
-[macOS](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432108) and
-[sanitizer](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432061) runs.
+MduX `a722784` has successful published
+[GCC](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463527),
+[MSVC](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463504),
+[Linux Clang](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463514),
+[macOS](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463456) and
+[sanitizer](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463431) runs.
 Reproduction and the behavioral reassessment are in the
 [behavior matrix](parity/behavior-matrix.md#335-adoption-reassessment).
 

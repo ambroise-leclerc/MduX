@@ -177,7 +177,7 @@ re-pin and claim the phases and profiles it implements, gated the same corpus-de
 [#335](https://github.com/ambroise-leclerc/MduX/issues/335), and until it closes the results table
 is a per-consumer statement. MduX's coverage is not lowered to match the narrower claim.
 
-**#335 adoption update, 8 September 2026:** TrustSC `b7fe0e1` adopts MedUI `9a57f64` on its work
+**#335 adoption update, 8 September 2026:** TrustSC `b21c423` adopts MedUI `9a57f64` on its work
 branch and passes all five syntax cases at line-only precision. The
 [paired results](../roadmap.md#335-paired-adoption-results) and
 [behavior reassessment](../parity/behavior-matrix.md#335-adoption-reassessment) record both heads
