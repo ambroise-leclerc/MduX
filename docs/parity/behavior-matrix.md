@@ -109,17 +109,19 @@ and presentation profiles. The local prospective requirements specify edge/occlu
 cancelled activation, observable overflow, bounded editing and update/capture order. They are
 not an instruction to execute a clinical action or to copy TrustSC's host shutdown behavior.
 
-**#315 fixed the MduX side of this comparison.**
-[ADR-018](../adr/ADR-018-bounded-input-and-update-order.md) (Accepted 2026-09-08) and the new
-`mdux.medui.input` module decide the local event vocabulary, the **floor-toward-−∞**
+**#315 and #316 fixed the MduX side of this comparison.**
+[ADR-018](../adr/ADR-018-bounded-input-and-update-order.md) (Accepted 2026-09-08) and the
+`mdux.medui.input` module decide the local event vocabulary, the fail-closed **floor-toward-−∞**
 coordinate-normalization rule (a truncating cast would be a latent wrong-target activation once an
 out-of-flow `position:` sits at a negative authored coordinate), the drop-newest / saturating /
 cancel-the-arm overflow policy, the press-arms / release-activates-same-target model over the
 existing `resolvePress()` occlusion, the bounded scalar-indexed editing contract, and the
-input→update→render order. The critical action stays **resolved and traced by MduX, executed by
-the host**. TrustSC's observations above are unchanged; the delivery is one-sided (the bounded
-queue body and text mutation are #316, the platform adapter #317), and no `medui-conformance.toml`
-key claims `MEDUI-PROFILE-INTERACTION`. PAR-REQ-004–008 dispositions are ratified in ADR-018.
+input→update→render order. #316 delivered `EventQueue` (the caller-owned bounded ring) and
+`FieldEditor` (the editing state — both charset bounds, `max_length`, no partial mutation), both
+allocation-free. The critical action stays **resolved and traced by MduX, executed by the host**.
+TrustSC's observations above are unchanged; the remaining MduX-side work is the platform adapter
+(#317) and the assembled monitor (#318), and no `medui-conformance.toml` key claims
+`MEDUI-PROFILE-INTERACTION`. PAR-REQ-004–008 dispositions are ratified in ADR-018.
 
 The pinned `v0.3.0-rc.1` checkout carries observation vectors for `MEDUI-PROFILE-INTERACTION`,
 `-BINDING`, `-PRESENTATION` and `-PIXELS` as well, but **#314 stops at `MEDUI-PROFILE-RENDERED`

@@ -404,4 +404,301 @@ const mdux::spec::Register anActionTraceCarriesTheClosedEventAndItsRequirement{
             .Execute();
     }};
 
+// ---------------------------------------------------------------------------
+// Clause 2 — the bounded event queue (#316)
+// ---------------------------------------------------------------------------
+
+/// A pointer-down at (x, 0), for terse queue scenarios.
+[[nodiscard]] ms::InputEvent down(mdux::core::Px x) {
+    return ms::InputEvent{ms::PointerEvent{.kind = ms::PointerKind::Down, .x = x, .y = 0}};
+}
+
+const mdux::spec::Register queueIsFifoAndBounded{
+    "The event queue delivers events in order and drops the newest once its storage is full",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-queue-is-fifo-and-drops-newest-on-overflow")
+            .Given("a queue over storage for three events", [] {})
+            .When("five are pushed and then all are drained", [] {})
+            .Then("the first three come back in order, the last two were dropped, and the counter saturates at the drop count",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      std::array<ms::InputEvent, 3> storage{};
+                      ms::EventQueue                queue{storage};
+
+                      checks.expect(queue.push(down(1)) == ms::PushOutcome::Accepted, "the first fits");
+                      checks.expect(queue.push(down(2)) == ms::PushOutcome::Accepted, "the second fits");
+                      checks.expect(queue.push(down(3)) == ms::PushOutcome::Accepted, "the third fills it");
+                      checks.expect(queue.full() && queue.size() == 3, "the queue is full");
+                      checks.expect(queue.push(down(4)) == ms::PushOutcome::DroppedNewest, "the fourth is dropped");
+                      checks.expect(queue.push(down(5)) == ms::PushOutcome::DroppedNewest, "so is the fifth");
+                      checks.expect(queue.droppedCount() == 2, "two events were dropped");
+
+                      const auto a = queue.pop();
+                      const auto b = queue.pop();
+                      const auto c = queue.pop();
+                      checks.expect(a.has_value() && std::get<ms::PointerEvent>(*a).x == 1, "the first out is the first in");
+                      checks.expect(b.has_value() && std::get<ms::PointerEvent>(*b).x == 2, "then the second");
+                      checks.expect(c.has_value() && std::get<ms::PointerEvent>(*c).x == 3, "then the third — the dropped two never entered");
+                      checks.expect(!queue.pop().has_value() && queue.empty(), "and then it is empty");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register queueRingWrapsAndClears{
+    "The queue is a ring: draining then filling again reuses the storage, and clear() empties it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-queue-ring-wraps-and-clears")
+            .Given("a queue over storage for two events, partly drained", [] {})
+            .When("more are pushed past the physical end of the buffer, and then clear() is called", [] {})
+            .Then("order is still FIFO across the wrap, and clear() discards the batch but not the drop count",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      std::array<ms::InputEvent, 2> storage{};
+                      ms::EventQueue                queue{storage};
+
+                      checks.expect(queue.push(down(1)) == ms::PushOutcome::Accepted, "push 1");
+                      checks.expect(queue.push(down(2)) == ms::PushOutcome::Accepted, "push 2");
+                      checks.expect(queue.pop().has_value(), "pop 1 — head advances");
+                      checks.expect(queue.push(down(3)) == ms::PushOutcome::Accepted, "push 3 wraps into slot 0");
+                      checks.expect(queue.push(down(4)) == ms::PushOutcome::DroppedNewest, "push 4 overflows");
+
+                      const auto x = queue.pop();
+                      const auto y = queue.pop();
+                      checks.expect(x.has_value() && std::get<ms::PointerEvent>(*x).x == 2, "2 comes out before 3 across the wrap");
+                      checks.expect(y.has_value() && std::get<ms::PointerEvent>(*y).x == 3, "then 3");
+
+                      checks.expect(queue.push(down(5)) == ms::PushOutcome::Accepted, "and the ring keeps going");
+                      queue.clear();
+                      checks.expect(queue.empty() && queue.size() == 0, "clear() empties it");
+                      checks.expect(queue.droppedCount() == 1, "but the drop count survives");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register zeroCapacityQueueDropsEverything{
+    "A queue over an empty span has zero capacity and drops every event without a division by its size",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-queue-zero-capacity")
+            .Given("a queue over an empty span", [] {})
+            .When("events are pushed", [] {})
+            .Then("every one is DroppedNewest and pop() is always empty",
+                  [] {
+                      mdux::spec::Checks checks;
+                      ms::EventQueue     queue{std::span<ms::InputEvent>{}};
+                      checks.expect(queue.capacity() == 0, "capacity is zero");
+                      checks.expect(queue.push(down(1)) == ms::PushOutcome::DroppedNewest, "the first is dropped");
+                      checks.expect(queue.push(down(2)) == ms::PushOutcome::DroppedNewest, "so is the second");
+                      checks.expect(queue.droppedCount() == 2 && !queue.pop().has_value(), "and nothing can be drained");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// Clause 5 — the FieldEditor (#316)
+// ---------------------------------------------------------------------------
+
+namespace fixture {
+inline constexpr std::array<font::CharsetRange, 1> asciiFont{font::CharsetRange{.first = U' ', .last = U'~'}};
+inline constexpr std::array<font::CharsetRange, 1> digits{font::CharsetRange{.first = U'0', .last = U'9'}};
+}  // namespace fixture
+
+const mdux::spec::Register editorCreateEnforcesItsBounds{
+    "FieldEditor::create refuses an oversized max_length, an over-long initial value, and an out-of-charset one",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-create-enforces-bounds")
+            .Given("storage for eight scalars and an ASCII font with a digits-only node charset", [] {})
+            .When("create is called with a too-large max_length, a too-long value, and a value with a letter", [] {})
+            .Then("each is refused, and a well-formed call succeeds with no caret",
+                  [] {
+                      mdux::spec::Checks checks;
+                      std::array<char32_t, 8> storage{};
+
+                      const auto tooWide = ms::FieldEditor::create("id", storage, {}, fixture::asciiFont, fixture::digits, 9);
+                      checks.expect(!tooWide.has_value() && tooWide.error() == ms::InputError::FieldAtCapacity,
+                                    "max_length past the storage is refused");
+
+                      static constexpr std::array<char32_t, 5> longValue{U'1', U'2', U'3', U'4', U'5'};
+                      const auto tooLong = ms::FieldEditor::create("id", storage, longValue, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(!tooLong.has_value() && tooLong.error() == ms::InputError::FieldAtCapacity,
+                                    "an initial value longer than max_length is refused");
+
+                      static constexpr std::array<char32_t, 2> hasLetter{U'1', U'A'};
+                      const auto badChar = ms::FieldEditor::create("id", storage, hasLetter, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(!badChar.has_value() && badChar.error() == ms::InputError::ScalarNotPermitted,
+                                    "an initial value outside the node charset is refused");
+
+                      static constexpr std::array<char32_t, 2> ok{U'1', U'2'};
+                      const auto editor = ms::FieldEditor::create("id", storage, ok, fixture::asciiFont, fixture::digits, 4);
+                      checks.expect(editor.has_value(), "a well-formed value is accepted");
+                      if (editor.has_value()) {
+                          checks.expect(editor->length() == 2 && !editor->caret().has_value(),
+                                        "it holds the value and is not yet being edited");
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register editorInsertsDeletesAndMovesTheCaret{
+    "A focused FieldEditor inserts at the caret, backspaces, deletes forward, and moves the caret",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-insert-delete-and-caret-moves")
+            .Given("a focused editor holding \"25\"", [] {})
+            .When("a 1 is inserted at the front, a 3 appended, then a backspace and a delete-forward", [] {})
+            .Then("the value tracks each edit and the caret follows",
+                  [] {
+                      mdux::spec::Checks       checks;
+                      std::array<char32_t, 16> storage{};
+                      static constexpr std::array<char32_t, 2> initial{U'2', U'5'};
+
+                      auto made = ms::FieldEditor::create("dose", storage, initial, fixture::asciiFont, fixture::digits, 8);
+                      if (!made.has_value()) {
+                          checks.expect(false, "the editor was created");
+                          checks.raise();
+                          return;
+                      }
+                      ms::FieldEditor editor = *made;
+                      editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "dose"});
+                      checks.expect(editor.caret() == std::optional<std::size_t>{2}, "focus puts the caret after the last scalar");
+
+                      const auto valueIs = [&](std::u32string_view want, std::string_view what) {
+                          const auto v = editor.value();
+                          checks.expect(std::u32string_view{v.data(), v.size()} == want, what);
+                      };
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 0}).has_value(), "caret home");
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'1'}).has_value(), "insert 1 at the front");
+                      valueIs(U"125", "the 1 landed before the 2");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{1}, "the caret advanced past the inserted scalar");
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = editor.length()}).has_value(), "caret end");
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'}).has_value(), "append 3");
+                      valueIs(U"1253", "the 3 landed at the end");
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::DeleteBack}).has_value(), "backspace");
+                      valueIs(U"125", "backspace removed the trailing 3");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{3}, "the caret moved back");
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 1}).has_value(), "caret between 1 and 2");
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::DeleteForward}).has_value(), "delete forward");
+                      valueIs(U"15", "delete-forward removed the 2, the caret stayed put");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{1}, "the caret did not move on delete-forward");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register editorRefusesLeaveEverythingUnchanged{
+    "Every FieldEditor refusal leaves the value and caret exactly as they were",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-refusals-do-not-mutate")
+            .Given("a focused editor holding \"12\", full at max_length 3", [] {})
+            .When("an unfocused edit, an out-of-charset scalar, a full-field insert, a boundary delete, and an out-of-range caret are attempted", [] {})
+            .Then("each names its reason and the value and caret are untouched throughout",
+                  [] {
+                      mdux::spec::Checks       checks;
+                      std::array<char32_t, 8>  storage{};
+                      static constexpr std::array<char32_t, 2> initial{U'1', U'2'};
+
+                      auto made = ms::FieldEditor::create("pin", storage, initial, fixture::asciiFont, fixture::digits, 3);
+                      if (!made.has_value()) { checks.expect(false, "created"); checks.raise(); return; }
+                      ms::FieldEditor editor = *made;
+
+                      // Not focused yet.
+                      const auto unfocused = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'});
+                      checks.expect(!unfocused.has_value() && unfocused.error() == ms::InputError::NotFocused,
+                                    "an edit before focus is NotFocused");
+
+                      editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "pin"});
+                      const auto caretBefore = editor.caret();
+
+                      const auto malformed = editor.apply(ms::EditOp{});
+                      checks.expect(!malformed.has_value() && malformed.error() == ms::InputError::MalformedEditOp,
+                                    "an EditOp with no kind is MalformedEditOp");
+
+                      const auto letter = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'A'});
+                      checks.expect(!letter.has_value() && letter.error() == ms::InputError::ScalarNotPermitted,
+                                    "a letter is ScalarNotPermitted");
+
+                      const auto emoji = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'\U0001F642'});
+                      checks.expect(!emoji.has_value() && emoji.error() == ms::InputError::ScalarNotInFont,
+                                    "an emoji is ScalarNotInFont");
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'}).has_value(), "one more digit fills the field");
+                      const auto full = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'4'});
+                      checks.expect(!full.has_value() && full.error() == ms::InputError::FieldAtCapacity,
+                                    "the next insert is FieldAtCapacity");
+
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 0}).has_value(), "caret home");
+                      const auto nothingBack = editor.apply(ms::EditOp{.kind = ms::EditKind::DeleteBack});
+                      checks.expect(!nothingBack.has_value() && nothingBack.error() == ms::InputError::EmptyEdit,
+                                    "backspace at the start is EmptyEdit");
+
+                      const auto badCaret = editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 99});
+                      checks.expect(!badCaret.has_value() && badCaret.error() == ms::InputError::CaretOutOfRange,
+                                    "a caret past the length is CaretOutOfRange");
+
+                      const auto v = editor.value();
+                      checks.expect(std::u32string_view{v.data(), v.size()} == U"123", "the value is exactly what the accepted edits left");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{0}, "the caret is where the last accepted move left it");
+                      (void)caretBefore;
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register editorRoutesKeysAndTextAndIgnoresOtherNodes{
+    "handleKey routes edits, reports a non-edit key as not-consumed, and ignores a focus for another node",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-editor-routes-keys-and-text")
+            .Given("an editor for the node \"name\"", [] {})
+            .When("a focus for \"other\", a focus for \"name\", a text event, and Commit / CaretLeft keys are routed", [] {})
+            .Then("the wrong-node focus is ignored, text inserts, Commit is not an edit, and CaretLeft moves the caret",
+                  [] {
+                      mdux::spec::Checks       checks;
+                      std::array<char32_t, 16> storage{};
+
+                      auto made = ms::FieldEditor::create("name", storage, {}, fixture::asciiFont, {}, 8);
+                      if (!made.has_value()) { checks.expect(false, "created"); checks.raise(); return; }
+                      ms::FieldEditor editor = *made;
+
+                      checks.expect(!editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "other"}),
+                                    "a focus event for another node is not taken");
+                      checks.expect(!editor.editing(), "and this editor is still not editing");
+
+                      checks.expect(editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "name"}),
+                                    "a focus event for this node is taken");
+
+                      const auto typed = editor.handleText(ms::TextEvent{.scalar = U'A'});
+                      checks.expect(typed.has_value() && *typed, "a text event inserts and reports consumed");
+
+                      const auto commit = editor.handleKey(ms::KeyEvent{.kind = ms::KeyKind::Down, .key = ms::KeyCode::Commit});
+                      checks.expect(commit.has_value() && !*commit, "Commit is not an edit — the caller handles it, and it is not an error");
+
+                      const auto left = editor.handleKey(ms::KeyEvent{.kind = ms::KeyKind::Down, .key = ms::KeyCode::CaretLeft});
+                      checks.expect(left.has_value() && *left, "CaretLeft is a consumed edit");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{0}, "and it moved the caret to the front");
+
+                      const auto keyUp = editor.handleKey(ms::KeyEvent{.kind = ms::KeyKind::Up, .key = ms::KeyCode::CaretRight});
+                      checks.expect(keyUp.has_value() && !*keyUp, "a key-up is not an edit");
+
+                      const auto v = editor.value();
+                      checks.expect(std::u32string_view{v.data(), v.size()} == U"A", "only the typed scalar is in the value");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 }  // namespace
