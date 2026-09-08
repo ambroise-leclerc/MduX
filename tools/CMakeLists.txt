@@ -513,10 +513,12 @@ target_sources(MduXVerifyUiLib
             verify/Driver.cppm
             verify/Artifact.cppm
             verify/Diff.cppm
+            verify/MeduiEvidence.cppm
     PRIVATE
         verify/Driver.cpp
         verify/Artifact.cpp
         verify/Diff.cpp
+        verify/MeduiEvidence.cpp
 )
 
 target_compile_features(MduXVerifyUiLib PUBLIC cxx_std_23)

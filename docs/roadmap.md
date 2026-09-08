@@ -114,9 +114,11 @@ adding `MEDUI-E035` and `MEDUI-E054`. **Stage B**: the manifest claims `MEDUI-PR
 the new `conformance_spec` suite gates MedUI's 33 `rendered-check` vectors (R01–R04) against
 `mdux.verify`'s own arithmetic. **Stage C**: `MEDUI-PROFILE-EVIDENCE` claimed, its 31
 `aggregate-evidence` vectors (E01–E03) and 29 `evidence` contract documents gated, and every
-contract document validated by `mdux.tools.schema` (a JSON-Schema-subset engine). The Stage
-C-emitter (MduX deriving its own E01 envelope from a real verify run), the per-capability results
-table + ADR-017 (`#314d`), and the TrustSC-side re-pin are the remaining stages.
+contract document validated by `mdux.tools.schema` (a JSON-Schema-subset engine). **Stage
+C-emitter**: `mdux-verify-ui --medui-evidence-out` derives MduX's own `MEDUI-PROFILE-RENDERED` E01
+envelope from a real verify run — schema-valid, aggregating to `pass` on a GPU leg, derived and
+uncommitted. The per-capability results table + ADR-017 (`#314d`) and the TrustSC-side re-pin are
+the remaining stages.
 
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 

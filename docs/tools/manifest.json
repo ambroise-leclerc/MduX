@@ -569,6 +569,7 @@
         "--frame-image-dir",
         "--help",
         "--locales",
+        "--medui-evidence-out",
         "--screen"
       ],
       "sourceDirectory": "tools/verify"

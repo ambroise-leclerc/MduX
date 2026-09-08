@@ -647,6 +647,16 @@ public:
     [[nodiscard]] VkPhysicalDevice physicalDevice() const noexcept {
         return physicalDevice_;
     }
+    /// `VkPhysicalDeviceProperties.deviceName`, verbatim - the exact producer-scoped backend
+    /// identifier the derived evidence envelope records (#314). Empty before `initialise()` runs.
+    [[nodiscard]] std::string backendName() const noexcept {
+        if (physicalDevice_ == VK_NULL_HANDLE) {
+            return {};
+        }
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
+        return std::string{static_cast<const char*>(properties.deviceName)};
+    }
     [[nodiscard]] VkQueue queue() const noexcept {
         return queue_;
     }
@@ -1020,6 +1030,9 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         result.state = RunState::NoRenderDevice;
         return result;
     }
+    result.backend       = device.backendName();
+    result.surfaceWidth  = screen.surfaceWidth;
+    result.surfaceHeight = screen.surfaceHeight;
     const mdux::core::Extent2D extent{.width = screen.surfaceWidth, .height = screen.surfaceHeight};
     auto                       target = mdux::render::OffscreenTarget::create(device.device(), device.physicalDevice(), extent, device.family());
     if (!target.has_value()) {
@@ -1222,7 +1235,7 @@ RunResult run(const std::filesystem::path& screenDirectory) {
 
 std::string usage() {
     return std::format("usage:\n  {} --screen=<generated/screen/id> --locales=all [--format=json|text]\n"
-                       "  {:{}}  [--diff-image-dir=<dir>] [--frame-image-dir=<dir>]\n\n"
+                       "  {:{}}  [--diff-image-dir=<dir>] [--frame-image-dir=<dir>] [--medui-evidence-out=<dir>]\n\n"
                        "Verifies every golden check in every render scope and both mandatory text checks\n"
                        "for every approved locale. The locale manifest cannot be narrowed.\n\n"
                        "--diff-image-dir names where to write <screen>.<scope>.png for each render scope\n"
@@ -1230,8 +1243,11 @@ std::string usage() {
                        "--frame-image-dir names where to write <screen>.<scope>.frame.png for every render\n"
                        "scope, pass or fail: the readback as it came back, undimmed and unannotated. This\n"
                        "is how to look at a screen that verifies.\n\n"
-                       "Both choose a location, never an expectation: the same checks run and the same\n"
-                       "status is returned whether or not either is given.\n",
+                       "--medui-evidence-out names where to write <screen>.medui-evidence.json, the derived\n"
+                       "MEDUI-PROFILE-RENDERED E01 envelope for this run. It is an attachment, never a\n"
+                       "committed artifact, and never byte-compared.\n\n"
+                       "All three choose a location, never an expectation: the same checks run and the same\n"
+                       "status is returned whether or not any is given.\n",
                        toolName,
                        "",
                        toolName.size());
@@ -1243,6 +1259,7 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
     bool       localesSeen = false;
     bool       diffSeen    = false;
     bool       frameSeen   = false;
+    bool       evidenceSeen = false;
     for (std::string_view argument : arguments) {
         if (argument == "--help" || argument == "-h")
             throw cli::UsageError{usage()};
@@ -1283,6 +1300,14 @@ Invocation parseArguments(std::span<const std::string_view> arguments) {
                 throw cli::UsageError{"--frame-image-dir must occur at most once with a non-empty directory\n\n" + usage()};
             result.frameImageDirectory = std::filesystem::path{argument.substr(flag.size())};
             frameSeen                  = true;
+            continue;
+        }
+        if (argument.starts_with("--medui-evidence-out=")) {
+            constexpr std::string_view flag = "--medui-evidence-out=";
+            if (evidenceSeen || argument.size() == flag.size())
+                throw cli::UsageError{"--medui-evidence-out must occur at most once with a non-empty directory\n\n" + usage()};
+            result.meduiEvidenceDirectory = std::filesystem::path{argument.substr(flag.size())};
+            evidenceSeen                  = true;
             continue;
         }
         throw cli::UsageError{"unrecognized argument '" + std::string{argument} + "'\n\n" + usage()};

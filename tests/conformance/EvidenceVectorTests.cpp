@@ -31,106 +31,8 @@ namespace json   = mdux::evidence::json;
 namespace schema = mdux::tools::schema;
 using namespace mdux::conformance;
 
-struct Aggregate {
-    std::string              outcome;
-    std::vector<std::string> rowOutcomes;
-};
-
-/// `spec/profiles.md` E01: a malformed identity fails aggregation. Two layers - the structural
-/// shape (`evidence.schema.json`'s `$defs/identity`, when `identitySchema` is supplied), and the
-/// constraint the schema delegates to the harness: `assets` ids unique and strictly ascending in
-/// ASCII byte order.
-[[nodiscard]] bool identityMalformed(const json::Value& identity, const json::Value* identitySchema) {
-    if (identitySchema != nullptr && !schema::validate(identity, *identitySchema).empty()) {
-        return true;
-    }
-    const json::Value* assets = identity.find("assets");
-    if (assets == nullptr) {
-        return false;
-    }
-    if (assets->kind() != json::Value::Kind::Array) {
-        return true;  // `assets` present but not an array is a malformed identity
-    }
-    std::string_view previous;
-    for (std::size_t i = 0; i < assets->elements().size(); ++i) {
-        const json::Value*              id = assets->elements()[i].find("id");
-        std::optional<std::string_view> text;
-        if (id != nullptr) {
-            if (const auto value = id->asString()) {
-                text = *value;
-            }
-        }
-        if (!text) {
-            return true;
-        }
-        if (i > 0 && !(previous < *text)) {  // strictly ascending also rules out a duplicate id
-            return true;
-        }
-        previous = *text;
-    }
-    return false;
-}
-
-/// E02 + E03 over `obligations` (each an identity) and `rows` (each `{ identity, outcome }`).
-/// `identitySchema` is `evidence.schema.json`'s `$defs/identity`; each obligation and each row
-/// identity is validated against it before any matching (E01).
-[[nodiscard]] Aggregate aggregateEvidence(std::span<const json::Value> obligations,
-                                          std::span<const json::Value> rows,
-                                          const json::Value*           identitySchema,
-                                          const std::filesystem::path& path) {
-    Aggregate aggregate;
-    for (const json::Value& row : rows) {
-        aggregate.rowOutcomes.emplace_back(requireString(row, "outcome", path));
-    }
-
-    // E03: an empty obligation set with no rows is not-run, never pass.
-    if (obligations.empty() && rows.empty()) {
-        aggregate.outcome = "not-run";
-        return aggregate;
-    }
-
-    // E01: a malformed identity fails aggregation before any comparison.
-    for (const json::Value& obligation : obligations) {
-        if (identityMalformed(obligation, identitySchema)) {
-            aggregate.outcome = "fail";
-            return aggregate;
-        }
-    }
-    for (const json::Value& row : rows) {
-        if (identityMalformed(member(row, "identity", path), identitySchema)) {
-            aggregate.outcome = "fail";
-            return aggregate;
-        }
-    }
-
-    // E02: exactly one matching row per obligation, and exactly one matching obligation per row.
-    bool complete = obligations.size() == rows.size();
-    if (complete) {
-        for (const json::Value& obligation : obligations) {
-            const auto matches = std::ranges::count_if(rows, [&](const json::Value& row) {
-                return jsonEqual(member(row, "identity", path), obligation);
-            });
-            complete = complete && matches == 1;
-        }
-        for (const json::Value& row : rows) {
-            const auto matches = std::ranges::count_if(obligations, [&](const json::Value& obligation) {
-                return jsonEqual(member(row, "identity", path), obligation);
-            });
-            complete = complete && matches == 1;
-        }
-    }
-    if (!complete) {
-        aggregate.outcome = "fail";
-        return aggregate;
-    }
-
-    // E03: pass only when every row's own outcome is pass.
-    const bool allPassed = !rows.empty() && std::ranges::all_of(aggregate.rowOutcomes, [](const std::string& outcome) {
-        return outcome == "pass";
-    });
-    aggregate.outcome = allPassed ? "pass" : "fail";
-    return aggregate;
-}
+// `Aggregate`, `identityMalformed` and `aggregateEvidence` (E01-E03 list logic) live in
+// CorpusFixture.hpp so the GPU emitter scenario in verify_ui_spec runs the same aggregation.
 
 const mdux::spec::Register evidenceProfileVectors{
     "Every MEDUI-PROFILE-EVIDENCE vector aggregates as the contract expects",
@@ -155,9 +57,7 @@ const mdux::spec::Register evidenceProfileVectors{
                                     "medui-conformance.toml claims MEDUI-PROFILE-EVIDENCE");
 
                       const json::Value  evidenceSchema = pinnedSchema(*root, "evidence");
-                      const json::Value* identitySchema = evidenceSchema.find("$defs") != nullptr
-                                                              ? evidenceSchema.find("$defs")->find("identity")
-                                                              : nullptr;
+                      const json::Value* identitySchema = identitySchemaFromEvidence(evidenceSchema);
                       checks.expect(identitySchema != nullptr, "evidence.schema.json defines $defs/identity");
 
                       const std::filesystem::path vectorsDir = *root / "conformance" / "profiles";
@@ -240,9 +140,7 @@ const mdux::spec::Register evidenceGateCatchesAWrongOutcome{
                           return;
                       }
                       const json::Value  evidenceSchema = pinnedSchema(*root, "evidence");
-                      const json::Value* identitySchema = evidenceSchema.find("$defs") != nullptr
-                                                              ? evidenceSchema.find("$defs")->find("identity")
-                                                              : nullptr;
+                      const json::Value* identitySchema = identitySchemaFromEvidence(evidenceSchema);
 
                       const std::filesystem::path directory =
                           std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "conformance" / "fixtures" / "evidence-wrong-outcome";

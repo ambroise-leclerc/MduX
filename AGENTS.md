@@ -268,7 +268,9 @@ look-alike command line; they are not needed to build by hand, and each uses its
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
   `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per
   screen by `mdux_compile_screen()`; asserted as a named step on all four CI legs since `#282`, and
-  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes),
+  distinct from `evidence` because it compares a frame to a screen rather than bytes to bytes — also
+  carries `verify_ui_spec`'s end-to-end check of `--medui-evidence-out`, the derived, uncommitted
+  `MEDUI-PROFILE-RENDERED` E01 envelope, since `#314`),
   `conformance` (`conformance_spec` runs the pinned MedUI observation-profile corpus — the
   `MEDUI-PROFILE-RENDERED` and `MEDUI-PROFILE-EVIDENCE` vectors, the `consumer-manifest` and
   `evidence` contract cases, and negative failure-mode fixtures — validated with
