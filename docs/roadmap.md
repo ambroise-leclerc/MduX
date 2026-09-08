@@ -98,12 +98,14 @@ record does not authorize its implementation to bypass a dependency. This replac
 practice of waiting for an entire predecessor epic to close before recording its successor's
 children: child-level dependencies now make the next executable step explicit.
 
-The first step is #312. Its [pinned behavior matrix](parity/behavior-matrix.md),
+The first step was #312. Its [pinned behavior matrix](parity/behavior-matrix.md),
 [accepted ADR-015](adr/ADR-015-versioned-sibling-observations.md) and
-[prospective requirements and decision gates](parity/requirements.md) now define the review
+[requirements and decision gates](parity/requirements.md) define the review
 surface. MedUI decisions for [#15](https://github.com/Compliatory/MedUI/issues/15)
 and [#16](https://github.com/Compliatory/MedUI/issues/16) are Accepted as MEDUI-DEC-007/008; profile/schema/corpus delivery remains follow-up work.
-ADR-015's local architectural direction is accepted; individual requirement review and shared
+ADR-015's local architectural direction is accepted, and
+[ADR-017](adr/ADR-017-sibling-conformance-gate-status.md) ratifies the PAR-REQ-001/002/003
+dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map. Subject to those gates, input design (#315), viewport
 design (#322) and editor API design (#325) can proceed alongside verifier alignment (#313).
 Canonical interfaces land before their consumers. No new version number or release date is assigned
@@ -131,8 +133,10 @@ contract document validated by `mdux.tools.schema` (a JSON-Schema-subset engine)
 C-emitter** ([#334](https://github.com/ambroise-leclerc/MduX/pull/334)): `mdux-verify-ui
 --medui-evidence-out` derives MduX's own `MEDUI-PROFILE-RENDERED` E01 envelope from a real verify
 run — schema-valid, aggregating to `pass` on a GPU leg, derived and uncommitted. **Stage D**
-(`#314d`, this record): the per-capability results table below, ADR-017's proposed PAR-REQ
-dispositions, and the TrustSC-side re-pin tracked as a follow-up issue.
+(`#314d`, this record): the per-capability results table below, ADR-017's PAR-REQ-001/002/003
+dispositions — ratified by maintainer instruction on 8 September 2026 under #312 (PAR-REQ-001
+Accepted, PAR-REQ-002 Accepted with amendment, PAR-REQ-003 Accepted with a recorded subset
+limitation) — and the TrustSC-side re-pin tracked as a follow-up issue.
 
 #### #314 per-capability conformance results
 

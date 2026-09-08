@@ -1,7 +1,15 @@
 # ADR-017: Sibling conformance gate status and PAR-REQ dispositions
 
 ## Status
-Proposed (2026-09-08)
+
+**Accepted**, 2026-09-08, for #312, by maintainer instruction. Acceptance ratifies the
+per-capability status statement and the PAR-REQ-001/002/003 dispositions below — PAR-REQ-001
+**Accepted**, PAR-REQ-002 **Accepted with amendment**, PAR-REQ-003 **Accepted with a recorded
+subset limitation**. It changes no runtime behavior, no compiled artifact, no committed evidence,
+no test and no shared pin, and supersedes no earlier ADR. PAR-REQ-004–010 keep their
+`Proposed / unreviewed` status; the cross-implementation baseline stays with
+[#335](https://github.com/ambroise-leclerc/MduX/issues/335), and ADR-016's own status is #313's to
+record.
 
 ## Shared contract
 
@@ -11,8 +19,8 @@ records that verification is not upstream-governed, and
 [#314](https://github.com/ambroise-leclerc/MduX/issues/314) owns the executable gate against one
 pinned observation corpus, and its acceptance is explicit that a cross-implementation parity claim
 cannot be discharged from one consumer's results. This record does not change that: it states what
-MduX's side of the gate now demonstrates and proposes dispositions for the prospective
-requirements, and it leaves the shared baseline to
+MduX's side of the gate now demonstrates and records the ratified dispositions for the prospective
+requirements it delivers, and it leaves the shared baseline to
 [#335](https://github.com/ambroise-leclerc/MduX/issues/335).
 
 ## Context
@@ -35,16 +43,19 @@ disposition to the individual requirements.
 
 Three of the ten prospective requirements — PAR-REQ-001, PAR-REQ-002 and PAR-REQ-003 — are the ones
 #314 was the named delivery vehicle for. Their engineering half now exists, gated in CI on all five
-legs (`-L conformance`). This record proposes their dispositions, each tied to the tests that
-demonstrate it, so a reviewer ratifies against running code rather than a plan. The other seven
-requirements belong to interaction, streaming and authoring work (#315–#327) and keep their
-`Proposed / unreviewed` status.
+legs (`-L conformance`). This record fixes their dispositions, each tied to the tests that
+demonstrate it, so the ratification is against running code rather than a plan. It was drafted as a
+proposal for the `#314d` PR review; the dispositions were **ratified by maintainer instruction on
+2026-09-08** under #312 and are recorded as Accepted below and in
+[`docs/parity/requirements.md`](../parity/requirements.md). The other seven requirements belong to
+interaction, streaming and authoring work (#315–#327) and keep their `Proposed / unreviewed`
+status.
 
 ## Medical Device Considerations
 
 Impact: **potentially safety-relevant planning and documentation**. This record changes no device
 code, no compiled artifact, no committed evidence and no test. It describes the state of a
-verification gate that already runs, and proposes review dispositions.
+verification gate that already runs, and records the ratified review dispositions.
 
 - **IEC 62304:2006 §5.7**: the software-system verification scope limit recorded in
   `docs/iec62304/03-development-process.md` is unchanged — MduX has no assembled software system,
@@ -74,7 +85,7 @@ statement, not a comparison of equivalent results. This is the historical `#314d
 the newer [#335 paired adoption results](../roadmap.md#335-paired-adoption-results) record TrustSC's
 shared-pin syntax candidate without extending this record's rendered/evidence dispositions.
 
-### 2. PAR-REQ-001 — proposed **Accepted**
+### 2. PAR-REQ-001 — **Accepted** (ratified 2026-09-08)
 
 *Required observable:* a comparison names both implementation SHAs, the exact contract SHA,
 phase/profile and position precision; an unknown or missing capability cannot imply support.
@@ -88,7 +99,7 @@ positive cases through the shared harness, and `positions = "full"` is checked i
 pinned columns matched exactly, and a diagnostic that started carrying an unexpected column would
 fail. ADR-015 D1 (exact SHAs and contract identity) and D4 (declared precision) are satisfied.
 
-### 3. PAR-REQ-002 — proposed **Accepted with amendment**
+### 3. PAR-REQ-002 — **Accepted with amendment** (ratified 2026-09-08)
 
 *Required observable:* extent equality, containment, tint composition and raw RGBA hash have
 distinct versioned identities with defined applicability, empty policy, ROI and arithmetic;
@@ -141,7 +152,7 @@ check:
   no image baseline and R04 discharges no obligation — a driver-tuple-dependent digest cannot enter
   a byte-compared artifact (ADR-014 D4, ADR-007 D5), and TrustSC commits none either.
 
-### 4. PAR-REQ-003 — proposed **Accepted**, with a recorded subset limitation
+### 4. PAR-REQ-003 — **Accepted**, with a recorded subset limitation (ratified 2026-09-08)
 
 *Required observable:* required observations are derived independently from the pinned
 screen/profile; missing, duplicate, unknown, unsupported or not-run required rows prevent a
@@ -198,16 +209,19 @@ condition in decision 3 or establish the derived-observation comparison in decis
   architectural direction and ADR-016 is the local profile layer; the PAR-REQ dispositions are a
   distinct review artifact that maps each requirement to the specific tests that discharge it, and
   they deserve one record a reviewer can ratify or amend as a unit.
-- **Assign the dispositions as Accepted here rather than proposing them.** Rejected: dispositions
-  are the maintainer's and domain reviewer's to assign. This record proposes; the `#314d` PR review
-  ratifies, and the ratification is linked back into `docs/parity/requirements.md`.
+- **Assign the dispositions as Accepted in the drafting revision.** Rejected at drafting:
+  dispositions are the maintainer's and domain reviewer's to assign, so the first revision proposed
+  them and left ratification to review. That ratification has now happened — by maintainer
+  instruction on 2026-09-08 under #312 — and is recorded here and linked back into
+  `docs/parity/requirements.md`. The verifier-area dispositions (PAR-REQ-002/003) still carry the
+  open domain-review note in the requirements table.
 
 ## Consequences
 
 ### Positive
 
-- PAR-REQ-001/002/003 move from "no individual disposition" to a proposed disposition with a test
-  map, so the `#314d` review is against running code.
+- PAR-REQ-001/002/003 move from "no individual disposition" to a ratified disposition with a test
+  map, each pinned to the `conformance_spec` scenarios that discharge it.
 - The RENDERED-subset limitation of the derived envelope is stated once, in a place the reviewer
   and a downstream consumer will both find.
 - The cross-implementation gap has a single owning issue (#335) and the results table has a defined
@@ -218,14 +232,15 @@ condition in decision 3 or establish the derived-observation comparison in decis
 - A fourth parity record (ADR-015, ADR-016, the requirements table, this) is added; a reader must
   follow the chain to see the whole picture. Mitigation: each has a distinct role and this one
   links the others.
-- Three requirements sit in "proposed Accepted" until the PR merges — a transient state, but a real
-  one.
+- The ratification is a maintainer instruction under #312 rather than the `#314d` PR review it was
+  drafted for; the drafting-time reasoning is kept in Context and Alternatives so the trail is
+  legible.
 
 ### Risks
 
-- **The dispositions are read as final before the maintainer ratifies.** Mitigation: the status is
-  `Proposed`, every disposition says "proposed", and `docs/parity/requirements.md` keeps explicit
-  "ratification pending in the `#314d` PR" wording.
+- **The verifier-area dispositions are read as domain-reviewed.** Mitigation: PAR-REQ-002/003 keep
+  the open "domain reviewer (verifier area)" note in `docs/parity/requirements.md`; ratification
+  here is the maintainer's engineering acceptance, not a clinical or risk-control sign-off.
 - **The per-consumer results table is read as a parity claim.** Mitigation: decision 1 and the
   table's own header state it is per-consumer; the two contract revisions are printed side by side;
   #335 is named as the completion condition.
@@ -236,7 +251,7 @@ condition in decision 3 or establish the derived-observation comparison in decis
   record cites (`-L conformance`, tests for the RENDERED and EVIDENCE vector runs, the two
   adapter-disagreement negatives, the manifest and schema validators and their malformed-input
   negatives) already exist and are green on all five CI legs.
-- `docs/parity/requirements.md` gains the proposed dispositions in its PAR-REQ rows and its Review
+- `docs/parity/requirements.md` records the ratified dispositions in its PAR-REQ rows and its Review
   disposition table, each linking here; the decision-map row for "#314 common corpus gate" cites
   this ADR.
 - `docs/parity/behavior-matrix.md` is re-assessed for `#314d` at the current pins and links the
@@ -262,10 +277,17 @@ condition in decision 3 or establish the derived-observation comparison in decis
 
 ## Approval
 
-- **Decision Date**: pending
-- **Approved By**: pending — MduX maintainer, and a domain reviewer for the verifier-area
-  dispositions (PAR-REQ-002/003)
-- **Review Date**: to be recorded in the `#314d` PR, with per-requirement Accepted / amended /
-  deferred dispositions linked back into `docs/parity/requirements.md`
-- **Scope**: the per-capability status statement and the proposed PAR-REQ-001/002/003 dispositions.
-  The gate architecture stays in ADR-015/016; the cross-implementation baseline is #335.
+- **Proposal date**: 2026-09-08
+- **Decision date**: 2026-09-08
+- **Approved by**: Ambroise Leclerc, maintainer, by explicit instruction to ratify ADR-017 and its
+  PAR-REQ-001/002/003 dispositions under #312.
+- **Dispositions ratified**: PAR-REQ-001 **Accepted**; PAR-REQ-002 **Accepted with amendment**
+  (three bounded limitations in decision 3, none weakening an existing required check);
+  PAR-REQ-003 **Accepted** with the recorded RENDERED-subset limitation in decision 4.
+- **Still open**: the verifier-area domain review for PAR-REQ-002/003 (recorded in
+  `docs/parity/requirements.md`); the rendered-artifact migration in decision 3 (gated on a final
+  0.3.0 release, #335 and a reviewed re-bake); PAR-REQ-004–010 stay `Proposed / unreviewed`;
+  ADR-016's status remains #313's to record.
+- **Scope**: the per-capability status statement and the PAR-REQ-001/002/003 dispositions. The gate
+  architecture stays in ADR-015/016; the cross-implementation baseline is #335. This is a
+  maintainer engineering acceptance, not a certification, validation or production-readiness claim.
