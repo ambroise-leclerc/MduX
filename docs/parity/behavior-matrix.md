@@ -177,8 +177,10 @@ unchanged (`4f114dd`); the delivery is one-sided until [#335](https://github.com
   incomplete one-to-one pairing (`OutcomeMismatch`), an unrecognised check name (`UnknownCheck` —
   only `LocalizedTextPresence` may be excluded) and a run that never rendered (`NotRun`).
 
-[ADR-017](../adr/ADR-017-sibling-conformance-gate-status.md) proposes the PAR-REQ-001/002/003
-dispositions this delivery supports. None of it is a cross-implementation parity claim: the
+[ADR-017](../adr/ADR-017-sibling-conformance-gate-status.md) (Accepted 2026-09-08) records the
+ratified PAR-REQ-001/002/003 dispositions this delivery supports — PAR-REQ-001 Accepted,
+PAR-REQ-002 Accepted with amendment, PAR-REQ-003 Accepted with a recorded subset limitation. None
+of it is a cross-implementation parity claim: the
 [roadmap results table](../roadmap.md#314-per-capability-conformance-results) is per-consumer, and
 TrustSC has not re-pinned.
 

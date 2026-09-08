@@ -23,7 +23,7 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-014](ADR-014-rendered-truth-verification.md) | What rendered-truth verification checks, and what it cannot | Accepted | 2026-08-31 |
 | [ADR-015](ADR-015-versioned-sibling-observations.md) | Versioned sibling observations | Accepted | 2026-09-07 |
 | [ADR-016](ADR-016-locally-versioned-observation-profiles.md) | Locally versioned observation profiles for rendered checks | Proposed | 2026-09-07 |
-| [ADR-017](ADR-017-sibling-conformance-gate-status.md) | Sibling conformance gate status and PAR-REQ dispositions | Proposed | 2026-09-08 |
+| [ADR-017](ADR-017-sibling-conformance-gate-status.md) | Sibling conformance gate status and PAR-REQ dispositions | Accepted | 2026-09-08 |
 
 Every number from 001 to 017 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
