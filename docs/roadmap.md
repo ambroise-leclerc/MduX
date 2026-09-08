@@ -8,6 +8,12 @@
 > was closed on 6 September. All post-merge MduX workflows reported success at this head,
 > including the four platform/compiler build legs and sanitizers.
 > Phase 2 below is newly planned work: five open epics and sixteen open child issues.
+>
+> **Update, 8 September 2026:** epic #307's child #314 is merged on the MduX side (four stages,
+> through `183a6da`). The [#314 per-capability conformance results](#314-per-capability-conformance-results)
+> table records what each consumer's own pin demonstrates; the cross-implementation baseline is
+> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's head is unchanged at
+> `4f114dd`, so the Phase-2 comparison below still stands as assessed.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -37,10 +43,10 @@ are superseded; closing the original backlog does not imply complete application
 | Area | MduX at the assessed head | TrustSC at the assessed head | Remaining work |
 |---|---|---|---|
 | Architecture and governance | Governed core, separate Vulkan adapter and host tools; requirement/hazard/verification records, traceability and evidence exports exist. | Governed crates, presentation adapter and host tools; corresponding governance records and application facade exist. | Preserve boundaries; add application integration rather than rebuild governance. |
-| MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | #307: common versioned observations, explicit differences and corpus-derived conformance. |
+| MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. #314 re-pinned to `v0.3.0-rc.1` and gates all 27 compiler cases from the pinned corpus. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | #307: TrustSC re-pin and joint sign-off ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)); the MduX corpus-derived gate is delivered. |
 | Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | #308: bounded interaction, editing and a presented medical monitor. |
 | Presentation and streaming | `UiRenderer` consumes host Vulkan resources; medical examples build draw lists, while the windowed example presents a triangle. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #308 for presentation; #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
-| Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 resolves predicate meaning; #309 verifies dynamic application behavior without weakening the static gate. |
+| Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate, versioned `mdux.local/tint-composition` v1; the raw RGBA8 digest is a separate `mdux.local/raw-image-digest` with no committed baseline. #314 gates `MEDUI-PROFILE-RENDERED`/`-EVIDENCE` against the pinned corpus and emits a derived RENDERED envelope. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 predicate meaning is resolved and gated on the MduX side; #309 verifies dynamic application behavior without weakening the static gate. |
 | Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311: host editing/preview interfaces and Studio integration, with a reuse decision before a fork. |
 | Evidence, ML and text | Recipe-driven committed artifacts, cross-toolchain byte checks, shared host/device inference kernels, fail-closed model creation and bounded runtime bindings. | Baked font/image/shader/model artifacts, deterministic inference and bounded draw paths; the screen/text join still allocates at startup. | Retain existing MduX guarantees. TrustSC #47 is a sibling-side tightening proposal, not missing MduX work. |
 | Platform evidence | MSVC/Windows, GCC/Linux, Clang/libc++ on Linux and Apple Silicon macOS, with pixel/evidence gates and sanitizers. | Current CI builds/tests the Rust workspace on Linux with lavapipe, baker verification, monitor smoke and Studio preview checks. | Do not trade MduX's wider platform coverage for API similarity. |
@@ -108,17 +114,47 @@ Publish an agreed, versioned compatibility boundary, adopt its verification sema
 | [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
 | [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
 
-The #314 gate is landing in stages. **Stage A**: `medui-conformance.toml` re-pinned to MedUI
-`v0.3.0-rc.1` (`9a57f64`), the shared-conformance test green over all 27 compiler cases at `positions = "full"`,
-adding `MEDUI-E035` and `MEDUI-E054`. **Stage B**: the manifest claims `MEDUI-PROFILE-RENDERED`, and
-the new `conformance_spec` suite gates MedUI's 33 `rendered-check` vectors (R01–R04) against
-`mdux.verify`'s own arithmetic. **Stage C**: `MEDUI-PROFILE-EVIDENCE` claimed, its 31
-`aggregate-evidence` vectors (E01–E03) and 29 `evidence` contract documents gated, and every
+The #314 gate landed in four merged stages. **Stage A** ([#331](https://github.com/ambroise-leclerc/MduX/pull/331)):
+`medui-conformance.toml` re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`), the shared-conformance test
+green over all 27 compiler cases at `positions = "full"`, adding `MEDUI-E035` and `MEDUI-E054`.
+**Stage B** ([#332](https://github.com/ambroise-leclerc/MduX/pull/332)): the manifest claims
+`MEDUI-PROFILE-RENDERED`, and the new `conformance_spec` suite gates MedUI's 33 `rendered-check`
+vectors (R01–R04) against `mdux.verify`'s own arithmetic. **Stage C**
+([#333](https://github.com/ambroise-leclerc/MduX/pull/333)): `MEDUI-PROFILE-EVIDENCE` claimed, its
+31 `aggregate-evidence` vectors (E01–E03) and 29 `evidence` contract documents gated, and every
 contract document validated by `mdux.tools.schema` (a JSON-Schema-subset engine). **Stage
-C-emitter**: `mdux-verify-ui --medui-evidence-out` derives MduX's own `MEDUI-PROFILE-RENDERED` E01
-envelope from a real verify run — schema-valid, aggregating to `pass` on a GPU leg, derived and
-uncommitted. The per-capability results table + ADR-017 (`#314d`) and the TrustSC-side re-pin are
-the remaining stages.
+C-emitter** ([#334](https://github.com/ambroise-leclerc/MduX/pull/334)): `mdux-verify-ui
+--medui-evidence-out` derives MduX's own `MEDUI-PROFILE-RENDERED` E01 envelope from a real verify
+run — schema-valid, aggregating to `pass` on a GPU leg, derived and uncommitted. **Stage D**
+(`#314d`, this record): the per-capability results table below, ADR-017's proposed PAR-REQ
+dispositions, and the TrustSC-side re-pin tracked as a follow-up issue.
+
+#### #314 per-capability conformance results
+
+The two consumers are pinned to **different** shared-contract revisions, so the table records what
+each demonstrates on its own pin — it is not a cross-implementation parity claim.
+
+| Consumer | Implementation SHA | Pinned MedUI contract | Manifest claims |
+|---|---|---|---|
+| MduX | [`183a6da`](https://github.com/ambroise-leclerc/MduX/commit/183a6da3190e673c41edbe9050586d4dc0fa4fa4) on `develop` | `v0.3.0-rc.1` / [`9a57f64`](https://github.com/Compliatory/MedUI/commit/9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb) | `syntax, semantics, layout, safety`; `positions = "full"`; `profiles = [MEDUI-PROFILE-RENDERED, MEDUI-PROFILE-EVIDENCE]` |
+| TrustSC | [`4f114dd`](https://github.com/ambroise-leclerc/TrustSC/commit/4f114dd30c64f61d11edb5941e95f422e189f305) on `main` | `0.1.0-candidate` / [`c8cc45e`](https://github.com/Compliatory/MedUI/commit/c8cc45ecec2f2dfd84940b9efc17c613e691cc0d) | `syntax`; `positions = "line-only"`; no profiles |
+
+| Capability / profile | MduX at `183a6da` — what the gate demonstrates | TrustSC at `4f114dd` | Cross-implementation status |
+|---|---|---|---|
+| `syntax` | Claimed. All 5 pinned syntax cases pass through the shared harness (`medui_tools_spec`). | Claimed, against the older pin. | Both claim; different corpus revision — not the same baseline. |
+| `semantics` | Claimed. All 17 pinned semantics cases pass. | Not claimed. Local resolution exists; unverified against the shared corpus. | Single-side. |
+| `layout` | Claimed. All 3 pinned layout cases pass. | Not claimed. Local bounded layout exists; unverified against the shared corpus. | Single-side. |
+| `safety` | Claimed. Both pinned safety cases pass; the compiler re-derives obligations. | Not claimed. Golden references are embedded; shared safety phase unclaimed. | Single-side. |
+| Diagnostic positions | `full` — every pinned 1-based UTF-8 byte column is matched exactly (`positions = "full"` checked both directions). | `line-only` — the parser carries no column; pinned columns are required absent. | Intentional, recorded difference. |
+| `MEDUI-PROFILE-RENDERED` (R01–R04) | Claimed. 33 `rendered-check` vectors run against `mdux.verify`'s own `rectContainedBy` / `inflate` / `couldBeBlend` and `mdux.evidence`'s `sha256` (`conformance_spec` tests for "holds against mdux.verify's own arithmetic" and the adapter-disagreement negative). R04 (`rgba8-sha256`) is exercised as arithmetic only — **no committed baseline** (ADR-016, ADR-014 D4). | Not claimed. `ColorHash` computes a raw RGBA8 digest but commits no baseline. | Single-side. |
+| `MEDUI-PROFILE-EVIDENCE` (E01–E03) | Claimed. 31 `aggregate-evidence` vectors (identity match, one row per obligation, `pass`/`fail`/`unsupported`/`not-run` aggregation) plus 29 `evidence` contract documents, every document schema-validated by `mdux.tools.schema` (fail-closed). Missing, duplicate, unknown, unsupported and not-run rows are all rejected. | Not claimed. | Single-side. |
+| Derived RENDERED E01 envelope | `mdux-verify-ui --medui-evidence-out` emits MduX's own envelope from a real GPU verify run — obligations synthesized from the screen and its checks, `evidence.schema.json`-valid, aggregating to `pass` on a GPU leg. It is the RENDERED **subset**: `LocalizedTextPresence` is implementation-local, excluded and counted. Derived and uncommitted (ADR-014 D4, ADR-007 D5). | n/a — TrustSC emits its own native report shape. | Single-side. |
+
+MduX's coverage is not lowered to match TrustSC's narrower claim: the four compiler phases and both
+profiles stay claimed and gated. A shared baseline requires TrustSC to re-pin to `v0.3.0-rc.1` and
+claim the phases and profiles it implements — tracked in
+[#335](https://github.com/ambroise-leclerc/MduX/issues/335). The
+[pinned behavior matrix](parity/behavior-matrix.md) links here rather than repeating this table.
 
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 

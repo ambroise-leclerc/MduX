@@ -1,0 +1,237 @@
+# ADR-017: Sibling conformance gate status and PAR-REQ dispositions
+
+## Status
+Proposed (2026-09-08)
+
+## Shared contract
+
+No MedUI shared decision covers cross-implementation conformance — [ADR-014](ADR-014-rendered-truth-verification.md)
+records that verification is not upstream-governed, and
+[ADR-016](ADR-016-locally-versioned-observation-profiles.md) inherits it.
+[#314](https://github.com/ambroise-leclerc/MduX/issues/314) owns the executable gate against one
+pinned observation corpus, and its acceptance is explicit that a cross-implementation parity claim
+cannot be discharged from one consumer's results. This record does not change that: it states what
+MduX's side of the gate now demonstrates and proposes dispositions for the prospective
+requirements, and it leaves the shared baseline to
+[#335](https://github.com/ambroise-leclerc/MduX/issues/335).
+
+## Context
+
+[#314](https://github.com/ambroise-leclerc/MduX/issues/314) landed in four merged stages:
+
+| Stage | PR | What it added to the gate |
+|---|---|---|
+| A | [#331](https://github.com/ambroise-leclerc/MduX/pull/331) | `medui-conformance.toml` re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`); the 27-case compiler corpus (5 syntax, 17 semantics, 3 layout, 2 safety) gated at `positions = "full"`; `MEDUI-E035`, `MEDUI-E054`; four compiler-defect fixes the newer corpus exposed |
+| B | [#332](https://github.com/ambroise-leclerc/MduX/pull/332) | `profiles` claims `MEDUI-PROFILE-RENDERED`; a new `conformance_spec` suite runs the 33 `rendered-check` vectors (rules R01–R04) against `mdux.verify`'s own exported predicates, plus the 10 `consumer-manifest` contract cases |
+| C | [#333](https://github.com/ambroise-leclerc/MduX/pull/333) | `profiles` also claims `MEDUI-PROFILE-EVIDENCE`; the 31 `aggregate-evidence` vectors (rules E01–E03) and 29 `evidence` contract documents are gated; `mdux.tools.schema` — a fail-closed JSON-Schema-subset engine — validates every contract document |
+| C-emitter | [#334](https://github.com/ambroise-leclerc/MduX/pull/334) | `mdux-verify-ui --medui-evidence-out` derives MduX's own `MEDUI-PROFILE-RENDERED` E01 envelope from a real verify run — schema-valid, aggregating to `pass` on a GPU leg, derived and uncommitted |
+
+The [pinned behavior matrix](../parity/behavior-matrix.md) was reviewed in
+[PR #329](https://github.com/ambroise-leclerc/MduX/pull/329): the maintainer verified its substance
+against the pinned sources and approved it, while explicitly leaving formal acceptance of the
+individual PAR-REQ records pending. [ADR-015](ADR-015-versioned-sibling-observations.md)'s D1–D5
+architectural direction was accepted separately on the same date; that acceptance assigned no
+disposition to the individual requirements.
+
+Three of the ten prospective requirements — PAR-REQ-001, PAR-REQ-002 and PAR-REQ-003 — are the ones
+#314 was the named delivery vehicle for. Their engineering half now exists, gated in CI on all five
+legs (`-L conformance`). This record proposes their dispositions, each tied to the tests that
+demonstrate it, so a reviewer ratifies against running code rather than a plan. The other seven
+requirements belong to interaction, streaming and authoring work (#315–#327) and keep their
+`Proposed / unreviewed` status.
+
+## Medical Device Considerations
+
+Impact: **potentially safety-relevant planning and documentation**. This record changes no device
+code, no compiled artifact, no committed evidence and no test. It describes the state of a
+verification gate that already runs, and proposes review dispositions.
+
+- **IEC 62304**: the §5.7 software-system scope limit recorded in
+  `docs/iec62304/03-development-process.md` is unchanged — MduX has no assembled software system,
+  and nothing here is a verification, validation or release activity for one. The `conformance_spec`
+  suite is a development-time conformance check against a pinned external corpus.
+- **Risk management**: no hazard, risk control or software safety class in this repository names the
+  failure mode that a weaker or misidentified conformance check would introduce. This record does
+  not invent one. The prospective requirements' failure descriptions remain engineering concerns,
+  not assigned clinical hazards.
+- **Traceability**: PAR-REQ-001/002/003 gain a link from their disposition to the specific
+  `conformance_spec` scenarios and ADR-016 fixtures that exercise them.
+- **Cybersecurity**: unaffected.
+
+No cross-implementation parity is claimed, and per #314's own acceptance it cannot be from MduX
+results alone. This is not a certification, validation or production-readiness claim.
+
+## Decision
+
+### 1. Per-capability status is the roadmap results table
+
+The authoritative record of what each consumer demonstrates on its own pin is the
+[#314 per-capability conformance results](../roadmap.md#314-per-capability-conformance-results)
+table in `docs/roadmap.md`: MduX at `183a6da` (MedUI `v0.3.0-rc.1` / `9a57f64`), TrustSC at
+`4f114dd` (MedUI `0.1.0-candidate` / `c8cc45e`). It is not duplicated here or in the behavior
+matrix. The two consumers are on different contract revisions, so the table is a per-consumer
+statement, not a comparison of equivalent results.
+
+### 2. PAR-REQ-001 — proposed **Accepted**
+
+*Required observable:* a comparison names both implementation SHAs, the exact contract SHA,
+phase/profile and position precision; an unknown or missing capability cannot imply support.
+
+The gate enforces this. `medui-conformance.toml` carries the exact contract `commit`, the claimed
+`capabilities`, `positions` and `profiles`; `conformance_spec` fails when the manifest claims a
+profile with no adapter ("An unsupported profile claim in `medui-conformance.toml` fails the gate")
+and when the manifest shape itself is malformed ("The manifest validator rejects a malformed
+`medui-conformance.toml`"). Each claimed compiler phase is exercised by its complete set of pinned
+positive cases through the shared harness, and `positions = "full"` is checked in both directions —
+pinned columns matched exactly, and a diagnostic that started carrying an unexpected column would
+fail. ADR-015 D1 (exact SHAs and contract identity) and D4 (declared precision) are satisfied.
+
+### 3. PAR-REQ-002 — proposed **Accepted with amendment**
+
+*Required observable:* extent equality, containment, tint composition and raw RGBA hash have
+distinct versioned identities with defined applicability, empty policy, ROI and arithmetic;
+migration preserves old required checks.
+
+Delivered in two halves. The **local** half is [ADR-016](ADR-016-locally-versioned-observation-profiles.md):
+five `mdux.local/*` observation profiles, one per predicate, each recorded per outcome in
+`verification.json`, plus the `rawImageDigest()` predicate with an adversarial fixture set and no
+committed baseline. The **shared-corpus** half is #314 Stage B: `MEDUI-PROFILE-RENDERED` is claimed
+and the 33 `rendered-check` vectors run against `mdux.verify`'s own `rectContainedBy`, `inflate`
+and `couldBeBlend` — one implementation of the arithmetic, shared by the local profiles and the
+corpus — with the adapter-disagreement negative proving the gate bites.
+
+The **amendment** records three bounded limitations, none of which weakens an existing required
+check:
+
+- `mdux.local/tint-composition` stays at version 1. The Stage B move of `couldBeBlend` into the
+  module interface was a visibility change only; its body is unchanged and `verify_spec` proves the
+  four required checks compute exactly what they computed before. A true outcome-changing revision
+  (correcting alpha handling for mismatched-alpha callers) is deferred to a future version-2 change,
+  per ADR-016 decision 4.
+- The canonical-id migration — mapping `mdux.local/*` onto MEDUI-DEC-007's shared identifiers — is
+  deferred until that decision delivers identifiers, a schema and a corpus. Today `MEDUI-PROFILE-RENDERED`
+  appears only in the manifest claim and the corpus harness, never in committed evidence.
+- Rule R04 (`rgba8-sha256`) is exercised as arithmetic against the pinned vectors, but MduX commits
+  no image baseline and R04 discharges no obligation — a driver-tuple-dependent digest cannot enter
+  a byte-compared artifact (ADR-014 D4, ADR-007 D5), and TrustSC commits none either.
+
+### 4. PAR-REQ-003 — proposed **Accepted**, with a recorded subset limitation
+
+*Required observable:* required observations are derived independently from the pinned
+screen/profile; missing, duplicate, unknown, unsupported or not-run required rows prevent a
+successful gate; keys include all scope and provenance fields.
+
+Delivered in two halves. The **aggregate** half is #314 Stage C: the 31 `aggregate-evidence`
+vectors check fieldwise identity match, one report row per derived obligation, and
+`pass`/`fail`/`unsupported`/`not-run` aggregation; the negative vector proves a wrong expected
+outcome fails; `mdux.tools.schema` validates every `evidence` contract document and fails closed on
+any keyword it does not implement, so a constraint the contract adds cannot silently stop being
+checked. Malformed identities are rejected before matching.
+
+The **derived** half is #314 Stage C-emitter: `deriveRenderedEvidence()` synthesizes one obligation
+per enumerated obligation from the screen and its checks — not read back from a report — and
+**fails closed**: it refuses a run whose outcomes and obligations are not a complete one-to-one
+pairing (missing, duplicate or substituted), refuses an unrecognised check name, and refuses a run
+that never rendered. The envelope carries the full identity — contract, producer, profile,
+artifact, ordered assets, screen, node, locale, scenario, capture, frame, check, backend and a
+producer-scoped configuration token.
+
+**Recorded limitation:** the derived envelope is the RENDERED **subset** of a run.
+`LocalizedTextPresence` (`mdux.local/ink-coverage`) has no shared rendered-check id — it is an
+implementation-local check — so its outcomes are excluded from the envelope and counted, not
+mapped. An implementation-local check runs alongside the shared ones; it does not become one. The
+cross-implementation half of PAR-REQ-003 (comparing MduX's and TrustSC's derived observations) is
+out of scope until #335.
+
+### 5. Cross-implementation parity is not claimed
+
+TrustSC's published head is unchanged at `4f114dd`, pinned to MedUI `0.1.0-candidate`, claiming
+`syntax` only at `line-only` positions and no profiles. A shared baseline requires TrustSC to
+re-pin and claim the phases and profiles it implements, gated the same corpus-derived way. That is
+[#335](https://github.com/ambroise-leclerc/MduX/issues/335), and until it closes the results table
+is a per-consumer statement. MduX's coverage is not lowered to match the narrower claim.
+
+## Alternatives Considered
+
+- **Claim cross-implementation parity from MduX's green gate.** Rejected: #314's acceptance
+  explicitly forbids it, and TrustSC is on a different contract revision. A single-side pass is not
+  equivalence.
+- **Wait for the TrustSC re-pin before recording any disposition.** Rejected: MduX's side of the
+  three requirements is complete, gated in CI and reviewable now. Holding the dispositions hostage
+  to sibling-side scheduling leaves accepted engineering work in an indefinite `unreviewed` state
+  and loses the traceability link while the context is fresh.
+- **Fold the dispositions into ADR-015/016 amendments.** Rejected: ADR-015 is the accepted
+  architectural direction and ADR-016 is the local profile layer; the PAR-REQ dispositions are a
+  distinct review artifact that maps each requirement to the specific tests that discharge it, and
+  they deserve one record a reviewer can ratify or amend as a unit.
+- **Assign the dispositions as Accepted here rather than proposing them.** Rejected: dispositions
+  are the maintainer's and domain reviewer's to assign. This record proposes; the #314d PR review
+  ratifies, and the ratification is linked back into `docs/parity/requirements.md`.
+
+## Consequences
+
+### Positive
+
+- PAR-REQ-001/002/003 move from "no individual disposition" to a proposed disposition with a test
+  map, so the #314d review is against running code.
+- The RENDERED-subset limitation of the derived envelope is stated once, in a place the reviewer
+  and a downstream consumer will both find.
+- The cross-implementation gap has a single owning issue (#335) and the results table has a defined
+  completion condition.
+
+### Negative
+
+- A fourth parity record (ADR-015, ADR-016, the requirements table, this) is added; a reader must
+  follow the chain to see the whole picture. Mitigation: each has a distinct role and this one
+  links the others.
+- Three requirements sit in "proposed Accepted" until the PR merges — a transient state, but a real
+  one.
+
+### Risks
+
+- **The dispositions are read as final before the maintainer ratifies.** Mitigation: the status is
+  `Proposed`, every disposition says "proposed", and `docs/parity/requirements.md` keeps explicit
+  "ratification pending in the #314d PR" wording.
+- **The per-consumer results table is read as a parity claim.** Mitigation: decision 1 and the
+  table's own header state it is per-consumer; the two contract revisions are printed side by side;
+  #335 is named as the completion condition.
+
+## Implementation Notes
+
+- No code, CMake, test or `medui-conformance.toml` change. The `conformance_spec` scenarios this
+  record cites (`-L conformance`, tests for the RENDERED and EVIDENCE vector runs, the two
+  adapter-disagreement negatives, the manifest and schema validators and their malformed-input
+  negatives) already exist and are green on all five CI legs.
+- `docs/parity/requirements.md` gains the proposed dispositions in its PAR-REQ rows and its Review
+  disposition table, each linking here; the decision-map row for "#314 common corpus gate" cites
+  this ADR.
+- `docs/parity/behavior-matrix.md` is re-assessed for #314d at the current pins and links the
+  roadmap results table.
+- `docs/adr/README.md` indexes this as ADR-017.
+
+## References
+
+- [ADR-014](ADR-014-rendered-truth-verification.md) — verification is not upstream-governed;
+  decision 4 (no measured pixel in the artifact)
+- [ADR-015](ADR-015-versioned-sibling-observations.md) — decisions D1–D5, accepted 2026-09-07
+- [ADR-016](ADR-016-locally-versioned-observation-profiles.md) — the local observation-profile
+  layer and the `rawImageDigest()` predicate
+- [ADR-007](ADR-007-evidence-pipeline-doctrine.md) — decision 5, environment-dependent data cannot
+  live in a byte-compared artifact
+- [Prospective requirements](../parity/requirements.md) — PAR-REQ-001/002/003
+- [Pinned behavior matrix](../parity/behavior-matrix.md) and the
+  [roadmap results table](../roadmap.md#314-per-capability-conformance-results)
+- Issues [#314](https://github.com/ambroise-leclerc/MduX/issues/314),
+  [#335](https://github.com/ambroise-leclerc/MduX/issues/335); PR
+  [#329](https://github.com/ambroise-leclerc/MduX/pull/329)
+- `medui-conformance.toml`, `tests/conformance/`
+
+## Approval
+
+- **Decision Date**: pending
+- **Approved By**: pending — MduX maintainer, and a domain reviewer for the verifier-area
+  dispositions (PAR-REQ-002/003)
+- **Review Date**: to be recorded in the #314d PR, with per-requirement Accepted / amended /
+  deferred dispositions linked back into `docs/parity/requirements.md`
+- **Scope**: the per-capability status statement and the proposed PAR-REQ-001/002/003 dispositions.
+  The gate architecture stays in ADR-015/016; the cross-implementation baseline is #335.
