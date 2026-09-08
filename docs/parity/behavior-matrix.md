@@ -1,5 +1,9 @@
 # Pinned sibling behavior matrix
 
+**Latest: [#335 adoption reassessment](#335-adoption-reassessment), 8 September 2026.**
+The #314d assessment below is preserved at its original immutable inputs; the adoption section
+records the newer pair and the limited observations they now share.
+
 Assessed **7 September 2026** for [#312](https://github.com/ambroise-leclerc/MduX/issues/312);
 **re-assessed 8 September 2026 for `#314d`** against MduX
 [`183a6da`](https://github.com/ambroise-leclerc/MduX/commit/183a6da3190e673c41edbe9050586d4dc0fa4fa4)
@@ -248,6 +252,63 @@ Offline mode needs the lockfile's dependencies in the local cache. This probe is
 evidence; MduX's own `conformance_spec` is the CI gate. Widget/presentation/dynamic comparisons
 above are source inspection; no cross-sibling pixel or event-replay equivalence was executed or
 established.
+
+## #335 adoption reassessment
+
+Re-assessed **8 September 2026** against MduX
+[`abdf771`](https://github.com/ambroise-leclerc/MduX/commit/abdf77182638735adf47c6d125c53581bc9d4f3d)
+and TrustSC
+[`b7fe0e1`](https://github.com/ambroise-leclerc/TrustSC/commit/b7fe0e18304b2156520b4268e2943d23afb2c77b).
+Both manifests pin MedUI `9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb` (`v0.3.0-rc.1`).
+The [roadmap's paired results](../roadmap.md#335-paired-adoption-results) are the authoritative
+capability table; this section records the behavioral consequences and reproduction.
+
+MduX's implementation is unchanged from `183a6da`: the intervening commit updates documentation.
+TrustSC's adoption changes the parser/checker and conformance gate; inspection of its diff against
+`4f114dd` found no runtime, renderer, binding, layout or golden-predicate changes. The component,
+interaction, rendering and intentional-difference rows above therefore retain their earlier
+assessment. They have not become cross-implementation tests merely because the pins now agree.
+
+The existing [observation probe](trustsc-observation-probe.rs) was also compiled and re-run against
+TrustSC `b7fe0e1`: `nested-row: MEDUI-E015 line=6 column=absent` and
+`empty golden: GoldenBounds=pass ColorHash=no_baseline`. These remain isolated predicate results,
+not whole-screen conformance, and confirm that the earlier rendering limitations still apply.
+
+| Changed observation | Reassessment |
+|---|---|
+| Contract revision | The adoption branch now reads the same 27 compiler cases as MduX. TrustSC executes the 5 syntax cases and names the remaining 22 as unclaimed; it does not report 27 passes. |
+| Duplicate authored IDs | TrustSC refuses them during parsing across root nodes, Rows and children, at the second declaration's line. Its compiled-node check remains for synthetic panel collisions and edited ASTs. The pinned duplicate-ID source gives E014 at line 11 in both siblings. |
+| Source encoding | TrustSC's production byte parser, file compiler and checker distinguish invalid UTF-8 (E004) from unreadable source (E003). The pinned invalid-UTF-8 source gives E004 at line 1 in both siblings. |
+| Diagnostic precision | The nested-Row source remains E015 at line 6. TrustSC reports no columns for any of the five cases; MduX checks every pinned column. Full-position equivalence remains unestablished. |
+| Closed values and later compiler phases | The new pin includes E033/E034/E035 and the newer layout/safety cases. TrustSC does not execute those phases; acquiring their fixtures supplies no semantic, layout or safety conformance evidence. |
+| Shared observation profiles | TrustSC still has no complete RENDERED/EVIDENCE adapters. Native `ColorHash` and native report shapes retain the differences recorded above. No GPU/capture or derived-envelope comparison was executed. |
+
+The paired local selections passed: MduX **313 tests**, TrustSC **68 tests**. The syntax harness
+reads all expected results from the contract; its negative test inverts an accepted case's
+expected validity and proves the disagreement fails. Another negative proves that adding a phase
+without an adapter is refused. The TrustSC gate runs in a named CI step. CI integration and joint
+review status are recorded in the roadmap rather than inferred from the local totals.
+
+To reproduce, use checkouts at the two implementation SHAs above and the exact contract SHA:
+
+```sh
+# From MduX, with its configured GCC build:
+export MEDUI_CONFORMANCE_DIR=/path/to/MedUI-at-9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb
+ctest --test-dir build-gcc -R '^(verify_spec|medui_tools_spec|medui_spec|conformance_spec)::' --no-tests=error --output-on-failure
+
+# From TrustSC, retaining the same MEDUI_CONFORMANCE_DIR:
+CI=1 cargo test --locked -p trustsc-ui-dsl-authoring --test shared_conformance -- --nocapture
+cargo test --locked -p trustsc-ui-dsl-authoring -p trustsc-medui-check
+cargo build --locked --workspace
+cargo test --locked --quiet
+```
+
+The local TrustSC run used Rust/Cargo 1.96.0, `--offline`, and a writable copy of the Cargo cache
+under `/tmp`; this resolves the read-only-cache limitation of the historical #314d run. These
+results support common syntax acceptance and diagnostic codes/lines. They do not change
+PAR-REQ-002/003's unverified cross-implementation observations or assign clinical risk controls.
+Impact is **potentially safety-relevant conformance documentation**: only the recorded evidence
+changes in MduX; no runtime code, baked artifact, safety class or certification claim changes.
 
 [m-manifest]: https://github.com/ambroise-leclerc/MduX/blob/183a6da3190e673c41edbe9050586d4dc0fa4fa4/medui-conformance.toml
 [t-manifest]: https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd30c64f61d11edb5941e95f422e189f305/medui-conformance.toml
