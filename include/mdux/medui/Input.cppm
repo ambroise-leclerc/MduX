@@ -604,9 +604,11 @@ public:
     [[nodiscard]] constexpr bool                        editing() const noexcept { return caret_.has_value(); }
 
     /**
-     * @brief A focus transition. An event for another node is ignored (returns `false`);
-     *        `FocusKind::Enter` starts editing with the caret after the last scalar, `Leave` ends
-     *        it (`caret()` -> `nullopt`). Returns whether this editor took the event.
+     * @brief A focus transition. `FocusKind::Enter` starts editing with the caret after the last
+     *        scalar, `Leave` ends it (`caret()` -> `nullopt`). Returns whether this editor changed
+     *        state for the event: `false` for an event naming another node and `false` for a
+     *        kindless (`FocusKind::Unspecified`) event, which is never a delivered one (clause 1) —
+     *        the same fail-closed reading `apply()` gives an `EditKind::Unspecified` op.
      */
     constexpr bool focus(const FocusEvent& event) noexcept {
         if (event.nodeId != nodeId_) {
@@ -614,10 +616,13 @@ public:
         }
         if (event.kind == FocusKind::Enter) {
             caret_ = length_;
-        } else if (event.kind == FocusKind::Leave) {
-            caret_ = std::nullopt;
+            return true;
         }
-        return true;
+        if (event.kind == FocusKind::Leave) {
+            caret_ = std::nullopt;
+            return true;
+        }
+        return false;
     }
 
     /**

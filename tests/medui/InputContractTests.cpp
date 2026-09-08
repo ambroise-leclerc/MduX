@@ -664,9 +664,9 @@ const mdux::spec::Register editorRefusesLeaveEverythingUnchanged{
     "evidence-unit",
     [] {
         return speclab::Test("medui-input-editor-refusals-do-not-mutate")
-            .Given("a focused editor holding \"12\", full at max_length 3", [] {})
-            .When("an unfocused edit, an out-of-charset scalar, a full-field insert, a boundary delete, and an out-of-range caret are attempted", [] {})
-            .Then("each names its reason and the value and caret are untouched throughout",
+            .Given("an editor holding \"123\", full at max_length 3", [] {})
+            .When("an unfocused edit, a kindless op, an out-of-charset scalar, a full-field insert, a boundary delete, and an out-of-range caret are attempted", [] {})
+            .Then("each names its reason and, checked right after it, leaves the value and caret exactly where they were",
                   [] {
                       mdux::spec::Checks       checks;
                       std::array<char32_t, 8>  storage{};
@@ -676,44 +676,46 @@ const mdux::spec::Register editorRefusesLeaveEverythingUnchanged{
                       if (!made.has_value()) { checks.expect(false, "created"); checks.raise(); return; }
                       ms::FieldEditor editor = *made;
 
-                      // Not focused yet.
-                      const auto unfocused = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'});
-                      checks.expect(!unfocused.has_value() && unfocused.error() == ms::InputError::NotFocused,
-                                    "an edit before focus is NotFocused");
+                      // Asserts, directly, that one refused operation changed neither the value nor
+                      // the caret - the state as it stood right before it is the state right after.
+                      const auto refusedUnchanged = [&](const char* what, ms::InputError want,
+                                                        mdux::core::Result<void, ms::InputError> got) {
+                          const auto v0 = editor.value();
+                          const std::u32string valueBefore{v0.data(), v0.size()};
+                          const auto caretBefore = editor.caret();
+                          checks.expect(!got.has_value() && got.error() == want, what);
+                          const auto v1 = editor.value();
+                          checks.expect(std::u32string{v1.data(), v1.size()} == valueBefore && editor.caret() == caretBefore,
+                                        std::format("{}: value and caret unchanged", what));
+                      };
+
+                      // Not focused yet: an edit is refused and nothing moves.
+                      refusedUnchanged("an edit before focus is NotFocused", ms::InputError::NotFocused,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'}));
 
                       editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "pin"});
-                      const auto caretBefore = editor.caret();
 
-                      const auto malformed = editor.apply(ms::EditOp{});
-                      checks.expect(!malformed.has_value() && malformed.error() == ms::InputError::MalformedEditOp,
-                                    "an EditOp with no kind is MalformedEditOp");
+                      refusedUnchanged("an EditOp with no kind is MalformedEditOp", ms::InputError::MalformedEditOp,
+                                       editor.apply(ms::EditOp{}));
+                      refusedUnchanged("a letter is ScalarNotPermitted", ms::InputError::ScalarNotPermitted,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'A'}));
+                      refusedUnchanged("an emoji is ScalarNotInFont", ms::InputError::ScalarNotInFont,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'\U0001F642'}));
 
-                      const auto letter = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'A'});
-                      checks.expect(!letter.has_value() && letter.error() == ms::InputError::ScalarNotPermitted,
-                                    "a letter is ScalarNotPermitted");
-
-                      const auto emoji = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'\U0001F642'});
-                      checks.expect(!emoji.has_value() && emoji.error() == ms::InputError::ScalarNotInFont,
-                                    "an emoji is ScalarNotInFont");
-
-                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'}).has_value(), "one more digit fills the field");
-                      const auto full = editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'4'});
-                      checks.expect(!full.has_value() && full.error() == ms::InputError::FieldAtCapacity,
-                                    "the next insert is FieldAtCapacity");
+                      checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'3'}).has_value(),
+                                    "one more digit fills the field to max_length 3");
+                      refusedUnchanged("the field is now full: FieldAtCapacity", ms::InputError::FieldAtCapacity,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::InsertScalar, .scalar = U'4'}));
 
                       checks.expect(editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 0}).has_value(), "caret home");
-                      const auto nothingBack = editor.apply(ms::EditOp{.kind = ms::EditKind::DeleteBack});
-                      checks.expect(!nothingBack.has_value() && nothingBack.error() == ms::InputError::EmptyEdit,
-                                    "backspace at the start is EmptyEdit");
-
-                      const auto badCaret = editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 99});
-                      checks.expect(!badCaret.has_value() && badCaret.error() == ms::InputError::CaretOutOfRange,
-                                    "a caret past the length is CaretOutOfRange");
+                      refusedUnchanged("backspace at the start is EmptyEdit", ms::InputError::EmptyEdit,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::DeleteBack}));
+                      refusedUnchanged("a caret past the length is CaretOutOfRange", ms::InputError::CaretOutOfRange,
+                                       editor.apply(ms::EditOp{.kind = ms::EditKind::MoveCaret, .caretTo = 99}));
 
                       const auto v = editor.value();
-                      checks.expect(std::u32string_view{v.data(), v.size()} == U"123", "the value is exactly what the accepted edits left");
-                      checks.expect(editor.caret() == std::optional<std::size_t>{0}, "the caret is where the last accepted move left it");
-                      (void)caretBefore;
+                      checks.expect(std::u32string_view{v.data(), v.size()} == U"123", "the value is still the one create() accepted");
+                      checks.expect(editor.caret() == std::optional<std::size_t>{0}, "the caret is where the one accepted move left it");
                       checks.raise();
                   })
             .Execute();
@@ -738,6 +740,10 @@ const mdux::spec::Register editorRoutesKeysAndTextAndIgnoresOtherNodes{
                       checks.expect(!editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "other"}),
                                     "a focus event for another node is not taken");
                       checks.expect(!editor.editing(), "and this editor is still not editing");
+
+                      checks.expect(!editor.focus(ms::FocusEvent{.nodeId = "name"}),
+                                    "a kindless focus event for this node is not taken either — Unspecified is never delivered");
+                      checks.expect(!editor.editing(), "and it did not start editing");
 
                       checks.expect(editor.focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = "name"}),
                                     "a focus event for this node is taken");
