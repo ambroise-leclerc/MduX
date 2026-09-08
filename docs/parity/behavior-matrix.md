@@ -1,5 +1,9 @@
 # Pinned sibling behavior matrix
 
+**Latest: [#335 paired adoption results](#335-paired-adoption-results), 8 September 2026.**
+The `#314d` assessment below is preserved at its original immutable inputs; the adoption section
+records the newer pair and the limited observations they now share.
+
 Assessed **7 September 2026** for [#312](https://github.com/ambroise-leclerc/MduX/issues/312);
 **re-assessed 8 September 2026 for `#314d`** against MduX
 [`183a6da`](https://github.com/ambroise-leclerc/MduX/commit/183a6da3190e673c41edbe9050586d4dc0fa4fa4)
@@ -129,7 +133,7 @@ Sources: [MduX predicates][m-verify], [implementation arithmetic][m-arithmetic],
 the ability to compute/compare a hash is not evidence of a committed image regression gate.
 [MedUI #15](https://github.com/Compliatory/MedUI/issues/15) requests the versioned resolution.
 
-### #314d — the MduX side of the "Proposed treatment" column is delivered and gated
+### `#314d` — the MduX side of the "Proposed treatment" column is delivered and gated
 
 The four merged stages of [#314](https://github.com/ambroise-leclerc/MduX/issues/314) turned the
 proposal above into running code on the MduX side. TrustSC's observations in the table are
@@ -248,6 +252,76 @@ Offline mode needs the lockfile's dependencies in the local cache. This probe is
 evidence; MduX's own `conformance_spec` is the CI gate. Widget/presentation/dynamic comparisons
 above are source inspection; no cross-sibling pixel or event-replay equivalence was executed or
 established.
+
+## #335 paired adoption results
+
+Re-assessed **8 September 2026** against MduX
+[`a722784`](https://github.com/ambroise-leclerc/MduX/commit/a722784de5c958cec9ede7903bdf577eb10fe09f)
+and TrustSC
+[`b21c423`](https://github.com/ambroise-leclerc/TrustSC/commit/b21c423f590d37c98625e3101ef41787ee4fb13c).
+Both manifests pin MedUI `9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb` (`v0.3.0-rc.1`).
+The [roadmap's paired results](../roadmap.md#335-paired-adoption-results) are the authoritative
+capability table; this section records the behavioral consequences and reproduction.
+
+MduX's implementation is unchanged from `183a6da`: the intervening changes update documentation.
+TrustSC's adoption changes the parser/checker, Studio file loading and conformance gate; inspection
+of its diff against
+`4f114dd` found no runtime, renderer, binding, layout or golden-predicate changes. The component,
+interaction, rendering and intentional-difference rows above therefore retain their earlier
+assessment. They have not become cross-implementation tests merely because the pins now agree.
+
+The existing [observation probe](trustsc-observation-probe.rs) was also compiled and re-run against
+TrustSC `b21c423`: `nested-row: MEDUI-E015 line=6 column=absent` and
+`empty golden: GoldenBounds=pass ColorHash=no_baseline`. These remain isolated predicate results,
+not whole-screen conformance, and confirm that the earlier rendering limitations still apply.
+
+| Changed observation | Reassessment |
+|---|---|
+| Contract revision | The adoption branch now reads the same 27 compiler cases as MduX. TrustSC executes the 5 syntax cases and names the remaining 22 as unclaimed; it does not report 27 passes. |
+| Duplicate authored IDs | TrustSC refuses them during parsing across root nodes, Rows and children, using final IDs and the later effective declaration's line; overwritten values reserve no names. Its compiled-node check remains for synthetic panel collisions and edited ASTs. The pinned duplicate-ID source gives E014 at line 11 in both siblings. |
+| Source encoding | TrustSC's production byte parser, file compiler, checker and Studio file endpoints distinguish invalid UTF-8 (E004) from unreadable source (E003). The pinned invalid-UTF-8 source gives E004 at line 1 in both siblings. |
+| Diagnostic precision | The nested-Row source remains E015 at line 6. TrustSC reports no columns for any of the five cases; MduX checks every pinned column. Full-position equivalence remains unestablished. |
+| Closed values and later compiler phases | The new pin includes E033/E034/E035 and the newer layout/safety cases. TrustSC does not execute those phases; acquiring their fixtures supplies no semantic, layout or safety conformance evidence. |
+| Known safety divergence | An annotation does not promote an optional Button/TextInput requirement to mandatory: E070 is not implemented. This is a behavioral gap in the unclaimed safety phase, not merely a missing diagnostic constant. |
+| Shared observation profiles | TrustSC still has no complete RENDERED/EVIDENCE adapters. Native `ColorHash` and native report shapes retain the differences recorded above. No GPU/capture or derived-envelope comparison was executed. |
+
+The paired local selections passed: MduX **313 tests**, TrustSC **70 tests**. The syntax harness
+reads all expected results from the contract; its negative test loads the source and runs a positive
+control before inverting validity, then checks the exact assertion message. I/O failures cannot
+satisfy that negative. Studio's **36 tests** also passed, including file endpoint encoding and I/O
+regressions. Another negative proves that adding a phase
+without an adapter is refused. The TrustSC gate runs in a named CI step. CI integration and joint
+review status are recorded in the roadmap rather than inferred from the local totals.
+
+To reproduce, use checkouts at the two implementation SHAs above and the exact contract SHA:
+
+```sh
+# From MduX, with its configured GCC build:
+export MEDUI_CONFORMANCE_DIR=/path/to/MedUI-at-9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb
+ctest --test-dir build-gcc -R '^(verify_spec|medui_tools_spec|medui_spec|conformance_spec)::' --no-tests=error --output-on-failure
+
+# From TrustSC, retaining the same MEDUI_CONFORMANCE_DIR:
+# Copy the already populated registry cache into a fresh writable Cargo home.
+mdux335_cargo_source="${CARGO_HOME:-$HOME/.cargo}"
+mdux335_cargo_copy="$(mktemp -d /tmp/mdux-335-cargo.XXXXXX)"
+cp -R "$mdux335_cargo_source/registry" "$mdux335_cargo_copy/"
+chmod -R u+w "$mdux335_cargo_copy"
+export CARGO_HOME="$mdux335_cargo_copy"
+CI=1 cargo test --offline --locked -p trustsc-ui-dsl-authoring --test shared_conformance -- --nocapture
+cargo test --offline --locked -p trustsc-ui-dsl-authoring -p trustsc-medui-check
+cargo build --offline --locked --workspace
+cargo test --offline --locked --quiet
+```
+
+The local TrustSC run used Rust/Cargo 1.96.0, `--offline`, and a writable copy of the Cargo cache
+under `/tmp`, as shown above. The source cache must already contain the registry packages required
+by the pinned `Cargo.lock` for the selected host; `--offline` does not download missing dependencies. Copying it to a
+writable directory allows Cargo to unpack cached packages despite the original read-only Cargo
+home, resolving that specific limitation of the historical `#314d` run. These results support common
+syntax acceptance and diagnostic codes/lines. They do not change
+PAR-REQ-002/003's unverified cross-implementation observations or assign clinical risk controls.
+Impact is **potentially safety-relevant conformance documentation**: only the recorded evidence
+changes in MduX; no runtime code, baked artifact, safety class or certification claim changes.
 
 [m-manifest]: https://github.com/ambroise-leclerc/MduX/blob/183a6da3190e673c41edbe9050586d4dc0fa4fa4/medui-conformance.toml
 [t-manifest]: https://github.com/ambroise-leclerc/TrustSC/blob/4f114dd30c64f61d11edb5941e95f422e189f305/medui-conformance.toml

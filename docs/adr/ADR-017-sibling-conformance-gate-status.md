@@ -70,7 +70,9 @@ The authoritative record of what each consumer demonstrates on its own pin is th
 table in `docs/roadmap.md`: MduX at `183a6da` (MedUI `v0.3.0-rc.1` / `9a57f64`), TrustSC at
 `4f114dd` (MedUI `0.1.0-candidate` / `c8cc45e`). It is not duplicated here or in the behavior
 matrix. The two consumers are on different contract revisions, so the table is a per-consumer
-statement, not a comparison of equivalent results.
+statement, not a comparison of equivalent results. This is the historical `#314d` pairing;
+the newer [#335 paired adoption results](../roadmap.md#335-paired-adoption-results) record TrustSC's
+shared-pin syntax candidate without extending this record's rendered/evidence dispositions.
 
 ### 2. PAR-REQ-001 — proposed **Accepted**
 
@@ -169,11 +171,19 @@ out of scope until #335.
 
 ### 5. Cross-implementation parity is not claimed
 
-TrustSC's published head is unchanged at `4f114dd`, pinned to MedUI `0.1.0-candidate`, claiming
-`syntax` only at `line-only` positions and no profiles. A shared baseline requires TrustSC to
+At the `#314d` assessment, TrustSC's published head was `4f114dd`, pinned to MedUI `0.1.0-candidate`,
+claiming `syntax` only at `line-only` positions and no profiles. A shared baseline requires TrustSC to
 re-pin and claim the phases and profiles it implements, gated the same corpus-derived way. That is
 [#335](https://github.com/ambroise-leclerc/MduX/issues/335), and until it closes the results table
 is a per-consumer statement. MduX's coverage is not lowered to match the narrower claim.
+
+**#335 paired adoption results, 8 September 2026:** TrustSC `b21c423` adopts MedUI `9a57f64` on its work
+branch and passes all five syntax cases at line-only precision. The
+[roadmap results table](../roadmap.md#335-paired-adoption-results) and
+[behavior matrix](../parity/behavior-matrix.md#335-paired-adoption-results) record both heads
+and the evidence. Semantics, layout, safety and RENDERED/EVIDENCE remain unclaimed by TrustSC;
+joint sign-off is pending. This syntax result does not discharge the rendered cross-implementation
+condition in decision 3 or establish the derived-observation comparison in decision 4.
 
 ## Alternatives Considered
 
@@ -189,7 +199,7 @@ is a per-consumer statement. MduX's coverage is not lowered to match the narrowe
   distinct review artifact that maps each requirement to the specific tests that discharge it, and
   they deserve one record a reviewer can ratify or amend as a unit.
 - **Assign the dispositions as Accepted here rather than proposing them.** Rejected: dispositions
-  are the maintainer's and domain reviewer's to assign. This record proposes; the #314d PR review
+  are the maintainer's and domain reviewer's to assign. This record proposes; the `#314d` PR review
   ratifies, and the ratification is linked back into `docs/parity/requirements.md`.
 
 ## Consequences
@@ -197,7 +207,7 @@ is a per-consumer statement. MduX's coverage is not lowered to match the narrowe
 ### Positive
 
 - PAR-REQ-001/002/003 move from "no individual disposition" to a proposed disposition with a test
-  map, so the #314d review is against running code.
+  map, so the `#314d` review is against running code.
 - The RENDERED-subset limitation of the derived envelope is stated once, in a place the reviewer
   and a downstream consumer will both find.
 - The cross-implementation gap has a single owning issue (#335) and the results table has a defined
@@ -215,7 +225,7 @@ is a per-consumer statement. MduX's coverage is not lowered to match the narrowe
 
 - **The dispositions are read as final before the maintainer ratifies.** Mitigation: the status is
   `Proposed`, every disposition says "proposed", and `docs/parity/requirements.md` keeps explicit
-  "ratification pending in the #314d PR" wording.
+  "ratification pending in the `#314d` PR" wording.
 - **The per-consumer results table is read as a parity claim.** Mitigation: decision 1 and the
   table's own header state it is per-consumer; the two contract revisions are printed side by side;
   #335 is named as the completion condition.
@@ -229,7 +239,7 @@ is a per-consumer statement. MduX's coverage is not lowered to match the narrowe
 - `docs/parity/requirements.md` gains the proposed dispositions in its PAR-REQ rows and its Review
   disposition table, each linking here; the decision-map row for "#314 common corpus gate" cites
   this ADR.
-- `docs/parity/behavior-matrix.md` is re-assessed for #314d at the current pins and links the
+- `docs/parity/behavior-matrix.md` is re-assessed for `#314d` at the current pins and links the
   roadmap results table.
 - `docs/adr/README.md` indexes this as ADR-017.
 
@@ -255,7 +265,7 @@ is a per-consumer statement. MduX's coverage is not lowered to match the narrowe
 - **Decision Date**: pending
 - **Approved By**: pending — MduX maintainer, and a domain reviewer for the verifier-area
   dispositions (PAR-REQ-002/003)
-- **Review Date**: to be recorded in the #314d PR, with per-requirement Accepted / amended /
+- **Review Date**: to be recorded in the `#314d` PR, with per-requirement Accepted / amended /
   deferred dispositions linked back into `docs/parity/requirements.md`
 - **Scope**: the per-capability status statement and the proposed PAR-REQ-001/002/003 dispositions.
   The gate architecture stays in ADR-015/016; the cross-implementation baseline is #335.

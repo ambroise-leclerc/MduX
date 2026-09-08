@@ -12,8 +12,13 @@
 > **Update, 8 September 2026:** epic #307's child #314 is merged on the MduX side (four stages,
 > through `183a6da`). The [#314 per-capability conformance results](#314-per-capability-conformance-results)
 > table records what each consumer's own pin demonstrates; the cross-implementation baseline is
-> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's head is unchanged at
+> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's published head is unchanged at
 > `4f114dd`, so the Phase-2 comparison below still stands as assessed.
+>
+> **#335 paired adoption results, 8 September 2026:** TrustSC `b21c423` now pins the same MedUI
+> revision as MduX. The [paired adoption results](#335-paired-adoption-results) below record a
+> shared syntax baseline at line precision. The earlier comparison remains historical;
+> unclaimed phases/profiles and joint sign-off remain explicit gaps.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -131,8 +136,9 @@ dispositions, and the TrustSC-side re-pin tracked as a follow-up issue.
 
 #### #314 per-capability conformance results
 
-The two consumers are pinned to **different** shared-contract revisions, so the table records what
-each demonstrates on its own pin — it is not a cross-implementation parity claim.
+**Historical #314 assessment; the [#335 paired adoption results](#335-paired-adoption-results) below are newer.**
+At these assessed heads the two consumers pin **different** shared-contract revisions, so the table
+records what each demonstrates on its own pin — it is not a cross-implementation parity claim.
 
 | Consumer | Implementation SHA | Pinned MedUI contract | Manifest claims |
 |---|---|---|---|
@@ -155,6 +161,55 @@ profiles stay claimed and gated. A shared baseline requires TrustSC to re-pin to
 claim the phases and profiles it implements — tracked in
 [#335](https://github.com/ambroise-leclerc/MduX/issues/335). The
 [pinned behavior matrix](parity/behavior-matrix.md) links here rather than repeating this table.
+
+#### #335 paired adoption results
+
+Assessed 8 September 2026. Both consumers now select the exact contract commit
+[`9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb`](https://github.com/Compliatory/MedUI/commit/9a57f6462b6f8dbdf1f0b8b4519674f1c6235dbb)
+(`v0.3.0-rc.1`). TrustSC's adoption is [PR #52](https://github.com/ambroise-leclerc/TrustSC/pull/52),
+on a work branch, not yet integrated into `main`.
+
+| Consumer | Assessed implementation head | Manifest claims |
+|---|---|---|
+| MduX | [`a722784`](https://github.com/ambroise-leclerc/MduX/commit/a722784de5c958cec9ede7903bdf577eb10fe09f) on the #335 issue branch; documentation only since `183a6da` | syntax, semantics, layout, safety; full positions; RENDERED and EVIDENCE |
+| TrustSC | [`b21c423`](https://github.com/ambroise-leclerc/TrustSC/commit/b21c423f590d37c98625e3101ef41787ee4fb13c) on `335-shared-conformance-baseline` | syntax; line-only positions; no profiles |
+
+| Capability / profile | MduX | TrustSC | Paired conclusion |
+|---|---|---|---|
+| Syntax | All 5 pinned cases pass with full positions. | All 5 pinned cases pass through the production byte parser. | Same corpus and acceptance/rejection codes; lines agree. Columns are asserted only by MduX. |
+| Semantics | All 17 pinned cases pass. | Unclaimed; no complete shared adapter. | MduX-only evidence. |
+| Layout | All 3 pinned cases pass. | Unclaimed; no complete shared adapter. | MduX-only evidence. |
+| Safety | Both pinned cases pass. | Unclaimed; no complete shared adapter. | MduX-only evidence. |
+| Diagnostic positions | Full, including UTF-8 byte columns. | Line-only, with every column required absent. | Precision differs; no full-position equivalence claim. |
+| MEDUI-PROFILE-RENDERED | All 33 vectors pass against MduX's arithmetic. | Unclaimed; native checks are not a complete shared-profile adapter. | MduX-only evidence; no paired pixel/capture result. |
+| MEDUI-PROFILE-EVIDENCE | All 31 aggregate vectors and 29 evidence contract cases pass. | Unclaimed; native reports do not establish the shared aggregate contract. | MduX-only evidence. |
+| Derived RENDERED E01 envelope | Existing GPU CI evidence from #314; not re-run in this local comparison. | No shared envelope claim. | No paired envelope comparison. |
+
+Local verification: MduX's GCC selection of `verify_spec`, `medui_tools_spec`, `medui_spec` and
+`conformance_spec` passed **313 tests** with the pinned checkout supplied. TrustSC's parser/checker
+selection passed **70 tests** (61 library, 6 CLI, 3 conformance-harness tests), including the five
+corpus-derived syntax cases, an inverted-expectation negative and refusal of an unsupported phase
+claim. The Studio selection passed **36 tests**, including invalid-encoding versus I/O failures
+on detail, frame and proposal endpoints. Its full local workspace build and **319 tests with no failures or ignored tests** also
+passed, using Rust/Cargo 1.96.0. The [TrustSC adoption CI run](https://github.com/ambroise-leclerc/TrustSC/actions/runs/34229297866)
+completed successfully for `b21c423`, including the conformance gate, workspace build/tests,
+documentation lint, artifact verification, headless smoke tests, Studio preview, lavapipe UI
+verification and evidence upload.
+MduX `a722784` has successful published
+[GCC](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463527),
+[MSVC](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463504),
+[Linux Clang](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463514),
+[macOS](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463456) and
+[sanitizer](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463431) runs.
+Reproduction and the behavioral reassessment are in the
+[behavior matrix](parity/behavior-matrix.md#335-paired-adoption-results).
+
+**Joint sign-off remains pending.** This removes the pin mismatch for the adoption branch and
+supports the common syntax subset only. TrustSC's semantics/layout/safety adapters and shared
+observation profiles remain unimplemented in the gate; unclaimed coverage is neither a pass nor
+evidence of equivalent behavior. Neither side's coverage was lowered. #335 must not be closed as
+full cross-implementation conformance on this evidence, and ADR-017's rendered-artifact migration
+condition is not discharged by this syntax result.
 
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 
