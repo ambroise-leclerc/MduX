@@ -191,10 +191,9 @@ selection passed **68 tests** (59 library, 6 CLI, 3 conformance-harness tests), 
 corpus-derived syntax cases, an inverted-expectation negative and refusal of an unsupported phase
 claim. Its full local workspace build and **316 tests with no failures or ignored tests** also
 passed, using Rust/Cargo 1.96.0. The [TrustSC adoption CI run](https://github.com/ambroise-leclerc/TrustSC/actions/runs/34209241880)
-successfully completed its named conformance gate, workspace build/tests, documentation lint,
-artifact verification, headless smoke tests, Studio preview and lavapipe UI verification,
-including evidence upload. These are individual step results; the run's cache cleanup was still
-pending when recorded, so an overall successful run is not asserted here.
+completed successfully, including its named conformance gate, workspace build/tests,
+documentation lint, artifact verification, headless smoke tests, Studio preview, lavapipe UI
+verification and evidence upload.
 MduX `abdf771` has successful published
 [GCC](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432100),
 [MSVC](https://github.com/ambroise-leclerc/MduX/actions/runs/34197432189),
