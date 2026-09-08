@@ -1,6 +1,6 @@
 # Pinned sibling behavior matrix
 
-**Latest: [#335 adoption reassessment](#335-adoption-reassessment), 8 September 2026.**
+**Latest: [#335 paired adoption results](#335-paired-adoption-results), 8 September 2026.**
 The #314d assessment below is preserved at its original immutable inputs; the adoption section
 records the newer pair and the limited observations they now share.
 
@@ -253,7 +253,7 @@ evidence; MduX's own `conformance_spec` is the CI gate. Widget/presentation/dyna
 above are source inspection; no cross-sibling pixel or event-replay equivalence was executed or
 established.
 
-## #335 adoption reassessment
+## #335 paired adoption results
 
 Re-assessed **8 September 2026** against MduX
 [`a722784`](https://github.com/ambroise-leclerc/MduX/commit/a722784de5c958cec9ede7903bdf577eb10fe09f)
@@ -301,15 +301,24 @@ export MEDUI_CONFORMANCE_DIR=/path/to/MedUI-at-9a57f6462b6f8dbdf1f0b8b4519674f1c
 ctest --test-dir build-gcc -R '^(verify_spec|medui_tools_spec|medui_spec|conformance_spec)::' --no-tests=error --output-on-failure
 
 # From TrustSC, retaining the same MEDUI_CONFORMANCE_DIR:
-CI=1 cargo test --locked -p trustsc-ui-dsl-authoring --test shared_conformance -- --nocapture
-cargo test --locked -p trustsc-ui-dsl-authoring -p trustsc-medui-check
-cargo build --locked --workspace
-cargo test --locked --quiet
+# Copy the already populated registry cache into a fresh writable Cargo home.
+mdux335_cargo_source="${CARGO_HOME:-$HOME/.cargo}"
+mdux335_cargo_copy="$(mktemp -d /tmp/mdux-335-cargo.XXXXXX)"
+cp -R "$mdux335_cargo_source/registry" "$mdux335_cargo_copy/"
+chmod -R u+w "$mdux335_cargo_copy"
+export CARGO_HOME="$mdux335_cargo_copy"
+CI=1 cargo test --offline --locked -p trustsc-ui-dsl-authoring --test shared_conformance -- --nocapture
+cargo test --offline --locked -p trustsc-ui-dsl-authoring -p trustsc-medui-check
+cargo build --offline --locked --workspace
+cargo test --offline --locked --quiet
 ```
 
 The local TrustSC run used Rust/Cargo 1.96.0, `--offline`, and a writable copy of the Cargo cache
-under `/tmp`; this resolves the read-only-cache limitation of the historical #314d run. These
-results support common syntax acceptance and diagnostic codes/lines. They do not change
+under `/tmp`, as shown above. The source cache must already contain the registry packages required
+by the pinned `Cargo.lock` for the selected host; `--offline` does not download missing dependencies. Copying it to a
+writable directory allows Cargo to unpack cached packages despite the original read-only Cargo
+home, resolving that specific limitation of the historical #314d run. These results support common
+syntax acceptance and diagnostic codes/lines. They do not change
 PAR-REQ-002/003's unverified cross-implementation observations or assign clinical risk controls.
 Impact is **potentially safety-relevant conformance documentation**: only the recorded evidence
 changes in MduX; no runtime code, baked artifact, safety class or certification claim changes.

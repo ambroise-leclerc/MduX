@@ -12,10 +12,10 @@
 > **Update, 8 September 2026:** epic #307's child #314 is merged on the MduX side (four stages,
 > through `183a6da`). The [#314 per-capability conformance results](#314-per-capability-conformance-results)
 > table records what each consumer's own pin demonstrates; the cross-implementation baseline is
-> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's head is unchanged at
+> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). TrustSC's published head is unchanged at
 > `4f114dd`, so the Phase-2 comparison below still stands as assessed.
 >
-> **#335 adoption candidate, 8 September 2026:** TrustSC `b21c423` now pins the same MedUI
+> **#335 paired adoption results, 8 September 2026:** TrustSC `b21c423` now pins the same MedUI
 > revision as MduX. The [paired adoption results](#335-paired-adoption-results) below record a
 > shared syntax baseline at line precision. The earlier comparison remains historical;
 > unclaimed phases/profiles and joint sign-off remain explicit gaps.
@@ -136,7 +136,7 @@ dispositions, and the TrustSC-side re-pin tracked as a follow-up issue.
 
 #### #314 per-capability conformance results
 
-**Historical #314 assessment; the [#335 pairing](#335-paired-adoption-results) below is newer.**
+**Historical #314 assessment; the [#335 paired adoption results](#335-paired-adoption-results) below are newer.**
 At these assessed heads the two consumers pin **different** shared-contract revisions, so the table
 records what each demonstrates on its own pin — it is not a cross-implementation parity claim.
 
@@ -202,7 +202,7 @@ MduX `a722784` has successful published
 [macOS](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463456) and
 [sanitizer](https://github.com/ambroise-leclerc/MduX/actions/runs/34222463431) runs.
 Reproduction and the behavioral reassessment are in the
-[behavior matrix](parity/behavior-matrix.md#335-adoption-reassessment).
+[behavior matrix](parity/behavior-matrix.md#335-paired-adoption-results).
 
 **Joint sign-off remains pending.** This removes the pin mismatch for the adoption branch and
 supports the common syntax subset only. TrustSC's semantics/layout/safety adapters and shared

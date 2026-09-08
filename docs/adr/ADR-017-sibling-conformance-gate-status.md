@@ -71,7 +71,7 @@ table in `docs/roadmap.md`: MduX at `183a6da` (MedUI `v0.3.0-rc.1` / `9a57f64`),
 `4f114dd` (MedUI `0.1.0-candidate` / `c8cc45e`). It is not duplicated here or in the behavior
 matrix. The two consumers are on different contract revisions, so the table is a per-consumer
 statement, not a comparison of equivalent results. This is the historical #314d pairing;
-the newer [#335 adoption results](../roadmap.md#335-paired-adoption-results) record TrustSC's
+the newer [#335 paired adoption results](../roadmap.md#335-paired-adoption-results) record TrustSC's
 shared-pin syntax candidate without extending this record's rendered/evidence dispositions.
 
 ### 2. PAR-REQ-001 — proposed **Accepted**
@@ -177,10 +177,10 @@ re-pin and claim the phases and profiles it implements, gated the same corpus-de
 [#335](https://github.com/ambroise-leclerc/MduX/issues/335), and until it closes the results table
 is a per-consumer statement. MduX's coverage is not lowered to match the narrower claim.
 
-**#335 adoption update, 8 September 2026:** TrustSC `b21c423` adopts MedUI `9a57f64` on its work
+**#335 paired adoption results, 8 September 2026:** TrustSC `b21c423` adopts MedUI `9a57f64` on its work
 branch and passes all five syntax cases at line-only precision. The
-[paired results](../roadmap.md#335-paired-adoption-results) and
-[behavior reassessment](../parity/behavior-matrix.md#335-adoption-reassessment) record both heads
+[roadmap results table](../roadmap.md#335-paired-adoption-results) and
+[behavior matrix](../parity/behavior-matrix.md#335-paired-adoption-results) record both heads
 and the evidence. Semantics, layout, safety and RENDERED/EVIDENCE remain unclaimed by TrustSC;
 joint sign-off is pending. This syntax result does not discharge the rendered cross-implementation
 condition in decision 3 or establish the derived-observation comparison in decision 4.
