@@ -46,7 +46,7 @@ Impact: **potentially safety-relevant planning and documentation**. This record 
 code, no compiled artifact, no committed evidence and no test. It describes the state of a
 verification gate that already runs, and proposes review dispositions.
 
-- **IEC 62304**: the §5.7 software-system scope limit recorded in
+- **IEC 62304:2006 §5.7**: the software-system verification scope limit recorded in
   `docs/iec62304/03-development-process.md` is unchanged — MduX has no assembled software system,
   and nothing here is a verification, validation or release activity for one. The `conformance_spec`
   suite is a development-time conformance check against a pinned external corpus.
@@ -93,9 +93,11 @@ distinct versioned identities with defined applicability, empty policy, ROI and 
 migration preserves old required checks.
 
 Delivered in two halves. The **local** half is [ADR-016](ADR-016-locally-versioned-observation-profiles.md):
-five `mdux.local/*` observation profiles, one per predicate, each recorded per outcome in
-`verification.json`, plus the `rawImageDigest()` predicate with an adversarial fixture set and no
-committed baseline. The **shared-corpus** half is #314 Stage B: `MEDUI-PROFILE-RENDERED` is claimed
+**five** `mdux.local/*` observation profiles — `extent-equality`, `tint-composition`,
+`ink-containment`, `ink-coverage` and `raw-image-digest`, one per predicate. The four committed
+checks record their profile per outcome in `verification.json`; `raw-image-digest`
+(`rawImageDigest()`) is exercised only by an adversarial fixture set and has no committed baseline
+and no production caller. The **shared-corpus** half is #314 Stage B: `MEDUI-PROFILE-RENDERED` is claimed
 and the 33 `rendered-check` vectors run against `mdux.verify`'s own `rectContainedBy`, `inflate`
 and `couldBeBlend` — one implementation of the arithmetic, shared by the local profiles and the
 corpus — with the adapter-disagreement negative proving the gate bites.
