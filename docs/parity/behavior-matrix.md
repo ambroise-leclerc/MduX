@@ -1,7 +1,7 @@
 # Pinned sibling behavior matrix
 
 **Latest: [#335 paired adoption results](#335-paired-adoption-results), 8 September 2026.**
-The #314d assessment below is preserved at its original immutable inputs; the adoption section
+The `#314d` assessment below is preserved at its original immutable inputs; the adoption section
 records the newer pair and the limited observations they now share.
 
 Assessed **7 September 2026** for [#312](https://github.com/ambroise-leclerc/MduX/issues/312);
@@ -133,7 +133,7 @@ Sources: [MduX predicates][m-verify], [implementation arithmetic][m-arithmetic],
 the ability to compute/compare a hash is not evidence of a committed image regression gate.
 [MedUI #15](https://github.com/Compliatory/MedUI/issues/15) requests the versioned resolution.
 
-### #314d — the MduX side of the "Proposed treatment" column is delivered and gated
+### `#314d` — the MduX side of the "Proposed treatment" column is delivered and gated
 
 The four merged stages of [#314](https://github.com/ambroise-leclerc/MduX/issues/314) turned the
 proposal above into running code on the MduX side. TrustSC's observations in the table are
@@ -317,7 +317,7 @@ The local TrustSC run used Rust/Cargo 1.96.0, `--offline`, and a writable copy o
 under `/tmp`, as shown above. The source cache must already contain the registry packages required
 by the pinned `Cargo.lock` for the selected host; `--offline` does not download missing dependencies. Copying it to a
 writable directory allows Cargo to unpack cached packages despite the original read-only Cargo
-home, resolving that specific limitation of the historical #314d run. These results support common
+home, resolving that specific limitation of the historical `#314d` run. These results support common
 syntax acceptance and diagnostic codes/lines. They do not change
 PAR-REQ-002/003's unverified cross-implementation observations or assign clinical risk controls.
 Impact is **potentially safety-relevant conformance documentation**: only the recorded evidence
