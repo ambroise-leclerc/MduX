@@ -108,9 +108,31 @@ check:
   four required checks compute exactly what they computed before. A true outcome-changing revision
   (correcting alpha handling for mismatched-alpha callers) is deferred to a future version-2 change,
   per ADR-016 decision 4.
-- The canonical-id migration — mapping `mdux.local/*` onto MEDUI-DEC-007's shared identifiers — is
-  deferred until that decision delivers identifiers, a schema and a corpus. Today `MEDUI-PROFILE-RENDERED`
-  appears only in the manifest claim and the corpus harness, never in committed evidence.
+- **The canonical identifiers, the schemas and the corpus already exist** at the pinned revision
+  `9a57f64`: `spec/profiles.md` defines `MEDUI-PROFILE-RENDERED/1` with `extent-equality/1`,
+  `ink-containment/1`, `tint-composition/1` and `rgba8-sha256/1`; `schemas/` carries the
+  `profile-case`, `contract-case` and `evidence` schemas; `conformance/profiles/` and
+  `conformance/contracts/` carry the vectors. So the migration is **not** blocked on MEDUI-DEC-007
+  delivering anything — that direction is Accepted and its candidate delivery is in the pinned
+  0.3.0 line. What remains, and what ADR-016 decision 4 defers, is a distinct step with two
+  identity domains:
+  - **Derived shared evidence already uses the canonical ids.** The `--medui-evidence-out` envelope
+    (Stage C-emitter) emits `profile.id = "MEDUI-PROFILE-RENDERED"` and `check.id` in
+    {`extent-equality`, `tint-composition`, `ink-containment`}. That envelope is derived and
+    uncommitted, so adopting canonical ids there carries no baseline risk and is done.
+  - **Committed `verification.json` still records `mdux.local/*` per outcome.** Migrating those to
+    the canonical check ids is a change to a **byte-compared** artifact, and per `spec/profiles.md`
+    ("a consumer maps legacy obligations explicitly … runs old and candidate obligations together,
+    retains both reports, and rebakes changed baselines") and MEDUI-DEC-007's rollout ("profile
+    adoption requires a minor release with its own candidate corpus, passed by every implementation
+    claiming the affected capability before any consumer advertises a profile") it is deliberately
+    gated on: a final 0.3.0 minor release rather than `-rc.1`, the cross-implementation pass
+    ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)), and a reviewed migration that
+    runs both identities together and re-bakes each screen bundle.
+  - **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) has **no** `MEDUI-PROFILE-RENDERED`
+    equivalent — the RENDERED profile has four checks and none is a localized-text-presence
+    predicate — so it stays implementation-local after the migration, not mapped. This is the same
+    boundary the derived envelope draws by excluding it.
 - Rule R04 (`rgba8-sha256`) is exercised as arithmetic against the pinned vectors, but MduX commits
   no image baseline and R04 discharges no obligation — a driver-tuple-dependent digest cannot enter
   a byte-compared artifact (ADR-014 D4, ADR-007 D5), and TrustSC commits none either.

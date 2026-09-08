@@ -142,8 +142,13 @@ unchanged (`4f114dd`); the delivery is one-sided until [#335](https://github.com
   observation TrustSC's `ColorHash` performs, as its own `mdux.local/raw-image-digest` profile, so
   the two `ColorHash` results are never conflated — with **no committed baseline** (a
   driver-tuple-dependent digest cannot live in a byte-compared artifact, ADR-014 D4), `NoBaseline`
-  on every production call, fixture-tested only. The ids stay `mdux.local/*` until MEDUI-DEC-007
-  delivers canonical identifiers.
+  on every production call, fixture-tested only. The **committed** `verification.json` keeps the
+  `mdux.local/*` ids; the canonical `MEDUI-PROFILE-RENDERED` ids (`extent-equality`,
+  `ink-containment`, `tint-composition`, `rgba8-sha256`) exist at the pin, and the **derived**
+  envelope below already emits them. Migrating the byte-compared artifact to them is gated on a
+  final 0.3.0 release, the cross-implementation pass (#335) and a reviewed re-bake — see
+  [ADR-017 §3](../adr/ADR-017-sibling-conformance-gate-status.md). `mdux.local/ink-coverage` has no
+  RENDERED equivalent and stays local.
 - **The shared RENDERED corpus** (Stage B). `medui-conformance.toml` claims
   `MEDUI-PROFILE-RENDERED`, and `conformance_spec` runs `v0.3.0-rc.1`'s 33 `rendered-check` vectors
   (rules R01–R04) against `mdux.verify`'s own exported predicates — `rectContainedBy`, `inflate`,

@@ -278,6 +278,36 @@ producer-scoped `configuration` token is a SHA-256 over `{backend, format, produ
 surface}` — `spec/profiles.md` leaves the payload to the named producer, requiring only that it
 bind the settings that determine what is rendered.
 
+### Amendment — #314d: the migration prerequisite, corrected
+
+Decision 4 above (and the Stage B amendment) say the `mdux.local/*` → canonical migration waits
+until "MEDUI-DEC-007 delivers canonical ids and a schema". **That is now inaccurate.** The pinned
+`v0.3.0-rc.1` (`9a57f64`) already carries `MEDUI-PROFILE-RENDERED/1` with `extent-equality/1`,
+`ink-containment/1`, `tint-composition/1` and `rgba8-sha256/1` in `spec/profiles.md`, the
+`profile-case` / `contract-case` / `evidence` schemas, and the `conformance/profiles` +
+`conformance/contracts` corpus. MEDUI-DEC-007 is Accepted and its candidate delivery is in the
+pinned 0.3.0 line.
+
+The migration is therefore split by identity domain:
+
+- **Derived shared evidence already uses the canonical ids.** The Stage C-emitter envelope emits
+  `profile.id = "MEDUI-PROFILE-RENDERED"` and `check.id` in {`extent-equality`, `tint-composition`,
+  `ink-containment`}. It is uncommitted, so this carries no baseline risk and needs no further work.
+- **The committed `verification.json` still records `mdux.local/*` per outcome**, and moving it to
+  the canonical check ids is a change to a byte-compared artifact. Per `spec/profiles.md` ("a
+  consumer maps legacy obligations explicitly … runs old and candidate obligations together …
+  rebakes changed baselines") and MEDUI-DEC-007's rollout ("a minor release with its own candidate
+  corpus, passed by every implementation claiming the affected capability"), it is gated on a final
+  0.3.0 release rather than `-rc.1`, the cross-implementation pass
+  ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)), and a reviewed re-bake of each
+  screen bundle running both identities during the transition.
+- **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) has **no** `MEDUI-PROFILE-RENDERED`
+  equivalent and stays implementation-local after the migration — the same boundary the derived
+  envelope draws by excluding it.
+
+[ADR-017 §3](ADR-017-sibling-conformance-gate-status.md) carries the PAR-REQ-002 disposition that
+depends on this.
+
 ## References
 
 - [ADR-014](ADR-014-rendered-truth-verification.md) — decision 4 (no measured pixel in the
