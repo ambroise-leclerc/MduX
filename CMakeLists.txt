@@ -268,6 +268,7 @@ target_sources(MduXCore
             include/mdux/text/Schema.cppm
             include/mdux/medui/Schema.cppm
             include/mdux/medui/Field.cppm
+            include/mdux/medui/Input.cppm
             include/mdux/medui/Reading.cppm
             include/mdux/medui/Screen.cppm
             include/mdux/medui/Trace.cppm

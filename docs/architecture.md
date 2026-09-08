@@ -84,6 +84,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.ml.kernels` | `include/mdux/ml/Kernels.cppm` | `src/ml/Kernels.cpp` |
 | `mdux.ml.runtime` | `include/mdux/ml/Runtime.cppm` | `src/ml/Runtime.cpp` |
 | `mdux.medui.schema` | `include/mdux/medui/Schema.cppm` | header-only |
+| `mdux.medui.input` | `include/mdux/medui/Input.cppm` | header-only |
 | `mdux.medui.reading` | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
 | `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
@@ -303,6 +304,18 @@ implements, and a critical control naming one anyway refuses the press as `Unimp
 than reporting a no-op nothing performs. A critical control with no requirement refuses it as
 `UntracedCriticalControl`, for the same reason at the other end: an action nobody can trace is not one
 this module hands to a host.
+
+`resolvePress()` is one coordinate to one control, and nothing more — no queue, no release, no
+focus, no text. The contract for those is `mdux.medui.input` (#315,
+[ADR-018](adr/ADR-018-bounded-input-and-update-order.md)): a closed pointer/key/text/focus event
+vocabulary, a caller-owned bounded queue that drops the newest event on overflow, a
+floor-toward-−∞ rule for the one physical→authored coordinate conversion the adapter does, a
+`PressLatch` that arms a target on press and activates it only if the release lands on the same
+one, and a scalar-indexed bounded-editing contract that never partially mutates a field. The
+module is header-only and holds the fully pure pieces; the ring-buffer `EventQueue` body and the
+`applyEdit` text mutation are #316, and the platform adapter that produces the events is #317. A
+critical press is still resolved and traced by MduX and **executed by the host** — `TriggerHalt`
+is a request for the host's halt path, not a behavior this library performs.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
