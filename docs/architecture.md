@@ -118,7 +118,7 @@ performs no checking and confers no compliance.
 | `MduXToolsCommon` | `tools/common/` | TOML subset reader, CLI parser, shared diagnostic envelope |
 | `MduXShaderBakeLib` | `tools/shader/` | `mdux-shaderbake`, `mdux-shaderemit` |
 | `MduXMlBakeLib` | `tools/ml/` | `mdux-mlbake`, `mdux-mlemit` |
-| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
+| `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158 — since #318 it also flattens composite glyphs into flat contour lists, so accented Latin bakes as ordinary coverage per ADR-010 decision 5), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
@@ -146,8 +146,11 @@ descriptor set layout and pool, pipeline layout, pipeline, frame buffers, defaul
 `MedicalScreenMonitorExample` only, as one way an application might create a surface. The reusable
 window + swapchain + native-event-translation shell those share is
 `examples/support/GlfwPresentationAdapter.hpp` ([ADR-019](adr/ADR-019-windowed-presentation-and-input-adapter.md)),
-which #318 will reuse; its only governed dependency is `mdux::medui::SurfaceMapping`, the pure
-window→authored coordinate transform in `mdux.medui.input`. `MedicalUiExample` deliberately links
+which #318's `MedicalScreenMonitorExample` reuses unchanged; its only governed dependency is
+`mdux::medui::SurfaceMapping`, the pure window→authored coordinate transform in `mdux.medui.input`.
+`examples/support/MonitorApp.hpp` (#318) sits beside it and carries the application-update logic —
+`updateMonitor()`, the deterministic clock, the demonstration state — with no windowing or Vulkan
+dependency, so `monitor_loop_spec` unit-tests it linking `MduX::Core` alone. `MedicalUiExample` deliberately links
 no windowing at all — building a frame needs neither a window nor a device, which is part of what
 it demonstrates.
 
@@ -187,6 +190,7 @@ Eight artifacts are committed today:
 | `generated/model/ecg-demo-alt/` | `mdux-mlbake` | `weights.bin` |
 | `generated/font/dejavu-ui/` | `mdux-textbake` | `atlas.bin` |
 | `generated/text/endoscope-monitor-en-us/` | `mdux-textbake` | `runs.bin` |
+| `generated/text/endoscope-monitor-fr-fr/` | `mdux-textbake` | `runs.bin` |
 | `generated/image/brand-mark/` | `mdux-imagebake` | `pixels.rgba` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
 
@@ -330,10 +334,14 @@ focus, no text. That is `mdux.medui.input` (#315/#316/#317,
 Everything is `constexpr` over caller storage — the module allocates nothing, proved by
 `input_noheap_spec`. The platform adapter that captures native events and fills the queue is the
 examples-zone `examples/support/GlfwPresentationAdapter.hpp` (#317, ADR-019) — GLFW and the
-swapchain live there, never in `MduXCore` or `MduX` — and `MedicalScreenMonitorExample` drives it
-over the committed `endoscope-monitor` screen; the assembled input→update→render loop is #318. A critical press is still resolved and traced by
-MduX and **executed by the host** — `TriggerHalt` is a request for the host's halt path, not a
-behavior this library performs.
+swapchain live there, never in `MduXCore` or `MduX`. The assembled input→update→bind→render loop
+(ADR-018 clause 6) is `examples/support/MonitorApp.hpp`'s `updateMonitor()` (#318): it drains one
+accepted batch, applies its presses and edits to caller-owned state, then advances a deterministic
+clock and the demonstration generators; `MedicalScreenMonitorExample` drives it over the committed
+`endoscope-monitor` screen — the interactive window and the deterministic `--headless-smoke` both —
+in two approved locales, with every live component bound. A critical press is still resolved and
+traced by MduX and **executed by the host** — `TriggerHalt` is a request for the host's halt path,
+not a behavior this library performs; an ordinary `Button` press yields only its open `source` name.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
@@ -344,9 +352,10 @@ Both files are reviewable as text, which is the point.
 `mdux-verify-ui --screen=generated/screen/<id> --locales=all` consumes this bundle without changing
 it. It derives render scopes only from the screen manifest, rejects locale subsets and zero
 obligations, and distinguishes a completed check failure from a run that Vulkan or an artifact
-problem made impossible. The committed endoscope screen discharges all nine of its obligations — two golden checks on the
+problem made impossible. The committed endoscope screen discharges eleven obligations per approved
+locale (`en-US` and `fr-FR` since #318), so twenty-two in total — two golden checks on the
 `NumericDisplay`, two on the `CriticalButton`, one on the `SignalTrace`, and the two mandatory text
-checks on each of the `Label` and the `CriticalButton`.
+checks on each of the `Label`, the `CriticalButton` and the `freeze` `Button`.
 
 The button is what made those two text checks need a distinction they had never needed: they ask
 whether the pixels a glyph does not cover are still the ground, and it is the first component that
@@ -559,7 +568,7 @@ tracking issue; the issue is authoritative for what remains.
 
 | Planned | Issue | Note |
 |---|---|---|
-| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, a `TextInput` (#260) whose bound value and caret reach pixels there too, and a `CriticalButton` (#261) whose face and label do, traced to a requirement and pinned by a golden |
+| `.medui` compiler | [#15](https://github.com/ambroise-leclerc/MduX/issues/15) | complete front to back: parsing, semantic validation, bounded layout, text budgets, golden references, the canonical package, both C++ emitters, `mdux-meduic`, `mdux-medui-check`, and a governed runtime that draws a compiled screen. One committed screen reaches pixels in `ScreenPixelTests`, carrying text (#242), fields (#255) and a baked QOI-derived Image (#256); it also carries a `StatusIndicator` (#259) whose bound state reaches pixels in the same suite — word and tint — and which `EcgClassifierExample` binds as a tint alone, since it opens no files to join a locale with, a `TextInput` (#260) whose bound value and caret reach pixels there too, a `CriticalButton` (#261) whose face and label do, traced to a requirement and pinned by a golden, and — since #318 — a deterministic `Clock` and an ordinary `Button` the assembled monitor loop drives in two approved locales |
 | Rendered-truth verification | [#16](https://github.com/ambroise-leclerc/MduX/issues/16) | beyond the current pixel test |
 | Content components | [#17](https://github.com/ambroise-leclerc/MduX/issues/17) | complete. `Image` shipped with #256, `SignalTrace` with #257 — the `EcgClassifierExample` binds the same ring its classifier reads — `NumericDisplay` and `Clock` with #258, `StatusIndicator` with #259, which the same demonstrator binds its classifier's output class to, `TextInput` with #260 — display and caret on a fixed-pitch grid, no input-method editing — and `Button` and `CriticalButton` with #261, which draw a face and resolve a press to a closed action and the requirement it is traced to |
 

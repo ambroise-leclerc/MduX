@@ -199,10 +199,18 @@ mdux_embed_blob(MedicalScreenMonitorExample
     SYMBOL dejavuUiAtlas)
 mdux_embed_blob(MedicalScreenMonitorExample
     FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-en-us/package.json
-    SYMBOL endoscopeTextPackageJson)
+    SYMBOL endoscopeTextEnUsPackageJson)
 mdux_embed_blob(MedicalScreenMonitorExample
     FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-en-us/runs.bin
-    SYMBOL endoscopeTextRuns)
+    SYMBOL endoscopeTextEnUsRuns)
+# The second approved locale (#318): both packages are embedded and the --locale flag picks which
+# TextBinding the monitor builds.
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-fr-fr/package.json
+    SYMBOL endoscopeTextFrFrPackageJson)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-fr-fr/runs.bin
+    SYMBOL endoscopeTextFrFrRuns)
 mdux_embed_blob(MedicalScreenMonitorExample
     FILE ${CMAKE_SOURCE_DIR}/generated/image/brand-mark/package.json
     SYMBOL brandMarkPackageJson)

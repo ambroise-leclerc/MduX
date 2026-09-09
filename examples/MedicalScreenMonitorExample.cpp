@@ -1,32 +1,43 @@
 /**
  * @file MedicalScreenMonitorExample.cpp
- * @brief Presents the committed `endoscope-monitor` screen in a window and routes real pointer and
- *        keyboard input through the bounded `mdux.medui.input` contract (#317, ADR-019).
+ * @brief The assembled interactive monitor: the committed `endoscope-monitor` screen presented in a
+ *        window, with real pointer/keyboard input flowing through one application-update
+ *        implementation into every live binding, in two approved locales (#318, ADR-018 clause 6).
  *
  * @compliance IEC 62304 Class B - Medical Device Example
+ * @compliance ADR-018 Bounded input, application update order and action policy (clause 6)
  * @compliance ADR-019 The windowed presentation and input adapter
  *
  * What this shows:
  *
  * - `examples/support/GlfwPresentationAdapter.hpp` owns the window, the Vulkan instance / device /
- *   swapchain and the native-event translation. `mdux::render::UiRenderer` draws the compiled screen
- *   through the borrowed `VulkanRenderContext` unchanged.
- * - A left-click resolved to the `emergency-halt` control arms a `PressLatch`; the release on the
- *   same control activates it, and this example prints an `ActionTrace` (node, requirement,
- *   `SystemEvent`, monotonic sequence) and **executes nothing** — the host owns the halt path
- *   (ADR-018 clause 7).
+ *   swapchain and the native-event translation. `examples/support/MonitorApp.hpp` owns the
+ *   deterministic clock, the demonstration state and `updateMonitor()` - the one application update
+ *   (ADR-018 clause 6, steps 1-2). This file binds a snapshot of that state, renders it and, in the
+ *   headless mode, reads it back (steps 3-5). **There is no test-only state machine: the interactive
+ *   window and the headless smoke drive the same `updateMonitor()`.**
+ * - Every live component draws: a numeric insufflation-pressure reading, a deterministic clock, the
+ *   ECG signal trace, the classifier status, the editable `patient-id` field, and the two control
+ *   faces.
+ * - A left-click resolved to `emergency-halt` arms a `PressLatch`; the release on the same control
+ *   activates it and this example prints an `ActionTrace` and **executes nothing** - the host owns
+ *   the halt path (ADR-018 clause 7). A click on the ordinary `freeze` Button prints its open
+ *   `source` string and also executes nothing.
  * - Typing routes through a `FieldEditor` bound to `patient-id`, whose `charset:` admits digits and
- *   `A`-`Z` only; a lowercase letter is refused with no mutation.
- * - A resize recreates the swapchain, rebuilds the `SurfaceMapping` and cancels the latch; a focus
- *   loss cancels the latch; a dropped event cancels the latch.
+ *   `A`-`Z` only; a lowercase letter or a symbol is refused with no mutation.
+ * - A resize rebuilds the `SurfaceMapping` and cancels the latch; a focus loss cancels it; a dropped
+ *   batch is discarded whole and the latch cancelled (ADR-019 clause 3).
  *
- * This example does not assemble the input -> update -> bind -> render loop as a reusable contract:
- * that is ADR-018 clause 6 and #318. It drains one batch per frame and acts on it inline.
+ * **The readings, the waveform and the classifier state are demonstration data, not clinically
+ * qualified input.**
  *
  * Modes:
- *   (no args)          interactive
- *   --smoke-test       present a few frames then exit; non-zero on a deadline or a Vulkan failure
- *   --headless-frame   render one frame offscreen (no window) and check the control rectangles
+ *   (no args)                        interactive, en-US
+ *   --locale=fr-FR                   interactive, fr-FR (also valid with the two modes below)
+ *   --smoke-test                     present a few frames then exit; non-zero on a deadline or a Vulkan failure
+ *   --headless-smoke                 run a fixed script of events through updateMonitor(), render one
+ *                                    frame offscreen (no window) and assert the resolved actions,
+ *                                    the refused edits and the painted content
  */
 
 import std;
@@ -38,8 +49,10 @@ import mdux.font.schema;
 import mdux.image.schema;
 import mdux.text.schema;
 import mdux.medui.input;
+import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.screen;
+import mdux.medui.trace;
 import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.render.vulkan;
 import mdux.render.offscreen;
@@ -47,13 +60,16 @@ import mdux.shader.generated.mdux_ui;
 import mdux.shader.schema;
 
 #include "support/GlfwPresentationAdapter.hpp"
+#include "support/MonitorApp.hpp"
 
 #include "brandMarkPackageJson.hpp"
 #include "brandMarkPixels.hpp"
 #include "dejavuUiAtlas.hpp"
 #include "dejavuUiPackageJson.hpp"
-#include "endoscopeTextPackageJson.hpp"
-#include "endoscopeTextRuns.hpp"
+#include "endoscopeTextEnUsPackageJson.hpp"
+#include "endoscopeTextEnUsRuns.hpp"
+#include "endoscopeTextFrFrPackageJson.hpp"
+#include "endoscopeTextFrFrRuns.hpp"
 
 namespace {
 
@@ -63,43 +79,50 @@ namespace ms   = mdux::medui;
 namespace mx   = mdux::examples;
 namespace rnd  = mdux::render;
 
-constexpr std::string_view kHaltNode    = "emergency-halt";
-constexpr std::string_view kPatientNode = "patient-id";
+enum class Locale { EnUs, FrFr };
+
+[[nodiscard]] std::string_view localeTag(Locale locale) noexcept {
+    return locale == Locale::FrFr ? "fr-FR" : "en-US";
+}
 
 /// An embedded blob's bytes as UTF-8 text, for the `*Package::parse()` calls.
 [[nodiscard]] std::string_view asText(std::span<const std::byte> bytes) noexcept {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-/// The compiled screen and the committed packages a device joins it to at start-up.
+/// The compiled screen and the committed packages a device joins it to at start-up, for one locale.
 ///
 /// Held on the heap for the life of the program and never moved: `TextBinding` / `ImageBinding`
-/// keep pointers into `font` / `text` / `image`, so this struct is self-referential and a move
-/// would dangle them. `load()` returns a `unique_ptr` for exactly that reason.
+/// keep pointers into `font` / `text` / `image`, so a move would dangle them.
 struct BoundScreen {
-    ms::ScreenPackage        screen{ms::generated::screen_endoscope_monitor::package()};
-    mdux::font::FontPackage   font{};
-    mdux::text::TextPackage   text{};
-    mdux::image::ImagePackage image{};
-    ms::TextBinding           textBinding{};
-    ms::ImageBinding          imageBinding{};
+    ms::ScreenPackage         screen{ms::generated::screen_endoscope_monitor::package()};
+    mdux::font::FontPackage    font{};
+    mdux::text::TextPackage    text{};
+    mdux::image::ImagePackage  image{};
+    ms::TextBinding            textBinding{};
+    ms::ImageBinding           imageBinding{};
 
     BoundScreen()                              = default;
     BoundScreen(const BoundScreen&)            = delete;
     BoundScreen& operator=(const BoundScreen&) = delete;
 
-    /// The authored surface extent the screen was compiled for — the `UiRenderer` viewport.
+    /// The authored surface extent the screen was compiled for - the `UiRenderer` viewport.
     [[nodiscard]] core::Extent2D surface() const noexcept {
         return {screen.surfaceWidth, screen.surfaceHeight};
     }
 
-    /// Parses the embedded font / text / image packages and builds the two bindings, or prints why
-    /// and returns `nullptr`. Heap-allocated because the bindings hold pointers into this struct.
-    [[nodiscard]] static std::unique_ptr<BoundScreen> load() {
+    /// Parses the embedded font / text / image packages for `locale` and builds the two bindings, or
+    /// prints why and returns `nullptr`.
+    [[nodiscard]] static std::unique_ptr<BoundScreen> load(Locale locale) {
         auto bound = std::make_unique<BoundScreen>();
 
+        const std::span<const std::byte> textJson =
+            locale == Locale::FrFr ? endoscopeTextFrFrPackageJson() : endoscopeTextEnUsPackageJson();
+        const std::span<const std::byte> textRuns =
+            locale == Locale::FrFr ? endoscopeTextFrFrRuns() : endoscopeTextEnUsRuns();
+
         auto font  = mdux::font::FontPackage::parse(asText(dejavuUiPackageJson()));
-        auto text  = mdux::text::TextPackage::parse(asText(endoscopeTextPackageJson()));
+        auto text  = mdux::text::TextPackage::parse(asText(textJson));
         auto image = mdux::image::ImagePackage::parse(asText(brandMarkPackageJson()));
         if (!font || !text || !image) {
             std::cerr << "monitor: a committed package did not parse\n";
@@ -109,20 +132,16 @@ struct BoundScreen {
         bound->text  = std::move(*text);
         bound->image = std::move(*image);
 
-        auto textBinding = ms::TextBinding::create(bound->screen, bound->font, bound->text,
-                                                   endoscopeTextPackageJson(), endoscopeTextRuns());
+        auto textBinding = ms::TextBinding::create(bound->screen, bound->font, bound->text, textJson, textRuns);
         if (!textBinding) {
-            std::cerr << "monitor: the committed text artifacts were refused: "
-                      << ms::describe(textBinding.error()) << '\n';
+            std::cerr << "monitor: the committed text artifacts were refused: " << ms::describe(textBinding.error()) << '\n';
             return nullptr;
         }
         bound->textBinding = *textBinding;
 
-        auto imageBinding = ms::ImageBinding::create(bound->screen, bound->image, brandMarkPackageJson(),
-                                                     brandMarkPixels());
+        auto imageBinding = ms::ImageBinding::create(bound->screen, bound->image, brandMarkPackageJson(), brandMarkPixels());
         if (!imageBinding) {
-            std::cerr << "monitor: the committed image artifacts were refused: "
-                      << ms::describe(imageBinding.error()) << '\n';
+            std::cerr << "monitor: the committed image artifacts were refused: " << ms::describe(imageBinding.error()) << '\n';
             return nullptr;
         }
         bound->imageBinding = *imageBinding;
@@ -132,134 +151,80 @@ struct BoundScreen {
 
 /// Storage a caller sizes once from the screen's own budget, as a device would.
 struct FrameStorage {
-    std::vector<draw::UiVertex>   vertices;
-    std::vector<draw::Index>      indices;
+    std::vector<draw::UiVertex>    vertices;
+    std::vector<draw::Index>       indices;
     std::vector<draw::DrawCommand> commands;
 
     explicit FrameStorage(const draw::DrawBudget& budget)
         : vertices(budget.maxVertices), indices(budget.maxIndices), commands(budget.maxCommands) {}
 };
 
-/// The caller-owned editing state for `patient-id`, plus the char32_t buffer it edits in place.
-struct FieldState {
-    std::array<char32_t, 64> buffer{};
-    std::optional<ms::FieldEditor> editor{};
-
-    /// Creates the `FieldEditor` for the `patient-id` `TextInput`, over `buffer`, bounded by the
-    /// font charset and the node's `charset:`. Leaves `editor` empty if the node is absent.
-    void bind(const BoundScreen& bound) {
-        const ms::CompiledNode* node = bound.screen.find(kPatientNode);
-        if (node == nullptr) {
-            return;
-        }
-        const auto* spec = std::get_if<ms::TextInputSpec>(&node->payload);
-        if (spec == nullptr) {
-            return;
-        }
-        const std::size_t maxLength = spec->maxLength < 0 ? 0 : static_cast<std::size_t>(spec->maxLength);
-        auto made = ms::FieldEditor::create(kPatientNode, buffer, {}, bound.font.restrictedCharset,
-                                            spec->charsetRanges, maxLength);
-        if (made) {
-            editor = *made;
-        }
-    }
-};
-
-/// One application update: drain the batch, act on it, and return whether a critical action was
-/// resolved this frame (for the caller to log).
-struct UpdateResult {
-    std::optional<ms::ActionTrace> action{};
-};
-
-/// One application update (not the assembled ADR-018 clause-6 loop — that is #318): drains the
-/// queue, routes pointers through `PressLatch` + `resolvePress` and keys/text through the
-/// `FieldEditor`, and returns the `ActionTrace` if the `emergency-halt` control was activated.
-[[nodiscard]] UpdateResult applyBatch(ms::EventQueue& queue, const BoundScreen& bound, ms::PressLatch& latch,
-                                      FieldState& field, std::uint64_t& sequence) {
-    UpdateResult result;
-
-    while (const auto event = queue.pop()) {
-        std::visit(
-            [&](const auto& value) {
-                using T = std::decay_t<decltype(value)>;
-
-                if constexpr (std::is_same_v<T, ms::PointerEvent>) {
-                    if (value.kind == ms::PointerKind::Cancel) {
-                        latch.cancel();
-                        return;
-                    }
-                    const auto press = ms::resolvePress(bound.screen, value.x, value.y);
-                    const std::string_view node =
-                        (press && press->has_value()) ? (*press)->nodeId : std::string_view{};
-                    if (value.kind == ms::PointerKind::Down) {
-                        latch.arm(node);
-                    } else if (value.kind == ms::PointerKind::Up) {
-                        if (latch.release(node) && node == kHaltNode && press && press->has_value() &&
-                            (*press)->event.has_value()) {
-                            result.action = ms::ActionTrace{.nodeId      = (*press)->nodeId,
-                                                            .requirement = (*press)->requirement,
-                                                            .event       = *(*press)->event,
-                                                            .sequence    = ++sequence};
-                        }
-                    }
-                } else if constexpr (std::is_same_v<T, ms::FocusEvent>) {
-                    if (field.editor) {
-                        field.editor->focus(value);
-                    }
-                } else if constexpr (std::is_same_v<T, ms::KeyEvent>) {
-                    if (!field.editor) {
-                        return;
-                    }
-                    // Enter-as-Commit here means "start editing the patient id": this example has
-                    // one field and no real focus traversal, so Commit/FocusNext both mean focus it.
-                    if (value.kind == ms::KeyKind::Down &&
-                        (value.key == ms::KeyCode::FocusNext || value.key == ms::KeyCode::Commit)) {
-                        field.editor->focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = kPatientNode});
-                        return;
-                    }
-                    if (value.kind == ms::KeyKind::Down && value.key == ms::KeyCode::Cancel) {
-                        field.editor->focus(ms::FocusEvent{.kind = ms::FocusKind::Leave, .nodeId = kPatientNode});
-                        return;
-                    }
-                    if (const auto handled = field.editor->handleKey(value); !handled) {
-                        std::cerr << "monitor: edit refused: " << ms::describe(handled.error()) << '\n';
-                    }
-                } else if constexpr (std::is_same_v<T, ms::TextEvent>) {
-                    if (field.editor) {
-                        if (const auto handled = field.editor->handleText(value); !handled) {
-                            std::cerr << "monitor: '" << static_cast<std::uint32_t>(value.scalar)
-                                      << "' refused: " << ms::describe(handled.error()) << '\n';
-                        }
-                    }
-                }
-            },
-            *event);
-    }
-    return result;
-}
-
-/// Builds this frame's `DrawList` from the screen and the current field value.
-[[nodiscard]] mdux::core::Result<draw::DrawList, ms::ScreenError> recordScreen(const BoundScreen& bound,
-                                                                               FrameStorage& storage,
-                                                                               const FieldState& field) {
+/// Builds this frame's `DrawList` from the screen and one snapshot of the demonstration state
+/// (ADR-018 clause 6, steps 3-4): the ECG trace, the pressure reading, the deterministic clock, the
+/// classifier state and the `patient-id` field value are all bound here, after `updateMonitor()`
+/// resolved the batch, so a capture never shows input the operator has not seen resolved.
+[[nodiscard]] mdux::core::Result<draw::DrawList, ms::ScreenError> recordMonitorFrame(const BoundScreen&    bound,
+                                                                                    FrameStorage&         storage,
+                                                                                    const mx::DemoState&  state,
+                                                                                    const mx::MonitorClock& clock) {
     auto list = draw::DrawList::create(storage.vertices, storage.indices, storage.commands, bound.screen.budget);
     if (!list) {
         std::cerr << "monitor: draw list refused: " << draw::describe(list.error()) << '\n';
         return mdux::core::err(ms::ScreenError::BudgetExhausted);
     }
 
-    std::array<ms::TextInputSlot, 1> slots{};
-    ms::TextInputBinding             inputs{};
-    if (field.editor) {
-        slots[0] = ms::TextInputSlot{.nodeId = field.editor->nodeId(),
-                                     .text   = field.editor->value(),
-                                     .caret  = field.editor->caret()};
-        if (auto made = ms::TextInputBinding::create(bound.screen, slots); made) {
-            inputs = *made;
-        }
+    const ms::SampleRing                 traceView = state.ecg.view();
+    const std::array<ms::SignalSlot, 1>  signalSlots{
+        ms::SignalSlot{.streamSource = mx::kTraceStream, .ring = &traceView, .style = mx::monitorTraceStyle}
+    };
+    ms::SignalBinding signals{};
+    if (auto made = ms::SignalBinding::create(bound.screen, signalSlots); made) {
+        signals = *made;
+    } else {
+        std::cerr << "monitor: signal binding refused: " << ms::describe(made.error()) << '\n';
+        return mdux::core::err(ms::ScreenError::BudgetExhausted);
     }
 
-    const auto recorded = ms::render(bound.screen, *list, bound.textBinding, bound.imageBinding, {}, {}, {}, inputs);
+    const std::array<ms::ReadingSlot, 1> readingSlots{
+        ms::ReadingSlot{.nodeId = mx::kPressureNode, .rendering = mx::kPressureRendering, .value = state.pressureTenths}
+    };
+    ms::ReadingBinding readings{};
+    if (auto made = ms::ReadingBinding::create(bound.screen, readingSlots, &clock.now, mx::kClockColorToken); made) {
+        readings = *made;
+    } else {
+        std::cerr << "monitor: reading binding refused: " << ms::describe(made.error()) << '\n';
+        return mdux::core::err(ms::ScreenError::BudgetExhausted);
+    }
+
+    const std::array<ms::StatusSlot, 1> statusSlots{
+        ms::StatusSlot{.nodeId = mx::kStatusNode, .state = state.classifierState}
+    };
+    ms::StatusBinding status{};
+    if (auto made = ms::StatusBinding::create(bound.screen, statusSlots); made) {
+        status = *made;
+    } else {
+        std::cerr << "monitor: status binding refused: " << ms::describe(made.error()) << '\n';
+        return mdux::core::err(ms::ScreenError::BudgetExhausted);
+    }
+
+    std::array<ms::TextInputSlot, 1> inputSlots{};
+    ms::TextInputBinding             inputs{};
+    if (state.field) {
+        inputSlots[0] = ms::TextInputSlot{.nodeId = state.field->nodeId(),
+                                          .text   = state.field->value(),
+                                          .caret  = state.field->caret()};
+        auto made = ms::TextInputBinding::create(bound.screen, inputSlots);
+        if (!made) {
+            // Fail closed rather than render a deferred field: a monitor that silently drops the
+            // patient id it was asked to show is the wrong failure.
+            std::cerr << "monitor: text input binding refused: " << ms::describe(made.error()) << '\n';
+            return mdux::core::err(made.error());
+        }
+        inputs = *made;
+    }
+
+    const auto recorded =
+        ms::render(bound.screen, *list, bound.textBinding, bound.imageBinding, signals, readings, status, inputs);
     if (!recorded) {
         std::cerr << "monitor: render refused: " << ms::describe(recorded.error()) << '\n';
         return mdux::core::err(recorded.error());
@@ -269,12 +234,11 @@ struct UpdateResult {
 
 /// A `UiRenderer` for `context` with the committed font coverage atlas and the brand-mark image
 /// atlas, so text and the logo draw as themselves rather than white blocks.
-[[nodiscard]] mdux::core::Result<rnd::UiRenderer, rnd::RenderError> makeRenderer(
-    const rnd::VulkanRenderContext& context, const BoundScreen& bound) {
-    return rnd::UiRenderer::createWithAtlases(context, mdux::shader::generated::mdux_ui::package(),
-                                              bound.screen.budget, dejavuUiAtlas(), bound.font.atlas.width,
-                                              bound.font.atlas.height, brandMarkPixels(), bound.image.width,
-                                              bound.image.height);
+[[nodiscard]] mdux::core::Result<rnd::UiRenderer, rnd::RenderError> makeRenderer(const rnd::VulkanRenderContext& context,
+                                                                                const BoundScreen&             bound) {
+    return rnd::UiRenderer::createWithAtlases(context, mdux::shader::generated::mdux_ui::package(), bound.screen.budget,
+                                              dejavuUiAtlas(), bound.font.atlas.width, bound.font.atlas.height,
+                                              brandMarkPixels(), bound.image.width, bound.image.height);
 }
 
 /// The near-black ground the screen is composited over.
@@ -284,10 +248,8 @@ constexpr core::ColorRgba8 kClear{.r = 6, .g = 8, .b = 10, .a = 255};
 // Interactive / smoke-test mode
 // ---------------------------------------------------------------------------
 
-/// Opens a window, presents the screen, and routes input until the window closes (or, under
-/// `--smoke-test`, until N frames are presented). Returns a process exit code.
-int runWindowed(bool smokeTest) {
-    auto bound = BoundScreen::load();
+int runWindowed(bool smokeTest, Locale locale) {
+    auto bound = BoundScreen::load(locale);
     if (!bound) {
         return 1;
     }
@@ -295,7 +257,7 @@ int runWindowed(bool smokeTest) {
 
     auto window = mx::GlfwWindow::create(surface.width, surface.height, "MduX - Medical Screen Monitor");
     if (!window) {
-        return 1;  // GlfwWindow::create already explained the failure on stderr
+        return 1;
     }
 
     rnd::VulkanRenderContext context = window->renderContext();
@@ -306,17 +268,14 @@ int runWindowed(bool smokeTest) {
         return 1;
     }
 
-    // The renderer holds buffers, descriptors and a pipeline the GPU may still be reading from the
-    // last submitted frame. It is destroyed before `window` (declaration order) and only `window`'s
-    // own teardown waits for the device, so idle it here first — on every return path, including the
-    // error exits below. Declared right after `renderer` so it runs immediately before it.
     struct IdleBeforeRendererTeardown {
         const mx::GlfwWindow* window;
         ~IdleBeforeRendererTeardown() { window->waitIdle(); }
     } const idleGuard{&*window};
 
-    FieldState field;
-    field.bind(*bound);
+    mx::DemoState  state;
+    state.bindField(bound->screen, bound->font);
+    mx::MonitorClock clock;
 
     std::array<ms::InputEvent, ms::maxInputEvents> queueStorage{};
     ms::EventQueue                                 queue{queueStorage};
@@ -328,8 +287,7 @@ int runWindowed(bool smokeTest) {
     };
     auto mapping = buildMapping();
     if (!mapping) {
-        std::cerr << "monitor: the framebuffer-to-window ratio is not one this adapter supports "
-                     "(a per-axis-different DPI, or one past maxCoordinateScale)\n";
+        std::cerr << "monitor: the framebuffer-to-window ratio is not one this adapter supports\n";
         return 1;
     }
     mx::WindowEventPump pump{window->handle(), queue, *mapping};
@@ -346,17 +304,12 @@ int runWindowed(bool smokeTest) {
         return smokeTest && std::chrono::steady_clock::now() - startedAt > smokeDeadline;
     };
 
-    // The one resync path (ADR-019 clause 4): rebuild the swapchain, rebuild and revalidate the
-    // SurfaceMapping from the new framebuffer extent, and cancel any armed press. A mapping that no
-    // longer validates is fatal here just as it is at start-up — otherwise every later click would
-    // hit-test with a stale ratio and no diagnostic. `false` means exit non-zero.
+    // The one resync path (ADR-019 clause 4): rebuild the swapchain and the SurfaceMapping and
+    // cancel any armed press. `false` means exit non-zero.
     const auto resync = [&]() -> bool {
         if (!window->recreateSwapchain()) {
             return false;
         }
-        // A minimised window reports a zero framebuffer, `recreateSwapchain()` skips the rebuild,
-        // and there is nothing to map. Stay disarmed and retry when the window comes back — a zero
-        // extent is not a DPI failure.
         const core::Extent2D fb  = window->framebufferExtent();
         const core::Extent2D win = window->windowExtent();
         if (fb.width == 0 || fb.height == 0 || win.width == 0 || win.height == 0) {
@@ -365,8 +318,7 @@ int runWindowed(bool smokeTest) {
         }
         auto rebuilt = buildMapping();
         if (!rebuilt) {
-            std::cerr << "monitor: after the resize the framebuffer-to-window ratio is no longer one "
-                         "this adapter supports (a per-axis-different DPI, or one past maxCoordinateScale)\n";
+            std::cerr << "monitor: after the resize the framebuffer-to-window ratio is no longer supported\n";
             return false;
         }
         pump.setMapping(*rebuilt);
@@ -374,8 +326,8 @@ int runWindowed(bool smokeTest) {
         return true;
     };
 
-    std::println("Monitor running. Click the red halt control; type a patient id (digits, A-Z).");
-    std::println("Press Esc to stop editing, close the window to exit.");
+    std::println("Monitor running ({}). Click the red halt control or the grey FREEZE button;", localeTag(locale));
+    std::println("type a patient id (digits, A-Z). Press Esc to stop editing, close the window to exit.");
 
     while (!window->shouldClose()) {
         glfwPollEvents();
@@ -389,25 +341,21 @@ int runWindowed(bool smokeTest) {
             latch.cancel();
         }
 
-        UpdateResult update{};
-        if (pump.takeOverflow()) {
-            // The batch is not a complete record of what the operator did (ADR-018 clause 2).
-            // Discard it whole and stay disarmed — acting on what did arrive could let a queued Down
-            // re-arm the control the overflow was meant to cancel, and a queued Up then activate it.
-            // The frame still renders, so the display does not freeze.
-            queue.clear();
-            latch.cancel();
+        const mx::MonitorUpdateOutcome update =
+            mx::updateMonitor(queue, pump.takeOverflow(), bound->screen, state, latch, clock, sequence);
+        if (update.droppedBatch) {
             std::println("(input overflowed - dropped a partial batch)");
-        } else {
-            update = applyBatch(queue, *bound, latch, field, sequence);
         }
-        if (update.action) {
+        if (update.criticalAction) {
             std::println("ActionTrace #{}: node='{}' requirement='{}' event={} - the host executes this, not MduX",
-                         update.action->sequence, update.action->nodeId, update.action->requirement,
-                         ms::toWire(update.action->event));
+                         update.criticalAction->sequence, update.criticalAction->nodeId,
+                         update.criticalAction->requirement, ms::toWire(update.criticalAction->event));
+        }
+        if (update.buttonSource) {
+            std::println("Button press: node='freeze' source='{}' - the host owns this action, not MduX", *update.buttonSource);
         }
 
-        auto list = recordScreen(*bound, storage, field);
+        auto list = recordMonitorFrame(*bound, storage, state, clock);
         if (!list) {
             return 1;
         }
@@ -469,26 +417,93 @@ int runWindowed(bool smokeTest) {
 }
 
 // ---------------------------------------------------------------------------
-// Headless one-frame content check
+// Deterministic headless smoke (no window): a fixed script through updateMonitor()
 // ---------------------------------------------------------------------------
 
-/// Renders one frame through `mdux.render.offscreen` (no window) and asserts the topbar and the
-/// halt control were painted where the compiled screen places them. Returns a process exit code.
-int runHeadlessFrame() {
-    auto bound = BoundScreen::load();
+/// A pointer down then up over the centre of `nodeId`'s rectangle.
+void clickNode(const ms::ScreenPackage& screen, ms::EventQueue& queue, std::string_view nodeId) {
+    const ms::CompiledNode* node = screen.find(nodeId);
+    if (node == nullptr) {
+        return;
+    }
+    const core::Px x = node->bounds.x + node->bounds.width / 2;
+    const core::Px y = node->bounds.y + node->bounds.height / 2;
+    (void)queue.push(ms::PointerEvent{.kind = ms::PointerKind::Down, .x = x, .y = y});
+    (void)queue.push(ms::PointerEvent{.kind = ms::PointerKind::Up, .x = x, .y = y});
+}
+
+int runHeadlessSmoke(Locale locale) {
+    auto bound = BoundScreen::load(locale);
     if (!bound) {
         return 1;
     }
     const core::Extent2D surface = bound->surface();
 
+    mx::DemoState state;
+    state.bindField(bound->screen, bound->font);
+    if (!state.field) {
+        std::cerr << "monitor: the patient-id field did not bind\n";
+        return 1;
+    }
+    mx::MonitorClock clock;
+
+    std::array<ms::InputEvent, ms::maxInputEvents> queueStorage{};
+    ms::EventQueue                                 queue{queueStorage};
+    ms::PressLatch                                 latch;
+    std::uint64_t                                  sequence = 0;
+
+    // Frame 1: start editing the field, type two accepted characters and two refused ones.
+    (void)queue.push(ms::KeyEvent{.kind = ms::KeyKind::Down, .key = ms::KeyCode::Commit});
+    (void)queue.push(ms::TextEvent{.scalar = U'A'});
+    (void)queue.push(ms::TextEvent{.scalar = U'7'});
+    (void)queue.push(ms::TextEvent{.scalar = U'a'});   // lowercase: not in the PATIENT-ID charset
+    (void)queue.push(ms::TextEvent{.scalar = U'-'});   // punctuation: not in the charset
+    const mx::MonitorUpdateOutcome f1 = mx::updateMonitor(queue, false, bound->screen, state, latch, clock, sequence);
+
+    // Frame 2: click the ordinary freeze Button.
+    clickNode(bound->screen, queue, mx::kFreezeNode);
+    const mx::MonitorUpdateOutcome f2 = mx::updateMonitor(queue, false, bound->screen, state, latch, clock, sequence);
+
+    // Frame 3: click the emergency-halt critical control.
+    clickNode(bound->screen, queue, mx::kHaltNode);
+    const mx::MonitorUpdateOutcome f3 = mx::updateMonitor(queue, false, bound->screen, state, latch, clock, sequence);
+
+    bool ok = true;
+    const auto fieldValue = state.field->value();
+    if (!(fieldValue.size() == 2 && fieldValue[0] == U'A' && fieldValue[1] == U'7')) {
+        std::cerr << "monitor: the field should hold exactly \"A7\" after two accepted and two refused edits\n";
+        ok = false;
+    }
+    if (f1.refusedEdits != 2) {
+        std::cerr << std::format("monitor: expected 2 refused edits, saw {}\n", f1.refusedEdits);
+        ok = false;
+    }
+    if (!f2.buttonSource || *f2.buttonSource != "FREEZE") {
+        std::cerr << "monitor: the freeze Button press did not resolve to its 'FREEZE' source\n";
+        ok = false;
+    }
+    if (!f3.criticalAction || f3.criticalAction->event != ms::SystemEvent::TriggerHalt ||
+        f3.criticalAction->requirement != "REQ-EM-003") {
+        std::cerr << "monitor: the emergency-halt press did not resolve to a traced TriggerHalt ActionTrace\n";
+        ok = false;
+    }
+    // The clock advanced once per updateMonitor() call from 08:00:00, deterministically.
+    if (!(clock.now.hour == 8 && clock.now.minute == 0 && clock.now.second == 3)) {
+        std::cerr << std::format("monitor: the deterministic clock should read 08:00:03, got {:02}:{:02}:{:02}\n",
+                                 clock.now.hour, clock.now.minute, clock.now.second);
+        ok = false;
+    }
+    if (!ok) {
+        return 1;
+    }
+
+    // Render one frame offscreen from the resolved state and check the painted content.
     auto boot = mx::VulkanBoot::headless();
     if (!boot) {
         std::cerr << "monitor: headless Vulkan boot failed: " << boot.error().what << '\n';
         return 1;
     }
-
-    auto target = rnd::OffscreenTarget::create(boot->device(), boot->physicalDevice(), surface,
-                                               boot->graphicsFamily());
+    auto target = rnd::OffscreenTarget::create(boot->device(), boot->physicalDevice(), surface, boot->graphicsFamily());
     if (!target) {
         std::cerr << "monitor: offscreen target failed: " << rnd::describe(target.error()) << '\n';
         return 1;
@@ -508,15 +523,12 @@ int runHeadlessFrame() {
         return 1;
     }
 
-    FieldState   field;
-    field.bind(*bound);
     FrameStorage storage{bound->screen.budget};
-    auto         list = recordScreen(*bound, storage, field);
+    auto         list = recordMonitorFrame(*bound, storage, state, clock);
     if (!list) {
         return 1;
     }
 
-    /// Context for the C-style `RecordCommands` callback `renderAndRead` takes.
     struct Recording {
         rnd::UiRenderer* renderer;
         draw::DrawList*  list;
@@ -534,27 +546,31 @@ int runHeadlessFrame() {
         return 1;
     }
 
-    /// Whether the centre of `nodeId`'s rectangle is painted (not the clear colour).
     const auto painted = [&](std::string_view nodeId) -> bool {
         const ms::CompiledNode* node = bound->screen.find(nodeId);
         if (node == nullptr) {
             std::cerr << "monitor: the compiled screen has no node '" << nodeId << "'\n";
             return false;
         }
-        const core::Px x = node->bounds.x + node->bounds.width / 2;
-        const core::Px y = node->bounds.y + node->bounds.height / 2;
+        const core::Px x  = node->bounds.x + node->bounds.width / 2;
+        const core::Px y  = node->bounds.y + node->bounds.height / 2;
         const auto     px = target->pixelAt(x, y);
-        const bool     ok = px.has_value() && *px != kClear;
-        if (!ok) {
+        const bool     hit = px.has_value() && *px != kClear;
+        if (!hit) {
             std::cerr << std::format("monitor: node '{}' centre ({},{}) was not painted\n", nodeId, x, y);
         }
-        return ok;
+        return hit;
     };
 
-    if (!painted("topbar-background") || !painted(kHaltNode)) {
+    if (!painted("topbar-background") || !painted(mx::kHaltNode) || !painted(mx::kFreezeNode) ||
+        !painted("wall-clock") || !painted(mx::kPressureNode) || !painted(mx::kStatusNode)) {
         return 1;
     }
-    std::println("headless frame: the topbar and the halt control were drawn where the compiled screen places them");
+
+    std::println("headless smoke ({}): field=\"A7\" after 2 refused edits, freeze->'FREEZE', "
+                 "emergency-halt->TriggerHalt/REQ-EM-003, clock 08:00:03; the topbar, both controls, "
+                 "the clock, the pressure reading and the classifier all drew.",
+                 localeTag(locale));
     return 0;
 }
 
@@ -563,16 +579,21 @@ int runHeadlessFrame() {
 int main(int argc, char** argv) {
     const std::span<char*> args{argv + 1, static_cast<std::size_t>(argc > 0 ? argc - 1 : 0)};
 
-    bool smokeTest = false;
-    bool headless  = false;
+    bool   smokeTest = false;
+    bool   headless  = false;
+    Locale locale    = Locale::EnUs;
     for (const char* arg : args) {
         const std::string_view a{arg};
         if (a == "--smoke-test") {
             smokeTest = true;
-        } else if (a == "--headless-frame") {
+        } else if (a == "--headless-smoke") {
             headless = true;
+        } else if (a == "--locale=fr-FR") {
+            locale = Locale::FrFr;
+        } else if (a == "--locale=en-US") {
+            locale = Locale::EnUs;
         } else {
-            std::cerr << "Usage: MedicalScreenMonitorExample [--smoke-test | --headless-frame]\n";
+            std::cerr << "Usage: MedicalScreenMonitorExample [--smoke-test | --headless-smoke] [--locale=en-US|fr-FR]\n";
             return 2;
         }
     }
@@ -582,7 +603,7 @@ int main(int argc, char** argv) {
         std::cerr << "monitor: mdux::initialize() failed\n";
         return 1;
     }
-    const int rc = headless ? runHeadlessFrame() : runWindowed(smokeTest);
+    const int rc = headless ? runHeadlessSmoke(locale) : runWindowed(smokeTest, locale);
     mdux::shutdown();
     return rc;
 }

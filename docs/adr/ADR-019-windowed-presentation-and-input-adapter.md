@@ -200,11 +200,12 @@ on Windows and macOS), not in the headless `-L pixel` step. It carries **no `SKI
 an absent required display or device is a failure, not a CTest `Skipped`, so a broken ICD or a
 missing display cannot turn the end-to-end presentation check into a silent no-op.
 
-A second mode, `--headless-frame`, renders one frame through `mdux.render.offscreen` with no window,
-reads it back and asserts the topbar and critical-control rectangles land where the compiled screen
-places them — deterministic frame-content evidence that does not depend on a swapchain or a display.
-It is `example.monitor.headless`, `pixel`-labelled like the rest of the offscreen suite, and the
-Linux and macOS `-L pixel` steps fail the job on any `Skipped` line.
+A second mode, `--headless-frame` (renamed `--headless-smoke` by #318, which also gave it a scripted
+event batch and a second `.fr` locale variant), renders one frame through `mdux.render.offscreen`
+with no window, reads it back and asserts the topbar and critical-control rectangles land where the
+compiled screen places them — deterministic frame-content evidence that does not depend on a
+swapchain or a display. It is `example.monitor.headless`, `pixel`-labelled like the rest of the
+offscreen suite, and the Linux and macOS `-L pixel` steps fail the job on any `Skipped` line.
 
 ### 6. Coordinate and event translation are unit-tested without a device
 
@@ -353,9 +354,11 @@ which runs in the ordinary test job.
   `InputNoHeapTests` / `glfw_translation_spec` / `example.monitor.smoke` checks. **PAR-REQ-006**
   is unchanged: the example records an `ActionTrace` and executes nothing; the host execution /
   audit / orderly-stop policy stays open for domain review.
-- **Still open**: the assembled batch-consuming update loop wired to Vulkan presentation and two
-  approved locales (#318, ADR-018 clause 6); the critical-action host policy (PAR-REQ-006); a full
-  swapchain-resize test (#318); PAR-REQ-009/010 keep their own status.
+- **Still open**: the critical-action host policy (PAR-REQ-006); a full swapchain-resize test;
+  PAR-REQ-009/010 keep their own status. The assembled batch-consuming update loop wired to Vulkan
+  presentation and two approved locales (#318, ADR-018 clause 6) is **delivered** as
+  `examples/support/MonitorApp.hpp` + `MedicalScreenMonitorExample` (`--headless-smoke` and the
+  windowed `--smoke-test`), reusing this record's `GlfwPresentationAdapter.hpp` shell unchanged.
 - **Scope**: where the windowed adapter lives, what it owns, the coordinate-mapping rule and its
   rebuild points, the event-translation table, the lifecycle outcomes and the CI smoke path.
   Windowing, native capture and host action execution stay implementation/host decisions. No

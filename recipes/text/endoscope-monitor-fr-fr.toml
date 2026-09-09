@@ -1,0 +1,51 @@
+# The endoscope monitor's text in French - the second locale `recipes/font/dejavu-ui.toml`
+# approves, added with the assembled monitor loop (#318).
+#
+# ## One recipe per locale
+#
+# A text package is one locale's worth of positioned glyph runs (`mdux.text.schema`), measured
+# against a *particular* atlas. `recipes/text/endoscope-monitor-en-us.toml` is the sibling for
+# `en-US`; this file is the same screen's text for `fr-FR`, and the screen recipe lists both. The
+# widest approved translation of every key is what #195's budget stage measures each box against,
+# which is only meaningful with each locale's own measurements committed separately.
+#
+# This is the first package to exercise the composite-glyph path: `STR-EM-HALT` is `ARRÊT`, and
+# `Ê` (U+00CA) is a composite glyph in DejaVu Sans that the font baker flattens on the host
+# (#318, ADR-010 decision 5). The `latin1-accented` charset range in the font recipe is what
+# admits it.
+#
+# ## Why the strings live here rather than in the .medui source
+#
+# ADR-011 as amended by #203: a compiled screen is locale-free and carries `textKey` rather than
+# glyph runs, so the device joins the two for the locale it runs. To change the wording, edit
+# this file and run the evidence update to a fixpoint (see `endoscope-monitor-en-us.toml` for the
+# four-command loop and why the fixpoint is required).
+
+# The artifact id is a lowercase slug (it names a directory, a test and a C++ identifier), so the
+# locale suffix is lowercased here even though `locale` below keeps its canonical `fr-FR` casing -
+# the same split `endoscope-monitor-en-us` makes.
+[package]
+id      = "endoscope-monitor-fr-fr"
+atlas   = "dejavu-ui"
+locale  = "fr-FR"
+
+# The committed font package these runs are measured against, named both by id and by path so the
+# baker can check the two agree.
+font    = "generated/font/dejavu-ui/package.json"
+sidecar = "runs.bin"
+
+# The keys a `.medui` source names with `t("...")`, and their French translations. Parallel
+# arrays, not an array of tables, because `mdux.tools.toml` implements a deliberate subset without
+# them (tools/common/Toml.cppm:13).
+[strings]
+#
+# `STR-EM-CLASS-*` are the `classifier-state` indicator's closed states. They stay as "Classe N"
+# for the same reason the English keys stay "Class N": the demonstrator model has synthetic
+# weights and no clinical validity, so a translation naming a rhythm would put a diagnosis on a
+# screen with no right to show one.
+#
+# `STR-EM-HALT` is the `emergency-halt` critical button's label; `STR-EM-FREEZE` is the new
+# `freeze` Button's. Both are kept to one word so they fit a control an operator must not have to
+# read before pressing.
+keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3", "STR-EM-HALT", "STR-EM-FREEZE"]
+values = ["Moniteur d'endoscopie", "Classe 0", "Classe 1", "Classe 2", "Classe 3", "ARRÊT", "FIGER"]

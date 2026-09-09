@@ -379,27 +379,36 @@ const mdux::spec::Register committedPackageParses{
                       }
                       state->package = std::move(*package);
                   })
-            .Then("it carries 95 printable-ASCII glyphs with tabular digits",
+            .Then("it carries printable-ASCII and the Latin-1 accented set (#318), with tabular digits",
                   [state] {
                       mdux::spec::Checks checks;
                       const auto&        package = *state->package;
                       checks.expect(package.id == "dejavu-ui", "id");
-                      checks.expect(package.glyphs.size() == 95, std::format("95 glyphs, got {}", package.glyphs.size()));
-                      // Every code point, not just the ends: a package missing an interior one
-                      // could still have 95 glyphs and pass an endpoint check.
-                      bool everyPointPresent = true;
-                      char32_t firstMissing  = 0;
-                      for (char32_t point = U' '; point <= U'~'; ++point) {
-                          if (!package.permits(point) || package.find(point) == nullptr) {
-                              everyPointPresent = false;
-                              firstMissing      = point;
-                              break;
+                      // 95 printable ASCII (U+0020..U+007E) + 85 of U+00AB..U+00FF + OE/oe. The
+                      // exact total is pinned so a font swap that quietly dropped a composite is
+                      // visible in the diff.
+                      checks.expect(package.glyphs.size() == 182, std::format("182 glyphs, got {}", package.glyphs.size()));
+                      // Every code point in each approved range, not just the ends: a package
+                      // missing an interior one could still pass an endpoint check.
+                      bool     everyPointPresent = true;
+                      char32_t firstMissing      = 0;
+                      const auto require = [&](char32_t lo, char32_t hi) {
+                          for (char32_t point = lo; point <= hi && everyPointPresent; ++point) {
+                              if (!package.permits(point) || package.find(point) == nullptr) {
+                                  everyPointPresent = false;
+                                  firstMissing      = point;
+                              }
                           }
-                      }
+                      };
+                      require(U' ', U'~');
+                      require(U'«', U'ÿ');
+                      require(U'Œ', U'œ');
                       checks.expect(everyPointPresent,
-                                    everyPointPresent ? "every printable-ASCII point is permitted and baked"
+                                    everyPointPresent ? "every approved point is permitted and baked"
                                                       : std::format("U+{:04X} is missing", static_cast<std::uint32_t>(firstMissing)));
-                      checks.expect(!package.permits(U'é'), "an accented letter outside the charset is refused");
+                      checks.expect(package.permits(U'é') && package.find(U'é') != nullptr,
+                                    "a composite accented letter is now baked (#318)");
+                      checks.expect(!package.permits(U'Ā'), "a letter outside the approved ranges is still refused");
                       // The tabular rule already passed inside validate(); this pins the value so a
                       // future font swap that quietly broke it is visible in the diff.
                       const auto* zero = package.find(U'0');

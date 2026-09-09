@@ -554,6 +554,24 @@ mdux_bake_artifact(
         runs.bin
 )
 
+# The second locale for the same screen (#318). A text package is one locale's positioned glyph
+# runs, so a second locale is a second recipe producing a second package; the screen recipe below
+# lists both, and `checkTextBudgets()` measures every box against the widest of the two. This is
+# also the first package whose glyphs include composites - `ARRÊT` carries `Ê` - which the font
+# baker now flattens on the host.
+mdux_bake_artifact(
+    KIND text
+    ID endoscope-monitor-fr-fr
+    TOOL mdux-textbake
+    RECIPE recipes/text/endoscope-monitor-fr-fr.toml
+    SOURCES
+        generated/font/dejavu-ui/package.json
+    OUTPUTS
+        package.json
+        report.json
+        runs.bin
+)
+
 mdux_bake_artifact(
     KIND shader
     ID triangle
@@ -592,6 +610,10 @@ mdux_compile_screen(
         # but every file a custom command reads is a dependency in its own right; otherwise an
         # independently changed or damaged sidecar would not even ask the screen bake to validate it.
         generated/text/endoscope-monitor-en-us/runs.bin
+        # The fr-FR package and its sidecar, same reasoning - the screen is measured against both
+        # locales' runs, so a change to either must re-bake it (#318).
+        generated/text/endoscope-monitor-fr-fr/package.json
+        generated/text/endoscope-monitor-fr-fr/runs.bin
         generated/image/brand-mark/package.json
         generated/image/brand-mark/pixels.rgba
         # The atlas, for the same reason applied to the second stage (#254): `loadLocale()` reads

@@ -634,9 +634,10 @@ private:
     return b;
 }
 
-/// A 10-byte composite glyf record: numberOfContours = -1, bbox 0..0. The parser rejects at
-/// the contour count check before touching the component stream - testing the rejection is the
-/// point of the fixture, not exercising composite walking.
+/// A 10-byte composite glyf record: numberOfContours = -1, bbox 0..0, and no component stream at
+/// all. Since #318 the parser flattens composites, so it now enters the component walk and hits
+/// the end of the record where the first component's flags/glyphIndex should be -
+/// `TruncatedComposite`.
 [[nodiscard]] std::vector<std::byte> compositeGlyph() {
     std::vector<std::byte> b;
     const auto             u16 = [&](std::uint16_t v) {
@@ -648,6 +649,107 @@ private:
     u16(0);
     u16(0);
     u16(0);  // bbox
+    return b;
+}
+
+// --- composite component builders (#318) ---------------------------------------------------
+// A component record is: u16 flags, u16 glyphIndex, then the args (int16x2 when
+// ARG_1_AND_2_ARE_WORDS), then an optional F2Dot14 transform. `MORE_COMPONENTS` (0x0020) chains
+// another entry. These helpers write one composite glyf record wrapping the -1 header.
+
+constexpr std::uint16_t kArgWords     = 0x0001u;
+constexpr std::uint16_t kArgsAreXY    = 0x0002u;
+constexpr std::uint16_t kHaveScale    = 0x0008u;
+constexpr std::uint16_t kMore         = 0x0020u;
+constexpr std::uint16_t kScaledOffset = 0x0800u;
+
+[[nodiscard]] std::vector<std::byte> compositeHeader() {
+    std::vector<std::byte> b;
+    const auto             u16 = [&](std::uint16_t v) {
+        b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+        b.push_back(static_cast<std::byte>(v & 0xffu));
+    };
+    u16(0xFFFFu);  // numberOfContours = -1
+    u16(0);
+    u16(0);
+    u16(0);
+    u16(0);  // advisory bbox; the parser recomputes it from the placed points
+    return b;
+}
+
+void appendU16(std::vector<std::byte>& b, std::uint16_t v) {
+    b.push_back(static_cast<std::byte>((v >> 8) & 0xffu));
+    b.push_back(static_cast<std::byte>(v & 0xffu));
+}
+void appendI16(std::vector<std::byte>& b, std::int16_t v) {
+    appendU16(b, static_cast<std::uint16_t>(v));
+}
+
+/// One composite glyph translating glyph `ref` by (dx, dy). `f2dot14Scale` != 0 adds a uniform
+/// WE_HAVE_A_SCALE transform (0x4000 == 1.0).
+[[nodiscard]] std::vector<std::byte> compositeRef(std::uint16_t ref, std::int16_t dx, std::int16_t dy,
+                                                  std::int16_t f2dot14Scale = 0) {
+    std::vector<std::byte> b = compositeHeader();
+    std::uint16_t          flags = kArgsAreXY | kArgWords;
+    if (f2dot14Scale != 0) {
+        flags |= kHaveScale;
+    }
+    appendU16(b, flags);
+    appendU16(b, ref);
+    appendI16(b, dx);
+    appendI16(b, dy);
+    if (f2dot14Scale != 0) {
+        appendI16(b, f2dot14Scale);
+    }
+    return b;
+}
+
+/// A composite scaling glyph `ref` by `f2dot14Scale` and translating by (dx, dy), with the
+/// SCALED_COMPONENT_OFFSET flag set so the offset is put through the scale too.
+[[nodiscard]] std::vector<std::byte> compositeRefScaledOffset(std::uint16_t ref, std::int16_t dx, std::int16_t dy,
+                                                              std::int16_t f2dot14Scale) {
+    std::vector<std::byte> b = compositeHeader();
+    appendU16(b, kArgsAreXY | kArgWords | kHaveScale | kScaledOffset);
+    appendU16(b, ref);
+    appendI16(b, dx);
+    appendI16(b, dy);
+    appendI16(b, f2dot14Scale);
+    return b;
+}
+
+/// A composite whose first component uses point-matching args (ARGS_ARE_XY_VALUES clear) - the
+/// form the parser refuses with `CompositeComponentUnsupported`.
+[[nodiscard]] std::vector<std::byte> compositePointMatch() {
+    std::vector<std::byte> b = compositeHeader();
+    appendU16(b, kArgWords);  // words, but not XY values
+    appendU16(b, 1);
+    appendI16(b, 0);
+    appendI16(b, 0);
+    return b;
+}
+
+/// A composite whose component record ends right after the glyphIndex, before its args.
+[[nodiscard]] std::vector<std::byte> compositeTruncatedArgs() {
+    std::vector<std::byte> b = compositeHeader();
+    appendU16(b, kArgsAreXY | kArgWords);
+    appendU16(b, 1);  // and then nothing - the two int16 args are missing
+    return b;
+}
+
+/// A composite with `count` components, all translating glyph `ref` by (0, 0). Used to exceed the
+/// parser's component-resolution budget without exceeding the per-glyph point or nesting caps.
+[[nodiscard]] std::vector<std::byte> compositeManyComponents(std::uint16_t ref, std::size_t count) {
+    std::vector<std::byte> b = compositeHeader();
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uint16_t flags = kArgsAreXY | kArgWords;
+        if (i + 1 < count) {
+            flags |= kMore;
+        }
+        appendU16(b, flags);
+        appendU16(b, ref);
+        appendI16(b, 0);
+        appendI16(b, 0);
+    }
     return b;
 }
 
@@ -1839,6 +1941,260 @@ const mdux::spec::Register squareGlyphParses{
             .Execute();
     }};
 
+// A composite glyph (#318) flattens into its components' contours, transformed into place. The
+// runtime never sees the composite - the baker resolves it here, which is the pre-baking ADR-010
+// decision 5 names.
+const mdux::spec::Register compositeGlyphFlattens{
+    "A composite glyph flattens into its component's contours, translated into place",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-translate")
+            .Given("a font whose glyph 2 is a composite translating the square glyph 1 by (10, 20)",
+                   [state] {
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, squareGlyph())
+                                               .rawGlyph(2, compositeRef(1, 10, 20))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph = tt::parseGlyph(*state->font, 2);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("it carries the square's four points, each shifted by (10, 20), and a recomputed bbox",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.glyphIndex == 2, "glyphIndex is the composite's own");
+                      checks.expect(g.endPtsOfContours.size() == 1 && g.endPtsOfContours[0] == 3, "one contour, 4 points");
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          checks.expect(g.points[0].x == 10 && g.points[0].y == 20, "point 0 shifted");
+                          checks.expect(g.points[2].x == 110 && g.points[2].y == 120, "point 2 shifted");
+                      }
+                      checks.expect(g.xMin == 10 && g.yMin == 20 && g.xMax == 110 && g.yMax == 120, "bbox recomputed from placed points");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeGlyphScales{
+    "A composite glyph applies a WE_HAVE_A_SCALE transform before translating",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-scale")
+            .Given("a composite scaling the square glyph by 0.5 (F2Dot14 0x2000) then translating by (0, 0)",
+                   [state] {
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, squareGlyph())
+                                               .rawGlyph(2, compositeRef(1, 0, 0, static_cast<std::int16_t>(0x2000)))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph   = tt::parseGlyph(*state->font, 2);
+                      state->glyph = glyph.has_value() ? std::optional{*glyph} : std::nullopt;
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                  })
+            .Then("the square's 100-unit corners have halved to 50",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          checks.expect(g.points[2].x == 50 && g.points[2].y == 50, "point 2 halved");
+                      }
+                      checks.expect(g.xMax == 50 && g.yMax == 50, "bbox halved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeScaledOffsetIsTransformed{
+    "SCALED_COMPONENT_OFFSET puts the component offset through the same scale as the points",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-scaled-offset")
+            .Given("a composite scaling the square by 0.5 and translating by (100, 0) with SCALED_COMPONENT_OFFSET",
+                   [state] {
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, squareGlyph())
+                                               .rawGlyph(2, compositeRefScaledOffset(1, 100, 0, static_cast<std::int16_t>(0x2000)))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph = tt::parseGlyph(*state->font, 2);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("the offset was halved with the points - the square lands at x 50..100, not 100..150",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          // square corner (0,0) -> scaled (0,0) -> + scaled offset (50,0) = (50,0)
+                          checks.expect(g.points[0].x == 50 && g.points[0].y == 0, "point 0 at (50,0)");
+                          // corner (100,100) -> scaled (50,50) -> + (50,0) = (100,50)
+                          checks.expect(g.points[2].x == 100 && g.points[2].y == 50, "point 2 at (100,50)");
+                      }
+                      checks.expect(g.xMin == 50 && g.xMax == 100, "bbox x 50..100");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeResolutionBudgetEnforced{
+    "A composite fanning out to more components than the budget allows is refused, not walked forever",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized     serialized;
+            std::optional<tt::Font> font;
+            tt::ParseError          code{tt::ParseError::Empty};
+            bool                    rejected{false};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-budget")
+            .Given("a single composite with 5000 components, each resolving the empty glyph 1",
+                   [state] {
+                       // Empty components add no points and no contours, so neither the per-glyph
+                       // point cap nor the nesting cap fires - only the resolution budget does.
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, emptyGlyph())
+                                               .rawGlyph(2, compositeManyComponents(1, 5000))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph      = tt::parseGlyph(*state->font, 2);
+                      state->rejected = !glyph.has_value();
+                      if (!glyph.has_value()) {
+                          state->code = glyph.error();
+                      }
+                  })
+            .Then("it is refused with CompositeBudgetExceeded",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->rejected, "the fan-out was refused");
+                      checks.expect(state->code == tt::ParseError::CompositeBudgetExceeded,
+                                    std::format("code is CompositeBudgetExceeded, got {}", tt::describe(state->code)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeNestingCapEnforced{
+    "A composite chain deeper than the parser's cap is refused rather than overflowing the stack",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized    serialized;
+            std::optional<tt::Font> font;
+            tt::ParseError          code{tt::ParseError::Empty};
+            bool                    rejected{false};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-nesting-cap")
+            .Given("a chain of 10 composites, each referencing the next, ending at the square glyph",
+                   [state] {
+                       Builder b;
+                       b.rawGlyph(0, emptyGlyph());
+                       b.rawGlyph(1, squareGlyph());
+                       // glyphs 2..11: glyph i is a composite referencing glyph i+1; glyph 11 -> 1.
+                       for (std::uint16_t i = 2; i <= 11; ++i) {
+                           const std::uint16_t ref = (i == 11) ? 1 : static_cast<std::uint16_t>(i + 1);
+                           b.rawGlyph(i, compositeRef(ref, 0, 0));
+                       }
+                       state->serialized = b.serialize();
+                       auto font         = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the top of the chain",
+                  [state] {
+                      auto glyph      = tt::parseGlyph(*state->font, 2);
+                      state->rejected = !glyph.has_value();
+                      if (!glyph.has_value()) {
+                          state->code = glyph.error();
+                      }
+                  })
+            .Then("it is refused with CompositeNestingTooDeep",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->rejected, "the deep chain was refused");
+                      checks.expect(state->code == tt::ParseError::CompositeNestingTooDeep,
+                                    std::format("code is CompositeNestingTooDeep, got {}", tt::describe(state->code)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register emptyGlyphParses{"An empty glyph (numberOfContours == 0) parses with no points", "evidence-unit", [] {
                                                 struct State {
                                                     Builder::Serialized            serialized;
@@ -1935,12 +2291,28 @@ const mdux::spec::Register parseGlyphRejections{
  return tt::parseGlyph(f, 0);
  }},
 
-            {       "a composite glyph (numberOfContours == -1)",
-             ParseError::CompositeGlyphRejected,
+            {  "a composite glyf record with no component stream",
+             ParseError::TruncatedComposite,
              [](State& s) {
              return s.parseOwning(Builder().rawGlyph(0, compositeGlyph()).serialize().bytes);
              }, [](const tt::Font& f) {
  return tt::parseGlyph(f, 0);
+ }},
+
+            {  "a composite whose component args are truncated",
+             ParseError::TruncatedComposite,
+             [](State& s) {
+             return s.parseOwning(Builder().rawGlyph(0, squareGlyph()).rawGlyph(1, compositeTruncatedArgs()).serialize().bytes);
+             }, [](const tt::Font& f) {
+ return tt::parseGlyph(f, 1);
+ }},
+
+            {  "a composite component using point-matching args",
+             ParseError::CompositeComponentUnsupported,
+             [](State& s) {
+             return s.parseOwning(Builder().rawGlyph(0, squareGlyph()).rawGlyph(1, compositePointMatch()).serialize().bytes);
+             }, [](const tt::Font& f) {
+ return tt::parseGlyph(f, 1);
  }},
 
             {  "instructionLength claiming more bytecode than exists",

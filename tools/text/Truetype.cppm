@@ -118,7 +118,11 @@ enum class ParseError : std::uint8_t {
     LocaOutOfBounds,            ///< a 'loca' entry extends past the end of 'glyf'
     GlyphIndexOutOfRange,       ///< parseGlyph called with an index >= numGlyphs
     TruncatedGlyph,             ///< glyf record is non-empty but shorter than the 10-byte header
-    CompositeGlyphRejected,     ///< numberOfContours == -1; composites are out of v1 scope
+    CompositeGlyphRejected,     ///< retired (#318): composites are now flattened; kept for enumerator stability
+    TruncatedComposite,         ///< a composite component record runs past the glyf record
+    CompositeComponentUnsupported, ///< a component uses point-matching args rather than XY values
+    CompositeNestingTooDeep,    ///< composites reference each other past `maxCompositeDepth`
+    CompositeBudgetExceeded,    ///< one glyph's composite tree resolves more components than the budget allows
     TruncatedContourEndpoints,  ///< endPtsOfContours extends past the glyf record
     TruncatedGlyphInstructions, ///< the (skipped) hinting instruction array runs past the record
     TruncatedGlyphFlags,        ///< the flag array extends past the glyf record

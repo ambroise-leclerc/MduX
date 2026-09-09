@@ -242,9 +242,9 @@ const mdux::spec::Register compileCarriesApprovedPackageIdentity{
                       checks.expect(read.ok(), std::format("the compiled package reads back, first diagnostic '{}'", firstCode(read.diagnostics)));
                       if (read.ok()) {
                           const ms::ScreenPackage package = read.document.package();
-                          checks.expect(package.approvedTextPackages.size() == 1,
-                                        std::format("one locale is approved, got {}", package.approvedTextPackages.size()));
-                          if (package.approvedTextPackages.size() == 1) {
+                          checks.expect(package.approvedTextPackages.size() == 2,
+                                        std::format("two locales are approved (#318), got {}", package.approvedTextPackages.size()));
+                          if (package.approvedTextPackages.size() == 2) {
                               const ms::TextPackageApproval& approval = package.approvedTextPackages.front();
                               const std::string              textJson = contentsOf(repoRoot() / "generated/text/endoscope-monitor-en-us/package.json");
                               checks.expect(approval.locale == "en-US", std::format("the locale is en-US, got '{}'", approval.locale));
@@ -262,6 +262,14 @@ const mdux::spec::Register compileCarriesApprovedPackageIdentity{
                                   const auto binding = ms::TextBinding::create(package, *font, *text, asBytes(textJson), asBytes(runs));
                                   checks.expect(binding.has_value(), "the compiler digest and runtime digest agree on the committed package");
                               }
+
+                              const ms::TextPackageApproval& french     = package.approvedTextPackages.back();
+                              const std::string              frenchJson = contentsOf(repoRoot() / "generated/text/endoscope-monitor-fr-fr/package.json");
+                              checks.expect(french.locale == "fr-FR", std::format("the second locale is fr-FR, got '{}'", french.locale));
+                              checks.expect(french.packageId == "endoscope-monitor-fr-fr",
+                                            std::format("the second package id is retained, got '{}'", french.packageId));
+                              checks.expect(french.packageSha256 == mdux::evidence::sha256(asBytes(frenchJson)),
+                                            "the fr-FR approval digest is the exact package.json input digest");
                           }
                       }
                       checks.raise();
@@ -362,11 +370,25 @@ const mdux::spec::Register theIrDescribesTheCompileThatProducedIt{
                       checks.expect(budgets != nullptr && !budgets->elements().empty(), "the IR carries the text budgets");
                       if (budgets != nullptr && !budgets->elements().empty()) {
                           const auto& first = budgets->elements().front();
-                          checks.expect(first.find("widestLocale") != nullptr && first.find("widestLocale")->asString().value_or("") == "en-US",
-                                        "naming the locale that produced the widest width");
+                          std::string firstLocale;
+                          if (const auto* wl = first.find("widestLocale"); wl != nullptr) {
+                              firstLocale = std::string{wl->asString().value_or("")};
+                          }
+                          checks.expect(firstLocale == "en-US" || firstLocale == "fr-FR",
+                                        std::format("each budget names one of the approved locales, got '{}'", firstLocale));
                           const auto* extent = first.find("extent");
                           checks.expect(extent != nullptr && extent->find("width") != nullptr && extent->find("width")->asInt().value_or(0) > 0,
                                         "and the extent it was measured at");
+                          // Since #318 the screen approves fr-FR, and 'Moniteur d'endoscopie' is
+                          // wider than 'Endoscope Monitor' - so the widest-translation machinery
+                          // must actually pick the French package for at least one box.
+                          bool anyFrench = false;
+                          for (const auto& budget : budgets->elements()) {
+                              if (budget.find("widestLocale") != nullptr && budget.find("widestLocale")->asString().value_or("") == "fr-FR") {
+                                  anyFrench = true;
+                              }
+                          }
+                          checks.expect(anyFrench, "at least one box's widest translation is the fr-FR one");
                       }
 
                       // Two compiles of one recipe produce one document. A dump that moved between
@@ -410,6 +432,11 @@ const mdux::spec::Register aCharsetNameIsResolvedIntoTheCompiledNode{
                       copy("generated/font/dejavu-ui/package.json");
                       copy("generated/text/endoscope-monitor-en-us/package.json");
                       copy("generated/text/endoscope-monitor-en-us/runs.bin");
+                      // The committed font approves fr-FR too (#318), so `checkLocaleWiring()`
+                      // needs a package for it as well - the ad-hoc screens below use no `t()`
+                      // keys, so an unused package satisfies the wiring check.
+                      copy("generated/text/endoscope-monitor-fr-fr/package.json");
+                      copy("generated/text/endoscope-monitor-fr-fr/runs.bin");
 
                       const std::filesystem::path source = root.path() / "recipes/screen/badge/Badge.medui";
                       std::filesystem::create_directories(source.parent_path());
@@ -452,7 +479,7 @@ const mdux::spec::Register aCharsetNameIsResolvedIntoTheCompiledNode{
                                              "\n"
                                              "[text]\n"
                                              "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
-                                             "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n",
+                                             "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\", \"generated/text/endoscope-monitor-fr-fr/package.json\"]\n",
                                              firsts,
                                              lasts);
                       };
@@ -537,6 +564,11 @@ const mdux::spec::Register aRefusedScreenStillYieldsItsIr{
                       copy("generated/font/dejavu-ui/package.json");
                       copy("generated/text/endoscope-monitor-en-us/package.json");
                       copy("generated/text/endoscope-monitor-en-us/runs.bin");
+                      // The committed font approves fr-FR too (#318), so `checkLocaleWiring()`
+                      // needs a package for it as well - the ad-hoc screens below use no `t()`
+                      // keys, so an unused package satisfies the wiring check.
+                      copy("generated/text/endoscope-monitor-fr-fr/package.json");
+                      copy("generated/text/endoscope-monitor-fr-fr/runs.bin");
 
                       const std::filesystem::path source = root.path() / "recipes/screen/too-narrow/TooNarrow.medui";
                       std::filesystem::create_directories(source.parent_path());
@@ -569,7 +601,7 @@ const mdux::spec::Register aRefusedScreenStillYieldsItsIr{
                                                      "\n"
                                                      "[text]\n"
                                                      "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
-                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\", \"generated/text/endoscope-monitor-fr-fr/package.json\"]\n";
 
                       const auto recipe = md::parseRecipe(recipeText, "recipes/screen/too-narrow.toml", diagnostics);
                       if (!recipe.has_value()) {
@@ -651,6 +683,11 @@ const mdux::spec::Register aTextInputOnlyScreenCompiles{
                       copy("generated/font/dejavu-ui/package.json");
                       copy("generated/text/endoscope-monitor-en-us/package.json");
                       copy("generated/text/endoscope-monitor-en-us/runs.bin");
+                      // The committed font approves fr-FR too (#318), so `checkLocaleWiring()`
+                      // needs a package for it as well - the ad-hoc screens below use no `t()`
+                      // keys, so an unused package satisfies the wiring check.
+                      copy("generated/text/endoscope-monitor-fr-fr/package.json");
+                      copy("generated/text/endoscope-monitor-fr-fr/runs.bin");
 
                       const std::filesystem::path source = root.path() / "recipes/screen/entry-only/EntryOnly.medui";
                       std::filesystem::create_directories(source.parent_path());
@@ -684,7 +721,7 @@ const mdux::spec::Register aTextInputOnlyScreenCompiles{
                                                      "\n"
                                                      "[text]\n"
                                                      "fontPackage = \"generated/font/dejavu-ui/package.json\"\n"
-                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\"]\n";
+                                                     "packages    = [\"generated/text/endoscope-monitor-en-us/package.json\", \"generated/text/endoscope-monitor-fr-fr/package.json\"]\n";
 
                       const auto recipe = md::parseRecipe(recipeText, "recipes/screen/entry-only.toml", diagnostics);
                       checks.expect(recipe.has_value(), "the recipe parses");

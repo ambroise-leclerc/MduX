@@ -12,12 +12,23 @@
         "first": 32,
         "last": 126,
         "name": "basic-latin-printable"
+      },
+      {
+        "first": 171,
+        "last": 255,
+        "name": "latin1-accented"
+      },
+      {
+        "first": 338,
+        "last": 339,
+        "name": "latin-extended-a-oe"
       }
     ],
     "id": "dejavu-ui",
     "locale": "",
     "locales": [
-      "en-US"
+      "en-US",
+      "fr-FR"
     ],
     "pixelSize": 16,
     "sidecar": "atlas.bin",
@@ -26,16 +37,16 @@
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
     },
     {
       "path": "atlas.bin",
-      "sha256": "d466ed725c4f697bbcf9ebc4236e55e58956c8cc68439a0dd60ad3381d7d31c8"
+      "sha256": "2165bb30ffcf5ef98e33961a15f559f349cdd64dd80486984edbe0cebb3a14fc"
     }
   ],
   "recipe": {
     "path": "recipes/font/dejavu-ui.toml",
-    "sha256": "53ba6f4a76878119c332596b7c41ee003f724f6cc61271e34b4160703a6cf8ba"
+    "sha256": "b8dc825cc820d41deb0fcd0d359de8a4f5ee9460d75b230fca991c95b74742ff"
   },
   "schemaVersion": 1,
   "tool": "mdux-textbake",

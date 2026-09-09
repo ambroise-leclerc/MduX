@@ -8,24 +8,24 @@
   "options": {
     "atlas": "dejavu-ui",
     "font": "generated/font/dejavu-ui/package.json",
-    "id": "endoscope-monitor-en-us",
-    "locale": "en-US",
+    "id": "endoscope-monitor-fr-fr",
+    "locale": "fr-FR",
     "sidecar": "runs.bin",
     "strings": 7
   },
   "outputs": [
     {
       "path": "package.json",
-      "sha256": "e260e350260598444907e04980b3ad27e263dcbcc1d3c2c8e5335bf1f0e6e0bf"
+      "sha256": "f9abfd5a63e940443bd8f9a4c64003e84355d2be4173d9ffbb5634212bf99bc8"
     },
     {
       "path": "runs.bin",
-      "sha256": "fa0061a5680ce96d3d1d384e3038c0491e177f0f5b149ae481de3af504b553a8"
+      "sha256": "ed62f1e96298a3d3b55a32ba24606cff7076e53058295f53ae289a85a5292ccf"
     }
   ],
   "recipe": {
-    "path": "recipes/text/endoscope-monitor-en-us.toml",
-    "sha256": "0344c1a10cbfc42ecf34c3cdec73c499dfb342847645dc60c04e1cba94368469"
+    "path": "recipes/text/endoscope-monitor-fr-fr.toml",
+    "sha256": "b69b52bb3b17c3a0173ab1d3fc8b790a3895d7f38012cce4a37577b56debb3ae"
   },
   "schemaVersion": 1,
   "tool": "mdux-textbake",

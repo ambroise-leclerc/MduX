@@ -1,0 +1,56 @@
+{
+  "atlas": "dejavu-ui",
+  "id": "endoscope-monitor-fr-fr",
+  "kind": "text",
+  "locale": "fr-FR",
+  "runs": [
+    {
+      "byteLength": 126,
+      "byteOffset": 0,
+      "id": "STR-EM-TITLE",
+      "sha256": "f0a415231f82c56852a92467d1f181efb1ad8699e3bff125f01c6dc4c2f7f1e6"
+    },
+    {
+      "byteLength": 48,
+      "byteOffset": 126,
+      "id": "STR-EM-CLASS-0",
+      "sha256": "479681d656526e3b889fd980074dcf99d6b2d98ff41d390d6746957bdb06437a"
+    },
+    {
+      "byteLength": 48,
+      "byteOffset": 174,
+      "id": "STR-EM-CLASS-1",
+      "sha256": "2821726c7a5579226f41bebb33486b7299c32ad1d6c6443efedf127a39c6d5a2"
+    },
+    {
+      "byteLength": 48,
+      "byteOffset": 222,
+      "id": "STR-EM-CLASS-2",
+      "sha256": "d0e2de525c12fef21aab1e33aa9e3dfcca8228a9fb7820057d0d305d360f1935"
+    },
+    {
+      "byteLength": 48,
+      "byteOffset": 270,
+      "id": "STR-EM-CLASS-3",
+      "sha256": "458ea864a30f6fe447bbd7ef14d578002be07e138a27337bd205463c71fa1329"
+    },
+    {
+      "byteLength": 30,
+      "byteOffset": 318,
+      "id": "STR-EM-HALT",
+      "sha256": "9630c6d463768fc1a7433e06132f4df2680a4a309f2c48b896b93bdf42ff9c5c"
+    },
+    {
+      "byteLength": 30,
+      "byteOffset": 348,
+      "id": "STR-EM-FREEZE",
+      "sha256": "3c080315d58b490f5eccb3fe39f9b7d17466bd8b80cdd856be26e048b9c22a7f"
+    }
+  ],
+  "schemaVersion": 1,
+  "sidecar": {
+    "byteLength": 378,
+    "path": "runs.bin",
+    "sha256": "ed62f1e96298a3d3b55a32ba24606cff7076e53058295f53ae289a85a5292ccf"
+  }
+}
