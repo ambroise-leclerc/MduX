@@ -435,4 +435,337 @@ private:
     }
 };
 
+// ===========================================================================
+// The replay runner (#320, ADR-020 §3)
+// ===========================================================================
+
+/// One live reading the caller observed this frame, keyed by node id so the runner stays
+/// screen-agnostic - a `NumericDisplay`'s value in the template's fixed-point units.
+struct NamedReading {
+    std::string_view nodeId{};
+    std::int64_t     value{0};
+};
+
+/// One `StatusIndicator`'s position this frame, keyed by node id.
+struct NamedState {
+    std::string_view nodeId{};
+    std::uint32_t    index{0};
+};
+
+/// The seven `mdux.medui.screen::FrameStats` counters, copied into a type this module can name
+/// without importing `mdux.medui.screen` (which would not be a cycle today, but the scenario
+/// module has no other reason to reach the screen runtime). The caller fills this from the
+/// `FrameStats` its `render()` returned.
+struct FrameCounts {
+    std::uint32_t nodes{0};
+    std::uint32_t rects{0};
+    std::uint32_t deferred{0};
+    std::uint32_t traces{0};
+    std::uint32_t readings{0};
+    std::uint32_t states{0};
+    std::uint32_t fields{0};
+
+    [[nodiscard]] constexpr std::uint32_t get(FrameStatField field) const noexcept {
+        switch (field) {
+            case FrameStatField::Nodes:    return nodes;
+            case FrameStatField::Rects:    return rects;
+            case FrameStatField::Deferred: return deferred;
+            case FrameStatField::Traces:   return traces;
+            case FrameStatField::Readings: return readings;
+            case FrameStatField::States:   return states;
+            case FrameStatField::Fields:   return fields;
+            case FrameStatField::Unspecified: return 0;
+        }
+        return 0;
+    }
+
+    [[nodiscard]] constexpr bool operator==(const FrameCounts&) const noexcept = default;
+};
+
+/**
+ * @brief The state one advance settled, as the caller hands it to `ScenarioRunner::observe()`.
+ *
+ * Every span and string view is caller-owned; the runner copies nothing and allocates nothing.
+ * `action` is the critical press the batch resolved (`nullopt` for none); `buttonNode` /
+ * `buttonSource` are the node an ordinary `Button` press resolved to and its open `source` (both
+ * empty for none). `latchArmed` is the `PressLatch`'s armed node (empty = disarmed); `refusedEdits`
+ * and `overflowed` are the batch-consuming frame's, which the caller tracks across a multi-frame
+ * advance.
+ */
+struct ScenarioObservation {
+    mdux::medui::CivilTime            clock{};
+    std::span<const char32_t>         fieldValue{};
+    std::optional<std::size_t>        caret{};
+    std::uint32_t                     refusedEdits{0};
+    std::optional<mdux::medui::ActionTrace> action{};
+    std::string_view                 buttonNode{};
+    std::string_view                 buttonSource{};
+    std::string_view                 latchArmed{};
+    FrameCounts                      frame{};
+    bool                             overflowed{false};
+    std::span<const NamedReading>    readings{};
+    std::span<const NamedState>      states{};
+};
+
+/// The outcome of one `Expect` step during a replay.
+struct StepOutcome {
+    std::size_t stepIndex{0};   ///< index into `CompiledScenario::steps`
+    ExpectKind  kind{ExpectKind::Unspecified};
+    bool        held{false};
+};
+
+/// Why a replay run failed as a whole. `None` means every expectation held and every declared
+/// capture was invoked. Any other value is a run the caller must treat as a failure.
+enum class ReplayFault : std::uint8_t {
+    None,
+    QueueTooSmall,       ///< a batch had more events than the caller's `EventQueue` could hold
+    ExpectationFailed,   ///< at least one `Expect` step did not hold
+    CaptureNotInvoked,   ///< a declared `captureNames` entry was never handed to the caller
+    OutcomeStorageFull,  ///< more expectations reached than the caller's `StepOutcome` span holds
+    MalformedScenario,   ///< `scenario->validate()` did not pass
+};
+
+[[nodiscard]] constexpr std::string_view describe(ReplayFault fault) noexcept {
+    switch (fault) {
+        case ReplayFault::None:               return "the replay held every expectation";
+        case ReplayFault::QueueTooSmall:      return "a batch had more events than the event queue could hold";
+        case ReplayFault::ExpectationFailed:  return "an expectation did not hold";
+        case ReplayFault::CaptureNotInvoked:  return "a declared capture was never invoked";
+        case ReplayFault::OutcomeStorageFull: return "the replay produced more outcomes than the caller's storage holds";
+        case ReplayFault::MalformedScenario:  return "the scenario does not satisfy mdux.medui.scenario";
+    }
+    return "unknown replay fault";
+}
+
+/// The result of a replay: per-expectation outcomes plus the whole-run verdict.
+struct ReplayReport {
+    std::span<const StepOutcome> outcomes{};
+    std::size_t                  framesRun{0};
+    std::size_t                  expectationsHeld{0};
+    ReplayFault                  fault{ReplayFault::None};
+    std::size_t                  faultStep{0};   ///< the step index a fault first attaches to, or 0
+
+    [[nodiscard]] constexpr bool passed() const noexcept { return fault == ReplayFault::None; }
+};
+
+/**
+ * @brief The bounded, allocation-free driver that replays a `CompiledScenario` through an
+ *        application's real event/update path.
+ *
+ * The runner owns a cursor into `scenario->steps` and a caller-supplied `std::span<StepOutcome>`
+ * it records into. It never touches `updateMonitor()`: the caller drives its own update loop and
+ * hands the runner the queue to fill, then the settled `ScenarioObservation`. One replay turn:
+ *
+ * ```
+ * while (!runner.finished()) {
+ *     const BatchLoad load = runner.loadNextBatch(queue);   // events up to the next advance
+ *     for (std::uint32_t i = 0; i < runner.framesThisAdvance(); ++i) { caller runs one update }
+ *     runner.observe(settledState);                          // checks this group's Expect steps
+ *     for (const std::string_view name : runner.capturesThisFrame()) { caller captures; runner.markCaptured(name); }
+ * }
+ * runner.finish();
+ * const ReplayReport report = runner.report();
+ * ```
+ *
+ * `constexpr`, `noexcept`, no allocation. `input_noheap`-style coverage proves it.
+ */
+class ScenarioRunner {
+public:
+    struct BatchLoad {
+        std::size_t queued{0};
+        bool        queueTooSmall{false};
+    };
+
+    constexpr ScenarioRunner(const CompiledScenario& scenario, std::span<StepOutcome> outcomeStorage) noexcept
+        : scenario_{&scenario}, outcomes_{outcomeStorage} {
+        if (!scenario.validate().has_value()) {
+            fault_ = ReplayFault::MalformedScenario;
+        }
+    }
+
+    /// True when every step has been consumed.
+    [[nodiscard]] constexpr bool finished() const noexcept {
+        return fault_ == ReplayFault::MalformedScenario || cursor_ >= scenario_->steps.size();
+    }
+
+    /// Pushes every event step from the cursor up to (not including) the next `Advance` into
+    /// `queue`, leaving the cursor at that `Advance`. A batch larger than `queue` sets
+    /// `queueTooSmall` and records `QueueTooSmall`.
+    [[nodiscard]] constexpr BatchLoad loadNextBatch(EventQueue& queue) noexcept {
+        BatchLoad load;
+        while (cursor_ < scenario_->steps.size() && scenario_->steps[cursor_].kind != StepKind::Advance) {
+            const ScenarioStep& step = scenario_->steps[cursor_];
+            const auto push = [&](const InputEvent& event) {
+                if (queue.push(event) == PushOutcome::Accepted) {
+                    ++load.queued;
+                } else {
+                    load.queueTooSmall = true;
+                }
+            };
+            switch (step.kind) {
+                case StepKind::Pointer: push(InputEvent{step.pointer}); break;
+                case StepKind::Key:     push(InputEvent{step.key}); break;
+                case StepKind::Text:    push(InputEvent{step.text}); break;
+                case StepKind::Focus:   push(InputEvent{step.focus}); break;
+                default:                break;
+            }
+            ++cursor_;
+        }
+        if (load.queueTooSmall && fault_ == ReplayFault::None) {
+            fault_     = ReplayFault::QueueTooSmall;
+            faultStep_ = cursor_;
+        }
+        pendingAdvance_ = cursor_ < scenario_->steps.size();
+        return load;
+    }
+
+    /// How many application updates the `Advance` at the cursor drives (0 if the scenario ended).
+    [[nodiscard]] constexpr std::uint32_t framesThisAdvance() const noexcept {
+        return pendingAdvance_ ? scenario_->steps[cursor_].frames : 0u;
+    }
+
+    /// Checks every `Expect` step in this advance's group against `obs`, records a `StepOutcome`
+    /// per expectation, and collects the group's `Capture` markers. Advances the cursor past the
+    /// group.
+    constexpr void observe(const ScenarioObservation& obs) noexcept {
+        if (!pendingAdvance_) {
+            return;
+        }
+        ++cursor_;  // past the Advance
+        ++framesRun_;
+        captureHead_ = 0;
+        captureCount_ = 0;
+        while (cursor_ < scenario_->steps.size()) {
+            const ScenarioStep& step = scenario_->steps[cursor_];
+            if (step.kind == StepKind::Expect) {
+                const bool held = evaluate(step.expect, obs);
+                if (outcomeCount_ < outcomes_.size()) {
+                    outcomes_[outcomeCount_++] = StepOutcome{.stepIndex = cursor_, .kind = step.expect.kind, .held = held};
+                } else if (fault_ == ReplayFault::None) {
+                    fault_     = ReplayFault::OutcomeStorageFull;
+                    faultStep_ = cursor_;
+                }
+                if (held) {
+                    ++held_;
+                } else if (fault_ == ReplayFault::None) {
+                    fault_     = ReplayFault::ExpectationFailed;
+                    faultStep_ = cursor_;
+                }
+            } else if (step.kind == StepKind::Capture) {
+                if (captureCount_ < pendingCaptures_.size()) {
+                    pendingCaptures_[captureCount_++] = step.capture;
+                }
+            } else {
+                break;  // the next event or advance begins the next group
+            }
+            ++cursor_;
+        }
+        pendingAdvance_ = false;
+    }
+
+    /// The `Capture` markers for the frame just observed. The caller invokes its capture callback
+    /// per name and calls `markCaptured(name)`.
+    [[nodiscard]] constexpr std::span<const std::string_view> capturesThisFrame() const noexcept {
+        return std::span{pendingCaptures_}.subspan(captureHead_, captureCount_ - captureHead_);
+    }
+
+    /// Records that the caller handed `name`'s frame to its capture callback.
+    constexpr void markCaptured(std::string_view name) noexcept {
+        for (std::size_t i = 0; i < scenario_->captureNames.size() && i < invoked_.size(); ++i) {
+            if (scenario_->captureNames[i] == name) {
+                invoked_[i] = true;
+                return;
+            }
+        }
+    }
+
+    /// Call once after the loop. Sets `CaptureNotInvoked` if a declared capture was never invoked.
+    constexpr void finish() noexcept {
+        for (std::size_t i = 0; i < scenario_->captureNames.size() && i < invoked_.size(); ++i) {
+            if (!invoked_[i] && fault_ == ReplayFault::None) {
+                fault_     = ReplayFault::CaptureNotInvoked;
+                faultStep_ = 0;
+            }
+        }
+    }
+
+    [[nodiscard]] constexpr ReplayReport report() const noexcept {
+        return ReplayReport{.outcomes         = outcomes_.first(outcomeCount_),
+                            .framesRun        = framesRun_,
+                            .expectationsHeld = held_,
+                            .fault            = fault_,
+                            .faultStep        = faultStep_};
+    }
+
+private:
+    [[nodiscard]] constexpr bool evaluate(const Expectation& e, const ScenarioObservation& obs) const noexcept {
+        switch (e.kind) {
+            case ExpectKind::Clock:
+                return obs.clock == e.clock;
+            case ExpectKind::Field: {
+                if (obs.fieldValue.size() != e.fieldValue.size()) {
+                    return false;
+                }
+                for (std::size_t i = 0; i < e.fieldValue.size(); ++i) {
+                    if (obs.fieldValue[i] != e.fieldValue[i]) {
+                        return false;
+                    }
+                }
+                return !e.fieldHasCaret || (obs.caret.has_value() && *obs.caret == e.caret);
+            }
+            case ExpectKind::RefusedEdits:
+                return obs.refusedEdits == e.count;
+            case ExpectKind::Action:
+                return obs.action.has_value() && obs.action->nodeId == e.nodeId && obs.action->event == e.event
+                       && obs.action->requirement == e.requirement;
+            case ExpectKind::ButtonSource:
+                // An empty `source` asserts that no ordinary `Button` press resolved this batch
+                // (the node is moot - there is nothing to match it against). Otherwise both halves
+                // must hold: the named control *and* its open `source`, so a press on a different
+                // control does not satisfy it.
+                return e.source.empty() ? obs.buttonSource.empty()
+                                        : (obs.buttonNode == e.nodeId && obs.buttonSource == e.source);
+            case ExpectKind::Reading: {
+                for (const NamedReading& r : obs.readings) {
+                    if (r.nodeId == e.nodeId) {
+                        return r.value == e.value;
+                    }
+                }
+                return false;
+            }
+            case ExpectKind::State: {
+                for (const NamedState& s : obs.states) {
+                    if (s.nodeId == e.nodeId) {
+                        return s.index == e.count;
+                    }
+                }
+                return false;
+            }
+            case ExpectKind::LatchArmed:
+                return obs.latchArmed == e.nodeId;
+            case ExpectKind::FrameStat:
+                return obs.frame.get(e.statField) == e.count;
+            case ExpectKind::Overflow:
+                return obs.overflowed == e.flag;
+            case ExpectKind::Unspecified:
+                return false;
+        }
+        return false;
+    }
+
+    const CompiledScenario*                     scenario_{nullptr};
+    std::span<StepOutcome>                      outcomes_{};
+    std::size_t                                 cursor_{0};
+    std::size_t                                 outcomeCount_{0};
+    std::size_t                                 framesRun_{0};
+    std::size_t                                 held_{0};
+    bool                                        pendingAdvance_{false};
+    std::array<std::string_view, maxScenarioCaptures> pendingCaptures_{};
+    std::size_t                                 captureHead_{0};
+    std::size_t                                 captureCount_{0};
+    std::array<bool, maxScenarioCaptures>       invoked_{};
+    ReplayFault                                 fault_{ReplayFault::None};
+    std::size_t                                 faultStep_{0};
+};
+
 }  // namespace mdux::medui

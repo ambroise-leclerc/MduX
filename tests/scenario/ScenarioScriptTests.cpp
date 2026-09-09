@@ -19,6 +19,7 @@ import mdux.tools.cli;
 import mdux.tools.scenario;
 import mdux.tools.scenario.script;
 import mdux.tools.scenarioemit;
+import mdux.tools.scenario.trace;
 
 #include "../framework/SpecLabBridge.hpp"
 
@@ -294,6 +295,41 @@ const mdux::spec::Register theEmitterRejectsAWrongTypedOperand{
                           checks.expect(!outputs.has_value() && !diags.empty(),
                                         std::format("{}: refused, first {}", m.what, firstCode(diags)));
                       }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theTraceRendersExpectedAndObserved{
+    "renderTraceText renders each step and marks every expectation HELD or FAILED",
+    "evidence-unit",
+    [] {
+        return speclab::Test("scenario-trace-text")
+            .Given("a hand-built scenario and a ReplayReport with one held and one failed expectation", [] {})
+            .When("renderTraceText runs", [] {})
+            .Then("the trace names both expectations and the verdict is FAIL",
+                  [] {
+                      mdux::spec::Checks checks;
+                      static constexpr ms::ScenarioStep steps[] = {
+                          {.kind = ms::StepKind::Advance, .frames = 1},
+                          {.kind = ms::StepKind::Expect, .expect = {.kind = ms::ExpectKind::Overflow, .flag = false}},
+                          {.kind = ms::StepKind::Expect, .expect = {.kind = ms::ExpectKind::RefusedEdits, .count = 2}},
+                      };
+                      ms::CompiledScenario scenario{.id = "t", .screenId = "x", .schemaVersion = ms::currentScenarioSchemaVersion,
+                                                    .pinnedClock = {.year = 2026, .month = 1, .day = 1}, .steps = steps};
+                      static constexpr ms::StepOutcome outcomes[] = {
+                          {.stepIndex = 1, .kind = ms::ExpectKind::Overflow, .held = true},
+                          {.stepIndex = 2, .kind = ms::ExpectKind::RefusedEdits, .held = false},
+                      };
+                      const ms::ReplayReport report{.outcomes = outcomes, .framesRun = 1, .expectationsHeld = 1,
+                                                    .fault = ms::ReplayFault::ExpectationFailed, .faultStep = 2};
+
+                      const std::string trace = sc::renderTraceText(scenario, report);
+                      checks.expect(trace.find("expect overflow false") != std::string::npos && trace.find("HELD") != std::string::npos,
+                                    "the held expectation is rendered");
+                      checks.expect(trace.find("expect refused 2") != std::string::npos && trace.find("FAILED") != std::string::npos,
+                                    "the failed expectation is rendered");
+                      checks.expect(trace.find("verdict: FAIL") != std::string::npos, "the verdict is FAIL");
                       checks.raise();
                   })
             .Execute();

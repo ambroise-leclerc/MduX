@@ -12,9 +12,9 @@ behaviour, no compiled screen, and no shared pin, and supersedes no earlier ADR.
 [ADR-011](ADR-011-deterministic-medui-compile-boundary.md) / [ADR-012](ADR-012-compiled-screen-artifacts.md)
 (a source compiles to a committed, byte-verified artifact and then to `constexpr` C++).
 
-The scenario **format and compiler** (#319) and the governed data types are delivered first; the
-**replay runner, its trace and the monitor wiring** (#320) follow in a stacked PR and close this
-record's "delivered by #320" clauses.
+The scenario **format and compiler** (#319) and the governed data types were delivered first; the
+**replay runner, its host trace and the monitor wiring** (#320) followed in a stacked PR and this
+record now reflects both.
 
 ## Shared contract
 
@@ -114,7 +114,9 @@ will still change); a scenario with no `advance` at all.
 `action <node> <SystemEvent> <REQ-ID>`, `button <node> <source>`, `reading <node> <int>`,
 `state <node> <index>`, `latch <node|->`, `frame <stat> <N>`, `overflow <true|false>`. Each is a
 governed fact (`FieldEditor` value, `PressLatch` state, `ActionTrace`, `FrameStats`) or a generic
-named numeric/state slot the replay fills.
+named numeric/state slot the replay fills. `button <node> <source>` checks **both** the control and
+its `source`, so a press on a different control does not satisfy it; `button <node> ""` (empty
+`source`) asserts that no ordinary `Button` press resolved this batch.
 
 **Bounds.** `maxScenarioSteps = 256`, `maxScenarioExpectations = 128`, `maxScenarioCaptures = 16`,
 `maxScenarioRequirements = 16` — all `inline constexpr` in `mdux.medui.scenario`, `maxInputEvents`'s
@@ -146,19 +148,22 @@ Re-laying-out a screen re-bakes every scenario scripted against it: `report.json
 screen package's digest as an input, and the fixpoint discipline the text → screen chain already
 uses applies.
 
-### 3. Replay is governed and bounded; the trace is host-side (delivered by #320)
+### 3. Replay is governed and bounded; the trace is host-side
 
 `ScenarioRunner` (in `mdux.medui.scenario`, `constexpr`/`noexcept`/allocation-free, caller-owned
 storage) drives a compiled scenario through the exact interfaces `updateMonitor()` uses:
 
 1. `loadNextBatch(EventQueue&)` fills the caller's queue with the current batch's events. A batch
-   larger than the caller's queue is a **failure** (`droppedNewest`), not a silent truncation.
-2. The caller runs its own `updateMonitor()` `framesThisStep()` times.
+   larger than the caller's queue is a **failure** (`queueTooSmall` → `QueueTooSmall`), not a
+   silent truncation.
+2. The caller runs its own `updateMonitor()` `framesThisAdvance()` times.
 3. `observe(ScenarioObservation)` checks every `Expect` step for the settled frame against a plain
    struct the caller filled — clock, field value/caret, refused count, `ActionTrace`, latch node,
    `FrameStats`, and generic `{node, value}` reading/state spans. All caller-owned; no allocation.
 4. `capturesThisFrame()` names the `Capture` markers due; the caller invokes its capture callback
-   and calls `markCaptured(name)`. A declared capture the replay never reaches is a **failure**.
+   and calls `markCaptured(name)` **only once the callback has run**. A marker the caller cannot
+   honour (no callback) is left outstanding, and a declared capture the replay never marks —
+   whether unreached or unhonoured — is a **failure** (`CaptureNotInvoked`).
 
 `report()` returns a per-step held/failed record. **Queue overflow, a rejected event, an unknown
 target and a missing capture each fail the run.** The allocating step-by-step expected/observed
@@ -242,12 +247,19 @@ bare `string_view` — so the module graph stays acyclic.
 - `include/mdux/medui/Scenario.cppm` (`mdux.medui.scenario`, in `MduXCore`, header-only, no `src/`
   file): `ExpectKind` / `FrameStatField` / `StepKind` + wire spellings, `Expectation`,
   `ScenarioStep`, `ScenarioSampleSeed`, `CompiledScenario` + `validate()`, the bounds, the
-  `ScenarioError` enum. `ScenarioRunner` / `ScenarioObservation` / `ReplayReport` are added here by
-  #320.
+  `ScenarioError` enum, and (added by #320) `ScenarioRunner` / `ScenarioObservation` /
+  `FrameCounts` / `StepOutcome` / `ReplayReport` — the bounded, allocation-free replay driver.
 - `tools/scenario/`: `ScenarioScript.{cppm,cpp}` (the line parser, `SCN001`–`SCN008`),
   `Scenario.{cppm,cpp}` (recipe + `run` / `write` / `verify` + `readScreenNodes` + `readScenarioDoc`,
-  `SCN020`+), `ScenarioEmit.{cppm,cpp}` (`SCE0NN`), and the two thin mains. `MduXScenarioLib` links
+  `SCN020`+), `ScenarioEmit.{cppm,cpp}` (`SCE0NN`), the two thin mains, and (added by #320)
+  `ScenarioTrace.{cppm,cpp}` (`mdux.tools.scenario.trace`: `renderTraceText(CompiledScenario,
+  ReplayReport)` → the deterministic step-by-step expected/observed trace). `MduXScenarioLib` links
   `MduX::ToolsCommon`.
+- `examples/support/ScenarioReplay.hpp` (#320): `replayMonitorScenario()` — the `updateMonitor()`
+  glue that fills the `EventQueue` from a `ScenarioRunner`, builds a `ScenarioObservation` from the
+  settled `DemoState` / `PressLatch` / `MonitorUpdateOutcome`, and invokes the caller's capture
+  callback per marker. `MedicalScreenMonitorExample --replay=<id>` renders one offscreen frame per
+  capture; registered as `example.monitor.replay`.
 - `cmake/MduXScenarioEmit.cmake` (`mdux_emit_scenario_package()`, mirrors `MduXScreenEmit.cmake`);
   the `mdux_bake_artifact(KIND scenario …)` + `mdux_emit_scenario_package(…)` calls in the root
   `CMakeLists.txt`; `docs/recipes/scenario.schema.json` + the `RECIPE_SCHEMAS` entry in
@@ -293,9 +305,10 @@ bare `string_view` — so the module graph stays acyclic.
   `template:` — and trace order — the ring's `oldest`/`count` — are explicit). The
   cross-implementation half stays [#335](https://github.com/ambroise-leclerc/MduX/issues/335); the
   viewport row/bin half stays [#322](https://github.com/ambroise-leclerc/MduX/issues/322).
-- **Still open**: the replay runner, its host trace and the monitor wiring (#320); the
-  critical-action host execution / audit policy (PAR-REQ-006, domain review); the dynamic-frame
-  evidence gate (#321). PAR-REQ-009/010 keep their own status.
+- **Still open**: the critical-action host execution / audit policy (PAR-REQ-006, domain review);
+  the dynamic-frame evidence gate with committed capture digests (#321). PAR-REQ-009/010 keep
+  their own status. The replay runner, its host trace and the monitor `--replay` wiring were
+  delivered by #320.
 - **Scope**: the `.scenario` format, its diagnostics, the committed artifact and its ownership, the
   `constexpr` emit, the governed bounded data types, and the replay contract (batching/settling,
   deterministic advancement, expected/observed traces, capture invocation, no-alloc governed path).

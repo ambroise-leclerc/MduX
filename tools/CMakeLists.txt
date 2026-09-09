@@ -515,10 +515,12 @@ target_sources(MduXScenarioLib
             scenario/ScenarioScript.cppm
             scenario/Scenario.cppm
             scenario/ScenarioEmit.cppm
+            scenario/ScenarioTrace.cppm
     PRIVATE
         scenario/ScenarioScript.cpp
         scenario/Scenario.cpp
         scenario/ScenarioEmit.cpp
+        scenario/ScenarioTrace.cpp
 )
 
 target_compile_features(MduXScenarioLib PUBLIC cxx_std_23)

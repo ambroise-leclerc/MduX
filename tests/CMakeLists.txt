@@ -1540,6 +1540,7 @@ mdux_discover_tests(scenario_tools_spec)
 add_executable(scenario_spec
     scenario/ScenarioSpecMain.cpp
     scenario/GeneratedScenarioTests.cpp
+    scenario/ReplayTests.cpp
 )
 target_sources(scenario_spec
     PRIVATE
@@ -1547,10 +1548,15 @@ target_sources(scenario_spec
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SCENARIO_DIR}
             FILES ${MDUX_ENDOSCOPE_SCENARIO_MODULE}
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
 )
-add_dependencies(scenario_spec emit-scenario-endoscope-monitor-basics)
+add_dependencies(scenario_spec emit-scenario-endoscope-monitor-basics emit-screen-endoscope-monitor)
 target_link_libraries(scenario_spec PRIVATE MduX::Core speclab::speclab)
-target_include_directories(scenario_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MDUX_GENERATED_SCENARIO_DIR})
+target_include_directories(scenario_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MDUX_GENERATED_SCENARIO_DIR} ${MDUX_GENERATED_SCREEN_DIR})
+target_compile_definitions(scenario_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
 set_target_properties(scenario_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(TARGET __CMAKE::CXX23)
     set_target_properties(scenario_spec PROPERTIES CXX_MODULE_STD ON)
@@ -1605,4 +1611,12 @@ if(MDUX_BUILD_EXAMPLES AND TARGET MedicalScreenMonitorExample)
     add_test(NAME example.monitor.headless.fr
              COMMAND MedicalScreenMonitorExample --headless-smoke --locale=fr-FR)
     set_tests_properties(example.monitor.headless.fr PROPERTIES LABELS "pixel" TIMEOUT 120)
+
+    # example.monitor.replay - the committed endoscope-monitor-basics scenario replayed through the
+    # same updateMonitor() loop the window drives (#320, ADR-020 §3), rendering one offscreen frame
+    # per `capture` marker. Fails on a failed expectation, a queue that overflows, a missing capture
+    # or a render failure. Headless, `-L pixel` like the rest of the offscreen suite.
+    add_test(NAME example.monitor.replay
+             COMMAND MedicalScreenMonitorExample --replay=endoscope-monitor-basics)
+    set_tests_properties(example.monitor.replay PROPERTIES LABELS "pixel" TIMEOUT 120)
 endif()

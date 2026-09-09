@@ -122,7 +122,7 @@ performs no checking and confers no compliance.
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158 — since #318 it also flattens composite glyphs into flat contour lists, so accented Latin bakes as ordinary coverage per ADR-010 decision 5), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
-| `MduXScenarioLib` | `tools/scenario/` | the interaction-scenario compiler (#319, ADR-020): the closed line-oriented `.scenario` parser with `SCN0NN` diagnostics, `mdux-scenariobake` (a `.scenario` → committed `generated/scenario/<id>/` bundle, byte-verified like a screen), and `mdux-scenarioemit` (that bundle → `constexpr` `mdux.medui.scenario` C++). Reads the committed screen `package.json` to resolve `pointer <node>` directives |
+| `MduXScenarioLib` | `tools/scenario/` | the interaction-scenario compiler (#319, ADR-020): the closed line-oriented `.scenario` parser with `SCN0NN` diagnostics, `mdux-scenariobake` (a `.scenario` → committed `generated/scenario/<id>/` bundle, byte-verified like a screen), and `mdux-scenarioemit` (that bundle → `constexpr` `mdux.medui.scenario` C++). Reads the committed screen `package.json` to resolve `pointer <node>` directives. Also hosts `mdux.tools.scenario.trace` (#320): the host-side `renderTraceText()` that turns a `ReplayReport` + `CompiledScenario` into a deterministic step-by-step expected/observed trace |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
@@ -345,6 +345,16 @@ clock and the demonstration generators; `MedicalScreenMonitorExample` drives it 
 in two approved locales, with every live component bound. A critical press is still resolved and
 traced by MduX and **executed by the host** — `TriggerHalt` is a request for the host's halt path,
 not a behavior this library performs; an ordinary `Button` press yields only its open `source` name.
+
+Replaying a committed scenario over that same loop (#320, ADR-020 §3) is
+`mdux::medui::ScenarioRunner` in `mdux.medui.scenario`: governed, bounded and allocation-free, it
+fills the caller's `EventQueue` one batch at a time from a `CompiledScenario`, and after each
+`advance` settles the state it checks a typed expected/observed pair per obligation and records a
+`StepOutcome`. A queue overflow, a failed expectation or a `capture` marker that is declared but
+never reached fails the run. `examples/support/ScenarioReplay.hpp` is the `updateMonitor()` glue and
+`MedicalScreenMonitorExample --replay=<id>` renders one offscreen frame per `capture`
+(`example.monitor.replay`); the GPU-free replay path is covered by `scenario_spec` and a full-loop
+no-alloc case in `scenario_noheap_spec`.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit

@@ -53,7 +53,9 @@ import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.medui.trace;
+import mdux.medui.scenario;
 import mdux.medui.generated.screen_endoscope_monitor;
+import mdux.medui.generated.scenario_endoscope_monitor_basics;
 import mdux.render.vulkan;
 import mdux.render.offscreen;
 import mdux.shader.generated.mdux_ui;
@@ -61,6 +63,7 @@ import mdux.shader.schema;
 
 #include "support/GlfwPresentationAdapter.hpp"
 #include "support/MonitorApp.hpp"
+#include "support/ScenarioReplay.hpp"
 
 #include "brandMarkPackageJson.hpp"
 #include "brandMarkPixels.hpp"
@@ -574,26 +577,123 @@ int runHeadlessSmoke(Locale locale) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic scenario replay (#320): replay a committed .scenario through the same
+// updateMonitor() loop the window uses, rendering one offscreen frame per `capture` marker.
+// ---------------------------------------------------------------------------
+
+int runReplay(std::string_view scenarioId, Locale locale) {
+    if (scenarioId != "endoscope-monitor-basics") {
+        std::cerr << "monitor: the only committed scenario is 'endoscope-monitor-basics'\n";
+        return 2;
+    }
+    const ms::CompiledScenario scenario = ms::generated::scenario_endoscope_monitor_basics::package();
+
+    auto bound = BoundScreen::load(locale);
+    if (!bound) {
+        return 1;
+    }
+    const core::Extent2D surface = bound->surface();
+
+    auto boot = mx::VulkanBoot::headless();
+    if (!boot) {
+        std::cerr << "monitor: headless Vulkan boot failed: " << boot.error().what << '\n';
+        return 1;
+    }
+    auto target = rnd::OffscreenTarget::create(boot->device(), boot->physicalDevice(), surface, boot->graphicsFamily());
+    if (!target) {
+        std::cerr << "monitor: offscreen target failed: " << rnd::describe(target.error()) << '\n';
+        return 1;
+    }
+    rnd::VulkanRenderContext context{};
+    context.device           = boot->device();
+    context.physicalDevice   = boot->physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = boot->graphicsQueue();
+    context.queueFamilyIndex = boot->graphicsFamily();
+    context.viewport         = surface;
+    auto renderer            = makeRenderer(context, *bound);
+    if (!renderer) {
+        std::cerr << "monitor: renderer failed: " << rnd::describe(renderer.error()) << '\n';
+        return 1;
+    }
+
+    FrameStorage storage{bound->screen.budget};
+    bool         captureFailed = false;
+
+    const auto captureFn = [&](const mx::ScenarioCaptureContext& ctx) {
+        auto list = recordMonitorFrame(*bound, storage, ctx.state, ctx.clock);
+        if (!list) {
+            captureFailed = true;
+            return;
+        }
+        struct Recording {
+            rnd::UiRenderer* renderer;
+            draw::DrawList*  list;
+        } recording{.renderer = &*renderer, .list = &*list};
+        const auto pixels = target->renderAndRead(
+            boot->graphicsQueue(), kClear,
+            [](VkCommandBuffer cb, void* c) {
+                auto* rec = static_cast<Recording*>(c);
+                (void)rec->renderer->record(cb, *rec->list);
+            },
+            &recording);
+        if (!pixels) {
+            std::cerr << std::format("monitor: capture '{}' failed to render: {}\n", ctx.name, rnd::describe(pixels.error()));
+            captureFailed = true;
+            return;
+        }
+        std::println("  capture '{}' at frame {}: rendered {}x{} offscreen", ctx.name, ctx.frameIndex, surface.width,
+                     surface.height);
+    };
+
+    std::array<ms::StepOutcome, ms::maxScenarioExpectations> outcomeStorage{};
+    const ms::ReplayReport report =
+        mx::replayMonitorScenario(scenario, bound->screen, bound->font, outcomeStorage, captureFn);
+
+    for (const ms::StepOutcome& o : report.outcomes) {
+        if (!o.held) {
+            std::cerr << std::format("monitor: expectation at step {} ({}) FAILED\n", o.stepIndex, ms::toWire(o.kind));
+        }
+    }
+    if (!report.passed()) {
+        std::cerr << std::format("monitor: replay of '{}' failed: {} (step {})\n", scenarioId, ms::describe(report.fault),
+                                 report.faultStep);
+        return 1;
+    }
+    if (captureFailed) {
+        std::cerr << "monitor: a capture render failed\n";
+        return 1;
+    }
+    std::println("replay '{}' ({}): {} of {} expectations held over {} frames; every capture rendered.", scenarioId,
+                 localeTag(locale), report.expectationsHeld, report.outcomes.size(), report.framesRun);
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     const std::span<char*> args{argv + 1, static_cast<std::size_t>(argc > 0 ? argc - 1 : 0)};
 
-    bool   smokeTest = false;
-    bool   headless  = false;
-    Locale locale    = Locale::EnUs;
+    bool             smokeTest = false;
+    bool             headless  = false;
+    std::string_view replay{};
+    Locale           locale = Locale::EnUs;
     for (const char* arg : args) {
         const std::string_view a{arg};
         if (a == "--smoke-test") {
             smokeTest = true;
         } else if (a == "--headless-smoke") {
             headless = true;
+        } else if (a.starts_with("--replay=")) {
+            replay = a.substr(std::string_view{"--replay="}.size());
         } else if (a == "--locale=fr-FR") {
             locale = Locale::FrFr;
         } else if (a == "--locale=en-US") {
             locale = Locale::EnUs;
         } else {
-            std::cerr << "Usage: MedicalScreenMonitorExample [--smoke-test | --headless-smoke] [--locale=en-US|fr-FR]\n";
+            std::cerr << "Usage: MedicalScreenMonitorExample [--smoke-test | --headless-smoke | --replay=<scenario-id>] "
+                         "[--locale=en-US|fr-FR]\n";
             return 2;
         }
     }
@@ -603,7 +703,9 @@ int main(int argc, char** argv) {
         std::cerr << "monitor: mdux::initialize() failed\n";
         return 1;
     }
-    const int rc = headless ? runHeadlessSmoke(locale) : runWindowed(smokeTest, locale);
+    const int rc = !replay.empty() ? runReplay(replay, locale)
+                   : headless       ? runHeadlessSmoke(locale)
+                                    : runWindowed(smokeTest, locale);
     mdux::shutdown();
     return rc;
 }
