@@ -19,6 +19,13 @@
 > revision as MduX. The [paired adoption results](#335-paired-adoption-results) below record a
 > shared syntax baseline at line precision. The earlier comparison remains historical;
 > unclaimed phases/profiles and joint sign-off remain explicit gaps.
+>
+> **Update, 9 September 2026 — Phase 2 progress.** Closed since the last update: **#312**, **#314**
+> (five stages), **#315** and **#316** (input contract + `EventQueue`/`FieldEditor`), **#335**.
+> **#313** is in review as [PR #341](https://github.com/ambroise-leclerc/MduX/pull/341) (the
+> committed `candidateProfile` migration; ADR-016 Accepted for its engineering layer). Of the twelve
+> remaining child issues, four are unblocked — **#317, #319, #322, #325** — and the
+> [Next to implement](#next-to-implement) subsection records the recommended order.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -36,9 +43,9 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 5 open: #307–#311 |
-| Phase 2 child issues | 16 open: #312–#327 |
+| Phase 2 child issues | 16 total (#312–#327): 4 closed (#312, #314, #315, #316), #313 in review (PR #341), 11 open |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| First actionable issue | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), behavior matrix and versioned decisions |
+| Unblocked child issues | [#317](https://github.com/ambroise-leclerc/MduX/issues/317), [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -106,20 +113,45 @@ and [#16](https://github.com/Compliatory/MedUI/issues/16) are Accepted as MEDUI-
 ADR-015's local architectural direction is accepted, and
 [ADR-017](adr/ADR-017-sibling-conformance-gate-status.md) ratifies the PAR-REQ-001/002/003
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
-profile adoption gates remain explicit in the decision map. Subject to those gates, input design (#315), viewport
-design (#322) and editor API design (#325) can proceed alongside verifier alignment (#313).
-Canonical interfaces land before their consumers. No new version number or release date is assigned
-until a deliverable and its evidence are agreed.
+profile adoption gates remain explicit in the decision map.
+
+#312, #314, #315 and #316 are closed; #313 is in review. The next executable work is #308's platform
+adapter (**#317**) and the three still-unblocked design/spec issues — the scenario compiler
+(**#319**), the viewport contract (**#322**) and the editor API (**#325**). Canonical interfaces land
+before their consumers, and each design issue produces the ADR and canonical types its epic's
+implementation children then consume. The [Next to implement](#next-to-implement) subsection records
+the recommended order and what each unblocks. No new version number or release date is assigned until
+a deliverable and its evidence are agreed.
+
+### Next to implement
+
+Assessed 9 September 2026 against `develop` at `0be95c7`. Four child issues have all prerequisites
+met. Every other open child (#318, #320, #321, #323, #324, #326, #327) is transitively blocked on
+one of these four or on #313's close-out.
+
+| Rank | Issue | Why now | Unblocks | Shape |
+|---|---|---|---|---|
+| 1 | [**#317**](https://github.com/ambroise-leclerc/MduX/issues/317) — platform presentation + input adapter | Critical path to the interactive monitor. Epic #308 is the most complete after #307 (#315, #316 done); #317 is its last building block. Consumes the finished `mdux.medui.input` and `UiRenderer` without changing either ownership contract. | #318 (the monitor), then #324 and #321 downstream | Implementation + example + CI presentation smoke test. Largest of the four; safety-relevant (presentation, coordinate mapping, resource lifetime) — needs prospective requirements and maintainer/domain review. |
+| 2 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; can run in parallel with #317. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
+| 3 | [**#319**](https://github.com/ambroise-leclerc/MduX/issues/319) — host scenario compiler | Host-only, no device or GPU surface. Parallelizable now; its epic (#309) also gates on #318, so this is get-ahead work. | #320 → #321 (epic #309) | Host parser/validator/emitter + committed scenario-data schema and versioning. Potentially safety-relevant (test-input compilation). |
+| 4 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the four. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+
+**#313** is not on this list because it is in review ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341));
+its remaining work is the verifier-area domain review and the ADR-016 residuals, not new
+implementation.
+
+Recommended sequencing: start **#317** (critical path) and take **#322** or **#319** in parallel as a
+lower-risk design track. #325 last among the unblocked set.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
 
 Publish an agreed, versioned compatibility boundary, adopt its verification semantics in MduX, and enforce normalized cross-implementation observations. Preserve intentional differences in language, supported safety classes and resource ownership.
 
-| Child | Deliverable | Prerequisites |
+| Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#312](https://github.com/ambroise-leclerc/MduX/issues/312) | Define the sibling behavior matrix and versioned MedUI decisions | Actionable now |
-| [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
-| [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
+| [#312](https://github.com/ambroise-leclerc/MduX/issues/312) | Define the sibling behavior matrix and versioned MedUI decisions | **closed** (PRs #329, #338) |
+| [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **in review** ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341)); local half + #314 Stage B merged |
+| [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **closed** (five stages, PRs #331–#336) |
 
 **#313 landed its verifier semantics.** The **local** half is
 [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) (Accepted 2026-09-09) — five
@@ -133,9 +165,14 @@ compute exactly R01 and R03. `InkContainment` (a compound predicate stronger tha
 `LocalizedTextPresence` (no shared equivalent) stay local and carry no `candidateProfile`.
 `canonicalRenderedCheckFor()` also names R04's `rgba8-sha256/1` for `raw-image-digest`, but that
 predicate is fixture-only with no committed baseline, so no R04 `candidateProfile` reaches
-`verification.json`. No check semantics, finding or runtime behaviour changed. Residual, recorded on
-ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint rendered/evidence sign-off, a
-reviewed re-bake against the final line, and the verifier-area domain review for PAR-REQ-002/003.
+`verification.json`. No check semantics, finding or runtime behaviour changed. A `[P1]` review
+finding — that `mdux.verify::inkContainment()` is a compound predicate stronger than shared R02, so
+its finding cannot stand in for an R02 result — was addressed by not mapping `InkContainment` at all.
+Residual, recorded on ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint
+rendered/evidence sign-off, a reviewed re-bake against the final line, a genuine separately-evaluated
+R02 obligation for `InkContainment` if one is wanted, the matching decision for the Stage C-emitter
+derived envelope, and the verifier-area domain review for PAR-REQ-002/003. **#313 closes when the
+domain review completes.**
 
 The #314 gate landed in four merged stages. **Stage A** ([#331](https://github.com/ambroise-leclerc/MduX/pull/331)):
 `medui-conformance.toml` re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`), the shared-conformance test
@@ -227,9 +264,14 @@ Reproduction and the behavioral reassessment are in the
 **Joint sign-off remains pending.** This removes the pin mismatch for the adoption branch and
 supports the common syntax subset only. TrustSC's semantics/layout/safety adapters and shared
 observation profiles remain unimplemented in the gate; unclaimed coverage is neither a pass nor
-evidence of equivalent behavior. Neither side's coverage was lowered. #335 must not be closed as
-full cross-implementation conformance on this evidence, and ADR-017's rendered-artifact migration
-condition is not discharged by this syntax result.
+evidence of equivalent behavior. Neither side's coverage was lowered. ADR-017's rendered-artifact
+migration condition is not discharged by this syntax result.
+
+The **#335 issue was closed** (PR #337) once the shared syntax baseline was recorded, but the
+substantive gap it names — a full cross-implementation rendered/evidence sign-off — is **not** closed
+and is carried as an explicit residual on [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md)
+and [ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md). It gates the #313 committed-artifact
+migration and the #321 dynamic-evidence gate.
 
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 
@@ -245,45 +287,45 @@ executed-by-the-host critical-action boundary. #315 delivered the pure pieces; *
 scalar-indexed editing state — insert/backspace/delete/caret-moves, both charset bounds and
 `max_length`, no partial mutation, `handleKey`/`handleText` routing). Covered by
 `InputContractTests` in `medui_spec` and a no-allocation proof in `input_noheap_spec`.
-PAR-REQ-004–008 dispositions are ratified in ADR-018. #317 (the platform adapter) and #318 (the
-assembled monitor) are now unblocked.
+PAR-REQ-004–008 dispositions are ratified in ADR-018. **#317 (the platform adapter) is now
+unblocked** and is the critical path to the monitor; **#318 stays blocked on #317**.
 
-| Child | Deliverable | Prerequisites |
+| Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **done** (ADR-018, `mdux.medui.input`) |
-| [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **done** (`EventQueue`, `FieldEditor`) |
-| [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
-| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316), [#317](https://github.com/ambroise-leclerc/MduX/issues/317) |
+| [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **closed** (ADR-018, `mdux.medui.input`) |
+| [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **closed** (`EventQueue`, `FieldEditor`) |
+| [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **unblocked** |
+| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#317](https://github.com/ambroise-leclerc/MduX/issues/317) · **blocked on #317** |
 
 ### [#309](https://github.com/ambroise-leclerc/MduX/issues/309) — Deterministic interaction scenarios and dynamic UI evidence · planned
 
 Replay the actual application's bounded event/update path from compiled scenarios, then verify the resulting dynamic frames and emit complete, traceable evidence.
 
-| Child | Deliverable | Prerequisites |
+| Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
-| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) |
-| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
+| [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **unblocked** (host-only design/emitter) |
+| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **blocked on #319** |
+| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **blocked** |
 
 ### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
 
 Add an optional Vulkan adapter path that consumes a caller-owned bounded stream and composes a concrete waterfall visualization inside the compiled viewport rectangle.
 
-| Child | Deliverable | Prerequisites |
+| Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
-| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) |
-| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) |
+| [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **unblocked** (spec/ADR; may need a MedUI decision if the schema extends) |
+| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) · **blocked on #322** |
+| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) · **blocked** |
 
 ### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
 
 Expose a stable host-only editing/preview interface and reuse the TrustSC Studio frontend where practical through a MduX backend, ending in a tested proposal workflow.
 
-| Child | Deliverable | Prerequisites |
+| Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
-| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316), [#323](https://github.com/ambroise-leclerc/MduX/issues/323) |
-| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) |
+| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **unblocked** (host-only API + reuse decision) |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) · **blocked on #325, #323** |
+| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) · **blocked** |
 
 ### Delivery and evidence rules
 
