@@ -120,6 +120,8 @@
             "generated/shader/mdux-ui/shaders.spv",
             "generated/text/endoscope-monitor-en-us/package.json",
             "generated/text/endoscope-monitor-en-us/runs.bin",
+            "generated/text/endoscope-monitor-fr-fr/package.json",
+            "generated/text/endoscope-monitor-fr-fr/runs.bin",
             "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
           ],
           "toolchain": [
@@ -446,6 +448,22 @@
           "toolchain": [
             "mdux-textbake"
           ]
+        },
+        {
+          "id": "endoscope-monitor-fr-fr",
+          "kind": "text",
+          "outputs": [
+            "package.json",
+            "report.json",
+            "runs.bin"
+          ],
+          "recipe": "recipes/text/endoscope-monitor-fr-fr.toml",
+          "sources": [
+            "generated/font/dejavu-ui/package.json"
+          ],
+          "toolchain": [
+            "mdux-textbake"
+          ]
         }
       ],
       "diagnosticCodes": [
@@ -512,6 +530,8 @@
             "generated/shader/mdux-ui/shaders.spv",
             "generated/text/endoscope-monitor-en-us/package.json",
             "generated/text/endoscope-monitor-en-us/runs.bin",
+            "generated/text/endoscope-monitor-fr-fr/package.json",
+            "generated/text/endoscope-monitor-fr-fr/runs.bin",
             "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
           ],
           "toolchain": [
