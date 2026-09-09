@@ -661,6 +661,7 @@ constexpr std::uint16_t kArgWords     = 0x0001u;
 constexpr std::uint16_t kArgsAreXY    = 0x0002u;
 constexpr std::uint16_t kHaveScale    = 0x0008u;
 constexpr std::uint16_t kMore         = 0x0020u;
+constexpr std::uint16_t kScaledOffset = 0x0800u;
 
 [[nodiscard]] std::vector<std::byte> compositeHeader() {
     std::vector<std::byte> b;
@@ -700,6 +701,19 @@ void appendI16(std::vector<std::byte>& b, std::int16_t v) {
     if (f2dot14Scale != 0) {
         appendI16(b, f2dot14Scale);
     }
+    return b;
+}
+
+/// A composite scaling glyph `ref` by `f2dot14Scale` and translating by (dx, dy), with the
+/// SCALED_COMPONENT_OFFSET flag set so the offset is put through the scale too.
+[[nodiscard]] std::vector<std::byte> compositeRefScaledOffset(std::uint16_t ref, std::int16_t dx, std::int16_t dy,
+                                                              std::int16_t f2dot14Scale) {
+    std::vector<std::byte> b = compositeHeader();
+    appendU16(b, kArgsAreXY | kArgWords | kHaveScale | kScaledOffset);
+    appendU16(b, ref);
+    appendI16(b, dx);
+    appendI16(b, dy);
+    appendI16(b, f2dot14Scale);
     return b;
 }
 
@@ -2026,6 +2040,58 @@ const mdux::spec::Register compositeGlyphScales{
                           checks.expect(g.points[2].x == 50 && g.points[2].y == 50, "point 2 halved");
                       }
                       checks.expect(g.xMax == 50 && g.yMax == 50, "bbox halved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeScaledOffsetIsTransformed{
+    "SCALED_COMPONENT_OFFSET puts the component offset through the same scale as the points",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized            serialized;
+            std::optional<tt::Font>        font;
+            std::optional<tt::SimpleGlyph> glyph;
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-scaled-offset")
+            .Given("a composite scaling the square by 0.5 and translating by (100, 0) with SCALED_COMPONENT_OFFSET",
+                   [state] {
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, squareGlyph())
+                                               .rawGlyph(2, compositeRefScaledOffset(1, 100, 0, static_cast<std::int16_t>(0x2000)))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph = tt::parseGlyph(*state->font, 2);
+                      if (!glyph.has_value()) {
+                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
+                                                                std::source_location::current());
+                      }
+                      state->glyph = std::move(*glyph);
+                  })
+            .Then("the offset was halved with the points - the square lands at x 50..100, not 100..150",
+                  [state] {
+                      const auto&        g = *state->glyph;
+                      mdux::spec::Checks checks;
+                      checks.expect(g.points.size() == 4, "4 points");
+                      if (g.points.size() == 4) {
+                          // square corner (0,0) -> scaled (0,0) -> + scaled offset (50,0) = (50,0)
+                          checks.expect(g.points[0].x == 50 && g.points[0].y == 0, "point 0 at (50,0)");
+                          // corner (100,100) -> scaled (50,50) -> + (50,0) = (100,50)
+                          checks.expect(g.points[2].x == 100 && g.points[2].y == 50, "point 2 at (100,50)");
+                      }
+                      checks.expect(g.xMin == 50 && g.xMax == 100, "bbox x 50..100");
                       checks.raise();
                   })
             .Execute();

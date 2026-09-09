@@ -712,16 +712,18 @@ namespace {
 // ---------------------------------------------------------------------------
 
 // componentFlags bits per the TrueType/OpenType specification.
-constexpr std::uint16_t compArg1And2AreWords    = 0x0001u;
-constexpr std::uint16_t compArgsAreXYValues     = 0x0002u;
-constexpr std::uint16_t compWeHaveAScale        = 0x0008u;
-constexpr std::uint16_t compMoreComponents      = 0x0020u;
-constexpr std::uint16_t compWeHaveXAndYScale    = 0x0040u;
-constexpr std::uint16_t compWeHaveTwoByTwo      = 0x0080u;
+constexpr std::uint16_t compArg1And2AreWords     = 0x0001u;
+constexpr std::uint16_t compArgsAreXYValues      = 0x0002u;
+constexpr std::uint16_t compWeHaveAScale         = 0x0008u;
+constexpr std::uint16_t compMoreComponents       = 0x0020u;
+constexpr std::uint16_t compWeHaveXAndYScale     = 0x0040u;
+constexpr std::uint16_t compWeHaveTwoByTwo       = 0x0080u;
+constexpr std::uint16_t compScaledComponentOffset = 0x0800u;
 // 0x0004 ROUND_XY_TO_GRID, 0x0100 WE_HAVE_INSTRUCTIONS, 0x0200 USE_MY_METRICS,
-// 0x0800 SCALED_COMPONENT_OFFSET, 0x1000 UNSCALED_COMPONENT_OFFSET: read past, not acted on -
-// grid rounding and the component-offset scaling flags do not change DejaVu's accented Latin,
-// and instructions/metrics are hinting and advance concerns this parser does not have.
+// 0x1000 UNSCALED_COMPONENT_OFFSET: read past, not acted on - grid rounding is a hinting concern,
+// instructions and metrics are not this parser's, and unscaled is the offset default it already
+// applies. SCALED_COMPONENT_OFFSET (0x0800) *is* honoured below - ignoring it silently misplaces a
+// component whenever it is set together with a non-identity transform.
 
 /// The deepest a composite may reference another composite. The spec sets no hard limit; 8 is
 /// far past any real font (DejaVu nests at most twice) and turns a cyclic or pathological
@@ -832,6 +834,20 @@ constexpr std::size_t maxCompositeResolutions = 4096u;
             cursor += 8u;
         }
 
+        // The offset (dx, dy) is in the parent's coordinate space by default (the Microsoft rule
+        // this parser follows). With SCALED_COMPONENT_OFFSET the offset is expressed in the
+        // component's own space, so it is put through the same 2x2 transform as the points before
+        // being added. Identical to the default when the transform is identity; a silent
+        // misplacement otherwise.
+        double offX = static_cast<double>(dx);
+        double offY = static_cast<double>(dy);
+        if ((*flags & compScaledComponentOffset) != 0u) {
+            const double sx = a * offX + c * offY;
+            const double sy = b * offX + d * offY;
+            offX            = sx;
+            offY            = sy;
+        }
+
         if (budget == 0u) {
             return err(ParseError::CompositeBudgetExceeded);
         }
@@ -853,8 +869,8 @@ constexpr std::size_t maxCompositeResolutions = 4096u;
 
         const std::size_t base = glyph.points.size();
         for (const auto& p : component->points) {
-            const double tx = a * static_cast<double>(p.x) + c * static_cast<double>(p.y) + static_cast<double>(dx);
-            const double ty = b * static_cast<double>(p.x) + d * static_cast<double>(p.y) + static_cast<double>(dy);
+            const double tx = a * static_cast<double>(p.x) + c * static_cast<double>(p.y) + offX;
+            const double ty = b * static_cast<double>(p.x) + d * static_cast<double>(p.y) + offY;
             const double rx = std::round(tx);
             const double ry = std::round(ty);
             if (rx < -32768.0 || rx > 32767.0 || ry < -32768.0 || ry > 32767.0) {
