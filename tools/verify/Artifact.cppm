@@ -72,6 +72,13 @@ enum class ArtifactError : std::uint8_t {
  * outcomes because no device existed is indistinguishable, once committed, from one recording zero
  * outcomes because the screen had nothing to verify. ADR-014 decision 3 makes both a failure, and
  * this is where the first of them stops being writable.
+ *
+ * Each outcome records its `observationProfile` (the `mdux.local/` identity, ADR-016) and, when
+ * that local profile maps onto a shared rendered-check id, a `candidateProfile` naming the
+ * `MEDUI-PROFILE-RENDERED` `{profile, check}` identity beside it - the ADR-016 §4 / ADR-017 §3
+ * migration, which runs both identities together rather than relabelling. `schemaVersion` is
+ * unchanged: the addition is additive and outcome-preserving, and `evidence::kSchemaVersion` is
+ * shared across every evidence artifact (ADR-016 decision 5).
  */
 [[nodiscard]] mdux::core::Result<std::string, ArtifactError> writeVerification(const RunResult& result, std::string_view screenId);
 

@@ -222,6 +222,75 @@ const mdux::spec::Register everyOutcomeMustCarryItsOwnObservationProfile{
             .Execute();
     }};
 
+const mdux::spec::Register mappedOutcomesAlsoCarryTheirCandidateSharedIdentity{
+    "A mapped rendered check records its MEDUI-PROFILE-RENDERED candidate identity beside the local one and an implementation-local check does not",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-artifact-candidate-profile")
+            .Given("a run over a Bounds, an InkContainment and a LocalizedTextPresence obligation", [] {})
+            .When("the artifact is written", [] {})
+            .Then("the first two carry a candidateProfile naming the shared check id; the text-presence one carries none",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      // ADR-016 §4 / ADR-017 §3: the committed file runs both identities together -
+                      // the retained `mdux.local/` profile and, for a check that has a shared
+                      // rendered-check equivalent, the candidate `MEDUI-PROFILE-RENDERED` identity.
+                      vu::RunResult result = completedRun();
+                      result.obligations.push_back({.kind = vu::ObligationKind::Text, .nodeId = "title", .scope = "en-US", .check = "LocalizedTextPresence"});
+                      result.outcomes.push_back({.finding = mv::Finding::Held,
+                                                 .nodeId  = "title",
+                                                 .scope   = "en-US",
+                                                 .check   = "LocalizedTextPresence",
+                                                 .profile = mv::profileOf(mv::TextCheck::LocalizedTextPresence)});
+
+                      const auto text = vu::writeVerification(result, "demo");
+                      if (!text.has_value()) {
+                          checks.expect(false, "the artifact is written for a completed run");
+                          checks.raise();
+                          return;
+                      }
+                      const auto document = evj::parse(*text);
+                      if (!document.has_value()) {
+                          checks.expect(false, "the artifact is canonical JSON");
+                          checks.raise();
+                          return;
+                      }
+                      const evj::Value* outcomes = document->find("outcomes");
+                      if (outcomes == nullptr || outcomes->kind() != evj::Value::Kind::Array || outcomes->elements().size() != 3) {
+                          checks.expect(false, "three outcomes, one per obligation");
+                          checks.raise();
+                          return;
+                      }
+
+                      // `a.b.c` string value, or empty when any link is absent or not a string.
+                      const auto nested = [](const evj::Value& root, std::string_view a, std::string_view b, std::string_view c) -> std::string {
+                          const evj::Value* first  = root.find(a);
+                          const evj::Value* second = first != nullptr ? first->find(b) : nullptr;
+                          const evj::Value* third  = second != nullptr ? second->find(c) : nullptr;
+                          if (third == nullptr) {
+                              return {};
+                          }
+                          const auto asString = third->asString();
+                          return asString.has_value() ? std::string{*asString} : std::string{};
+                      };
+
+                      const std::span<const evj::Value> rows = outcomes->elements();
+                      checks.expect(nested(rows[0], "candidateProfile", "profile", "id") == "MEDUI-PROFILE-RENDERED"
+                                        && nested(rows[0], "candidateProfile", "check", "id") == "extent-equality",
+                                    "the Bounds outcome names the shared extent-equality check");
+                      checks.expect(nested(rows[1], "candidateProfile", "check", "id") == "ink-containment",
+                                    "the InkContainment outcome names the shared ink-containment check");
+                      checks.expect(rows[2].find("candidateProfile") == nullptr,
+                                    "the LocalizedTextPresence outcome carries no candidateProfile - it stays implementation-local");
+                      // The retained local identity is untouched on every outcome.
+                      checks.expect(text->contains("mdux.local/extent-equality") && text->contains("mdux.local/ink-coverage"),
+                                    "and every outcome still records its mdux.local profile");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register theReportGainsTheOutputAndItsOptions{
     "The screen's one report gains the new output and the resolved locale set",
     "evidence-unit",
