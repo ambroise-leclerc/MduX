@@ -495,6 +495,88 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 # ---------------------------------------------------------------------------
+# mdux-scenariobake / mdux-scenarioemit (issue #319, ADR-020)
+# ---------------------------------------------------------------------------
+#
+# The `.scenario` compiler as a baker, and the emitter that renders a committed `scenario.json` into
+# `constexpr` C++. Same library/executable split every baker has. Links MduX::ToolsCommon (and
+# through it MduX::Core), so it reads the screen it validates against and writes its artifact
+# through the same governed evidence modules the replay reads them with. It is deliberately not
+# declared governed: it parses untrusted `.scenario` text and may throw.
+
+add_library(MduXScenarioLib)
+add_library(MduX::ScenarioLib ALIAS MduXScenarioLib)
+
+target_sources(MduXScenarioLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+        FILES
+            scenario/ScenarioScript.cppm
+            scenario/Scenario.cppm
+            scenario/ScenarioEmit.cppm
+    PRIVATE
+        scenario/ScenarioScript.cpp
+        scenario/Scenario.cpp
+        scenario/ScenarioEmit.cpp
+)
+
+target_compile_features(MduXScenarioLib PUBLIC cxx_std_23)
+target_link_libraries(MduXScenarioLib PUBLIC MduX::ToolsCommon)
+target_link_libraries(MduXScenarioLib PRIVATE MduX_warnings)
+
+set_target_properties(MduXScenarioLib
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXScenarioLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXScenarioLib PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-scenariobake scenario/ScenarioBakeMain.cpp)
+target_link_libraries(mdux-scenariobake PRIVATE MduX::ScenarioLib MduX_warnings)
+
+set_target_properties(mdux-scenariobake
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-scenariobake PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-scenariobake PRIVATE /experimental:module /std:c++latest)
+endif()
+
+add_executable(mdux-scenarioemit scenario/ScenarioEmitMain.cpp)
+target_link_libraries(mdux-scenarioemit PRIVATE MduX::ScenarioLib MduX_warnings)
+
+set_target_properties(mdux-scenarioemit
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux-scenarioemit PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux-scenarioemit PRIVATE /experimental:module /std:c++latest)
+endif()
+
+# ---------------------------------------------------------------------------
 # mdux-verify-ui (issue #253) - rendered-truth verification driver
 # ---------------------------------------------------------------------------
 #

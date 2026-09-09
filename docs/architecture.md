@@ -34,7 +34,7 @@ boundary between them enforced at configure time rather than by review:
 |---|---|---|---|
 | **Governed** | `MduXCore`, `MduX_warnings` | `std` only | never throws ([ADR-005](adr/ADR-005-error-handling-and-exceptions-policy.md)) |
 | **Adapter** | `MduX` | governed + Vulkan | throws where Vulkan makes it unavoidable |
-| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib`, `MduXTextBakeLib`, `MduXMeduiLib`, `MduXVerifyUiLib` | anything | may throw freely; never linked into a device target |
+| **Host tools** | `MduXToolsCommon`, `MduXShaderBakeLib`, `MduXMlBakeLib`, `MduXTextBakeLib`, `MduXMeduiLib`, `MduXScenarioLib`, `MduXVerifyUiLib` | anything | may throw freely; never linked into a device target |
 
 `mdux_verify_trust_zones()` in [`cmake/MduXTrustZones.cmake`](../cmake/MduXTrustZones.cmake) walks
 the full link graph of every declared-governed target at the end of configure and fails on a
@@ -88,6 +88,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.medui.reading` | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
 | `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
+| `mdux.medui.scenario` | `include/mdux/medui/Scenario.cppm` | header-only |
 | `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 
 `mdux.core.result` is a naming alias over `std::expected`, not a reimplementation
@@ -121,6 +122,7 @@ performs no checking and confers no compliance.
 | `MduXTextBakeLib` | `tools/text/` | `mdux-textbake`; also hosts `mdux.tools.truetype` (the host-only glyf parser with cmap/hmtx, #158 — since #318 it also flattens composite glyphs into flat contour lists, so accented Latin bakes as ordinary coverage per ADR-010 decision 5), `mdux.tools.atlaspacker` (the shelf packer, #160) and `mdux.text.raster` (the glyph rasteriser, #159) |
 | `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
+| `MduXScenarioLib` | `tools/scenario/` | the interaction-scenario compiler (#319, ADR-020): the closed line-oriented `.scenario` parser with `SCN0NN` diagnostics, `mdux-scenariobake` (a `.scenario` → committed `generated/scenario/<id>/` bundle, byte-verified like a screen), and `mdux-scenarioemit` (that bundle → `constexpr` `mdux.medui.scenario` C++). Reads the committed screen `package.json` to resolve `pointer <node>` directives |
 | `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
@@ -193,6 +195,7 @@ Eight artifacts are committed today:
 | `generated/text/endoscope-monitor-fr-fr/` | `mdux-textbake` | `runs.bin` |
 | `generated/image/brand-mark/` | `mdux-imagebake` | `pixels.rgba` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
+| `generated/scenario/endoscope-monitor-basics/` | `mdux-scenariobake` | `scenario.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
 cannot bake vertices, because five of the eleven components in the dictionary — `NumericDisplay`,

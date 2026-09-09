@@ -1,0 +1,30 @@
+{
+  "inputs": [
+    {
+      "path": "recipes/scenario/endoscope-monitor-basics/basics.scenario",
+      "sha256": "b6afe8e912e696fdea5ebda99977e5c9f577d7a1a227c293879e0ad61a24c587"
+    },
+    {
+      "path": "generated/screen/endoscope-monitor/package.json",
+      "sha256": "87d2d8825f2f4661b003fd5426387e1e6d80fd8821a2269c2762259343bcfc04"
+    }
+  ],
+  "options": {
+    "id": "endoscope-monitor-basics",
+    "screen": "endoscope-monitor",
+    "source": "recipes/scenario/endoscope-monitor-basics/basics.scenario"
+  },
+  "outputs": [
+    {
+      "path": "scenario.json",
+      "sha256": "5b8fd9740cb581e1e6702a838da2d71381b170a1d41740d8f53a91b862b83fdf"
+    }
+  ],
+  "recipe": {
+    "path": "recipes/scenario/endoscope-monitor-basics.toml",
+    "sha256": "5cb4961c89eef615fdd6761ab12858596767f46c197f1e97f35432f21f26084d"
+  },
+  "schemaVersion": 1,
+  "tool": "mdux-scenariobake",
+  "toolVersion": "0.8.0"
+}

@@ -1,0 +1,218 @@
+{
+  "captureNames": [
+    "freeze-pressed",
+    "halt-activated"
+  ],
+  "id": "endoscope-monitor-basics",
+  "kind": "scenario",
+  "pinnedClock": {
+    "day": 9,
+    "hour": 8,
+    "minute": 0,
+    "month": 9,
+    "second": 0,
+    "year": 2026
+  },
+  "requirements": [
+    "REQ-EM-002",
+    "REQ-EM-003"
+  ],
+  "sampleSeed": {
+    "beatPeriod": 60,
+    "warmupFrames": 0
+  },
+  "schemaVersion": 1,
+  "screenId": "endoscope-monitor",
+  "steps": [
+    {
+      "frames": 1,
+      "kind": "advance"
+    },
+    {
+      "expect": {
+        "clock": {
+          "day": 9,
+          "hour": 8,
+          "minute": 0,
+          "month": 9,
+          "second": 1,
+          "year": 2026
+        },
+        "kind": "clock"
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "index": 0,
+        "kind": "state",
+        "node": "classifier-state"
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "kind": "reading",
+        "node": "insufflation-pressure",
+        "value": 120
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "kind": "latch",
+        "node": ""
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "kind": "overflow",
+        "value": false
+      },
+      "kind": "expect"
+    },
+    {
+      "key": {
+        "code": "Commit",
+        "transition": "Down"
+      },
+      "kind": "key"
+    },
+    {
+      "kind": "text",
+      "scalar": 65
+    },
+    {
+      "kind": "text",
+      "scalar": 55
+    },
+    {
+      "kind": "text",
+      "scalar": 97
+    },
+    {
+      "kind": "text",
+      "scalar": 45
+    },
+    {
+      "frames": 1,
+      "kind": "advance"
+    },
+    {
+      "expect": {
+        "kind": "field",
+        "value": [
+          65,
+          55
+        ]
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "count": 2,
+        "kind": "refused"
+      },
+      "kind": "expect"
+    },
+    {
+      "kind": "pointer",
+      "pointer": {
+        "transition": "Down",
+        "x": 656,
+        "y": 36
+      }
+    },
+    {
+      "kind": "pointer",
+      "pointer": {
+        "transition": "Up",
+        "x": 656,
+        "y": 36
+      }
+    },
+    {
+      "frames": 1,
+      "kind": "advance"
+    },
+    {
+      "expect": {
+        "kind": "button",
+        "node": "freeze",
+        "source": "FREEZE"
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "kind": "latch",
+        "node": ""
+      },
+      "kind": "expect"
+    },
+    {
+      "kind": "capture",
+      "name": "freeze-pressed"
+    },
+    {
+      "kind": "pointer",
+      "pointer": {
+        "transition": "Down",
+        "x": 796,
+        "y": 36
+      }
+    },
+    {
+      "kind": "pointer",
+      "pointer": {
+        "transition": "Up",
+        "x": 796,
+        "y": 36
+      }
+    },
+    {
+      "frames": 1,
+      "kind": "advance"
+    },
+    {
+      "expect": {
+        "event": "TriggerHalt",
+        "kind": "action",
+        "node": "emergency-halt",
+        "requirement": "REQ-EM-003"
+      },
+      "kind": "expect"
+    },
+    {
+      "kind": "capture",
+      "name": "halt-activated"
+    },
+    {
+      "frames": 27,
+      "kind": "advance"
+    },
+    {
+      "expect": {
+        "index": 1,
+        "kind": "state",
+        "node": "classifier-state"
+      },
+      "kind": "expect"
+    },
+    {
+      "expect": {
+        "clock": {
+          "day": 9,
+          "hour": 8,
+          "minute": 0,
+          "month": 9,
+          "second": 31,
+          "year": 2026
+        },
+        "kind": "clock"
+      },
+      "kind": "expect"
+    }
+  ]
+}

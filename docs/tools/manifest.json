@@ -258,6 +258,92 @@
       "sourceDirectory": "tools/ml"
     },
     {
+      "bakes": [
+        {
+          "id": "endoscope-monitor-basics",
+          "kind": "scenario",
+          "outputs": [
+            "report.json",
+            "scenario.json"
+          ],
+          "recipe": "recipes/scenario/endoscope-monitor-basics.toml",
+          "sources": [
+            "generated/screen/endoscope-monitor/package.json",
+            "recipes/scenario/endoscope-monitor-basics/basics.scenario"
+          ],
+          "toolchain": [
+            "mdux-scenariobake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "SCE001",
+        "SCE002",
+        "SCE003",
+        "SCN001",
+        "SCN002",
+        "SCN003",
+        "SCN004",
+        "SCN005",
+        "SCN006",
+        "SCN007",
+        "SCN008",
+        "SCN020",
+        "SCN021",
+        "SCN022",
+        "SCN023",
+        "SCN024",
+        "SCN025",
+        "SCN026",
+        "SCN027",
+        "SCN028"
+      ],
+      "entryPoint": "tools/scenario/ScenarioBakeMain.cpp",
+      "grammar": "shared-bake-verify",
+      "libraries": [
+        "MduX::ScenarioLib"
+      ],
+      "name": "mdux-scenariobake",
+      "options": [
+        "--format",
+        "--help"
+      ],
+      "sourceDirectory": "tools/scenario"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "SCE001",
+        "SCE002",
+        "SCE003",
+        "SCN001",
+        "SCN002",
+        "SCN003",
+        "SCN004",
+        "SCN005",
+        "SCN006",
+        "SCN007",
+        "SCN008",
+        "SCN020",
+        "SCN021",
+        "SCN022",
+        "SCN023",
+        "SCN024",
+        "SCN025",
+        "SCN026",
+        "SCN027",
+        "SCN028"
+      ],
+      "entryPoint": "tools/scenario/ScenarioEmitMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::ScenarioLib"
+      ],
+      "name": "mdux-scenarioemit",
+      "options": [],
+      "sourceDirectory": "tools/scenario"
+    },
+    {
       "bakes": [],
       "diagnosticCodes": [
         "MDC001",

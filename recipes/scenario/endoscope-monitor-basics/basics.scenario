@@ -1,0 +1,52 @@
+# The endoscope monitor's basic interaction scenario (#320, ADR-020).
+#
+# One directive per line, matching the .medui component-body convention. Events queue; `advance`
+# consumes the queued batch as one accepted batch and runs that many application updates; an
+# `expect` after an `advance` checks the state that advance settled (ADR-018 clause 6: state bound
+# after the batch). Everything the replay checks here is a governed fact - a FieldEditor value, a
+# PressLatch state, an ActionTrace, a FrameStats counter - or a demonstration reading.
+
+scenario endoscope-monitor-basics
+screen endoscope-monitor
+version 1
+clock 2026-09-09 08:00:00
+sample 60
+requirement REQ-EM-002 REQ-EM-003
+
+# --- frame 1: an empty batch settles the initial state ---
+advance
+expect clock 08:00:01
+expect state classifier-state 0
+expect reading insufflation-pressure 120
+expect latch -
+expect overflow false
+
+# --- frame 2: focus the patient-id field and type two accepted, two refused characters ---
+key Commit
+text A
+text 7
+text a
+text -
+advance
+expect field "A7"
+expect refused 2
+
+# --- frame 3: press the ordinary freeze Button (one batch, two events) ---
+pointer down freeze
+pointer up freeze
+advance
+expect button freeze FREEZE
+expect latch -
+capture freeze-pressed
+
+# --- frame 4: press the emergency-halt critical control ---
+pointer down emergency-halt
+pointer up emergency-halt
+advance
+expect action emergency-halt TriggerHalt REQ-EM-003
+capture halt-activated
+
+# --- advance far enough that the demonstration classifier steps to its next state ---
+advance 27
+expect state classifier-state 1
+expect clock 08:00:31
