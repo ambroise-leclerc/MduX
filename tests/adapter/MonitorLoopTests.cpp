@@ -160,6 +160,11 @@ const mdux::spec::Register releaseOnADifferentTargetDoesNotActivate{
 
                       const ms::CompiledNode* halt   = monitorScreen().find(mx::kHaltNode);
                       const ms::CompiledNode* freeze = monitorScreen().find(mx::kFreezeNode);
+                      checks.expect(halt != nullptr && freeze != nullptr, "the committed screen carries both controls");
+                      if (halt == nullptr || freeze == nullptr) {
+                          checks.raise();
+                          return;
+                      }
                       (void)q.queue.push(ms::PointerEvent{.kind = ms::PointerKind::Down,
                                                           .x    = halt->bounds.x + halt->bounds.width / 2,
                                                           .y    = halt->bounds.y + halt->bounds.height / 2});
@@ -191,6 +196,10 @@ const mdux::spec::Register editingRespectsTheFieldCharset{
                       mx::DemoState      state;
                       state.bindField(monitorScreen(), committedFont());
                       checks.expect(state.field.has_value(), "the field bound against the committed font and node charset");
+                      if (!state.field.has_value()) {
+                          checks.raise();
+                          return;
+                      }
                       ms::PressLatch   latch;
                       mx::MonitorClock clock;
                       std::uint64_t    sequence = 0;

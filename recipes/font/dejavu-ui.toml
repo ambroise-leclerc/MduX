@@ -45,13 +45,13 @@
 #   - U+0020..U+007E (`basic-latin-printable`) is every glyph a `en-US` screen draws, and every
 #     one of them is a *simple* outline in DejaVu Sans: 95 of 95 code points map and 95 of 95
 #     produce outlines with zero composites.
-#   - U+00C0..U+00FF plus U+0152..U+0153 (`latin1-accented`) is the French repertoire - the
-#     accented capitals and lowercase, the cedilla, the ligatures and the guillemets. Almost
-#     every one of these is a *composite* glyph in DejaVu Sans (a base letter plus a combining
-#     accent, placed by a transform). Since #318 the TrueType parser flattens a composite into a
-#     flat contour list on the host, in the baker, which is exactly the pre-baking ADR-010
-#     decision 5 names - the atlas the runtime receives still carries coverage bitmaps and baked
-#     advances and nothing else.
+#   - U+00AB..U+00FF (`latin1-accented`) and U+0152..U+0153 (`latin-extended-a-oe`) are the
+#     French repertoire - the guillemets, the accented capitals and lowercase, the cedilla and
+#     the OE ligatures. Most of the letters are *composite* glyphs in DejaVu Sans (a base letter
+#     plus a combining accent, placed by a transform). Since #318 the TrueType parser flattens a
+#     composite into a flat contour list on the host, in the baker, which is exactly the
+#     pre-baking ADR-010 decision 5 names - the atlas the runtime receives still carries coverage
+#     bitmaps and baked advances and nothing else.
 #
 # What is still out of scope, and would still fail the bake: RTL and contextual scripts,
 # ligatured shaping, CFF outlines. A locale needing any of those is not one this font is approved

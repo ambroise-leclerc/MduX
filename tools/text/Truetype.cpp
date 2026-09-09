@@ -393,6 +393,8 @@ std::string_view describe(ParseError error) noexcept {
             return "a composite component uses point-matching args rather than XY values";
         case ParseError::CompositeNestingTooDeep:
             return "composite glyphs reference each other more deeply than the parser allows";
+        case ParseError::CompositeBudgetExceeded:
+            return "a composite glyph resolves more component glyphs than the parser's budget allows";
         case ParseError::TruncatedContourEndpoints:
             return "endPtsOfContours or the instruction length field extends past the glyf record";
         case ParseError::TruncatedGlyphInstructions:
@@ -726,21 +728,31 @@ constexpr std::uint16_t compWeHaveTwoByTwo      = 0x0080u;
 /// `components` chain into a diagnostic rather than a stack overflow.
 constexpr std::size_t maxCompositeDepth = 8u;
 
+/// The total number of component-glyph resolutions one top-level `parseGlyph()` call may perform.
+/// The depth cap alone does not bound this: eight levels each fanning out to dozens of
+/// minimum-size components that terminate at zero-length glyphs would perform billions of
+/// resolutions without ever tripping the depth or point caps, hanging the host baker. 4096 is far
+/// past any real glyph (DejaVu's deepest composite resolves a handful) and small enough that the
+/// walk always terminates.
+constexpr std::size_t maxCompositeResolutions = 4096u;
+
 /// F2Dot14 (a 2.14 fixed-point value in an int16) as a double.
 [[nodiscard]] double f2dot14(std::int16_t raw) noexcept {
     return static_cast<double>(raw) / 16384.0;
 }
 
 // parseGlyphAtDepth resolves a component's referenced glyph, which may itself be composite, so
-// the two functions are mutually recursive.
+// the two functions are mutually recursive. `budget` is the shared component-resolution counter
+// threaded through the whole tree from the one public `parseGlyph()` entry.
 [[nodiscard]] Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_t glyphIndex,
-                                                                std::size_t depth) noexcept;
+                                                                std::size_t depth, std::size_t& budget) noexcept;
 
 /// Flattens the composite record in `span` (whose 10-byte header the caller already read) into
 /// one `SimpleGlyph` with every component's contours transformed into place.
 [[nodiscard]] Result<SimpleGlyph, ParseError> parseCompositeGlyph(const Font& font, std::uint16_t glyphIndex,
                                                                   std::span<const std::byte> span,
-                                                                  std::size_t                depth) noexcept {
+                                                                  std::size_t                depth,
+                                                                  std::size_t&               budget) noexcept {
     if (depth >= maxCompositeDepth) {
         return err(ParseError::CompositeNestingTooDeep);
     }
@@ -820,7 +832,11 @@ constexpr std::size_t maxCompositeDepth = 8u;
             cursor += 8u;
         }
 
-        const auto component = parseGlyphAtDepth(font, *compGlyph, depth + 1u);
+        if (budget == 0u) {
+            return err(ParseError::CompositeBudgetExceeded);
+        }
+        --budget;
+        const auto component = parseGlyphAtDepth(font, *compGlyph, depth + 1u, budget);
         if (!component) {
             return err(component.error());
         }
@@ -881,7 +897,7 @@ constexpr std::size_t maxCompositeDepth = 8u;
 namespace {
 
 Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_t glyphIndex,
-                                                  std::size_t depth) noexcept {
+                                                  std::size_t depth, std::size_t& budget) noexcept {
     if (glyphIndex >= font.numGlyphs) {
         return err(ParseError::GlyphIndexOutOfRange);
     }
@@ -924,7 +940,7 @@ Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_
     glyph.yMax                  = *beI16(span, 8);
 
     if (numberOfContours < 0) {
-        return parseCompositeGlyph(font, glyphIndex, span, depth);
+        return parseCompositeGlyph(font, glyphIndex, span, depth, budget);
     }
     const auto contours = static_cast<std::size_t>(numberOfContours);
 
@@ -1082,7 +1098,8 @@ Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_
 }  // namespace
 
 Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyphIndex) noexcept {
-    return parseGlyphAtDepth(font, glyphIndex, 0u);
+    std::size_t budget = maxCompositeResolutions;
+    return parseGlyphAtDepth(font, glyphIndex, 0u, budget);
 }
 
 std::optional<std::uint16_t> glyphForCodePoint(const Font& font, char32_t codePoint) noexcept {

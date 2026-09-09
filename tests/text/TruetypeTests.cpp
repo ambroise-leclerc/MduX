@@ -722,6 +722,23 @@ void appendI16(std::vector<std::byte>& b, std::int16_t v) {
     return b;
 }
 
+/// A composite with `count` components, all translating glyph `ref` by (0, 0). Used to exceed the
+/// parser's component-resolution budget without exceeding the per-glyph point or nesting caps.
+[[nodiscard]] std::vector<std::byte> compositeManyComponents(std::uint16_t ref, std::size_t count) {
+    std::vector<std::byte> b = compositeHeader();
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uint16_t flags = kArgsAreXY | kArgWords;
+        if (i + 1 < count) {
+            flags |= kMore;
+        }
+        appendU16(b, flags);
+        appendU16(b, ref);
+        appendI16(b, 0);
+        appendI16(b, 0);
+    }
+    return b;
+}
+
 /// A glyph whose coordinate stream is shorter than the flags declared. Built as a 1-contour
 /// glyph with 4 on-curve points but with the X coordinate array truncated to one entry - the
 /// parser hits `TruncatedGlyphCoords` mid-X.
@@ -2009,6 +2026,54 @@ const mdux::spec::Register compositeGlyphScales{
                           checks.expect(g.points[2].x == 50 && g.points[2].y == 50, "point 2 halved");
                       }
                       checks.expect(g.xMax == 50 && g.yMax == 50, "bbox halved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register compositeResolutionBudgetEnforced{
+    "A composite fanning out to more components than the budget allows is refused, not walked forever",
+    "evidence-unit",
+    [] {
+        struct State {
+            Builder::Serialized     serialized;
+            std::optional<tt::Font> font;
+            tt::ParseError          code{tt::ParseError::Empty};
+            bool                    rejected{false};
+        };
+        auto state = std::make_shared<State>();
+
+        return speclab::Test("text-truetype-composite-budget")
+            .Given("a single composite with 5000 components, each resolving the empty glyph 1",
+                   [state] {
+                       // Empty components add no points and no contours, so neither the per-glyph
+                       // point cap nor the nesting cap fires - only the resolution budget does.
+                       state->serialized = Builder()
+                                               .rawGlyph(0, emptyGlyph())
+                                               .rawGlyph(1, emptyGlyph())
+                                               .rawGlyph(2, compositeManyComponents(1, 5000))
+                                               .serialize();
+                       auto font = tt::parse(state->serialized.bytes);
+                       if (!font.has_value()) {
+                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
+                                                                 std::source_location::current());
+                       }
+                       state->font = std::move(*font);
+                   })
+            .When("parseGlyph() is called for the composite",
+                  [state] {
+                      auto glyph      = tt::parseGlyph(*state->font, 2);
+                      state->rejected = !glyph.has_value();
+                      if (!glyph.has_value()) {
+                          state->code = glyph.error();
+                      }
+                  })
+            .Then("it is refused with CompositeBudgetExceeded",
+                  [state] {
+                      mdux::spec::Checks checks;
+                      checks.expect(state->rejected, "the fan-out was refused");
+                      checks.expect(state->code == tt::ParseError::CompositeBudgetExceeded,
+                                    std::format("code is CompositeBudgetExceeded, got {}", tt::describe(state->code)));
                       checks.raise();
                   })
             .Execute();

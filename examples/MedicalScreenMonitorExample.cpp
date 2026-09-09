@@ -213,9 +213,14 @@ struct FrameStorage {
         inputSlots[0] = ms::TextInputSlot{.nodeId = state.field->nodeId(),
                                           .text   = state.field->value(),
                                           .caret  = state.field->caret()};
-        if (auto made = ms::TextInputBinding::create(bound.screen, inputSlots); made) {
-            inputs = *made;
+        auto made = ms::TextInputBinding::create(bound.screen, inputSlots);
+        if (!made) {
+            // Fail closed rather than render a deferred field: a monitor that silently drops the
+            // patient id it was asked to show is the wrong failure.
+            std::cerr << "monitor: text input binding refused: " << ms::describe(made.error()) << '\n';
+            return mdux::core::err(made.error());
         }
+        inputs = *made;
     }
 
     const auto recorded =
