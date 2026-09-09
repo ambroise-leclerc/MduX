@@ -254,19 +254,34 @@ const mdux::spec::Register theEmitterRejectsAWrongTypedOperand{
     "evidence-unit",
     [] {
         return speclab::Test("scenario-emit-wrong-typed-operand")
-            .Given("the committed scenario.json with its overflow value turned into a string", [] {})
-            .When("renderScenario() runs on it", [] {})
-            .Then("it fails rather than silently defaulting the obligation",
+            .Given("the committed scenario.json, one operand at a time replaced with the wrong JSON type", [] {})
+            .When("renderScenario() runs on each", [] {})
+            .Then("each fails rather than silently defaulting the obligation",
                   [] {
                       mdux::spec::Checks checks;
                       std::ifstream     in{repoRoot() / "generated/scenario/endoscope-monitor-basics/scenario.json",
                                        std::ios::binary};
-                      std::string       doc{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-                      const std::string from = "\"value\": false";
-                      const auto        at   = doc.find(from);
-                      checks.expect(at != std::string::npos, "the overflow expectation is where the test expects it");
-                      if (at != std::string::npos) {
-                          doc.replace(at, from.size(), "\"value\": \"false\"");
+                      const std::string original{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+
+                      struct Mutation {
+                          std::string_view what;
+                          std::string_view from;
+                          std::string_view to;
+                      };
+                      const std::array<Mutation, 2> mutations{{
+                          {"overflow value as a string", "\"value\": false", "\"value\": \"false\""},
+                          {"field value as a scalar not an array",
+                           "\"value\": [\n          65,\n          55\n        ]", "\"value\": 65"},
+                      }};
+
+                      for (const Mutation& m : mutations) {
+                          std::string doc = original;
+                          const auto  at  = doc.find(m.from);
+                          checks.expect(at != std::string::npos, std::format("{}: the operand is where the test expects it", m.what));
+                          if (at == std::string::npos) {
+                              continue;
+                          }
+                          doc.replace(at, m.from.size(), std::string{m.to});
                           const std::filesystem::path bad =
                               std::filesystem::temp_directory_path() / "mdux-scenario-wrong-typed.json";
                           {
@@ -277,7 +292,7 @@ const mdux::spec::Register theEmitterRejectsAWrongTypedOperand{
                           auto                         outputs = sc::renderScenario(bad, diags);
                           std::filesystem::remove(bad);
                           checks.expect(!outputs.has_value() && !diags.empty(),
-                                        std::format("refused, first {}", firstCode(diags)));
+                                        std::format("{}: refused, first {}", m.what, firstCode(diags)));
                       }
                       checks.raise();
                   })

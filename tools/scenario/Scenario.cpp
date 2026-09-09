@@ -395,6 +395,10 @@ std::optional<Script> readScenarioDoc(std::span<const std::byte> scenarioJson, s
         || reqs == nullptr || caps == nullptr || steps == nullptr) {
         return badShape("a top-level member is missing");
     }
+    if (reqs->kind() != json::Value::Kind::Array || caps->kind() != json::Value::Kind::Array
+        || steps->kind() != json::Value::Kind::Array) {
+        return badShape("requirements, captureNames and steps must be arrays");
+    }
     const auto sv = schemaVersion->asUInt();
     if (!sv) {
         return badShape("schemaVersion is not an integer");
@@ -575,8 +579,8 @@ std::optional<Script> readScenarioDoc(std::span<const std::byte> scenarioJson, s
                     }
                     case ms::ExpectKind::Field: {
                         const auto* v = ex->find("value");
-                        if (v == nullptr) {
-                            return badShape("a field expectation carries no value");
+                        if (v == nullptr || v->kind() != json::Value::Kind::Array) {
+                            return badShape("a field expectation needs a value array");
                         }
                         for (const json::Value& cp : v->elements()) {
                             const auto scalar = cp.asUInt();
