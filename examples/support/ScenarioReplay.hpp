@@ -112,6 +112,7 @@ using ScenarioFrameObserver = std::function<mdux::medui::FrameCounts(const DemoS
         }
         obs.refusedEdits = batchOutcome.refusedEdits;
         obs.action       = batchOutcome.criticalAction;
+        obs.buttonNode   = batchOutcome.buttonNode;
         obs.buttonSource =
             batchOutcome.buttonSource.has_value() ? std::string_view{*batchOutcome.buttonSource} : std::string_view{};
         obs.latchArmed = latch.armedNode();
@@ -122,9 +123,11 @@ using ScenarioFrameObserver = std::function<mdux::medui::FrameCounts(const DemoS
 
         runner.observe(obs);
         for (const std::string_view name : runner.capturesThisFrame()) {
-            if (captureFn) {
-                captureFn(ScenarioCaptureContext{.name = name, .state = state, .clock = clock, .frameIndex = frameIndex});
+            if (!captureFn) {
+                continue;  // no callback to honour the marker with - leave it outstanding so
+                           // runner.finish() fails the run with CaptureNotInvoked
             }
+            captureFn(ScenarioCaptureContext{.name = name, .state = state, .clock = clock, .frameIndex = frameIndex});
             runner.markCaptured(name);
         }
     }

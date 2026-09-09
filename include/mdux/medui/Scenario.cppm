@@ -486,9 +486,10 @@ struct FrameCounts {
  * @brief The state one advance settled, as the caller hands it to `ScenarioRunner::observe()`.
  *
  * Every span and string view is caller-owned; the runner copies nothing and allocates nothing.
- * `action` / `buttonSource` are the presses the batch resolved (empty / `nullopt` for none);
- * `latchArmed` is the `PressLatch`'s armed node (empty = disarmed); `refusedEdits` and
- * `overflowed` are the batch-consuming frame's, which the caller tracks across a multi-frame
+ * `action` is the critical press the batch resolved (`nullopt` for none); `buttonNode` /
+ * `buttonSource` are the node an ordinary `Button` press resolved to and its open `source` (both
+ * empty for none). `latchArmed` is the `PressLatch`'s armed node (empty = disarmed); `refusedEdits`
+ * and `overflowed` are the batch-consuming frame's, which the caller tracks across a multi-frame
  * advance.
  */
 struct ScenarioObservation {
@@ -497,6 +498,7 @@ struct ScenarioObservation {
     std::optional<std::size_t>        caret{};
     std::uint32_t                     refusedEdits{0};
     std::optional<mdux::medui::ActionTrace> action{};
+    std::string_view                 buttonNode{};
     std::string_view                 buttonSource{};
     std::string_view                 latchArmed{};
     FrameCounts                      frame{};
@@ -717,7 +719,12 @@ private:
                 return obs.action.has_value() && obs.action->nodeId == e.nodeId && obs.action->event == e.event
                        && obs.action->requirement == e.requirement;
             case ExpectKind::ButtonSource:
-                return obs.buttonSource == e.source;  // the node is fixed by resolvePress; source is the fact
+                // An empty `source` asserts that no ordinary `Button` press resolved this batch
+                // (the node is moot - there is nothing to match it against). Otherwise both halves
+                // must hold: the named control *and* its open `source`, so a press on a different
+                // control does not satisfy it.
+                return e.source.empty() ? obs.buttonSource.empty()
+                                        : (obs.buttonNode == e.nodeId && obs.buttonSource == e.source);
             case ExpectKind::Reading: {
                 for (const NamedReading& r : obs.readings) {
                     if (r.nodeId == e.nodeId) {

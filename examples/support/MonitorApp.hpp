@@ -167,6 +167,7 @@ struct DemoState {
 struct MonitorUpdateOutcome {
     std::optional<mdux::medui::ActionTrace> criticalAction{};  ///< a resolved `emergency-halt` press
     std::optional<std::string>              buttonSource{};     ///< a resolved `freeze` press, its open `source`
+    std::string_view                        buttonNode{};       ///< the node `buttonSource` resolved to (empty = none)
     std::uint32_t                           refusedEdits{0};    ///< edits the `FieldEditor` refused this batch
     bool                                    droppedBatch{false};///< the batch overflowed and was discarded whole
 };
@@ -216,6 +217,7 @@ struct MonitorUpdateOutcome {
                                                                              .sequence    = ++sequence};
                                 } else if (node == kFreezeNode && !action.source.empty()) {
                                     outcome.buttonSource = std::string{action.source};
+                                    outcome.buttonNode   = kFreezeNode;
                                 }
                             }
                         }

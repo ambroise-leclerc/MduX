@@ -233,6 +233,74 @@ const mdux::spec::Register aFailedExpectationIsReported{
             .Execute();
     }};
 
+const mdux::spec::Register aButtonExpectationChecksTheNode{
+    "expect button names a control, and a press on a different control does not satisfy it",
+    "evidence-unit",
+    [] {
+        return speclab::Test("scenario-replay-button-node")
+            .Given("a freeze press but an expectation naming emergency-halt with the same source", [] {})
+            .When("it replays", [] {})
+            .Then("the expectation fails - the node is part of the obligation, not just the source",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const ms::CompiledNode* freeze = monitorScreen().find("freeze");
+                      checks.expect(freeze != nullptr, "the screen carries the freeze Button");
+                      if (freeze == nullptr) {
+                          checks.raise();
+                          return;
+                      }
+                      const mdux::core::Px x = freeze->bounds.x + freeze->bounds.width / 2;
+                      const mdux::core::Px y = freeze->bounds.y + freeze->bounds.height / 2;
+
+                      HandScenario wrongNode{
+                          "endoscope-monitor", kNoon,
+                          {{.kind = ms::StepKind::Pointer, .pointer = {.kind = ms::PointerKind::Down, .x = x, .y = y}},
+                           {.kind = ms::StepKind::Pointer, .pointer = {.kind = ms::PointerKind::Up, .x = x, .y = y}},
+                           {.kind = ms::StepKind::Advance, .frames = 1},
+                           {.kind = ms::StepKind::Expect,
+                            .expect = {.kind = ms::ExpectKind::ButtonSource, .nodeId = "emergency-halt", .source = "FREEZE"}}}};
+                      const auto run = replay(wrongNode.scenario);
+                      checks.expect(!run.passed() && run.fault == ms::ReplayFault::ExpectationFailed,
+                                    std::format("the wrong-node expectation fails, got {}", ms::describe(run.fault)));
+
+                      HandScenario rightNode{
+                          "endoscope-monitor", kNoon,
+                          {{.kind = ms::StepKind::Pointer, .pointer = {.kind = ms::PointerKind::Down, .x = x, .y = y}},
+                           {.kind = ms::StepKind::Pointer, .pointer = {.kind = ms::PointerKind::Up, .x = x, .y = y}},
+                           {.kind = ms::StepKind::Advance, .frames = 1},
+                           {.kind = ms::StepKind::Expect,
+                            .expect = {.kind = ms::ExpectKind::ButtonSource, .nodeId = "freeze", .source = "FREEZE"}}}};
+                      checks.expect(replay(rightNode.scenario).passed(), "the same press with the right node still passes");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register anUnhonouredCaptureFailsTheRun{
+    "A capture marker the caller cannot honour leaves the run outstanding",
+    "evidence-unit",
+    [] {
+        return speclab::Test("scenario-replay-capture-not-honoured")
+            .Given("a scenario with a capture step but an empty capture callback", [] {})
+            .When("it replays", [] {})
+            .Then("the run fails with CaptureNotInvoked rather than passing on an unfired capture",
+                  [] {
+                      mdux::spec::Checks checks;
+                      HandScenario       s{"endoscope-monitor", kNoon,
+                                     {{.kind = ms::StepKind::Advance, .frames = 1},
+                                            {.kind = ms::StepKind::Expect, .expect = {.kind = ms::ExpectKind::Overflow, .flag = false}},
+                                            {.kind = ms::StepKind::Capture, .capture = "shot"}},
+                                     {"shot"}};
+                      std::array<ms::StepOutcome, ms::maxScenarioExpectations> storage{};
+                      const ms::ReplayReport report = mx::replayMonitorScenario(
+                          s.scenario, monitorScreen(), committedFont(), storage, mx::ScenarioCaptureFn{});
+                      checks.expect(!report.passed() && report.fault == ms::ReplayFault::CaptureNotInvoked,
+                                    std::format("fault is CaptureNotInvoked, got {}", ms::describe(report.fault)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register aBatchLargerThanTheQueueFails{
     "A batch with more events than maxInputEvents fails the run",
     "evidence-unit",

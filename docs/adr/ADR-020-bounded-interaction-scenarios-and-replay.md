@@ -114,7 +114,9 @@ will still change); a scenario with no `advance` at all.
 `action <node> <SystemEvent> <REQ-ID>`, `button <node> <source>`, `reading <node> <int>`,
 `state <node> <index>`, `latch <node|->`, `frame <stat> <N>`, `overflow <true|false>`. Each is a
 governed fact (`FieldEditor` value, `PressLatch` state, `ActionTrace`, `FrameStats`) or a generic
-named numeric/state slot the replay fills.
+named numeric/state slot the replay fills. `button <node> <source>` checks **both** the control and
+its `source`, so a press on a different control does not satisfy it; `button <node> ""` (empty
+`source`) asserts that no ordinary `Button` press resolved this batch.
 
 **Bounds.** `maxScenarioSteps = 256`, `maxScenarioExpectations = 128`, `maxScenarioCaptures = 16`,
 `maxScenarioRequirements = 16` — all `inline constexpr` in `mdux.medui.scenario`, `maxInputEvents`'s
@@ -152,13 +154,16 @@ uses applies.
 storage) drives a compiled scenario through the exact interfaces `updateMonitor()` uses:
 
 1. `loadNextBatch(EventQueue&)` fills the caller's queue with the current batch's events. A batch
-   larger than the caller's queue is a **failure** (`droppedNewest`), not a silent truncation.
-2. The caller runs its own `updateMonitor()` `framesThisStep()` times.
+   larger than the caller's queue is a **failure** (`queueTooSmall` → `QueueTooSmall`), not a
+   silent truncation.
+2. The caller runs its own `updateMonitor()` `framesThisAdvance()` times.
 3. `observe(ScenarioObservation)` checks every `Expect` step for the settled frame against a plain
    struct the caller filled — clock, field value/caret, refused count, `ActionTrace`, latch node,
    `FrameStats`, and generic `{node, value}` reading/state spans. All caller-owned; no allocation.
 4. `capturesThisFrame()` names the `Capture` markers due; the caller invokes its capture callback
-   and calls `markCaptured(name)`. A declared capture the replay never reaches is a **failure**.
+   and calls `markCaptured(name)` **only once the callback has run**. A marker the caller cannot
+   honour (no callback) is left outstanding, and a declared capture the replay never marks —
+   whether unreached or unhonoured — is a **failure** (`CaptureNotInvoked`).
 
 `report()` returns a per-step held/failed record. **Queue overflow, a rejected event, an unknown
 target and a missing capture each fail the run.** The allocating step-by-step expected/observed
