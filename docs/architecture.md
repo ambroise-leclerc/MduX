@@ -142,9 +142,14 @@ partially-filled context fails validation rather than faulting.
 descriptor set layout and pool, pipeline layout, pipeline, frame buffers, default atlas. It does
 **not** create an instance, device or swapchain. Those are the application's.
 
-**Windowing is not a library dependency.** GLFW is linked into `VulkanSCTriangleExample` only, as
-one way an application might create a surface. `MedicalUiExample` deliberately does not link it —
-building a frame needs neither a window nor a device, which is part of what it demonstrates.
+**Windowing is not a library dependency.** GLFW is linked into `VulkanSCTriangleExample` and
+`MedicalScreenMonitorExample` only, as one way an application might create a surface. The reusable
+window + swapchain + native-event-translation shell those share is
+`examples/support/GlfwPresentationAdapter.hpp` ([ADR-019](adr/ADR-019-windowed-presentation-and-input-adapter.md)),
+which #318 will reuse; its only governed dependency is `mdux::medui::SurfaceMapping`, the pure
+window→authored coordinate transform in `mdux.medui.input`. `MedicalUiExample` deliberately links
+no windowing at all — building a frame needs neither a window nor a device, which is part of what
+it demonstrates.
 
 ## Evidence pipeline
 
@@ -306,12 +311,14 @@ than reporting a no-op nothing performs. A critical control with no requirement 
 this module hands to a host.
 
 `resolvePress()` is one coordinate to one control, and nothing more — no queue, no release, no
-focus, no text. That is `mdux.medui.input` (#315/#316,
-[ADR-018](adr/ADR-018-bounded-input-and-update-order.md)), a header-only governed module:
+focus, no text. That is `mdux.medui.input` (#315/#316/#317,
+[ADR-018](adr/ADR-018-bounded-input-and-update-order.md),
+[ADR-019](adr/ADR-019-windowed-presentation-and-input-adapter.md)), a header-only governed module:
 
 - a closed pointer/key/text/focus event vocabulary with contract spellings;
 - `normalizeSurfacePoint()` — the one physical→authored coordinate conversion the adapter does,
-  flooring toward −∞ and failing closed rather than wrapping;
+  flooring toward −∞ and failing closed rather than wrapping — and `SurfaceMapping`, the value an
+  adapter (#317) rebuilds on every resize/scale change and asks each window-space pointer through;
 - `PressLatch` — arms a target on press, activates it only if the release lands on the same one;
 - `EventQueue` — a caller-owned bounded ring the adapter fills and one update drains, dropping the
   newest event on overflow with a saturating counter;
@@ -321,8 +328,10 @@ focus, no text. That is `mdux.medui.input` (#315/#316,
   events, and `value()` / `caret()` feed a `TextInputSlot`.
 
 Everything is `constexpr` over caller storage — the module allocates nothing, proved by
-`input_noheap_spec`. The platform adapter that captures native events and fills the queue is #317;
-the assembled input→update→render loop is #318. A critical press is still resolved and traced by
+`input_noheap_spec`. The platform adapter that captures native events and fills the queue is the
+examples-zone `examples/support/GlfwPresentationAdapter.hpp` (#317, ADR-019) — GLFW and the
+swapchain live there, never in `MduXCore` or `MduX` — and `MedicalScreenMonitorExample` drives it
+over the committed `endoscope-monitor` screen; the assembled input→update→render loop is #318. A critical press is still resolved and traced by
 MduX and **executed by the host** — `TriggerHalt` is a request for the host's halt path, not a
 behavior this library performs.
 

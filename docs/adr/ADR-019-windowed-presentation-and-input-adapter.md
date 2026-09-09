@@ -171,15 +171,18 @@ never as a skipped frame.
 
 The example takes `--smoke-test`: it presents a fixed number of frames (real swapchain, real
 `vkQueuePresentKHR`) and exits, non-zero on the wall-clock deadline or any Vulkan/GLFW failure —
-the `VulkanSCTriangleExample` pattern. It is registered as a CTest and added to the Linux (Xvfb +
-lavapipe), macOS (MoltenVK) and Windows (lavapipe) legs. It carries **no `SKIP_RETURN_CODE`**: an
-absent required display or device is a failure, not a CTest `Skipped`, so a broken ICD cannot turn
-the only end-to-end presentation check into a silent no-op.
+the `VulkanSCTriangleExample` pattern. It is registered as the CTest `example.monitor.smoke` and
+**labelled `pixel`**, so the `-L pixel` step every supported CI leg already runs (Linux GCC and
+Clang under Xvfb + lavapipe, Windows under lavapipe, macOS under MoltenVK) exercises it without a
+new workflow step. It carries **no `SKIP_RETURN_CODE`**: an absent required display or device is a
+failure, not a CTest `Skipped`, so a broken ICD cannot turn the only end-to-end presentation check
+into a silent no-op — and the Linux and macOS `-L pixel` steps additionally fail the job on any
+`Skipped` line.
 
 A second mode, `--headless-frame`, renders one frame through `mdux.render.offscreen` with no window,
 reads it back and asserts the topbar and critical-control rectangles land where the compiled screen
-places them — deterministic frame-content evidence that does not depend on a swapchain, run wherever
-`-L pixel` runs.
+places them — deterministic frame-content evidence that does not depend on a swapchain. It is
+`example.monitor.headless`, also `pixel`-labelled.
 
 ### 6. Coordinate and event translation are unit-tested without a device
 
