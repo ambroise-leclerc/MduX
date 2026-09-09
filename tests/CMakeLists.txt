@@ -1487,16 +1487,22 @@ endif()
 #                          `pixel`: it needs a window server, so it runs in the unfiltered "Run
 #                          Tests" step (Xvfb on Linux, the desktop session on Windows/macOS) and not
 #                          in the headless `-L pixel` step, which has no display.
-# example.monitor.headless - one frame through mdux.render.offscreen, no window: deterministic
-#                            evidence that the compiled screen's topbar and halt control land where
-#                            the artifact places them. Headless, so it is `-L pixel` like the rest of
-#                            the offscreen suite.
+# example.monitor.headless{,.fr} - a fixed script of events driven through the same updateMonitor()
+#                            the window uses (#318, ADR-018 clause 6), then one frame rendered
+#                            through mdux.render.offscreen with no window: deterministic evidence
+#                            that the refused edits, the resolved freeze/emergency-halt actions and
+#                            the painted content all hold, in each approved locale. Headless, so it
+#                            is `-L pixel` like the rest of the offscreen suite.
 if(MDUX_BUILD_EXAMPLES AND TARGET MedicalScreenMonitorExample)
     add_test(NAME example.monitor.smoke
              COMMAND MedicalScreenMonitorExample --smoke-test)
     set_tests_properties(example.monitor.smoke PROPERTIES TIMEOUT 120)
 
     add_test(NAME example.monitor.headless
-             COMMAND MedicalScreenMonitorExample --headless-frame)
+             COMMAND MedicalScreenMonitorExample --headless-smoke)
     set_tests_properties(example.monitor.headless PROPERTIES LABELS "pixel" TIMEOUT 120)
+
+    add_test(NAME example.monitor.headless.fr
+             COMMAND MedicalScreenMonitorExample --headless-smoke --locale=fr-FR)
+    set_tests_properties(example.monitor.headless.fr PROPERTIES LABELS "pixel" TIMEOUT 120)
 endif()
