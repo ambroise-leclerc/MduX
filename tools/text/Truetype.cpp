@@ -825,6 +825,16 @@ constexpr std::size_t maxCompositeDepth = 8u;
             return err(component.error());
         }
 
+        // A flattened composite whose contour list or point count no longer fits the uint16
+        // indices `endPtsOfContours` and the storage form use is refused rather than wrapped -
+        // the same fail-closed stance the coordinate accumulation takes. `maxGlyphPoints` is far
+        // past any real glyph (DejaVu's largest is a few hundred points).
+        constexpr std::size_t maxGlyphPoints = 20000u;
+        if (glyph.points.size() + component->points.size() > maxGlyphPoints
+            || glyph.endPtsOfContours.size() + component->endPtsOfContours.size() > maxGlyphPoints) {
+            return err(ParseError::TruncatedComposite);
+        }
+
         const std::size_t base = glyph.points.size();
         for (const auto& p : component->points) {
             const double tx = a * static_cast<double>(p.x) + c * static_cast<double>(p.y) + static_cast<double>(dx);
