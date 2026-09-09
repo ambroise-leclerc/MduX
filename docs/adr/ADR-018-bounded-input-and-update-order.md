@@ -6,11 +6,12 @@
 local contract for input events, the input → application update → render order, bounded keyboard
 editing and the policy around a critical action such as `SystemEvent::TriggerHalt`. It changes no
 existing runtime behavior, no compiled artifact, no committed evidence and no shared pin, and
-supersedes no earlier ADR. The bounded event queue body and the text-editing mutation are
-specified here and implemented in [#316](https://github.com/ambroise-leclerc/MduX/issues/316);
-the concrete platform adapter is [#317](https://github.com/ambroise-leclerc/MduX/issues/317). The
-host-side execution and audit policy for a critical action stays open for domain review, and is
-recorded as such in [`docs/parity/requirements.md`](../parity/requirements.md).
+supersedes no earlier ADR. The bounded event queue body and the text-editing mutation were
+specified here and delivered by [#316](https://github.com/ambroise-leclerc/MduX/issues/316) as
+`EventQueue` and `FieldEditor`; the concrete platform adapter is
+[#317](https://github.com/ambroise-leclerc/MduX/issues/317). The host-side execution and audit
+policy for a critical action stays open for domain review, and is recorded as such in
+[`docs/parity/requirements.md`](../parity/requirements.md).
 
 ## Shared contract
 
@@ -117,16 +118,17 @@ wheel, multi-touch and gestures, hover / pointer-enter styling, and host key-rep
 ### 2. The event queue is caller-owned, bounded, and drops the newest on overflow
 
 The queue is a ring over storage the caller allocated once — `maxInputEvents` is the named
-default capacity, and a caller may size its own. On overflow the queue **drops the newest event**,
-increments a **saturating** `droppedCount`, and **cancels any pending armed activation** (clause
-4): a dropped event means the stream is no longer a complete record of what the operator did, and
-a press waiting for its release must not be allowed to activate against an incomplete stream. One
-application update consumes **one** accepted batch (clause 6). The queue is allocation-free and
+default capacity, and a caller may size its own. On overflow `push()` returns `DroppedNewest`:
+the queue **drops the newest event**, increments a **saturating** `droppedCount`, and the caller
+**cancels any pending armed activation** (clause 4) on that signal — a dropped event means the
+stream is no longer a complete record of what the operator did, and a press waiting for its
+release must not be allowed to activate against an incomplete stream. One application update
+`pop()`s the queue to empty — **one** accepted batch (clause 6). The queue is allocation-free and
 `noexcept`.
 
-This ADR fixes that contract. `EventQueue`'s declaration and body land in #316, against these
-types; a half-implemented governed symbol here would trip `governed.noThrow.symbolScan` and
-`screen.noheap.symbolScan` for no benefit.
+**#316 delivered this as `EventQueue`** — a `constexpr` class over a `std::span<InputEvent>`, with
+`push()` / `pop()` / `clear()` and `size` / `capacity` / `empty` / `full` / `droppedCount`
+accessors.
 
 Dropping the newest rather than the oldest is deliberate and matches TrustSC: the oldest events
 are the ones whose consequences (an arm, a caret move) the application has the best chance of
@@ -199,9 +201,20 @@ field, a caret moved out of range — produces **no partial mutation**: the valu
 caller holds are untouched and an `InputError` is returned.
 
 `editWouldBeAccepted(scalar, fontCharset, nodeCharset, currentLen, maxLen)` — the pure predicate,
-both charset bounds plus capacity, no mutation — is implemented in this PR. `applyEdit()`, which
-produces the next `(value, caret)` over caller storage, lands in #316 against this contract. There
-is no on-device text shaping and no unbounded storage (ADR-010, ADR-004).
+both charset bounds plus capacity, no mutation — was delivered by #315.
+
+**#316 delivered the mutation as `FieldEditor`**: a class over a caller-owned `std::span<char32_t>`
+buffer, holding the length and the caret (`std::optional`, `nullopt` = not being edited, which is
+exactly `TextInputSlot::caret`'s no-caret state). `create()` validates the **whole** initial value
+against both charsets and `max_length` before it writes anything, so a rejected `create()` leaves
+the caller's buffer intact, and it copies with an overlap-safe `std::memmove` so `initial` may be
+a view of `storage` the caller is adopting in place; `apply(EditOp)` runs `editWouldBeAccepted`
+then shifts scalars inside the caller's buffer, all-or-nothing; `focus(FocusEvent)` starts and
+ends editing, ignoring an event for another node; `handleKey` / `handleText` route the contract's
+events to edits and report a non-edit key (`Commit`, `Cancel`, focus traversal) as not-consumed
+rather than as an error. It builds no `TextInputSlot` — that type is `mdux.medui.screen`'s — but
+exposes `nodeId()` / `value()` / `caret()` for the caller to assemble one per frame. There is no
+on-device text shaping and no unbounded storage (ADR-010, ADR-004).
 
 ### 6. One update consumes one batch, in a fixed order
 
@@ -215,8 +228,9 @@ The application update order, as a contract for #316 / #319 / #320 to implement 
 
 State bound in step 3 is the state after step 2, so a capture never shows input from a frame the
 operator has not seen resolved, and a replay that injects the same batches and the same time
-(`SignalBinding` already takes injected time) produces the same frames. This clause is prose in
-this PR; the loop and its replay are #316 / #320.
+(`SignalBinding` already takes injected time) produces the same frames. #316 delivered the parts
+(`EventQueue::pop` for step 1, `FieldEditor` for step 2, the existing bindings for step 3); the
+assembled loop wired to real Vulkan presentation is #318 and its deterministic replay is #320.
 
 ### 7. MduX resolves a critical action and traces it; the host executes it
 
@@ -277,18 +291,18 @@ deferred list is out.
 - One decided vocabulary for input, in one governed module, before three consumers need it.
 - PAR-REQ-004–008 move from `Proposed / unreviewed` to ratified dispositions, each tied to a
   clause here and to `InputContractTests`.
-- The pure pieces — coordinate normalization, the press latch, the edit predicate — are
-  implemented and tested now, so #316's remaining work is the ring buffer and the text mutation,
-  not the rules.
+- The pure pieces — coordinate normalization, the press latch, the edit predicate — were
+  implemented and tested by #315, so #316's work was the ring buffer (`EventQueue`) and the text
+  mutation (`FieldEditor`) against fixed types, not the rules.
 - The host-executes-`TriggerHalt` boundary is written down where a domain reviewer will find it.
 
 ### Negative
 
 - A reader of the input subsystem now has two PRs to follow (#315 defines, #316 implements) and
   an ADR between them. Mitigation: this ADR is the single reference and #316 restates nothing.
-- Clause 6 (the update order) is prose, not code or a test, until #316 / #320. It can drift from
-  what those PRs actually build. Mitigation: those issues name this clause as their contract, and
-  a mismatch is a review finding on them.
+- Clause 6 (the update order) is prose, not one assembled function, until #318 wires the loop and
+  #320 its replay. #316 delivered the pieces it names but not their composition. Mitigation: those
+  issues name this clause as their contract, and a mismatch is a review finding on them.
 - `KeyCode` starts as a minimal enum (caret motion, delete, tab, enter, escape). A real adapter
   will need to extend it. Mitigation: it is implementation-local and versioned by this module;
   extending an enum is additive.
@@ -304,19 +318,23 @@ deferred list is out.
 
 ## Implementation Notes
 
-- New module `include/mdux/medui/Input.cppm` (`mdux.medui.input`), header-only like
-  `mdux.medui.schema`: everything is `constexpr` / `inline`. Added to the root `CMakeLists.txt`
-  `FILE_SET CXX_MODULES` list; no `src/` file and no `PRIVATE` source entry.
+- The module `include/mdux/medui/Input.cppm` (`mdux.medui.input`) stays header-only like
+  `mdux.medui.schema`: `EventQueue`, `FieldEditor` and the rest are `inline` with state in
+  caller-owned spans, and all but `FieldEditor::create()` (one overlap-safe `std::memmove`) is
+  `constexpr`. No `src/` file and no `PRIVATE` source entry.
 - Imports `std`, `mdux.core.units`, `mdux.core.result`, `mdux.medui.schema`,
   `mdux.medui.field`, `mdux.font.schema`. It does **not** import `mdux.medui.screen`, so the
-  module graph stays acyclic; the armed target is a bare node-id `string_view`.
-- `tests/medui/InputContractTests.cpp`, added to the `medui_spec` target (links `MduX::Core`
-  only), covers: `toWire`/`fromWire` round-trips and closed-set completeness; `normalizeSurfacePoint`
-  at pixel boundaries and negative authored coordinates, plus an oversized scale and an
-  out-of-`Px`-range result; `PressLatch` arm/activate/cancel/overflow and the
-  string-view-invalidation case; `editWouldBeAccepted` for a permitted scalar, one the font cannot
-  draw (`ScalarNotInFont`), one the node's charset excludes (`ScalarNotPermitted`), a full field,
-  and an empty font charset; and trivial-copyability / `noexcept` static checks.
+  module graph stays acyclic; the armed target is a bare node-id `string_view` and `FieldEditor`
+  exposes `value()`/`caret()`/`nodeId()` for the caller to build a `TextInputSlot`.
+- `tests/medui/InputContractTests.cpp` (in `medui_spec`, links `MduX::Core` only) covers the wire
+  round-trips and closed sets; `normalizeSurfacePoint` at the boundaries, an oversized scale and an
+  out-of-`Px` result; `PressLatch`; `editWouldBeAccepted` against both charsets; **`EventQueue`**
+  FIFO order, drop-newest overflow with a saturating counter, ring wrap, `clear()` and a
+  zero-capacity queue; **`FieldEditor`** create-time refusals, insert/backspace/delete-forward/caret
+  moves, unchanged state on every refusal, wrong-node focus ignored, and `handleKey`/`handleText`
+  routing. `tests/medui/InputNoHeapTests.cpp` in a new `input_noheap_spec` binary proves the queue
+  and the editor allocate nothing after construction, on the accepted and the refused paths (its
+  own binary because `CountingAllocations.hpp` may be included by one TU per binary).
 - No `MDX-E` diagnostic, no `medui-conformance.toml`, no compiled-screen schema and no baked
   artifact changes. `docs/architecture.md`'s module table and `docs/roadmap.md`'s #308 section
   gain the module; `docs/parity/requirements.md` and `docs/parity/behavior-matrix.md` record the
@@ -352,13 +370,14 @@ deferred list is out.
 - **Approved by**: Ambroise Leclerc, maintainer, by explicit instruction to accept ADR-018 and
   the PAR-REQ-004–008 dispositions it supports under #315.
 - **Dispositions ratified**: PAR-REQ-004 **Accepted**; PAR-REQ-005 **Accepted with amendment**
-  (the batch-consuming update loop is a documented contract until #316/#320); PAR-REQ-006
-  **Accepted with a recorded limitation** (host execution and audit policy stay for domain
-  review); PAR-REQ-007 **Accepted** (the `applyEdit` mutation lands in #316); PAR-REQ-008
-  **Accepted with amendment** (the viewport row/bin half stays with #322).
+  (`EventQueue` delivered by #316; the assembled batch-consuming update loop is a documented
+  contract until #318/#320); PAR-REQ-006 **Accepted with a recorded limitation** (host execution
+  and audit policy stay for domain review); PAR-REQ-007 **Accepted** (the edit mutation delivered
+  by #316 as `FieldEditor`); PAR-REQ-008 **Accepted with amendment** (the viewport row/bin half
+  stays with #322).
 - **Still open**: the domain review of the critical-action host policy (PAR-REQ-006); the
-  `EventQueue` and `applyEdit` implementations (#316); the platform adapter (#317); the update
-  loop and its replay (#316/#320); PAR-REQ-009/010 keep their own status.
+  platform adapter (#317); the assembled update loop wired to Vulkan (#318) and its replay (#320);
+  PAR-REQ-009/010 keep their own status.
 - **Scope**: the input event vocabulary, coordinate-normalization rule, press/release/cancel
   model, bounded-editing contract, update order and critical-action boundary. Windowing,
   platform capture and host action execution stay implementation/host decisions. No interaction

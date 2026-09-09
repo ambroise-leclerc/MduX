@@ -1250,6 +1250,35 @@ endif()
 
 mdux_discover_tests(medui_noheap_spec)
 
+# The same layer-1 measurement for `mdux.medui.input` (#316): its own binary for the reason
+# medui_noheap_spec has one - `CountingAllocations.hpp` replaces the global operator new family, so
+# exactly one translation unit per binary may include it. The event queue and the field editor
+# work entirely in caller-owned spans; this proves it, including on the refused-edit paths.
+add_executable(input_noheap_spec
+    medui/InputNoHeapSpecMain.cpp
+    medui/InputNoHeapTests.cpp
+)
+
+target_link_libraries(input_noheap_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(input_noheap_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set_target_properties(input_noheap_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(input_noheap_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(input_noheap_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+
+mdux_discover_tests(input_noheap_spec)
+
 # No-heap verification, layer 2 (issue #63): object-file symbol scan.
 #
 # Catches an allocator reference at build time, in the PR that introduced it, rather than whenever

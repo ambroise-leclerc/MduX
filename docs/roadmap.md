@@ -219,20 +219,23 @@ condition is not discharged by this syntax result.
 
 Deliver one interactive monitor whose platform events flow through a bounded governed model into the existing screen bindings and real Vulkan presentation, with a deterministic headless path using the same application logic.
 
-**#315 landed the input contract.** [ADR-018](adr/ADR-018-bounded-input-and-update-order.md)
+**#315 and #316 landed the input contract and its model.** [ADR-018](adr/ADR-018-bounded-input-and-update-order.md)
 (Accepted 2026-09-08) and the header-only `mdux.medui.input` module define the closed
-pointer/key/text/focus event vocabulary, `maxInputEvents`, the floor-toward-−∞ coordinate rule,
-the `PressLatch` arm/activate model over `resolvePress()`, the bounded `EditOp` /
-`editWouldBeAccepted` editing contract, the input→update→render order, and the
-resolved-and-traced-by-MduX / executed-by-the-host critical-action boundary. The pure pieces are
-implemented and covered by `InputContractTests` in `medui_spec`; the ring-buffer `EventQueue`
-body and the `applyEdit` mutation are #316, the platform adapter #317. PAR-REQ-004–008 dispositions
-are ratified in ADR-018. #316 and #317 are now unblocked.
+pointer/key/text/focus event vocabulary, `maxInputEvents`, the fail-closed floor-toward-−∞
+coordinate rule, the `PressLatch` arm/activate model over `resolvePress()`, the bounded
+editing contract, the input→update→render order, and the resolved-and-traced-by-MduX /
+executed-by-the-host critical-action boundary. #315 delivered the pure pieces; **#316** added
+`EventQueue` (the caller-owned bounded ring, drop-newest on overflow) and `FieldEditor` (the
+scalar-indexed editing state — insert/backspace/delete/caret-moves, both charset bounds and
+`max_length`, no partial mutation, `handleKey`/`handleText` routing). Covered by
+`InputContractTests` in `medui_spec` and a no-allocation proof in `input_noheap_spec`.
+PAR-REQ-004–008 dispositions are ratified in ADR-018. #317 (the platform adapter) and #318 (the
+assembled monitor) are now unblocked.
 
 | Child | Deliverable | Prerequisites |
 |---|---|---|
 | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **done** (ADR-018, `mdux.medui.input`) |
-| [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
+| [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **done** (`EventQueue`, `FieldEditor`) |
 | [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) |
 | [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316), [#317](https://github.com/ambroise-leclerc/MduX/issues/317) |
 

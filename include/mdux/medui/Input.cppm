@@ -15,18 +15,20 @@
  * [ADR-018](../../../docs/adr/ADR-018-bounded-input-and-update-order.md); the numbered clauses
  * below refer to that record.
  *
- * ## What is here, and what is #316's
+ * ## What is here
  *
- * Here: the closed event vocabulary (clause 1), `maxInputEvents` (clause 2), the pure
- * `normalizeSurfacePoint()` (clause 3), the pure `PressLatch` state machine (clause 4), the
- * `EditOp` vocabulary and the pure `editWouldBeAccepted()` predicate (clause 5), and the
- * `ActionTrace` value (clause 7). All of it is `constexpr`, allocation-free and `noexcept`, so the
- * module is header-only like `mdux.medui.schema`.
+ * - clause 1: the closed event vocabulary and its wire spellings;
+ * - clause 2: `maxInputEvents` and the caller-owned bounded `EventQueue` (#316);
+ * - clause 3: the pure `normalizeSurfacePoint()`, fail-closed on overflow;
+ * - clause 4: the pure `PressLatch` state machine;
+ * - clause 5: the `EditOp` vocabulary, the pure `editWouldBeAccepted()` predicate, and the
+ *   stateful `FieldEditor` (#316) — the realization of ADR-018's `applyEdit()` over caller storage;
+ * - clause 7: the `ActionTrace` value.
  *
- * #316's: the ring-buffer `EventQueue` over caller storage, and `applyEdit()`, which produces the
- * next `(value, caret)` from an `EditOp` over caller-owned field storage. Their contracts are in
- * ADR-018 clauses 2 and 5; putting a half-implemented governed symbol here would trip
- * `governed.noThrow.symbolScan` and `screen.noheap.symbolScan` for no benefit.
+ * All of it is `inline`, allocation-free and `noexcept`, and all but `FieldEditor::create()`
+ * (which does one overlap-safe `std::memmove`) is `constexpr`, so the module is header-only like
+ * `mdux.medui.schema`. The `EventQueue` and `FieldEditor` state lives in caller-owned spans; the
+ * types themselves are small value objects.
  *
  * ## Why this does not import `mdux.medui.screen`
  *
@@ -35,6 +37,13 @@
  * input later, input never imports screen — keeps the module graph acyclic. The cost is that the
  * `string_view` a latch holds is into the caller's screen storage: a caller that rebuilds that
  * storage must `cancel()` across the rebuild, which the latch cannot enforce and a test covers.
+ *
+ * For the same reason `FieldEditor` does not build a `TextInputSlot` (that type is
+ * `mdux.medui.screen`'s). It exposes `nodeId()`, `value()` and `caret()`, and a caller assembles
+ * the slot per frame:
+ *
+ *     const mdux::medui::TextInputSlot slot{
+ *         .nodeId = editor.nodeId(), .text = editor.value(), .caret = editor.caret()};
  */
 module;
 
@@ -218,13 +227,13 @@ using InputEvent = std::variant<PointerEvent, KeyEvent, TextEvent, FocusEvent>;
 }
 
 // ===========================================================================
-// Clause 2 — the bounded queue's default capacity
+// Clause 2 — the bounded event queue
 // ===========================================================================
 
 /// The default event-queue capacity. `maxFieldCells`'s counterpart, chosen the same way: large
 /// enough for the input an operator produces between two frames of a medical display, small enough
 /// that a reviewer can multiply it by `sizeof(InputEvent)` in their head. A caller may size its own
-/// storage; the ring-buffer `EventQueue` over it lands in #316.
+/// storage.
 inline constexpr std::size_t maxInputEvents = 64;
 
 /// Why a pure input operation was refused. Every one leaves the caller's value and caret exactly as
@@ -232,6 +241,8 @@ inline constexpr std::size_t maxInputEvents = 64;
 enum class InputError : std::uint8_t {
     MalformedScale,        ///< a coordinate scale term that is non-positive or past `maxCoordinateScale`
     CoordinateOutOfRange,  ///< a normalized coordinate that does not fit in `core::Px`
+    NotFocused,            ///< an edit offered to a field that is not being edited (`caret()` is `nullopt`)
+    MalformedEditOp,       ///< an `EditOp` whose `kind` is `EditKind::Unspecified`
     CaretOutOfRange,       ///< a caret position outside `[0, length]`
     ScalarNotInFont,       ///< the font package has no glyph for the scalar — the physical limit
     ScalarNotPermitted,    ///< the font can draw it, but the node's `charset:` excludes it — the policy limit
@@ -243,6 +254,8 @@ enum class InputError : std::uint8_t {
     switch (error) {
         case InputError::MalformedScale:       return "the coordinate scale is not strictly positive or is too large";
         case InputError::CoordinateOutOfRange: return "the normalized coordinate does not fit in a surface pixel";
+        case InputError::NotFocused:           return "the field is not being edited";
+        case InputError::MalformedEditOp:      return "the edit operation has no kind";
         case InputError::CaretOutOfRange:      return "the caret is outside [0, length]";
         case InputError::ScalarNotInFont:      return "the font package has no glyph for the scalar";
         case InputError::ScalarNotPermitted:   return "the scalar is outside the node's charset";
@@ -251,6 +264,76 @@ enum class InputError : std::uint8_t {
     }
     return {};
 }
+
+/// The outcome of offering an event to an `EventQueue`.
+enum class PushOutcome : std::uint8_t {
+    Accepted,       ///< the event was stored
+    DroppedNewest,  ///< the queue was full; this event was discarded and `droppedCount()` advanced
+};
+
+/**
+ * @brief A caller-owned bounded FIFO of input events (ADR-018 clause 2).
+ *
+ * The platform adapter `push()`es events in; one application update `pop()`s them out in order
+ * until `empty()`. `storage` is a span the caller allocated once — a `std::array<InputEvent, N>`
+ * on a device — and the queue never grows it, never copies it elsewhere, and allocates nothing.
+ * It is a ring: `head_` and `count_` index into `storage`, wrapping.
+ *
+ * On overflow the **newest** event is dropped, not the oldest: the oldest events are the ones the
+ * application has most likely already acted on (an arm, a caret move), so discarding them would
+ * desynchronise state from what the operator last saw. `droppedCount()` saturates rather than
+ * wrapping. A `push()` returning `DroppedNewest` is the signal to `PressLatch::cancel()` any armed
+ * press — the event stream is no longer a complete record.
+ */
+class EventQueue {
+public:
+    /// A queue over `storage`. An empty span is a zero-capacity queue: every `push()` drops.
+    constexpr explicit EventQueue(std::span<InputEvent> storage) noexcept : storage_{storage} {}
+
+    /// Offers `event`. Stored (`Accepted`) unless the queue is `full()`, in which case `event` is
+    /// discarded, `droppedCount()` advances (saturating), and `DroppedNewest` is returned.
+    [[nodiscard]] constexpr PushOutcome push(const InputEvent& event) noexcept {
+        if (count_ >= storage_.size()) {
+            if (droppedCount_ != std::numeric_limits<std::uint32_t>::max()) {
+                ++droppedCount_;
+            }
+            return PushOutcome::DroppedNewest;
+        }
+        storage_[(head_ + count_) % storage_.size()] = event;
+        ++count_;
+        return PushOutcome::Accepted;
+    }
+
+    /// The oldest queued event, or `nullopt` when `empty()`.
+    [[nodiscard]] constexpr std::optional<InputEvent> pop() noexcept {
+        if (count_ == 0) {
+            return std::nullopt;
+        }
+        const InputEvent event = storage_[head_];
+        head_ = (head_ + 1) % storage_.size();
+        --count_;
+        return event;
+    }
+
+    /// Discards every queued event without returning them — for a caller that has decided the batch
+    /// is void, e.g. the screen was replaced under it. Does not reset `droppedCount()`.
+    constexpr void clear() noexcept {
+        head_  = 0;
+        count_ = 0;
+    }
+
+    [[nodiscard]] constexpr std::size_t   size() const noexcept { return count_; }
+    [[nodiscard]] constexpr std::size_t   capacity() const noexcept { return storage_.size(); }
+    [[nodiscard]] constexpr bool          empty() const noexcept { return count_ == 0; }
+    [[nodiscard]] constexpr bool          full() const noexcept { return count_ >= storage_.size(); }
+    [[nodiscard]] constexpr std::uint32_t droppedCount() const noexcept { return droppedCount_; }
+
+private:
+    std::span<InputEvent> storage_{};
+    std::size_t           head_{0};
+    std::size_t           count_{0};
+    std::uint32_t         droppedCount_{0};
+};
 
 // ===========================================================================
 // Clause 3 — coordinate normalization (floor toward -inf)
@@ -453,6 +536,215 @@ editWouldBeAccepted(char32_t scalar, std::span<const mdux::font::CharsetRange> f
     }
     return {};
 }
+
+/**
+ * @brief The controlled editing state of one `TextInput`, over caller-owned scalar storage
+ *        (ADR-018 clause 5) — the realization of the ADR's `applyEdit()`.
+ *
+ * Holds a view of a `char32_t` buffer the caller allocated once (at least `maxLength` long), the
+ * current length, and the caret. Every mutation is bounded by the two charset questions
+ * `editWouldBeAccepted()` asks and by `max_length`, all checked before anything moves, so a
+ * refused edit leaves the value and caret exactly as they were — no partial mutation. Nothing is
+ * allocated: an insert or delete shifts scalars inside the caller's own buffer.
+ *
+ * `caret()` is `nullopt` when the field is not being edited (a fresh editor, or `focus()` with
+ * `FocusKind::Leave`), which is exactly `TextInputSlot::caret`'s "draws no caret" state. The
+ * editor holds no `TextInputSlot` — see the module header for the one-line assembly a caller does.
+ *
+ * The `fontCharset` / `nodeCharset` spans are the caller's storage (the bound `FontPackage`'s
+ * `restrictedCharset` and the node's `charsetRanges`); the editor keeps views, not copies.
+ */
+class FieldEditor {
+public:
+    /**
+     * @brief A fresh editor over `storage` for `nodeId`, holding `initial`, not yet being edited.
+     *
+     * Refused when `maxLength` exceeds `storage.size()` or `maxFieldCells`, when `initial` is
+     * longer than `maxLength`, or when `initial` carries a scalar the font or node charset
+     * excludes. **A refused `create()` never writes `storage`** — the whole of `initial` is
+     * validated before anything is copied — so a caller's existing buffer contents survive a
+     * rejection intact. On success `initial` is copied into `storage` (overlap-safe: `initial`
+     * may legitimately be a view of `storage` the caller is adopting in place) and `caret()` is
+     * `nullopt`. Not `constexpr` for the same reason `TextInputBinding::create()` is not — the
+     * copy is an overlap-safe `std::memmove`.
+     */
+    [[nodiscard]] static mdux::core::Result<FieldEditor, InputError>
+    create(std::string_view nodeId, std::span<char32_t> storage, std::span<const char32_t> initial,
+           std::span<const mdux::font::CharsetRange> fontCharset,
+           std::span<const mdux::font::CharsetRange> nodeCharset, std::size_t maxLength) noexcept {
+        if (maxLength > storage.size() || maxLength > maxFieldCells) {
+            return mdux::core::err(InputError::FieldAtCapacity);
+        }
+        if (initial.size() > maxLength) {
+            return mdux::core::err(InputError::FieldAtCapacity);
+        }
+        // Validate the whole value first, writing nothing: a rejected create() must leave the
+        // caller's buffer exactly as it found it.
+        for (const char32_t scalar : initial) {
+            // Charset only — capacity is `initial.size() <= maxLength` by the check above, so ask
+            // against a fresh field so `editWouldBeAccepted` never answers `FieldAtCapacity` here.
+            if (auto ok = editWouldBeAccepted(scalar, fontCharset, nodeCharset, 0, maxLength); !ok) {
+                return mdux::core::err(ok.error());
+            }
+        }
+        // Overlap-safe: `initial` and `storage` may alias (a caller adopting a value already at
+        // the front of its buffer, or a sub-view of it). `std::memmove` is correct for every
+        // overlap; a forward element copy would read scalars it had already overwritten.
+        if (!initial.empty()) {
+            std::memmove(storage.data(), initial.data(), initial.size() * sizeof(char32_t));
+        }
+        return FieldEditor{nodeId, storage, initial.size(), fontCharset, nodeCharset, maxLength};
+    }
+
+    [[nodiscard]] constexpr std::string_view           nodeId() const noexcept { return nodeId_; }
+    [[nodiscard]] constexpr std::span<const char32_t>   value() const noexcept { return storage_.first(length_); }
+    [[nodiscard]] constexpr std::optional<std::size_t>  caret() const noexcept { return caret_; }
+    [[nodiscard]] constexpr std::size_t                 length() const noexcept { return length_; }
+    [[nodiscard]] constexpr std::size_t                 maxLength() const noexcept { return maxLength_; }
+    [[nodiscard]] constexpr bool                        editing() const noexcept { return caret_.has_value(); }
+
+    /**
+     * @brief A focus transition. `FocusKind::Enter` starts editing with the caret after the last
+     *        scalar, `Leave` ends it (`caret()` -> `nullopt`). Returns whether this editor changed
+     *        state for the event: `false` for an event naming another node and `false` for a
+     *        kindless (`FocusKind::Unspecified`) event, which is never a delivered one (clause 1) —
+     *        the same fail-closed reading `apply()` gives an `EditKind::Unspecified` op.
+     */
+    constexpr bool focus(const FocusEvent& event) noexcept {
+        if (event.nodeId != nodeId_) {
+            return false;
+        }
+        if (event.kind == FocusKind::Enter) {
+            caret_ = length_;
+            return true;
+        }
+        if (event.kind == FocusKind::Leave) {
+            caret_ = std::nullopt;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Applies one edit, or refuses it without mutating anything.
+     *
+     * `NotFocused` when the field is not being edited; `MalformedEditOp` for an `Unspecified`
+     * `EditOp`; `InsertScalar` is bounded by `editWouldBeAccepted()`; `DeleteBack` / `DeleteForward`
+     * are `EmptyEdit` at their boundary; `MoveCaret` is `CaretOutOfRange` past `length()`.
+     */
+    [[nodiscard]] constexpr mdux::core::Result<void, InputError> apply(const EditOp& op) noexcept {
+        if (!caret_.has_value()) {
+            return mdux::core::err(InputError::NotFocused);
+        }
+        const std::size_t caret = *caret_;
+        switch (op.kind) {
+            case EditKind::InsertScalar: {
+                if (auto ok = editWouldBeAccepted(op.scalar, fontCharset_, nodeCharset_, length_, maxLength_); !ok) {
+                    return mdux::core::err(ok.error());
+                }
+                for (std::size_t i = length_; i > caret; --i) {
+                    storage_[i] = storage_[i - 1];
+                }
+                storage_[caret] = op.scalar;
+                ++length_;
+                caret_ = caret + 1;
+                return {};
+            }
+            case EditKind::DeleteBack: {
+                if (caret == 0) {
+                    return mdux::core::err(InputError::EmptyEdit);
+                }
+                for (std::size_t i = caret - 1; i + 1 < length_; ++i) {
+                    storage_[i] = storage_[i + 1];
+                }
+                --length_;
+                caret_ = caret - 1;
+                return {};
+            }
+            case EditKind::DeleteForward: {
+                if (caret >= length_) {
+                    return mdux::core::err(InputError::EmptyEdit);
+                }
+                for (std::size_t i = caret; i + 1 < length_; ++i) {
+                    storage_[i] = storage_[i + 1];
+                }
+                --length_;
+                return {};
+            }
+            case EditKind::MoveCaret: {
+                if (op.caretTo > length_) {
+                    return mdux::core::err(InputError::CaretOutOfRange);
+                }
+                caret_ = op.caretTo;
+                return {};
+            }
+            case EditKind::Unspecified:
+                return mdux::core::err(InputError::MalformedEditOp);
+        }
+        return mdux::core::err(InputError::MalformedEditOp);
+    }
+
+    /**
+     * @brief Routes a key event to an edit. Returns `true` when it was an edit this field consumed,
+     *        `false` for a key that is not an edit (`Commit`, `Cancel`, focus traversal — the
+     *        caller's to act on), a key-up, or an unfocused field. An error is a refused edit.
+     */
+    [[nodiscard]] constexpr mdux::core::Result<bool, InputError> handleKey(const KeyEvent& event) noexcept {
+        if (event.kind != KeyKind::Down || !caret_.has_value()) {
+            return false;
+        }
+        const std::size_t caret = *caret_;
+        EditOp            op{};
+        switch (event.key) {
+            case KeyCode::DeleteBack:    op = {.kind = EditKind::DeleteBack}; break;
+            case KeyCode::DeleteForward: op = {.kind = EditKind::DeleteForward}; break;
+            case KeyCode::CaretLeft:     op = {.kind = EditKind::MoveCaret, .caretTo = caret == 0 ? 0 : caret - 1}; break;
+            case KeyCode::CaretRight:    op = {.kind = EditKind::MoveCaret, .caretTo = caret + 1 > length_ ? length_ : caret + 1}; break;
+            case KeyCode::CaretHome:     op = {.kind = EditKind::MoveCaret, .caretTo = 0}; break;
+            case KeyCode::CaretEnd:      op = {.kind = EditKind::MoveCaret, .caretTo = length_}; break;
+            case KeyCode::Commit:
+            case KeyCode::Cancel:
+            case KeyCode::FocusNext:
+            case KeyCode::FocusPrev:
+            case KeyCode::Unspecified:
+                return false;
+        }
+        if (auto r = apply(op); !r) {
+            return mdux::core::err(r.error());
+        }
+        return true;
+    }
+
+    /// Inserts `event.scalar` at the caret when focused; `false` otherwise, an error when refused.
+    [[nodiscard]] constexpr mdux::core::Result<bool, InputError> handleText(const TextEvent& event) noexcept {
+        if (!caret_.has_value()) {
+            return false;
+        }
+        if (auto r = apply(EditOp{.kind = EditKind::InsertScalar, .scalar = event.scalar}); !r) {
+            return mdux::core::err(r.error());
+        }
+        return true;
+    }
+
+private:
+    constexpr FieldEditor(std::string_view nodeId, std::span<char32_t> storage, std::size_t length,
+                          std::span<const mdux::font::CharsetRange> fontCharset,
+                          std::span<const mdux::font::CharsetRange> nodeCharset, std::size_t maxLength) noexcept
+        : nodeId_{nodeId}, storage_{storage}, fontCharset_{fontCharset}, nodeCharset_{nodeCharset},
+          length_{length}, maxLength_{maxLength} {}
+
+    std::string_view                         nodeId_{};
+    std::span<char32_t>                       storage_{};
+    std::span<const mdux::font::CharsetRange> fontCharset_{};
+    std::span<const mdux::font::CharsetRange> nodeCharset_{};
+    std::size_t                              length_{0};
+    std::size_t                              maxLength_{0};
+    std::optional<std::size_t>               caret_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline —
+// `TextInputBinding`'s static_assert, for its reason.
+static_assert(!std::is_aggregate_v<FieldEditor>, "a FieldEditor must only be obtainable through create()");
 
 // ===========================================================================
 // Clause 7 — MduX resolves and traces a critical action; the host executes it

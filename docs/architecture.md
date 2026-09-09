@@ -306,16 +306,25 @@ than reporting a no-op nothing performs. A critical control with no requirement 
 this module hands to a host.
 
 `resolvePress()` is one coordinate to one control, and nothing more — no queue, no release, no
-focus, no text. The contract for those is `mdux.medui.input` (#315,
-[ADR-018](adr/ADR-018-bounded-input-and-update-order.md)): a closed pointer/key/text/focus event
-vocabulary, a caller-owned bounded queue that drops the newest event on overflow, a
-floor-toward-−∞ rule for the one physical→authored coordinate conversion the adapter does, a
-`PressLatch` that arms a target on press and activates it only if the release lands on the same
-one, and a scalar-indexed bounded-editing contract that never partially mutates a field. The
-module is header-only and holds the fully pure pieces; the ring-buffer `EventQueue` body and the
-`applyEdit` text mutation are #316, and the platform adapter that produces the events is #317. A
-critical press is still resolved and traced by MduX and **executed by the host** — `TriggerHalt`
-is a request for the host's halt path, not a behavior this library performs.
+focus, no text. That is `mdux.medui.input` (#315/#316,
+[ADR-018](adr/ADR-018-bounded-input-and-update-order.md)), a header-only governed module:
+
+- a closed pointer/key/text/focus event vocabulary with contract spellings;
+- `normalizeSurfacePoint()` — the one physical→authored coordinate conversion the adapter does,
+  flooring toward −∞ and failing closed rather than wrapping;
+- `PressLatch` — arms a target on press, activates it only if the release lands on the same one;
+- `EventQueue` — a caller-owned bounded ring the adapter fills and one update drains, dropping the
+  newest event on overflow with a saturating counter;
+- `FieldEditor` — scalar-indexed editing over a caller-owned buffer: insert / backspace /
+  delete-forward / caret moves, bounded by the font's charset, the node's `charset:` and
+  `max_length`, and never partially applied; `handleKey` / `handleText` route the contract's
+  events, and `value()` / `caret()` feed a `TextInputSlot`.
+
+Everything is `constexpr` over caller storage — the module allocates nothing, proved by
+`input_noheap_spec`. The platform adapter that captures native events and fills the queue is #317;
+the assembled input→update→render loop is #318. A critical press is still resolved and traced by
+MduX and **executed by the host** — `TriggerHalt` is a request for the host's halt path, not a
+behavior this library performs.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit
