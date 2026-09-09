@@ -441,6 +441,12 @@ public:
 
     /// Ends the render pass and command buffer, submits, and presents. `OutOfDate` when the
     /// swapchain went stale during present (a resize); `Presented` otherwise.
+    ///
+    /// The submit signals `renderFinished_[imageIndex_]` — a semaphore **per swapchain image**, not
+    /// per frame slot. A binary semaphore cannot be re-signalled until the previous wait on it has
+    /// completed, and there is no fence for the *presentation* wait; under FIFO, an image is not
+    /// re-acquired until its previous present finished, so keying the semaphore to the image is
+    /// what makes the reuse safe (Khronos WSI guidance).
     [[nodiscard]] PresentOutcome endFrame() {
         vkCmdEndRenderPass(commandBuffers_[slot_]);
         vkEndCommandBuffer(commandBuffers_[slot_]);
@@ -454,7 +460,7 @@ public:
         submit.commandBufferCount   = 1;
         submit.pCommandBuffers      = &commandBuffers_[slot_];
         submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores    = &renderFinished_[slot_];
+        submit.pSignalSemaphores    = &renderFinished_[imageIndex_];
         if (vkQueueSubmit(boot_.graphicsQueue(), 1, &submit, inFlight_[slot_]) != VK_SUCCESS) {
             return PresentOutcome::DeviceLost;
         }
@@ -462,7 +468,7 @@ public:
         VkPresentInfoKHR present{};
         present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores    = &renderFinished_[slot_];
+        present.pWaitSemaphores    = &renderFinished_[imageIndex_];
         present.swapchainCount     = 1;
         present.pSwapchains        = &swapchain_;
         present.pImageIndices      = &imageIndex_;
@@ -476,6 +482,16 @@ public:
             return PresentOutcome::DeviceLost;
         }
         return PresentOutcome::Presented;
+    }
+
+    /// Blocks until the device has finished every submitted frame. The caller runs this before it
+    /// destroys a `UiRenderer` built against this window — the renderer frees buffers, descriptors
+    /// and a pipeline the last in-flight frame may still be reading, and only this window's own
+    /// teardown waits for the device otherwise.
+    void waitIdle() const noexcept {
+        if (boot_.device() != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(boot_.device());
+        }
     }
 
     /// Idles the device, tears the swapchain-derived objects down in reverse order, and rebuilds
@@ -502,7 +518,13 @@ public:
     }
 
 private:
-    static constexpr std::uint32_t kFramesInFlight = 2;
+    // One frame in flight. There is a single `UiRenderer` with one vertex/index buffer pair, and
+    // `UiRenderer::record()` overwrites it in place — so a second in-flight frame would let the CPU
+    // rewrite geometry the GPU is still reading for the previous one. Serialising to one frame is
+    // the correct, small fix for a demonstrator; a real monitor would carry a renderer (or a buffer
+    // ring) per slot. `beginFrame()` waits this slot's fence before it hands back a command buffer,
+    // so `record()` only ever touches the buffer once the previous frame's GPU work has completed.
+    static constexpr std::uint32_t kFramesInFlight = 1;
 
     GlfwWindow() = default;
 
@@ -684,19 +706,30 @@ private:
                 return false;
             }
         }
+
+        // One `renderFinished` semaphore per swapchain image — see `endFrame()`. Rebuilt with the
+        // swapchain because the image count can change on a resize.
+        renderFinished_.resize(actual);
+        const VkSemaphoreCreateInfo sem{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        for (std::uint32_t i = 0; i < actual; ++i) {
+            if (vkCreateSemaphore(boot_.device(), &sem, nullptr, &renderFinished_[i]) != VK_SUCCESS) {
+                std::cerr << "adapter: could not create a presentation semaphore\n";
+                return false;
+            }
+        }
         return true;
     }
 
+    /// The per-frame-slot fence and image-available semaphore — `kFramesInFlight` of each, built
+    /// once. `renderFinished` lives with the swapchain instead (`createSwapchain`).
     [[nodiscard]] bool createSync() {
         imageAvailable_.resize(kFramesInFlight);
-        renderFinished_.resize(kFramesInFlight);
         inFlight_.resize(kFramesInFlight);
-        VkSemaphoreCreateInfo sem{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        VkFenceCreateInfo     fence{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                                    .flags = VK_FENCE_CREATE_SIGNALED_BIT};
+        const VkSemaphoreCreateInfo sem{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        const VkFenceCreateInfo     fence{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                                          .flags = VK_FENCE_CREATE_SIGNALED_BIT};
         for (std::uint32_t i = 0; i < kFramesInFlight; ++i) {
             if (vkCreateSemaphore(boot_.device(), &sem, nullptr, &imageAvailable_[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(boot_.device(), &sem, nullptr, &renderFinished_[i]) != VK_SUCCESS ||
                 vkCreateFence(boot_.device(), &fence, nullptr, &inFlight_[i]) != VK_SUCCESS) {
                 std::cerr << "adapter: could not create the frame synchronisation objects\n";
                 return false;
@@ -706,6 +739,10 @@ private:
     }
 
     void destroySwapchain() noexcept {
+        for (VkSemaphore s : renderFinished_) {
+            vkDestroySemaphore(boot_.device(), s, nullptr);
+        }
+        renderFinished_.clear();
         for (VkFramebuffer fb : framebuffers_) {
             vkDestroyFramebuffer(boot_.device(), fb, nullptr);
         }
@@ -727,19 +764,15 @@ private:
         // connection `glfwTerminate()` frees, so destroying the surface after it is a use-after-free.
         if (boot_.device() != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(boot_.device());
+            destroySwapchain();  // also destroys the per-image renderFinished_ semaphores
             for (VkSemaphore s : imageAvailable_) {
-                vkDestroySemaphore(boot_.device(), s, nullptr);
-            }
-            for (VkSemaphore s : renderFinished_) {
                 vkDestroySemaphore(boot_.device(), s, nullptr);
             }
             for (VkFence f : inFlight_) {
                 vkDestroyFence(boot_.device(), f, nullptr);
             }
             imageAvailable_.clear();
-            renderFinished_.clear();
             inFlight_.clear();
-            destroySwapchain();
             if (commandPool_ != VK_NULL_HANDLE) {
                 vkDestroyCommandPool(boot_.device(), commandPool_, nullptr);
                 commandPool_ = VK_NULL_HANDLE;
@@ -896,13 +929,26 @@ private:
     }
 
     void pointerAt(mdux::medui::PointerKind kind, double x, double y) noexcept {
-        const auto mapped = mapping_.map(kind, static_cast<mdux::core::Px>(std::lround(x)),
-                                         static_cast<mdux::core::Px>(std::lround(y)));
-        if (mapped) {
-            enqueue(*mapped);
+        // Scale first, then floor toward −∞ — the same rule `mdux::medui::normalizeSurfacePoint()`
+        // applies, done here because GLFW hands us fractional coordinates and the governed module is
+        // integer-only. Rounding `x`/`y` before scaling (an earlier `std::lround`) pushed a
+        // sub-pixel position onto the adjacent authored cell at a non-1:1 device-pixel ratio: window
+        // 10.75 at 2× became authored 22 rather than ⌊21.5⌋ = 21.
+        const double ratio     = static_cast<double>(mapping_.scaleNum) / mapping_.scaleDen;
+        const double authoredX = std::floor((x - mapping_.originX) * ratio);
+        const double authoredY = std::floor((y - mapping_.originY) * ratio);
+        // `core::Px` is `std::int32_t`. −2³¹ and 2³¹ are both exactly representable as `double`,
+        // INT32_MAX is not — so bound with the half-open `[−2³¹, 2³¹)` and the cast is always in
+        // range. Fail-closed, as `normalizeSurfacePoint`'s `CoordinateOutOfRange`: never clamp a
+        // wrapped coordinate onto a real control.
+        constexpr double lo = -2147483648.0;
+        constexpr double hi = 2147483648.0;
+        if (!(authoredX >= lo && authoredX < hi && authoredY >= lo && authoredY < hi)) {
+            return;
         }
-        // A coordinate that will not normalise (fail-closed, ADR-018 clause 3) is dropped rather
-        // than clamped onto a real control.
+        enqueue(mdux::medui::PointerEvent{.kind = kind,
+                                          .x    = static_cast<mdux::core::Px>(authoredX),
+                                          .y    = static_cast<mdux::core::Px>(authoredY)});
     }
 
     GLFWwindow*                 window_{nullptr};

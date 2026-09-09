@@ -121,8 +121,13 @@ device-pixel ratio is uniform, and a per-axis-different one is exactly the silen
 ADR-018 clause 3 fails closed to avoid, so a height that does not reduce to the same fraction (also
 a non-positive extent, or a reduced term past `maxCoordinateScale`) is `MalformedScale`.
 `map(kind, windowX, windowY)` runs exactly one `normalizeSurfacePoint()` pass (ADR-018 clause 3:
-floor toward −∞, fail-closed on an out-of-`core::Px` result). A point off the authored surface is
-not `SurfaceMapping`'s concern — `resolvePress()` returns nothing for it.
+floor toward −∞, fail-closed on an out-of-`core::Px` result) for a caller that already holds an
+integer window coordinate. GLFW's coordinates are fractional, so the adapter applies the **same**
+rule — **scale, then floor toward −∞, then range-check** — over the raw `double` before it builds
+the event; flooring the window coordinate first would move a sub-pixel position onto the adjacent
+authored cell at a non-1:1 ratio. The float arithmetic stays in the adapter; the governed module is
+integer-only. A point off the authored surface is not `SurfaceMapping`'s concern — `resolvePress()`
+returns nothing for it.
 
 The adapter builds the mapping once at start-up and again on **every** framebuffer-resize and
 content-scale change, from the current `glfwGetFramebufferSize` and window size, and
@@ -154,7 +159,13 @@ The `KeyCode` table is exactly ADR-018's members and no more: Left/Right/Home/En
 `TextEvent` for one keystroke is expected and each is handled on its own terms.
 
 `EventQueue::push()` returning `DroppedNewest` is a `PressLatch::cancel()` signal (ADR-018 clause 2):
-the stream is no longer a complete record, so a press waiting for its release must not activate.
+the stream is no longer a complete record. The example goes further — it `clear()`s the whole
+overflowed batch and skips the update rather than acting on the events that did arrive, because a
+queued `Down` still in the batch would re-arm the control the cancel was meant to disarm and a
+queued `Up` could then activate it. The frame still renders.
+
+The pointer leaving the window (`GLFW_CURSOR` enter/leave) also emits `PointerEvent{Cancel}` — a
+press that armed a control cannot stay armed while the cursor is somewhere the control is not.
 
 ### 4. Every lifecycle outcome is explicit — no silent degradation
 
@@ -164,10 +175,19 @@ the stream is no longer a complete record, so a press waiting for its release mu
 | **Resize / swapchain recreation** | `vkDeviceWaitIdle`, destroy the swapchain-derived objects (image views, framebuffers) in reverse order, rebuild, rebuild `SurfaceMapping` from the new framebuffer extent, `PressLatch::cancel()`. A `VK_ERROR_OUT_OF_DATE_KHR` from acquire or present triggers the same path. |
 | **Focus loss** | `PressLatch::cancel()`; the frame keeps rendering. No queued event that could activate a control. |
 | **Close / stop** | `glfwWindowShouldClose`, or — in `--smoke-test` — the presented-frame budget met, or the wall-clock deadline reached (a non-zero exit if the budget was not met). |
-| **Teardown** | device idle first, then destroy in strict reverse construction order — sync objects, command pool, framebuffers, pipeline-adjacent objects the example owns, swapchain, device, surface, instance, window — the ordering `VulkanSCTriangleExample::cleanup()` already uses. `UiRenderer` destroys only what it created, in its own destructor. |
+| **Teardown** | `vkDeviceWaitIdle` first — the last submitted frame may still reference the `UiRenderer`'s buffers, descriptors and pipeline, and the renderer is destroyed *before* the window whose teardown does its own idle. An RAII guard runs that idle on every return path, error exits included. Then destroy in strict reverse construction order (sync objects, command pool, framebuffers, swapchain, device, surface, instance, window — `VulkanSCTriangleExample::cleanup()`'s ordering). `UiRenderer` destroys only what it created, in its own destructor. |
 
-`VK_ERROR_DEVICE_LOST` and any other non-recoverable `VkResult` is fatal and reported as itself,
-never as a skipped frame.
+`VK_ERROR_DEVICE_LOST`, a non-`SUCCESS`/`TIMEOUT` fence wait, a failed `vkBeginCommandBuffer`, and
+any other non-recoverable `VkResult` are fatal and reported as themselves, never as a skipped frame.
+
+The shell runs **one frame in flight**. There is a single `UiRenderer` with one vertex/index buffer
+pair that `record()` rewrites in place, so a second in-flight frame would let the CPU overwrite
+geometry the GPU is still reading. `beginFrame()` waits the frame's fence before it returns a
+command buffer. The `renderFinished` semaphore is allocated **per swapchain image** and indexed by
+the acquired image index, not the frame slot: there is no fence for the *presentation* wait, and
+under FIFO an image is not re-acquired until its previous present completed, which is what makes the
+semaphore safe to reuse (Khronos WSI guidance). A real monitor (#318) would carry a renderer, or a
+buffer ring, per slot and could pipeline; a demonstrator does not need to.
 
 ### 5. A bounded presentation smoke path runs in CI, and an unavailable device fails it
 
@@ -250,7 +270,11 @@ which runs in the ordinary test job.
   library, so it is exercised only by the example binaries and the `glfw_translation_spec` unit
   test — its swapchain-recreation path has CI coverage only through `--smoke-test` on a resize the
   smoke test does not itself trigger. Mitigation: `--smoke-test` exercises acquire/record/present
-  and the `OUT_OF_DATE` branch is shared with the resize path; a full resize test belongs with #318.
+  and the `OUT_OF_DATE` branch is shared with the resize path; a full resize test, and any
+  validation-layer coverage of the frame-sync model, belong with #318.
+- The shell serialises to one frame in flight, so it cannot overlap CPU and GPU work. Acceptable
+  for a demonstrator drawing a handful of rectangles and glyphs; #318 revisits it if the monitor
+  needs the throughput.
 - `SurfaceMapping::create` assumes a 1:1 framebuffer-origin renderer. A presenter that scaled or
   letterboxed the surface would need a different factory. Mitigation: it is implementation-local
   and versioned by its module; adding a second constructor is additive, and `identity()` plus the

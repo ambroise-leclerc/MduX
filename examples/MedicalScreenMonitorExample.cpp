@@ -306,6 +306,15 @@ int runWindowed(bool smokeTest) {
         return 1;
     }
 
+    // The renderer holds buffers, descriptors and a pipeline the GPU may still be reading from the
+    // last submitted frame. It is destroyed before `window` (declaration order) and only `window`'s
+    // own teardown waits for the device, so idle it here first — on every return path, including the
+    // error exits below. Declared right after `renderer` so it runs immediately before it.
+    struct IdleBeforeRendererTeardown {
+        const mx::GlfwWindow* window;
+        ~IdleBeforeRendererTeardown() { window->waitIdle(); }
+    } const idleGuard{&*window};
+
     FieldState field;
     field.bind(*bound);
 
@@ -367,11 +376,22 @@ int runWindowed(bool smokeTest) {
                 return 1;
             }
         }
-        if (pump.takeFocusLost() || pump.takeOverflow()) {
+        if (pump.takeFocusLost()) {
             latch.cancel();
         }
 
-        const UpdateResult update = applyBatch(queue, *bound, latch, field, sequence);
+        UpdateResult update{};
+        if (pump.takeOverflow()) {
+            // The batch is not a complete record of what the operator did (ADR-018 clause 2).
+            // Discard it whole and stay disarmed — acting on what did arrive could let a queued Down
+            // re-arm the control the overflow was meant to cancel, and a queued Up then activate it.
+            // The frame still renders, so the display does not freeze.
+            queue.clear();
+            latch.cancel();
+            std::println("(input overflowed - dropped a partial batch)");
+        } else {
+            update = applyBatch(queue, *bound, latch, field, sequence);
+        }
         if (update.action) {
             std::println("ActionTrace #{}: node='{}' requirement='{}' event={} - the host executes this, not MduX",
                          update.action->sequence, update.action->nodeId, update.action->requirement,
