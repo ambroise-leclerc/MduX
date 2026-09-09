@@ -219,6 +219,34 @@ const mdux::spec::Register theEmitterRendersAValidModule{
             .Execute();
     }};
 
+const mdux::spec::Register theEmitterRejectsAMalformedDocument{
+    "mdux-scenarioemit refuses a scenario.json that is not a compiled scenario",
+    "evidence-unit",
+    [] {
+        return speclab::Test("scenario-emit-malformed")
+            .Given("a JSON file missing the scenario members", [] {})
+            .When("renderScenario() runs on it", [] {})
+            .Then("it fails and the emitter's own SCE002 is among the diagnostics",
+                  [] {
+                      mdux::spec::Checks checks;
+                      const std::filesystem::path bad =
+                          std::filesystem::temp_directory_path() / "mdux-scenario-emit-malformed.json";
+                      {
+                          std::ofstream out{bad, std::ios::binary | std::ios::trunc};
+                          out << "{}";
+                      }
+                      std::vector<cli::Diagnostic> diags;
+                      auto outputs = sc::renderScenario(bad, diags);
+                      std::filesystem::remove(bad);
+                      const bool sawSce002 =
+                          std::ranges::any_of(diags, [](const cli::Diagnostic& d) { return d.code == "SCE002"; });
+                      checks.expect(!outputs.has_value() && sawSce002,
+                                    std::format("refused with SCE002, first {}", firstCode(diags)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register identifierParity{
     "identifierForScenario maps an id the same way the CMake helper does",
     "evidence-unit",

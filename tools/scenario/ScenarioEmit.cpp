@@ -307,6 +307,10 @@ std::optional<EmitOutputs> renderScenario(const std::filesystem::path& scenarioP
     }
     auto script = readScenarioDoc(*bytes, scenarioPath.generic_string(), diagnostics);
     if (!script.has_value()) {
+        // `readScenarioDoc` has already pushed the specific `SCN02x` shape fault; add the emitter's
+        // own top-level code so a caller filtering on the `mdux-scenarioemit` family still sees one.
+        report(diagnostics, scenarioPath.generic_string(), scenarioMalformed,
+               "scenario.json is not a compiled scenario this build can emit");
         return std::nullopt;
     }
 
