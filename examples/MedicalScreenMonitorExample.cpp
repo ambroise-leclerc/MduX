@@ -354,6 +354,15 @@ int runWindowed(bool smokeTest) {
         if (!window->recreateSwapchain()) {
             return false;
         }
+        // A minimised window reports a zero framebuffer, `recreateSwapchain()` skips the rebuild,
+        // and there is nothing to map. Stay disarmed and retry when the window comes back — a zero
+        // extent is not a DPI failure.
+        const core::Extent2D fb  = window->framebufferExtent();
+        const core::Extent2D win = window->windowExtent();
+        if (fb.width == 0 || fb.height == 0 || win.width == 0 || win.height == 0) {
+            latch.cancel();
+            return true;
+        }
         auto rebuilt = buildMapping();
         if (!rebuilt) {
             std::cerr << "monitor: after the resize the framebuffer-to-window ratio is no longer one "
