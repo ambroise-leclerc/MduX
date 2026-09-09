@@ -99,6 +99,39 @@ const mdux::spec::Register theQueueAllocatesNothing{
             .Execute();
     }};
 
+const mdux::spec::Register surfaceMappingAllocatesNothing{
+    "Building a SurfaceMapping and mapping pointer coordinates through it allocates nothing",
+    "noheap",
+    [] {
+        return speclab::Test("medui-input-noheap-surface-mapping")
+            .Given("a run of window and framebuffer extents and pointer coordinates", [] {})
+            .When("a mapping is built for each and every coordinate is mapped through it", [] {})
+            .Then("not one allocation happens",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const std::size_t before = allocations();
+                      for (mdux::core::Px w = 640; w <= 3840; w += 160) {
+                          const mdux::core::Extent2D window{w, w * 9 / 16};
+                          for (mdux::core::Px ratio = 1; ratio <= 3; ++ratio) {
+                              const auto mapping = ms::SurfaceMapping::create(
+                                  {window.width * ratio, window.height * ratio}, window);
+                              if (!mapping) { continue; }
+                              for (mdux::core::Px x = 0; x < w; x += 97) {
+                                  (void)mapping->map(ms::PointerKind::Move, x, x / 2);
+                                  (void)mapping->toSurface(x, x / 2);
+                              }
+                          }
+                      }
+                      (void)ms::SurfaceMapping::create({0, 0}, {400, 300});  // the refused path
+                      const std::size_t after = allocations();
+
+                      checks.expect(after == before, std::format("no allocation, {} then {}", before, after));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register theEditorAllocatesNothing{
     "Creating a field editor and running edits - accepted and refused - allocates nothing after creation",
     "noheap",
