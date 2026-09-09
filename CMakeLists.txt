@@ -272,6 +272,7 @@ target_sources(MduXCore
             include/mdux/medui/Reading.cppm
             include/mdux/medui/Screen.cppm
             include/mdux/medui/Trace.cppm
+            include/mdux/medui/Scenario.cppm
             include/mdux/verify/Verify.cppm
     PRIVATE
         src/evidence/Digest.cpp
@@ -633,6 +634,32 @@ mdux_emit_screen_package(
     ID endoscope-monitor
     OUT_MODULE MDUX_ENDOSCOPE_SCREEN_MODULE
     OUT_DIR MDUX_GENERATED_SCREEN_DIR
+)
+
+# The first committed interaction scenario (#319, ADR-020). A `.scenario` script becomes a
+# committed `generated/scenario/<id>/` bundle the same way a `.medui` screen does - one
+# mdux_bake_artifact() registration, one evidence.scenario.<id> byte comparison - then
+# mdux-scenarioemit renders it into `constexpr` C++ #320's replay consumes. The screen package is
+# a SOURCE: the compiler resolves `pointer <node>` against it, and re-laying-out the screen
+# re-bakes the scenario.
+mdux_bake_artifact(
+    KIND scenario
+    ID endoscope-monitor-basics
+    TOOL mdux-scenariobake
+    RECIPE recipes/scenario/endoscope-monitor-basics.toml
+    SOURCES
+        recipes/scenario/endoscope-monitor-basics/basics.scenario
+        generated/screen/endoscope-monitor/package.json
+    OUTPUTS
+        scenario.json
+        report.json
+)
+
+include(cmake/MduXScenarioEmit.cmake)
+mdux_emit_scenario_package(
+    ID endoscope-monitor-basics
+    OUT_MODULE MDUX_ENDOSCOPE_SCENARIO_MODULE
+    OUT_DIR MDUX_GENERATED_SCENARIO_DIR
 )
 
 # Generated C++ for that package (issue #121). Build-tree only, never committed - see

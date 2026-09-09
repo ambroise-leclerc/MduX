@@ -1,0 +1,31 @@
+# The endoscope monitor's first committed interaction scenario, compiled by mdux-scenariobake into
+# generated/scenario/endoscope-monitor-basics/, which is committed and byte-verified by
+# `ctest -L evidence` on every active toolchain (ADR-007, ADR-020).
+#
+# ## What a scenario is
+#
+# A `.scenario` script is a reviewed, ordered list of platform events, batch advances, typed
+# expectations and named captures - a statement about how the assembled `updateMonitor()` loop
+# (ADR-018 clause 6) behaves, replayed through the exact `EventQueue` / `PressLatch` / `FieldEditor`
+# / `resolvePress` / `render()` interfaces the presentation uses, not through a parallel test state
+# machine (#320). The source lives in `endoscope-monitor-basics/basics.scenario`; the committed
+# artifact is `scenario.json`, and `mdux-scenarioemit` renders it into `constexpr` C++ the replay
+# consumes.
+#
+# ## The screen it is scripted against
+#
+# `screen` names the committed screen. The compiler reads `generated/screen/endoscope-monitor/`
+# to resolve every `pointer <node>` directive to the centre of that node's rectangle, and refuses a
+# directive naming a node the screen does not carry. Re-laying-out the screen re-bakes this
+# scenario, because `report.json` records the screen package's digest as an input.
+#
+# To change the scenario, edit the .scenario source and run
+#
+#   cmake --build <build-dir> --target mdux-bake-update
+#
+# then review the diff to generated/scenario/endoscope-monitor-basics/.
+
+[package]
+id     = "endoscope-monitor-basics"
+source = "recipes/scenario/endoscope-monitor-basics/basics.scenario"
+screen = "endoscope-monitor"

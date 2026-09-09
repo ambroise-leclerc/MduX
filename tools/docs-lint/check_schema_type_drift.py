@@ -161,6 +161,7 @@ RECIPE_SCHEMAS = (
     ("image", "docs/recipes/image.schema.json", ()),
     ("model", "docs/recipes/model.schema.json", ()),
     ("screen", "docs/recipes/screen.schema.json", ()),
+    ("scenario", "docs/recipes/scenario.schema.json", ()),
 )
 
 # Each entry: the schema, the property carrying a closed vocabulary, and the C++ array that

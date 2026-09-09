@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdux.dev/schemas/recipes/scenario.schema.json",
+  "title": "Resolved interaction-scenario recipe options",
+  "description": "What `mdux-scenariobake` was asked to do when compiling one `.scenario` script (#319, ADR-020): the artifact id, the script source, and the committed screen the script is scripted against. Describes the **resolved** option set a baker records in `report.json`'s `options`, with every default expanded - not the literal TOML a recipe file carries. ADR-007 decision 4 is why. Checked against every committed report by tools/docs-lint/check_schema_type_drift.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "screen"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The artifact id, which names the directory under `generated/scenario/`.",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Repository-relative path to the `.scenario` script.",
+      "minLength": 1
+    },
+    "screen": {
+      "type": "string",
+      "description": "The committed screen id the script names. The compiler reads `generated/screen/<screen>/package.json` to resolve every `pointer <node>` directive to that node's rectangle centre and to reject a directive naming a node the screen does not carry.",
+      "minLength": 1
+    }
+  },
+  "examples": [
+    {
+      "id": "endoscope-monitor-basics",
+      "source": "recipes/scenario/endoscope-monitor-basics/basics.scenario",
+      "screen": "endoscope-monitor"
+    }
+  ]
+}

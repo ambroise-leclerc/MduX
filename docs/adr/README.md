@@ -26,8 +26,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-017](ADR-017-sibling-conformance-gate-status.md) | Sibling conformance gate status and PAR-REQ dispositions | Accepted | 2026-09-08 |
 | [ADR-018](ADR-018-bounded-input-and-update-order.md) | Bounded input, application update order and action policy | Accepted | 2026-09-08 |
 | [ADR-019](ADR-019-windowed-presentation-and-input-adapter.md) | The windowed presentation and input adapter | Accepted | 2026-09-09 |
+| [ADR-020](ADR-020-bounded-interaction-scenarios-and-replay.md) | Bounded interaction scenarios and their replay | Accepted | 2026-09-09 |
 
-Every number from 001 to 019 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 020 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
@@ -61,7 +62,7 @@ decision record that lists only benefits documents an advertisement rather than 
 ## Writing a new ADR
 
 1. Copy [`template.md`](template.md).
-2. Take the next free number from the index above — currently **ADR-020**.
+2. Take the next free number from the index above — currently **ADR-021**.
 3. Name the file `ADR-NNN-short-description.md`, lowercase and hyphenated.
 4. Add a row to the index in this file. An ADR that is not indexed does not exist.
 5. If it supersedes an earlier decision, set that ADR's status to `Superseded by ADR-NNN`, link

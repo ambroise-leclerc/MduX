@@ -1511,6 +1511,72 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 mdux_discover_tests(monitor_loop_spec)
 
+# ---------------------------------------------------------------------------
+# The interaction-scenario compiler and its committed artifact (#319, ADR-020)
+# ---------------------------------------------------------------------------
+#
+# scenario_tools_spec - the host tool: the `.scenario` line parser (every SCN0NN rejection path),
+#   the baker's run()/verify() over the committed scenario, and the emitter's round-trip. Links
+#   MduX::ScenarioLib, so it is deliberately apart from scenario_spec, whose MduX::Core-only link
+#   line is the standing evidence that a device reaching a compiled scenario links no compiler.
+add_executable(scenario_tools_spec
+    scenario/ScenarioToolsSpecMain.cpp
+    scenario/ScenarioScriptTests.cpp
+)
+target_link_libraries(scenario_tools_spec PRIVATE MduX::ScenarioLib speclab::speclab)
+target_include_directories(scenario_tools_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(scenario_tools_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(scenario_tools_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(scenario_tools_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(scenario_tools_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(scenario_tools_spec)
+
+# scenario_spec - the governed side: the committed scenario as generated `constexpr` C++, and
+#   CompiledScenario::validate()'s refusals. Links MduX::Core and the generated scenario module.
+add_executable(scenario_spec
+    scenario/ScenarioSpecMain.cpp
+    scenario/GeneratedScenarioTests.cpp
+)
+target_sources(scenario_spec
+    PRIVATE
+        FILE_SET generated_scenario_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCENARIO_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCENARIO_MODULE}
+)
+add_dependencies(scenario_spec emit-scenario-endoscope-monitor-basics)
+target_link_libraries(scenario_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(scenario_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MDUX_GENERATED_SCENARIO_DIR})
+set_target_properties(scenario_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(scenario_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(scenario_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(scenario_spec)
+
+# scenario_noheap_spec - its own binary, medui_noheap_spec's reason: it replaces the global
+#   operator new family, which one TU per binary may do.
+add_executable(scenario_noheap_spec
+    scenario/ScenarioSpecMain.cpp
+    scenario/ScenarioNoHeapTests.cpp
+)
+target_link_libraries(scenario_noheap_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(scenario_noheap_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(scenario_noheap_spec PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(scenario_noheap_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(scenario_noheap_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(scenario_noheap_spec)
+
 # `MedicalScreenMonitorExample` is built by examples/CMakeLists.txt, which is processed before
 # enable_testing() - so its CI checks are registered here instead, where add_test() takes effect.
 #
