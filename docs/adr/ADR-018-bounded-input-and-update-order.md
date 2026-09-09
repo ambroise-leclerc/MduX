@@ -229,8 +229,10 @@ The application update order, as a contract for #316 / #319 / #320 to implement 
 State bound in step 3 is the state after step 2, so a capture never shows input from a frame the
 operator has not seen resolved, and a replay that injects the same batches and the same time
 (`SignalBinding` already takes injected time) produces the same frames. #316 delivered the parts
-(`EventQueue::pop` for step 1, `FieldEditor` for step 2, the existing bindings for step 3); the
-assembled loop wired to real Vulkan presentation is #318 and its deterministic replay is #320.
+(`EventQueue::pop` for step 1, `FieldEditor` for step 2, the existing bindings for step 3); **#318
+assembled them** into `examples/support/MonitorApp.hpp`'s `updateMonitor()`, wired to real Vulkan
+presentation by `MedicalScreenMonitorExample` and to a deterministic offscreen frame by its
+`--headless-smoke` mode. Its deterministic scenario replay is #320.
 
 ### 7. MduX resolves a critical action and traces it; the host executes it
 
@@ -300,9 +302,11 @@ deferred list is out.
 
 - A reader of the input subsystem now has two PRs to follow (#315 defines, #316 implements) and
   an ADR between them. Mitigation: this ADR is the single reference and #316 restates nothing.
-- Clause 6 (the update order) is prose, not one assembled function, until #318 wires the loop and
-  #320 its replay. #316 delivered the pieces it names but not their composition. Mitigation: those
-  issues name this clause as their contract, and a mismatch is a review finding on them.
+- Clause 6 (the update order) was prose, not one assembled function, until #318. **#318 delivered
+  it** as `examples/support/MonitorApp.hpp`'s `updateMonitor()` (steps 1-2: drain one accepted
+  batch, apply its presses and edits to caller-owned state) with the caller binding a snapshot,
+  rendering and capturing (steps 3-5); the interactive window and the deterministic
+  `--headless-smoke` both drive it. #320's deterministic replay still consumes the same function.
 - `KeyCode` starts as a minimal enum (caret motion, delete, tab, enter, escape). A real adapter
   will need to extend it. Mitigation: it is implementation-local and versioned by this module;
   extending an enum is additive.
@@ -376,7 +380,8 @@ deferred list is out.
   by #316 as `FieldEditor`); PAR-REQ-008 **Accepted with amendment** (the viewport row/bin half
   stays with #322).
 - **Still open**: the domain review of the critical-action host policy (PAR-REQ-006); the
-  platform adapter (#317); the assembled update loop wired to Vulkan (#318) and its replay (#320);
+  deterministic scenario replay (#320). The platform adapter (#317) and the assembled update loop
+  wired to Vulkan and two approved locales (#318, `examples/support/MonitorApp.hpp`) are delivered;
   PAR-REQ-009/010 keep their own status.
 - **Scope**: the input event vocabulary, coordinate-normalization rule, press/release/cancel
   model, bounded-editing contract, update order and critical-action boundary. Windowing,

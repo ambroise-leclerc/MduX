@@ -26,9 +26,12 @@
 > committed `candidateProfile` migration; ADR-016 Accepted for its engineering layer). **#317** (the
 > windowed presentation + input adapter) landed [ADR-019](adr/ADR-019-windowed-presentation-and-input-adapter.md),
 > `mdux::medui::SurfaceMapping`, the examples-zone `GlfwPresentationAdapter.hpp` shell and
-> `MedicalScreenMonitorExample` — **#318 (the interactive monitor) is now unblocked**. Of the
-> remaining child issues, three more are unblocked — **#319, #322, #325** — and the
-> [Next to implement](#next-to-implement) subsection records the recommended order.
+> `MedicalScreenMonitorExample`. **#318 (the interactive monitor) is now implemented**: the
+> assembled `updateMonitor()` loop (`examples/support/MonitorApp.hpp`, ADR-018 clause 6), a `Clock`
+> and an ordinary `Button` on the screen, and the second approved locale `fr-FR` via composite-glyph
+> flattening in the font baker (ADR-010 decision 5). Of the remaining child issues, three more are
+> unblocked — **#319, #322, #325** — and the [Next to implement](#next-to-implement) subsection
+> records the recommended order.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -46,9 +49,9 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 5 open: #307–#311 |
-| Phase 2 child issues | 16 total (#312–#327): 5 closed (#312, #314, #315, #316, #317), #313 in review (PR #341), 10 open |
+| Phase 2 child issues | 16 total (#312–#327): 5 closed (#312, #314, #315, #316, #317), #313 in review (PR #341), #318 implemented (in review), 9 open |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — #318 implemented; see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -60,7 +63,7 @@ are superseded; closing the original backlog does not imply complete application
 | Architecture and governance | Governed core, separate Vulkan adapter and host tools; requirement/hazard/verification records, traceability and evidence exports exist. | Governed crates, presentation adapter and host tools; corresponding governance records and application facade exist. | Preserve boundaries; add application integration rather than rebuild governance. |
 | MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. #314 re-pinned to `v0.3.0-rc.1` and gates all 27 compiler cases from the pinned corpus. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | #307: TrustSC re-pin and joint sign-off ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)); the MduX corpus-derived gate is delivered. |
 | Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | #308: bounded interaction, editing and a presented medical monitor. |
-| Presentation and streaming | `UiRenderer` consumes host Vulkan resources; `MedicalScreenMonitorExample` (#317, ADR-019) presents the committed `endoscope-monitor` screen in a window and routes real pointer/keyboard input through `mdux.medui.input`. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #318 for the assembled monitor loop and locales; #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
+| Presentation and streaming | `UiRenderer` consumes host Vulkan resources; `MedicalScreenMonitorExample` (#318, ADR-018 clause 6) presents the committed `endoscope-monitor` screen in a window, runs the assembled `updateMonitor()` loop with every live component bound, and routes real pointer/keyboard input through `mdux.medui.input`, in two approved locales. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
 | Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate, versioned `mdux.local/tint-composition` v1; the raw RGBA8 digest is a separate `mdux.local/raw-image-digest` with no committed baseline. #314 gates `MEDUI-PROFILE-RENDERED`/`-EVIDENCE` against the pinned corpus and emits a derived RENDERED envelope. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 predicate meaning is resolved and gated on the MduX side; #309 verifies dynamic application behavior without weakening the static gate. |
 | Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311: host editing/preview interfaces and Studio integration, with a reuse decision before a fork. |
 | Evidence, ML and text | Recipe-driven committed artifacts, cross-toolchain byte checks, shared host/device inference kernels, fail-closed model creation and bounded runtime bindings. | Baked font/image/shader/model artifacts, deterministic inference and bounded draw paths; the screen/text join still allocates at startup. | Retain existing MduX guarantees. TrustSC #47 is a sibling-side tightening proposal, not missing MduX work. |
@@ -118,34 +121,40 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312, #314, #315, #316 and #317 are closed; #313 is in review. The next executable work is the
-interactive monitor (**#318**, now unblocked by #317) and the three still-unblocked design/spec
-issues — the scenario compiler (**#319**), the viewport contract (**#322**) and the editor API
-(**#325**). Canonical interfaces land before their consumers, and each design issue produces the ADR
-and canonical types its epic's implementation children then consume. The
+#312, #314, #315, #316 and #317 are closed; #313 and #318 are in review. The next executable work is
+the three still-unblocked design/spec issues — the scenario compiler (**#319**), the viewport
+contract (**#322**) and the editor API (**#325**). Canonical interfaces land before their consumers,
+and each design issue produces the ADR and canonical types its epic's implementation children then
+consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
 unblocks. No new version number or release date is assigned until a deliverable and its evidence are
 agreed.
 
 ### Next to implement
 
-Assessed 9 September 2026 against `develop`. Four child issues have all prerequisites met. Every
-other open child (#320, #321, #323, #324, #326, #327) is transitively blocked on one of these four
-or on #313's close-out.
+Assessed 9 September 2026 against `develop`. Three child issues have all prerequisites met. Every
+other open child (#320, #321, #323, #324, #326, #327) is transitively blocked on one of these three,
+on #313's close-out, or on #318's.
+
+**#318** (the interactive monitor with two approved locales) is **implemented and in review**: the
+assembled `updateMonitor()` loop (`examples/support/MonitorApp.hpp`, ADR-018 clause 6), a `Clock` and
+an ordinary `Button` on `EndoscopeMonitor.medui`, the `fr-FR` text package delivered by flattening
+composite glyphs in the font baker, and `monitor_loop_spec` + `example.monitor.headless{,.fr}`. Its
+scenario replay is #320 and its dynamic-content pixel gate is #321/#324; the critical-action host
+policy (PAR-REQ-006) stays open for domain review.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#318**](https://github.com/ambroise-leclerc/MduX/issues/318) — the interactive monitor with two approved locales | Critical path, now unblocked: #317 landed ADR-019, `SurfaceMapping`, the `GlfwPresentationAdapter.hpp` shell and `MedicalScreenMonitorExample`. #318 assembles the input→update→bind→render→capture loop (ADR-018 clause 6) over that shell and two locales. | #320 (replay), #324 and #321 downstream | Implementation + example + captures. Safety-relevant; needs the reviewed critical-action host policy (PAR-REQ-006) before any real-device effect. |
-| 2 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
-| 3 | [**#319**](https://github.com/ambroise-leclerc/MduX/issues/319) — host scenario compiler | Host-only, no device or GPU surface. Parallelizable now; its epic (#309) also gates on #318, so this is get-ahead work. | #320 → #321 (epic #309) | Host parser/validator/emitter + committed scenario-data schema and versioning. Potentially safety-relevant (test-input compilation). |
-| 4 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the four. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+| 1 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
+| 2 | [**#319**](https://github.com/ambroise-leclerc/MduX/issues/319) — host scenario compiler | Host-only, no device or GPU surface. Parallelizable now; with #318 in review its epic (#309) is close behind. | #320 → #321 (epic #309) | Host parser/validator/emitter + committed scenario-data schema and versioning. Potentially safety-relevant (test-input compilation). |
+| 3 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the three. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
 **#313** is not on this list because it is in review ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341));
 its remaining work is the verifier-area domain review and the ADR-016 residuals, not new
 implementation.
 
-Recommended sequencing: start **#317** (critical path) and take **#322** or **#319** in parallel as a
-lower-risk design track. #325 last among the unblocked set.
+Recommended sequencing: with **#318** in review, take **#322** and **#319** in parallel as the
+design track for epics #310 and #309. #325 last among the unblocked set.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
 
@@ -298,15 +307,24 @@ PAR-REQ-004–008 dispositions are ratified in ADR-018. **#317 landed the platfo
 translation, GLFW never in `MduXCore`/`MduX`), and `MedicalScreenMonitorExample` presenting the
 committed `endoscope-monitor` screen with pointer→`PressLatch`/`resolvePress`→`ActionTrace` and
 keyboard→`FieldEditor` wired. Covered by the `SurfaceMapping` scenarios in `InputContractTests` /
-`input_noheap_spec`, `glfw_translation_spec`, and `example.monitor.{smoke,headless}`. **#318 (the
-assembled loop with two locales) is now unblocked** and is the critical path to the monitor.
+`input_noheap_spec`, `glfw_translation_spec`, and `example.monitor.{smoke,headless}`. **#318 assembled
+the loop**: `examples/support/MonitorApp.hpp` — `updateMonitor()` (ADR-018 clause 6 steps 1-2: drain
+one accepted batch, apply its presses and edits to caller-owned state), `MonitorClock` (a
+deterministic civil clock) and `DemoState` — driven identically by `MedicalScreenMonitorExample`'s
+interactive window and its deterministic `--headless-smoke`, with every live component bound (the
+pressure reading, the clock, the ECG trace, the classifier status, the `patient-id` field). The
+screen gained a `Clock` and an ordinary `Button`, and the second approved locale `fr-FR` is delivered
+by flattening composite glyphs in the font baker (`tools/text/Truetype.cpp`, ADR-010 decision 5).
+Covered by `monitor_loop_spec`, `text_tools_spec`'s composite cases and `example.monitor.headless{,.fr}`.
+The critical-action host policy (PAR-REQ-006) stays open for domain review and the example executes
+nothing; its scenario replay is #320.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **closed** (ADR-018, `mdux.medui.input`) |
 | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **closed** (`EventQueue`, `FieldEditor`) |
 | [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **closed** (ADR-019, `SurfaceMapping`, `GlfwPresentationAdapter.hpp`, `MedicalScreenMonitorExample`) |
-| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#317](https://github.com/ambroise-leclerc/MduX/issues/317) ✓ · **unblocked** |
+| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#317](https://github.com/ambroise-leclerc/MduX/issues/317) ✓ · **implemented** (`MonitorApp.hpp` + `updateMonitor()`, `Clock`/`Button` on the screen, `fr-FR` via composite-glyph baking, `monitor_loop_spec` + `example.monitor.headless{,.fr}`) |
 
 ### [#309](https://github.com/ambroise-leclerc/MduX/issues/309) — Deterministic interaction scenarios and dynamic UI evidence · planned
 

@@ -170,11 +170,20 @@ Concretely:
    shared implementation and a compile-time bound rather than by construction. Static text
    remains stronger, because its positions are bytes in a committed artifact. A component
    that *can* be static should be.
-5. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), composite
-   glyph substitutions the baker did not pre-bake, CFF/CFF2 outlines, GPOS
+5. Unsupported scripts (anything outside Latin/Cyrillic/Greek LTR in v1), CFF/CFF2 outlines, GPOS
    positioning, ligatures and hinting **fail the font baker (#160/#161)** with stable codes
    and therefore fail the build. They never reach a device. The restricted-charset table
    of #161 (S5) is what makes this enforceable rather than aspirational.
+
+   **Amended by #318: composite glyphs are pre-baked by the host, not refused.** This decision
+   spoke of "composite glyph substitutions the baker did not pre-bake"; #318 is the pre-baking.
+   `tools/text/Truetype.cpp` now flattens a composite `glyf` record (a base letter plus a
+   combining accent, placed by an F2Dot14 transform) into one flat contour list, on the host,
+   in the baker - so the accented Latin an approved locale needs is baked as ordinary coverage
+   bitmaps and baked advances, and the runtime still walks no font table. Point-matching
+   composites and a nesting chain past a fixed depth cap are refused with stable codes; the
+   `endoscope-monitor` font gained a `latin1-accented` charset range and `fr-FR` approval on
+   the strength of it.
 6. The canonical schema that describes both baked packages (`mdux.text.schema`,
    `mdux.font.schema`) is governed and imported by both the host baker and the
    device runtime — one definition, one set of compile flags (ADR-008 decision 1,
