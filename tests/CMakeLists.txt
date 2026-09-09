@@ -1441,3 +1441,62 @@ else()
         "will not run, so issue #63's layer 2 and issue #116's object-level no-throw check are "
         "both unverified in this build.")
 endif()
+
+# ---------------------------------------------------------------------------
+# The windowed presentation + input adapter (#317, ADR-019)
+# ---------------------------------------------------------------------------
+
+# The pure half of the adapter — the GLFW -> mdux.medui.input translation table — unit-tested with
+# no window and no display. Links `glfw` for the key constants only (no glfwInit).
+#
+# When examples pull GLFW via CPM the `glfw` target is global and already visible here; when they
+# find it with find_package() the imported target is scoped to examples/, so re-resolve it.
+if(NOT TARGET glfw)
+    find_package(glfw3 QUIET)
+endif()
+if(TARGET glfw)
+    add_executable(glfw_translation_spec
+        adapter/GlfwTranslationMain.cpp
+        adapter/GlfwTranslationTests.cpp
+    )
+    target_link_libraries(glfw_translation_spec PRIVATE MduX::Core speclab::speclab glfw)
+    target_include_directories(glfw_translation_spec
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/examples/support)
+    set_target_properties(glfw_translation_spec
+        PROPERTIES
+            CXX_STANDARD 23
+            CXX_STANDARD_REQUIRED ON
+            CXX_EXTENSIONS OFF
+    )
+    if(TARGET __CMAKE::CXX23)
+        set_target_properties(glfw_translation_spec PROPERTIES CXX_MODULE_STD ON)
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(glfw_translation_spec PRIVATE /experimental:module /std:c++latest)
+    endif()
+    mdux_discover_tests(glfw_translation_spec)
+endif()
+
+# `MedicalScreenMonitorExample` is built by examples/CMakeLists.txt, which is processed before
+# enable_testing() - so its CI checks are registered here instead, where add_test() takes effect.
+#
+# example.monitor.smoke  - the bounded windowed presentation smoke path (ADR-019 clause 5): a real
+#                          swapchain + vkQueuePresentKHR under the CI leg's display/ICD. No
+#                          SKIP_RETURN_CODE, so an absent display or device is a failure, never a
+#                          CTest Skip - a broken ICD cannot make this a silent no-op. **Not** labelled
+#                          `pixel`: it needs a window server, so it runs in the unfiltered "Run
+#                          Tests" step (Xvfb on Linux, the desktop session on Windows/macOS) and not
+#                          in the headless `-L pixel` step, which has no display.
+# example.monitor.headless - one frame through mdux.render.offscreen, no window: deterministic
+#                            evidence that the compiled screen's topbar and halt control land where
+#                            the artifact places them. Headless, so it is `-L pixel` like the rest of
+#                            the offscreen suite.
+if(MDUX_BUILD_EXAMPLES AND TARGET MedicalScreenMonitorExample)
+    add_test(NAME example.monitor.smoke
+             COMMAND MedicalScreenMonitorExample --smoke-test)
+    set_tests_properties(example.monitor.smoke PROPERTIES TIMEOUT 120)
+
+    add_test(NAME example.monitor.headless
+             COMMAND MedicalScreenMonitorExample --headless-frame)
+    set_tests_properties(example.monitor.headless PROPERTIES LABELS "pixel" TIMEOUT 120)
+endif()

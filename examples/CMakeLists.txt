@@ -159,3 +159,77 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(EcgClassifierExample PRIVATE /experimental:module /std:c++latest)
 endif()
+
+# The medical-screen presentation and input adapter demonstrator (issue #317, ADR-019).
+#
+# Presents the committed `endoscope-monitor` screen in a window and routes real pointer/keyboard
+# input through `mdux.medui.input`. Links `MduX::MduX` (for `mdux.render.vulkan`) and `glfw` - the
+# examples-only windowing boundary, exactly as VulkanSCTriangleExample does. The reusable window +
+# swapchain + event-translation shell is `examples/support/GlfwPresentationAdapter.hpp`; #318 reuses
+# it.
+add_executable(MedicalScreenMonitorExample
+    MedicalScreenMonitorExample.cpp
+)
+
+# Two generated modules from two build-tree directories, so two file sets - EcgClassifierExample's
+# reason. The screen is the endoscope monitor; the shader is `mdux-ui` (the renderer's pipeline).
+target_sources(MedicalScreenMonitorExample
+    PRIVATE
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
+        FILE_SET generated_ui_shader_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+            FILES ${MDUX_UI_SHADER_MODULE}
+)
+add_dependencies(MedicalScreenMonitorExample emit-screen-endoscope-monitor emit-shader-mdux-ui)
+
+target_link_libraries(MedicalScreenMonitorExample PRIVATE MduX::MduX glfw)
+target_include_directories(MedicalScreenMonitorExample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The committed artifacts the screen joins a locale and an image to, embedded as byte arrays so the
+# example opens no files - the same "data, not a path" move EcgClassifierExample makes for weights.
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/font/dejavu-ui/package.json
+    SYMBOL dejavuUiPackageJson)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/font/dejavu-ui/atlas.bin
+    SYMBOL dejavuUiAtlas)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-en-us/package.json
+    SYMBOL endoscopeTextPackageJson)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/text/endoscope-monitor-en-us/runs.bin
+    SYMBOL endoscopeTextRuns)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/image/brand-mark/package.json
+    SYMBOL brandMarkPackageJson)
+mdux_embed_blob(MedicalScreenMonitorExample
+    FILE ${CMAKE_SOURCE_DIR}/generated/image/brand-mark/pixels.rgba
+    SYMBOL brandMarkPixels)
+
+set_target_properties(MedicalScreenMonitorExample
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MedicalScreenMonitorExample PROPERTIES CXX_MODULE_STD ON)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MedicalScreenMonitorExample PRIVATE /experimental:module /std:c++latest)
+endif()
+
+if(UNIX)
+    target_link_libraries(MedicalScreenMonitorExample PRIVATE Threads::Threads)
+endif()
+
+# The CI presentation smoke test and the offscreen frame check are registered in
+# tests/CMakeLists.txt as `example.monitor.smoke` / `example.monitor.headless` (ADR-019 clause 5) -
+# `enable_testing()` has not run yet at this point in the configure, so `add_test()` here would be
+# silently dropped.

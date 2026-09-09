@@ -28,9 +28,12 @@ import std;
 import speclab;
 import mdux.core.result;
 import mdux.core.units;
+import mdux.draw;
 import mdux.font.schema;
 import mdux.medui.input;
 import mdux.medui.schema;
+import mdux.medui.screen;
+import mdux.evidence.report;
 
 #include "../framework/SpecLabBridge.hpp"
 
@@ -39,6 +42,7 @@ namespace {
 namespace ms   = mdux::medui;
 namespace core = mdux::core;
 namespace font = mdux::font;
+namespace draw = mdux::draw;
 
 // ---------------------------------------------------------------------------
 // Compile-time contract: these types cross a bounded ring buffer and a replay boundary, so they
@@ -247,6 +251,119 @@ const mdux::spec::Register normalizeFailsClosedOnBadInput{
                           std::numeric_limits<mdux::core::Px>::max(), 0, ms::maxCoordinateScale, 1, 0, 0);
                       checks.expect(!overflows.has_value() && overflows.error() == ms::InputError::CoordinateOutOfRange,
                                     "a result past INT32_MAX is CoordinateOutOfRange, not a wrapped value");
+
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// Clause 3 — SurfaceMapping, the adapter's per-frame coordinate transform (#317, ADR-019)
+// ---------------------------------------------------------------------------
+
+static_assert(std::is_trivially_copyable_v<ms::SurfaceMapping>);
+static_assert(noexcept(ms::SurfaceMapping::create({1, 1}, {1, 1})));
+static_assert(ms::SurfaceMapping::identity().scaleNum == 1 && ms::SurfaceMapping::identity().scaleDen == 1);
+
+// A framebuffer equal to the window is the identity, constant-evaluated.
+static_assert([] {
+    const auto m = ms::SurfaceMapping::create({400, 300}, {400, 300});
+    return m && m->scaleNum == 1 && m->scaleDen == 1 && m->originX == 0 && m->originY == 0;
+}());
+
+const mdux::spec::Register surfaceMappingCarriesTheDevicePixelRatio{
+    "SurfaceMapping carries the uniform framebuffer-to-window device-pixel ratio and fails closed on a per-axis or degenerate one",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-surface-mapping-device-pixel-ratio")
+            .Given("a window, and framebuffer extents at 1x, 2x, 3x, 1.5x, a per-axis-different one, and a degenerate one", [] {})
+            .When("a mapping is built for each", [] {})
+            .Then("a uniform ratio (integer or fractional) is carried, and a per-axis-different or degenerate one is refused",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      const auto oneToOne = ms::SurfaceMapping::create({400, 300}, {400, 300});
+                      checks.expect(oneToOne && oneToOne->scaleNum == 1 && oneToOne->scaleDen == 1 &&
+                                        oneToOne->originX == 0 && oneToOne->originY == 0,
+                                    "a framebuffer equal to the window is the identity");
+
+                      const auto retina = ms::SurfaceMapping::create({800, 600}, {400, 300});
+                      checks.expect(retina && retina->scaleNum == 2 && retina->scaleDen == 1,
+                                    "a 2x framebuffer is a 2/1 authored-per-window ratio");
+
+                      const auto scaled3 = ms::SurfaceMapping::create({1200, 900}, {400, 300});
+                      checks.expect(scaled3 && scaled3->scaleNum == 3 && scaled3->scaleDen == 1, "and a 3x one is 3/1");
+
+                      // 1.5x on both axes: 600/400 and 450/300 both reduce to 3/2. Fractional is
+                      // fine — normalizeSurfacePoint is rational — as long as it is uniform.
+                      const auto scaled15 = ms::SurfaceMapping::create({600, 450}, {400, 300});
+                      checks.expect(scaled15 && scaled15->scaleNum == 3 && scaled15->scaleDen == 2,
+                                    "a 1.5x display is a 3/2 ratio, carried rather than rounded");
+
+                      // 800x601 against 400x300: width says 2/1, height says 601/300 — not uniform.
+                      const auto perAxis = ms::SurfaceMapping::create({800, 601}, {400, 300});
+                      checks.expect(!perAxis && perAxis.error() == ms::InputError::MalformedScale,
+                                    "a framebuffer whose axes carry different ratios is refused, not squashed onto one axis");
+
+                      const auto degenerate = ms::SurfaceMapping::create({0, 300}, {400, 300});
+                      checks.expect(!degenerate && degenerate.error() == ms::InputError::MalformedScale,
+                                    "a zero framebuffer dimension is MalformedScale, not a divide by zero");
+
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register renderingAndHitTestingAgreeAcrossScale{
+    "A pointer mapped through SurfaceMapping resolves to the same control at 1x and at 2x DPI, so rendering and hit testing agree",
+    "evidence-unit",
+    [] {
+        return speclab::Test("medui-input-surface-mapping-hit-testing-agrees")
+            .Given("a 400x300 screen with a critical control at (100,100)-(220,140), drawn 1:1 at the framebuffer origin", [] {})
+            .When("a window-space point over the control is mapped and resolved at a 1x and a 2x device-pixel ratio", [] {})
+            .Then("both resolve to the control, and a window point away from it resolves to nothing",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      static constexpr ms::CriticalButtonSpec haltSpec{
+                          .requirement = "REQ-EM-003", .labelKey = "STR-HALT",
+                          .colorToken = "Theme.Colors.Fault", .onPress = ms::SystemEvent::TriggerHalt};
+                      static constexpr std::array<ms::CompiledNode, 1> nodes{
+                          ms::CompiledNode{.id = "emergency-halt", .bounds = {100, 100, 120, 40}, .payload = haltSpec}};
+                      static constexpr std::array approvals{
+                          ms::TextPackageApproval{.locale = "en-US", .packageId = "mon-text", .packageSha256 = {1}}};
+                      static constexpr ms::ScreenPackage screen{
+                          .id                   = "monitor",
+                          .schemaVersion        = mdux::evidence::kSchemaVersion,
+                          .surfaceWidth         = 400,
+                          .surfaceHeight        = 300,
+                          .approvedTextPackages = approvals,
+                          .nodes                = nodes,
+                          .budget               = draw::DrawBudget{.maxVertices = 64, .maxIndices = 96, .maxCommands = 8}};
+                      static_assert(screen.validate().has_value(), "the reference screen is one a device could hold");
+
+                      const auto resolveAt = [&](const ms::SurfaceMapping& m, core::Px winX, core::Px winY)
+                          -> std::optional<std::string_view> {
+                          const auto pt = m.toSurface(winX, winY);
+                          if (!pt) { return std::nullopt; }
+                          const auto press = ms::resolvePress(screen, pt->x, pt->y);
+                          if (!press || !press->has_value()) { return std::nullopt; }
+                          return (*press)->nodeId;
+                      };
+
+                      // 1x: window == framebuffer == authored. The control is at window (100,100)-(220,140).
+                      const auto at1x = ms::SurfaceMapping::create({400, 300}, {400, 300});
+                      // 2x: a 200x150 window on a HiDPI display, framebuffer 400x300. The control is
+                      // drawn at framebuffer px (100,100) and so appears at window px (50,50).
+                      const auto at2x = ms::SurfaceMapping::create({400, 300}, {200, 150});
+                      checks.expect(at1x && at2x, "both mappings are well-formed");
+
+                      checks.expect(resolveAt(*at1x, 150, 120) == std::optional<std::string_view>{"emergency-halt"},
+                                    "at 1x, a window point over the control resolves to it");
+                      checks.expect(resolveAt(*at2x, 75, 60) == std::optional<std::string_view>{"emergency-halt"},
+                                    "at 2x, the halved window point over the same on-screen pixels resolves to the same control");
+                      checks.expect(resolveAt(*at2x, 10, 10) == std::nullopt,
+                                    "a window point away from the control resolves to nothing");
 
                       checks.raise();
                   })

@@ -19,7 +19,9 @@
  *
  * - clause 1: the closed event vocabulary and its wire spellings;
  * - clause 2: `maxInputEvents` and the caller-owned bounded `EventQueue` (#316);
- * - clause 3: the pure `normalizeSurfacePoint()`, fail-closed on overflow;
+ * - clause 3: the pure `normalizeSurfacePoint()`, fail-closed on overflow, and `SurfaceMapping` —
+ *   the value an adapter (#317) recomputes on every resize/scale change and asks each window-space
+ *   pointer coordinate through, so hit testing always matches what was last rendered;
  * - clause 4: the pure `PressLatch` state machine;
  * - clause 5: the `EditOp` vocabulary, the pure `editWouldBeAccepted()` predicate, and the
  *   stateful `FieldEditor` (#316) — the realization of ADR-018's `applyEdit()` over caller storage;
@@ -398,6 +400,88 @@ normalizeSurfacePoint(mdux::core::Px physX, mdux::core::Px physY, std::int32_t s
     }
     return SurfacePoint{.x = static_cast<mdux::core::Px>(nx), .y = static_cast<mdux::core::Px>(ny)};
 }
+
+/**
+ * @brief The window→authored coordinate transform an adapter keeps for one presented frame
+ *        (ADR-018 clause 3, ADR-019).
+ *
+ * `normalizeSurfacePoint()` is the arithmetic; this is the state an adapter recomputes on every
+ * framebuffer-resize and content-scale change so a pointer is hit-tested against the geometry the
+ * operator last saw. It holds a uniform authored-per-window-pixel ratio (`scaleNum / scaleDen`,
+ * each in `[1, maxCoordinateScale]`) and, optionally, a window-space origin.
+ *
+ * The presented renderer draws the authored surface at 1:1 into the framebuffer origin
+ * (`mdux::render::UiRenderer`), so authored pixels and framebuffer pixels coincide and the only
+ * scaling is the display's **device-pixel ratio** — framebuffer pixels per window pixel. A pointer
+ * arrives in window (screen) coordinates; `map()` takes it to the authored grid. A point off the
+ * authored surface is not this type's concern — `resolvePress()` returns nothing for it.
+ *
+ * The adapter `PressLatch::cancel()`s across every rebuild (ADR-018 clause 4 lists a screen-storage
+ * rebuild and a queue overflow as disarm points; ADR-019 adds the surface rebuild). Governed code
+ * downstream only ever sees integer authored `core::Px`.
+ *
+ * Pure, `constexpr`, `noexcept`, allocation-free — like the rest of this module.
+ */
+struct SurfaceMapping {
+    std::int32_t  scaleNum{1};  ///< authored pixels per window pixel, numerator (the device-pixel ratio)
+    std::int32_t  scaleDen{1};  ///< authored pixels per window pixel, denominator
+    mdux::core::Px originX{};   ///< window x of the authored origin, normally 0
+    mdux::core::Px originY{};   ///< window y of the authored origin
+
+    /// The identity: authored pixels are window pixels, no scaling.
+    [[nodiscard]] static constexpr SurfaceMapping identity() noexcept { return SurfaceMapping{}; }
+
+    /**
+     * @brief The mapping for a 1:1 framebuffer-origin renderer at the current device-pixel ratio.
+     *
+     * `framebuffer` is `glfwGetFramebufferSize`, `window` is the client-area size in screen
+     * coordinates. The ratio is taken from the width, reduced by `std::gcd`; a fractional ratio
+     * (a 1.5× display, say) is fine — `normalizeSurfacePoint()` is rational. What is **not** fine
+     * is a ratio that differs between the axes: a display's device-pixel ratio is uniform, and a
+     * per-axis-different one is exactly the silent wrong-target case ADR-018 clause 3 fails closed
+     * to avoid. So the height is required to reduce to the **same** fraction, and this returns
+     * `MalformedScale` when it does not, for a non-positive extent, or for a reduced term past
+     * `maxCoordinateScale`.
+     */
+    [[nodiscard]] static constexpr mdux::core::Result<SurfaceMapping, InputError>
+    create(mdux::core::Extent2D framebuffer, mdux::core::Extent2D window) noexcept {
+        if (framebuffer.width <= 0 || framebuffer.height <= 0 || window.width <= 0 || window.height <= 0) {
+            return mdux::core::err(InputError::MalformedScale);
+        }
+        std::int32_t       num = framebuffer.width;
+        std::int32_t       den = window.width;
+        const std::int32_t g   = std::gcd(num, den);
+        num /= g;
+        den /= g;
+        if (num > maxCoordinateScale || den > maxCoordinateScale) {
+            return mdux::core::err(InputError::MalformedScale);
+        }
+        // The height must carry the same ratio: framebuffer.h / window.h == num / den.
+        if (static_cast<std::int64_t>(framebuffer.height) * den !=
+            static_cast<std::int64_t>(window.height) * num) {
+            return mdux::core::err(InputError::MalformedScale);
+        }
+        return SurfaceMapping{.scaleNum = num, .scaleDen = den, .originX = 0, .originY = 0};
+    }
+
+    /// Maps one window-space pointer coordinate to authored surface pixels, fail-closed
+    /// (`CoordinateOutOfRange` for a point whose authored coordinate does not fit `core::Px`).
+    [[nodiscard]] constexpr mdux::core::Result<SurfacePoint, InputError>
+    toSurface(mdux::core::Px windowX, mdux::core::Px windowY) const noexcept {
+        return normalizeSurfacePoint(windowX, windowY, scaleNum, scaleDen, originX, originY);
+    }
+
+    /// The `PointerEvent` of `kind` at window coordinate `(windowX, windowY)` — the one call an
+    /// adapter makes per pointer event before it reaches the queue.
+    [[nodiscard]] constexpr mdux::core::Result<PointerEvent, InputError>
+    map(PointerKind kind, mdux::core::Px windowX, mdux::core::Px windowY) const noexcept {
+        const auto surface = toSurface(windowX, windowY);
+        if (!surface) {
+            return mdux::core::err(surface.error());
+        }
+        return PointerEvent{.kind = kind, .x = surface->x, .y = surface->y};
+    }
+};
 
 // ===========================================================================
 // Clause 4 — press arms a target; release activates only the same target
