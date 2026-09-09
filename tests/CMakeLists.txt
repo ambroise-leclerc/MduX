@@ -1483,14 +1483,18 @@ endif()
 # example.monitor.smoke  - the bounded windowed presentation smoke path (ADR-019 clause 5): a real
 #                          swapchain + vkQueuePresentKHR under the CI leg's display/ICD. No
 #                          SKIP_RETURN_CODE, so an absent display or device is a failure, never a
-#                          CTest Skip - a broken ICD cannot make this a silent no-op.
+#                          CTest Skip - a broken ICD cannot make this a silent no-op. **Not** labelled
+#                          `pixel`: it needs a window server, so it runs in the unfiltered "Run
+#                          Tests" step (Xvfb on Linux, the desktop session on Windows/macOS) and not
+#                          in the headless `-L pixel` step, which has no display.
 # example.monitor.headless - one frame through mdux.render.offscreen, no window: deterministic
 #                            evidence that the compiled screen's topbar and halt control land where
-#                            the artifact places them.
+#                            the artifact places them. Headless, so it is `-L pixel` like the rest of
+#                            the offscreen suite.
 if(MDUX_BUILD_EXAMPLES AND TARGET MedicalScreenMonitorExample)
     add_test(NAME example.monitor.smoke
              COMMAND MedicalScreenMonitorExample --smoke-test)
-    set_tests_properties(example.monitor.smoke PROPERTIES LABELS "pixel" TIMEOUT 120)
+    set_tests_properties(example.monitor.smoke PROPERTIES TIMEOUT 120)
 
     add_test(NAME example.monitor.headless
              COMMAND MedicalScreenMonitorExample --headless-frame)

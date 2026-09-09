@@ -390,7 +390,9 @@ public:
         if (fence == VK_TIMEOUT) {
             return PresentOutcome::Skipped;
         }
-        if (fence == VK_ERROR_DEVICE_LOST) {
+        if (fence != VK_SUCCESS) {
+            // Device loss, or a host/device allocation failure. Not a skipped frame — every one of
+            // these is fatal, and continuing would submit over work the GPU has not finished.
             return PresentOutcome::DeviceLost;
         }
 
@@ -402,10 +404,8 @@ public:
         if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY) {
             return PresentOutcome::Skipped;
         }
-        if (acquired == VK_ERROR_DEVICE_LOST) {
-            return PresentOutcome::DeviceLost;
-        }
         if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) {
+            // VK_ERROR_DEVICE_LOST and every other failure — fatal.
             return PresentOutcome::DeviceLost;
         }
 
@@ -414,7 +414,10 @@ public:
 
         VkCommandBufferBeginInfo begin{};
         begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        vkBeginCommandBuffer(commandBuffers_[slot_], &begin);
+        if (vkBeginCommandBuffer(commandBuffers_[slot_], &begin) != VK_SUCCESS) {
+            // The buffer is left invalid; recording a render pass onto it would be undefined.
+            return PresentOutcome::DeviceLost;
+        }
 
         VkClearValue clearValue{};
         clearValue.color.float32[0] = static_cast<float>(clear.r) / 255.0F;
@@ -578,21 +581,22 @@ private:
 
         std::uint32_t formatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(boot_.physicalDevice(), boot_.surface(), &formatCount, nullptr);
-        std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(boot_.physicalDevice(), boot_.surface(), &formatCount, formats.data());
-        VkSurfaceFormatKHR chosen = formats.front();
-        for (const auto& f : formats) {
-            if (f.format == VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                chosen = f;
-                break;
-            }
-        }
-        // The render pass was built for B8G8R8A8_SRGB. If the surface cannot give us that, fail
-        // rather than present through an incompatible pass.
-        if (chosen.format != VK_FORMAT_B8G8R8A8_SRGB) {
-            std::cerr << "adapter: the surface does not offer B8G8R8A8_SRGB\n";
+        if (formatCount == 0) {
+            std::cerr << "adapter: the surface reports no formats\n";
             return false;
         }
+        std::vector<VkSurfaceFormatKHR> formats(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(boot_.physicalDevice(), boot_.surface(), &formatCount, formats.data());
+        // The render pass was built for B8G8R8A8_SRGB. Take that pairing or fail — presenting through
+        // an incompatible pass is undefined.
+        const bool hasSrgb = std::ranges::any_of(formats, [](const VkSurfaceFormatKHR& f) {
+            return f.format == VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+        });
+        if (!hasSrgb) {
+            std::cerr << "adapter: the surface does not offer B8G8R8A8_SRGB / SRGB_NONLINEAR\n";
+            return false;
+        }
+        const VkSurfaceFormatKHR chosen{VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 
         extent_ = caps.currentExtent;
         if (extent_.width == UINT32_MAX) {
@@ -780,11 +784,15 @@ private:
 // ===========================================================================
 
 /**
- * @brief Installs GLFW callbacks that translate and enqueue events, and tracks the two flags a
- *        caller acts on each frame: a surface that must be remapped, and a focus loss.
+ * @brief Installs GLFW callbacks that translate native input into `mdux.medui.input` events and
+ *        push them into a caller-owned `EventQueue`, and tracks the three flags a caller reads once
+ *        per frame: the surface must be remapped (`takeSurfaceDirty`), the window lost focus
+ *        (`takeFocusLost`), or a `push()` overflowed (`takeOverflow`) — each a `PressLatch::cancel()`
+ *        signal.
  *
- * The queue, and everything it stores, is the caller's. This object holds only a pointer to it and
- * the two flags. One per window.
+ * The queue, and everything it stores, is the caller's. This object holds a pointer to it, the
+ * current `SurfaceMapping`, and the three flags. One per window; the user pointer its callbacks read
+ * is cleared on destruction, so a callback that fires afterwards is a no-op.
  */
 class WindowEventPump {
 public:
@@ -796,6 +804,7 @@ public:
         glfwSetKeyCallback(window_, &WindowEventPump::onKey);
         glfwSetCharCallback(window_, &WindowEventPump::onChar);
         glfwSetWindowFocusCallback(window_, &WindowEventPump::onFocus);
+        glfwSetCursorEnterCallback(window_, &WindowEventPump::onCursorEnter);
         glfwSetFramebufferSizeCallback(window_, &WindowEventPump::onFramebufferSize);
     }
 
@@ -869,6 +878,14 @@ private:
     static void onFocus(GLFWwindow* window, int focused) {
         if (auto* pump = self(window); pump != nullptr && focused == GLFW_FALSE) {
             pump->focusLost_ = true;
+            pump->enqueue(mdux::medui::PointerEvent{.kind = mdux::medui::PointerKind::Cancel});
+        }
+    }
+    static void onCursorEnter(GLFWwindow* window, int entered) {
+        // The pointer left the window (ADR-019 clause 3: a lost pointer-capture gesture is void).
+        // Cancel so a press cannot stay armed while the cursor is somewhere the operator can no
+        // longer see the control.
+        if (auto* pump = self(window); pump != nullptr && entered == GLFW_FALSE) {
             pump->enqueue(mdux::medui::PointerEvent{.kind = mdux::medui::PointerKind::Cancel});
         }
     }

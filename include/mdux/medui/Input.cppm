@@ -435,11 +435,13 @@ struct SurfaceMapping {
      * @brief The mapping for a 1:1 framebuffer-origin renderer at the current device-pixel ratio.
      *
      * `framebuffer` is `glfwGetFramebufferSize`, `window` is the client-area size in screen
-     * coordinates. The ratio is taken from the width and the height is required to reduce to the
-     * same fraction — a display's device-pixel ratio is uniform, and an anamorphic or fractional
-     * ratio is out of initial adapter scope (ADR-019), so this **fails closed** (`MalformedScale`)
-     * rather than picking one axis. Also `MalformedScale` for a non-positive extent or a reduced
-     * term past `maxCoordinateScale`.
+     * coordinates. The ratio is taken from the width, reduced by `std::gcd`; a fractional ratio
+     * (a 1.5× display, say) is fine — `normalizeSurfacePoint()` is rational. What is **not** fine
+     * is a ratio that differs between the axes: a display's device-pixel ratio is uniform, and a
+     * per-axis-different one is exactly the silent wrong-target case ADR-018 clause 3 fails closed
+     * to avoid. So the height is required to reduce to the **same** fraction, and this returns
+     * `MalformedScale` when it does not, for a non-positive extent, or for a reduced term past
+     * `maxCoordinateScale`.
      */
     [[nodiscard]] static constexpr mdux::core::Result<SurfaceMapping, InputError>
     create(mdux::core::Extent2D framebuffer, mdux::core::Extent2D window) noexcept {

@@ -272,13 +272,13 @@ static_assert([] {
 }());
 
 const mdux::spec::Register surfaceMappingCarriesTheDevicePixelRatio{
-    "SurfaceMapping carries the framebuffer-to-window device-pixel ratio and fails closed on a non-uniform or degenerate one",
+    "SurfaceMapping carries the uniform framebuffer-to-window device-pixel ratio and fails closed on a per-axis or degenerate one",
     "evidence-unit",
     [] {
         return speclab::Test("medui-input-surface-mapping-device-pixel-ratio")
-            .Given("a window, and framebuffer extents at 1x, 2x, 3x, a non-uniform one, and a degenerate one", [] {})
+            .Given("a window, and framebuffer extents at 1x, 2x, 3x, 1.5x, a per-axis-different one, and a degenerate one", [] {})
             .When("a mapping is built for each", [] {})
-            .Then("an integer uniform ratio is carried and everything else is refused rather than approximated",
+            .Then("a uniform ratio (integer or fractional) is carried, and a per-axis-different or degenerate one is refused",
                   [] {
                       mdux::spec::Checks checks;
 
@@ -294,9 +294,15 @@ const mdux::spec::Register surfaceMappingCarriesTheDevicePixelRatio{
                       const auto scaled3 = ms::SurfaceMapping::create({1200, 900}, {400, 300});
                       checks.expect(scaled3 && scaled3->scaleNum == 3 && scaled3->scaleDen == 1, "and a 3x one is 3/1");
 
+                      // 1.5x on both axes: 600/400 and 450/300 both reduce to 3/2. Fractional is
+                      // fine — normalizeSurfacePoint is rational — as long as it is uniform.
+                      const auto scaled15 = ms::SurfaceMapping::create({600, 450}, {400, 300});
+                      checks.expect(scaled15 && scaled15->scaleNum == 3 && scaled15->scaleDen == 2,
+                                    "a 1.5x display is a 3/2 ratio, carried rather than rounded");
+
                       // 800x601 against 400x300: width says 2/1, height says 601/300 — not uniform.
-                      const auto anamorphic = ms::SurfaceMapping::create({800, 601}, {400, 300});
-                      checks.expect(!anamorphic && anamorphic.error() == ms::InputError::MalformedScale,
+                      const auto perAxis = ms::SurfaceMapping::create({800, 601}, {400, 300});
+                      checks.expect(!perAxis && perAxis.error() == ms::InputError::MalformedScale,
                                     "a framebuffer whose axes carry different ratios is refused, not squashed onto one axis");
 
                       const auto degenerate = ms::SurfaceMapping::create({0, 300}, {400, 300});
@@ -309,7 +315,7 @@ const mdux::spec::Register surfaceMappingCarriesTheDevicePixelRatio{
     }};
 
 const mdux::spec::Register renderingAndHitTestingAgreeAcrossScale{
-    "A pointer mapped through SurfaceMapping resolves to the same control at 1x and at 2x DPI — rendering and hit testing agree",
+    "A pointer mapped through SurfaceMapping resolves to the same control at 1x and at 2x DPI, so rendering and hit testing agree",
     "evidence-unit",
     [] {
         return speclab::Test("medui-input-surface-mapping-hit-testing-agrees")

@@ -114,13 +114,15 @@ smaller clips it (the render scissor bounds it). Authored pixels and framebuffer
 
 The only transform between a native pointer and the authored grid is therefore the display's
 **device-pixel ratio** — framebuffer pixels per window pixel. `SurfaceMapping::create(framebuffer,
-window)` takes that ratio from the framebuffer width over the window width and **requires the height
-to reduce to the same fraction** — a real display's device-pixel ratio is uniform, and a
-fractional or anamorphic one is out of initial adapter scope, so this fails closed
-(`MalformedScale`) rather than picking an axis. `map(kind, windowX, windowY)` runs exactly one
-`normalizeSurfacePoint()` pass (ADR-018 clause 3: floor toward −∞, fail-closed on an
-out-of-`core::Px` result). A point off the authored surface is not `SurfaceMapping`'s concern —
-`resolvePress()` returns nothing for it.
+window)` takes that ratio from the framebuffer width over the window width, reduced by `gcd`. A
+fractional ratio (a 1.5× display, say) is carried as `3/2` rather than rounded — `normalizeSurfacePoint()`
+is rational. What it **requires** is that the ratio be the **same on both axes**: a real display's
+device-pixel ratio is uniform, and a per-axis-different one is exactly the silent wrong-target case
+ADR-018 clause 3 fails closed to avoid, so a height that does not reduce to the same fraction (also
+a non-positive extent, or a reduced term past `maxCoordinateScale`) is `MalformedScale`.
+`map(kind, windowX, windowY)` runs exactly one `normalizeSurfacePoint()` pass (ADR-018 clause 3:
+floor toward −∞, fail-closed on an out-of-`core::Px` result). A point off the authored surface is
+not `SurfaceMapping`'s concern — `resolvePress()` returns nothing for it.
 
 The adapter builds the mapping once at start-up and again on **every** framebuffer-resize and
 content-scale change, from the current `glfwGetFramebufferSize` and window size, and
@@ -171,18 +173,18 @@ never as a skipped frame.
 
 The example takes `--smoke-test`: it presents a fixed number of frames (real swapchain, real
 `vkQueuePresentKHR`) and exits, non-zero on the wall-clock deadline or any Vulkan/GLFW failure —
-the `VulkanSCTriangleExample` pattern. It is registered as the CTest `example.monitor.smoke` and
-**labelled `pixel`**, so the `-L pixel` step every supported CI leg already runs (Linux GCC and
-Clang under Xvfb + lavapipe, Windows under lavapipe, macOS under MoltenVK) exercises it without a
-new workflow step. It carries **no `SKIP_RETURN_CODE`**: an absent required display or device is a
-failure, not a CTest `Skipped`, so a broken ICD cannot turn the only end-to-end presentation check
-into a silent no-op — and the Linux and macOS `-L pixel` steps additionally fail the job on any
-`Skipped` line.
+the `VulkanSCTriangleExample` pattern. It is registered as the CTest `example.monitor.smoke`. It
+needs a window server, so it is **not** `pixel`-labelled: it runs in the unfiltered "Run Tests"
+step every supported leg already has (Xvfb + lavapipe on Linux GCC and Clang, the desktop session
+on Windows and macOS), not in the headless `-L pixel` step. It carries **no `SKIP_RETURN_CODE`**:
+an absent required display or device is a failure, not a CTest `Skipped`, so a broken ICD or a
+missing display cannot turn the end-to-end presentation check into a silent no-op.
 
 A second mode, `--headless-frame`, renders one frame through `mdux.render.offscreen` with no window,
 reads it back and asserts the topbar and critical-control rectangles land where the compiled screen
-places them — deterministic frame-content evidence that does not depend on a swapchain. It is
-`example.monitor.headless`, also `pixel`-labelled.
+places them — deterministic frame-content evidence that does not depend on a swapchain or a display.
+It is `example.monitor.headless`, `pixel`-labelled like the rest of the offscreen suite, and the
+Linux and macOS `-L pixel` steps fail the job on any `Skipped` line.
 
 ### 6. Coordinate and event translation are unit-tested without a device
 
@@ -259,10 +261,12 @@ which runs in the ordinary test job.
 - **The lifecycle table is read as a completed safety analysis.** Mitigation: the Medical Device
   Considerations section and this record's status both say these are engineering outcomes, no
   hazard or risk control is assigned, and the host owns any real action.
-- **A HiDPI configuration with a fractional or per-axis-different framebuffer ratio** yields a
-  `num/den` past `maxCoordinateScale` or a height that does not match the width ratio. Mitigation:
-  `create()` fails closed (`MalformedScale`) rather than rounding, and the example reports it as a
-  start-up failure; a fractional-DPI screen is out of initial adapter scope (ADR-018 clause 8).
+- **A HiDPI configuration with a per-axis-different framebuffer ratio, or one whose reduced terms
+  exceed `maxCoordinateScale`.** Mitigation: `create()` fails closed (`MalformedScale`) rather than
+  rounding or picking an axis, and the example reports it — fatal at start-up, and now also fatal
+  on a resize that reaches this state (a review finding; the resize path previously kept the stale
+  mapping). A uniform fractional ratio (125 %, 150 %, 175 % scaling) is *supported* — carried as an
+  exact fraction.
 
 ## Implementation Notes
 

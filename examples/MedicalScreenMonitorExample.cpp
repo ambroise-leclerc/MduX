@@ -66,6 +66,7 @@ namespace rnd  = mdux::render;
 constexpr std::string_view kHaltNode    = "emergency-halt";
 constexpr std::string_view kPatientNode = "patient-id";
 
+/// An embedded blob's bytes as UTF-8 text, for the `*Package::parse()` calls.
 [[nodiscard]] std::string_view asText(std::span<const std::byte> bytes) noexcept {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
@@ -87,10 +88,13 @@ struct BoundScreen {
     BoundScreen(const BoundScreen&)            = delete;
     BoundScreen& operator=(const BoundScreen&) = delete;
 
+    /// The authored surface extent the screen was compiled for — the `UiRenderer` viewport.
     [[nodiscard]] core::Extent2D surface() const noexcept {
         return {screen.surfaceWidth, screen.surfaceHeight};
     }
 
+    /// Parses the embedded font / text / image packages and builds the two bindings, or prints why
+    /// and returns `nullptr`. Heap-allocated because the bindings hold pointers into this struct.
     [[nodiscard]] static std::unique_ptr<BoundScreen> load() {
         auto bound = std::make_unique<BoundScreen>();
 
@@ -141,6 +145,8 @@ struct FieldState {
     std::array<char32_t, 64> buffer{};
     std::optional<ms::FieldEditor> editor{};
 
+    /// Creates the `FieldEditor` for the `patient-id` `TextInput`, over `buffer`, bounded by the
+    /// font charset and the node's `charset:`. Leaves `editor` empty if the node is absent.
     void bind(const BoundScreen& bound) {
         const ms::CompiledNode* node = bound.screen.find(kPatientNode);
         if (node == nullptr) {
@@ -165,6 +171,9 @@ struct UpdateResult {
     std::optional<ms::ActionTrace> action{};
 };
 
+/// One application update (not the assembled ADR-018 clause-6 loop — that is #318): drains the
+/// queue, routes pointers through `PressLatch` + `resolvePress` and keys/text through the
+/// `FieldEditor`, and returns the `ActionTrace` if the `emergency-halt` control was activated.
 [[nodiscard]] UpdateResult applyBatch(ms::EventQueue& queue, const BoundScreen& bound, ms::PressLatch& latch,
                                       FieldState& field, std::uint64_t& sequence) {
     UpdateResult result;
@@ -258,6 +267,8 @@ struct UpdateResult {
     return std::move(*list);
 }
 
+/// A `UiRenderer` for `context` with the committed font coverage atlas and the brand-mark image
+/// atlas, so text and the logo draw as themselves rather than white blocks.
 [[nodiscard]] mdux::core::Result<rnd::UiRenderer, rnd::RenderError> makeRenderer(
     const rnd::VulkanRenderContext& context, const BoundScreen& bound) {
     return rnd::UiRenderer::createWithAtlases(context, mdux::shader::generated::mdux_ui::package(),
@@ -266,12 +277,15 @@ struct UpdateResult {
                                               bound.image.height);
 }
 
+/// The near-black ground the screen is composited over.
 constexpr core::ColorRgba8 kClear{.r = 6, .g = 8, .b = 10, .a = 255};
 
 // ---------------------------------------------------------------------------
 // Interactive / smoke-test mode
 // ---------------------------------------------------------------------------
 
+/// Opens a window, presents the screen, and routes input until the window closes (or, under
+/// `--smoke-test`, until N frames are presented). Returns a process exit code.
 int runWindowed(bool smokeTest) {
     auto bound = BoundScreen::load();
     if (!bound) {
@@ -300,21 +314,47 @@ int runWindowed(bool smokeTest) {
     ms::PressLatch                                 latch;
     std::uint64_t                                  sequence = 0;
 
-    auto mapping = ms::SurfaceMapping::create(window->framebufferExtent(), window->windowExtent());
+    const auto buildMapping = [&] {
+        return ms::SurfaceMapping::create(window->framebufferExtent(), window->windowExtent());
+    };
+    auto mapping = buildMapping();
     if (!mapping) {
         std::cerr << "monitor: the framebuffer-to-window ratio is not one this adapter supports "
-                     "(fractional or per-axis DPI)\n";
+                     "(a per-axis-different DPI, or one past maxCoordinateScale)\n";
         return 1;
     }
     mx::WindowEventPump pump{window->handle(), queue, *mapping};
 
     FrameStorage storage{bound->screen.budget};
 
-    constexpr std::uint32_t         smokeFramesRequired = 3;
-    constexpr std::chrono::seconds  smokeDeadline{30};
-    const std::uint64_t             timeoutNanos = smokeTest ? std::uint64_t{2'000'000'000} : UINT64_MAX;
-    const auto                      startedAt    = std::chrono::steady_clock::now();
-    std::uint32_t                   presented    = 0;
+    constexpr std::uint32_t        smokeFramesRequired = 3;
+    constexpr std::chrono::seconds smokeDeadline{30};
+    const std::uint64_t            timeoutNanos = smokeTest ? std::uint64_t{2'000'000'000} : UINT64_MAX;
+    const auto                     startedAt    = std::chrono::steady_clock::now();
+    std::uint32_t                  presented    = 0;
+
+    const auto smokeExpired = [&] {
+        return smokeTest && std::chrono::steady_clock::now() - startedAt > smokeDeadline;
+    };
+
+    // The one resync path (ADR-019 clause 4): rebuild the swapchain, rebuild and revalidate the
+    // SurfaceMapping from the new framebuffer extent, and cancel any armed press. A mapping that no
+    // longer validates is fatal here just as it is at start-up — otherwise every later click would
+    // hit-test with a stale ratio and no diagnostic. `false` means exit non-zero.
+    const auto resync = [&]() -> bool {
+        if (!window->recreateSwapchain()) {
+            return false;
+        }
+        auto rebuilt = buildMapping();
+        if (!rebuilt) {
+            std::cerr << "monitor: after the resize the framebuffer-to-window ratio is no longer one "
+                         "this adapter supports (a per-axis-different DPI, or one past maxCoordinateScale)\n";
+            return false;
+        }
+        pump.setMapping(*rebuilt);
+        latch.cancel();
+        return true;
+    };
 
     std::println("Monitor running. Click the red halt control; type a patient id (digits, A-Z).");
     std::println("Press Esc to stop editing, close the window to exit.");
@@ -323,14 +363,9 @@ int runWindowed(bool smokeTest) {
         glfwPollEvents();
 
         if (pump.takeSurfaceDirty()) {
-            if (!window->recreateSwapchain()) {
+            if (!resync()) {
                 return 1;
             }
-            auto rebuilt = ms::SurfaceMapping::create(window->framebufferExtent(), window->windowExtent());
-            if (rebuilt) {
-                pump.setMapping(*rebuilt);
-            }
-            latch.cancel();
         }
         if (pump.takeFocusLost() || pump.takeOverflow()) {
             latch.cancel();
@@ -338,7 +373,7 @@ int runWindowed(bool smokeTest) {
 
         const UpdateResult update = applyBatch(queue, *bound, latch, field, sequence);
         if (update.action) {
-            std::println("ActionTrace #{}: node='{}' requirement='{}' event={} — the host executes this, not MduX",
+            std::println("ActionTrace #{}: node='{}' requirement='{}' event={} - the host executes this, not MduX",
                          update.action->sequence, update.action->nodeId, update.action->requirement,
                          ms::toWire(update.action->event));
         }
@@ -348,21 +383,23 @@ int runWindowed(bool smokeTest) {
             return 1;
         }
 
-        mx::FrameContext frame{};
+        mx::FrameContext         frame{};
         const mx::PresentOutcome begun = window->beginFrame(kClear, timeoutNanos, frame);
         if (begun == mx::PresentOutcome::DeviceLost) {
             std::cerr << "monitor: the Vulkan device was lost\n";
             return 1;
         }
         if (begun == mx::PresentOutcome::OutOfDate) {
-            if (!window->recreateSwapchain()) {
+            if (!resync()) {
                 return 1;
             }
-            latch.cancel();
+            if (smokeExpired()) {
+                break;
+            }
             continue;
         }
         if (begun == mx::PresentOutcome::Skipped) {
-            if (smokeTest && std::chrono::steady_clock::now() - startedAt > smokeDeadline) {
+            if (smokeExpired()) {
                 break;
             }
             continue;
@@ -379,21 +416,15 @@ int runWindowed(bool smokeTest) {
             return 1;
         }
         if (ended == mx::PresentOutcome::OutOfDate) {
-            if (!window->recreateSwapchain()) {
+            if (!resync()) {
                 return 1;
             }
-            latch.cancel();
         } else {
             ++presented;
         }
 
-        if (smokeTest) {
-            if (presented >= smokeFramesRequired) {
-                break;
-            }
-            if (std::chrono::steady_clock::now() - startedAt > smokeDeadline) {
-                break;
-            }
+        if (smokeTest && (presented >= smokeFramesRequired || smokeExpired())) {
+            break;
         }
     }
 
@@ -412,6 +443,8 @@ int runWindowed(bool smokeTest) {
 // Headless one-frame content check
 // ---------------------------------------------------------------------------
 
+/// Renders one frame through `mdux.render.offscreen` (no window) and asserts the topbar and the
+/// halt control were painted where the compiled screen places them. Returns a process exit code.
 int runHeadlessFrame() {
     auto bound = BoundScreen::load();
     if (!bound) {
@@ -454,6 +487,7 @@ int runHeadlessFrame() {
         return 1;
     }
 
+    /// Context for the C-style `RecordCommands` callback `renderAndRead` takes.
     struct Recording {
         rnd::UiRenderer* renderer;
         draw::DrawList*  list;
@@ -471,8 +505,7 @@ int runHeadlessFrame() {
         return 1;
     }
 
-    // The two rectangles the compiled screen pins: the topbar background and the halt control. Both
-    // must be painted (not the clear colour) at their own top-left corner.
+    /// Whether the centre of `nodeId`'s rectangle is painted (not the clear colour).
     const auto painted = [&](std::string_view nodeId) -> bool {
         const ms::CompiledNode* node = bound->screen.find(nodeId);
         if (node == nullptr) {
