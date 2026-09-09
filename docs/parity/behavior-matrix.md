@@ -139,7 +139,7 @@ design-level comparison; #314 changed neither side's interaction code.
 | Color tolerance | One UNORM step per modeled composite; existing two-layer fields need two. Channels share a feasible coverage; arbitrary independent channel slack is not permitted. | Exact hash has zero tolerance; ChromeColor uses ±1 per channel in its sampled edge bands. | Profile/check-specific arithmetic and sampling; no global fuzzy tolerance. |
 | TextPresence | Approved atlas coverage and placed glyph checks; ink containment has explicit composite-ground limits. Named `mdux.local/ink-containment` and `mdux.local/ink-coverage`, both v1, since #313. | Glyph-count coverage heuristic (5–70% of estimated glyph area), not a glyph-shape comparison. | Distinct shape/coverage predicates, asset identity and applicability. |
 | Ink/background | Resolved ground/tint and baked placements; bounds and ink checks have documented local limits. | Ink delta threshold 8; containment/search margins 8; local panel/chrome background handling. | Record thresholds, ground resolution and ROI in the profile; do not transfer one sibling's constants into the other silently. |
-| Report scope | Artifact provenance and node/check with explicit locale-free or locale scope; driver enforces complete obligations. Each outcome in `verification.json` now records an `observationProfile` {id, version} (#313). | Check IDs such as node::golden_bounds; locale/scenario/clock also carried by the enclosing report. | A common observation key must include scope and provenance, not just the local check ID. |
+| Report scope | Artifact provenance and node/check with explicit locale-free or locale scope; driver enforces complete obligations. Each outcome in `verification.json` records an `observationProfile` {id, version}; a `Bounds` or `ColorHash` outcome also records a candidate `candidateProfile` naming the shared `MEDUI-PROFILE-RENDERED` identity beside it (#313). | Check IDs such as node::golden_bounds; locale/scenario/clock also carried by the enclosing report. | A common observation key must include scope and provenance, not just the local check ID. |
 
 Sources: [MduX predicates][m-verify], [implementation arithmetic][m-arithmetic],
 [MduX fixtures][m-tests], [TrustSC checks][t-checks], [report types][t-verify] and
@@ -161,12 +161,20 @@ unchanged (`4f114dd`); the delivery is one-sided until [#335](https://github.com
   the two `ColorHash` results are never conflated — with **no committed baseline** (a
   driver-tuple-dependent digest cannot live in a byte-compared artifact, ADR-014 D4), `NoBaseline`
   on every production call, fixture-tested only. The **committed** `verification.json` keeps the
-  `mdux.local/*` ids; the canonical `MEDUI-PROFILE-RENDERED` ids (`extent-equality`,
-  `ink-containment`, `tint-composition`, `rgba8-sha256`) exist at the pin, and the **derived**
-  envelope below already emits them. Migrating the byte-compared artifact to them is gated on a
-  final 0.3.0 release, the cross-implementation pass (#335) and a reviewed re-bake — see
-  [ADR-017 §3](../adr/ADR-017-sibling-conformance-gate-status.md). `mdux.local/ink-coverage` has no
-  RENDERED equivalent and stays local.
+  `mdux.local/` ids and, since the **#313 amendment** (2026-09-09), a `Bounds` or `ColorHash` outcome
+  also records a candidate `candidateProfile` — the canonical `MEDUI-PROFILE-RENDERED` `{profile,
+  check}` identity (`extent-equality/1`, `tint-composition/1`) — beside its local one, because
+  `goldenBounds()` and `colorHash()` compute exactly R01 and R03, so the bundle runs both identities
+  together (`spec/profiles.md`). One pure `canonicalRenderedCheckFor()` in `mdux.verify` is the
+  mapping. It also names R04's `rgba8-sha256/1` for `mdux.local/raw-image-digest`, but that predicate
+  is fixture-only with no committed baseline (above), so no R04 `candidateProfile` reaches
+  `verification.json`. `mdux.local/ink-containment` does **not** map — `inkContainment()` is a
+  compound predicate stronger than shared R02 (a clipped glyph fails locally while passing R02), so
+  it stays implementation-local like `mdux.local/ink-coverage`; both carry no `candidateProfile`, and
+  a genuine separately-evaluated R02 obligation is deferred. Dropping the `mdux.local/` half and
+  marking `candidateProfile` non-candidate is still gated on a final 0.3.0 release, the
+  cross-implementation pass (#335) and a reviewed re-bake — see
+  [ADR-017 §3](../adr/ADR-017-sibling-conformance-gate-status.md).
 - **The shared RENDERED corpus** (Stage B). `medui-conformance.toml` claims
   `MEDUI-PROFILE-RENDERED`, and `conformance_spec` runs `v0.3.0-rc.1`'s 33 `rendered-check` vectors
   (rules R01–R04) against `mdux.verify`'s own exported predicates — `rectContainedBy`, `inflate`,
@@ -184,7 +192,9 @@ unchanged (`4f114dd`); the delivery is one-sided until [#335](https://github.com
   real verify run — obligations synthesized from the screen and its checks,
   `Bounds`/`ColorHash`/`InkContainment` mapped to
   `extent-equality`/`tint-composition`/`ink-containment`, `LocalizedTextPresence` excluded and
-  counted as implementation-local. `backend` is the Vulkan `deviceName` and `producer.source` the
+  counted as implementation-local. (The committed-artifact migration deliberately does **not** map
+  `InkContainment` — `inkContainment()` is stronger than shared R02, ADR-016 §4 — and whether this
+  derived envelope should match is a recorded residual.) `backend` is the Vulkan `deviceName` and `producer.source` the
   build commit, so the envelope is **derived and uncommitted** (ADR-014 D4, ADR-007 D5). A GPU leg
   checks it is `evidence.schema.json`-valid and aggregates to `pass`. `deriveRenderedEvidence()`
   **fails closed**: one obligation per enumerated obligation (not per report row), refusing an

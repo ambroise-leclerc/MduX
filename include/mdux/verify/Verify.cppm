@@ -10,6 +10,7 @@
  * @compliance ADR-014 What rendered-truth verification checks, and what it cannot
  * @compliance ADR-015 Versioned sibling observations (decision 2: name the predicate, not its alias)
  * @compliance ADR-016 Locally versioned observation profiles for rendered checks
+ * @compliance ADR-017 Sibling conformance gate status (§3: the committed rendered-id migration)
  *
  * Part of MduXCore, and that placement is ADR-014 decision 1 rather than an inheritance: the checks
  * have the same shape as the screen runtime - bounded arithmetic over caller-owned storage, no
@@ -56,8 +57,16 @@
  * `CheckOutcome` therefore carries an `ObservationProfile` - an id naming what was measured and a
  * version that moves only on a reviewed change - and `verification.json` records it beside each
  * outcome. `profileOf()` maps a `CvCheck` or `TextCheck` to its profile; `rawImageDigest()` carries
- * `rawImageDigestProfile`. The ids are implementation-local (`localProfilePrefix`) until
- * MEDUI-DEC-007 delivers a canonical set (ADR-016).
+ * `rawImageDigestProfile`. Those `mdux.local/` ids are implementation-local (`localProfilePrefix`).
+ *
+ * The shared rendered-check ids MEDUI-DEC-007 delivered (`MEDUI-PROFILE-RENDERED` in the pinned
+ * `spec/profiles.md`) exist alongside them: `canonicalRenderedCheckFor()` maps a local profile onto
+ * its canonical `{profile, check}` identity **only when the local predicate computes that shared
+ * check's observation** - `extent-equality`, `tint-composition` and `raw-image-digest` (R01/R03/R04)
+ * do; `ink-containment` (a stronger compound predicate, not R02) and `ink-coverage` (no shared
+ * equivalent) do not and stay implementation-local. The committed `verification.json` records the
+ * candidate identity beside the retained `mdux.local/` one for the checks that map (ADR-016 §4,
+ * ADR-017 §3).
  *
  * ## What a check is given, and what it may never be given
  *
@@ -382,6 +391,75 @@ inline constexpr ObservationProfile inkCoverageProfile{"mdux.local/ink-coverage"
 /// `rawImageDigest()`: SHA-256 over tightly packed row-major RGBA8 of a rectangle. Uncommitted;
 /// see ADR-016 for why it exists without a committed baseline.
 inline constexpr ObservationProfile rawImageDigestProfile{"mdux.local/raw-image-digest", 1};
+
+/// The shared rendered-check profile MduX claims in `medui-conformance.toml` (since #314 Stage B):
+/// MedUI's `MEDUI-PROFILE-RENDERED`, the candidate delivery of MEDUI-DEC-007. Unlike
+/// `localProfilePrefix`, this id *is* a shared-contract identifier - see `spec/profiles.md` at the
+/// pinned revision, which defines version 1 with checks `extent-equality/1`, `ink-containment/1`,
+/// `tint-composition/1` and `rgba8-sha256/1`.
+inline constexpr std::string_view renderedProfileId      = "MEDUI-PROFILE-RENDERED";
+inline constexpr std::uint32_t     renderedProfileVersion = 1;
+
+/**
+ * @brief A rendered-check outcome's identity in the shared `MEDUI-PROFILE-RENDERED` profile.
+ *
+ * The **candidate** half of the ADR-016 §4 / ADR-017 §3 migration. `spec/profiles.md` requires a
+ * consumer that adopts the shared rendered-check ids to "map legacy obligations explicitly to one
+ * or more identified checks, run old and candidate obligations together, retain both reports, and
+ * rebake changed baselines explicitly" - so `verification.json` records this beside the retained
+ * `mdux.local/` identity rather than in place of it. `profileId`/`profileVersion` are always
+ * `renderedProfileId`/`renderedProfileVersion`; `checkId`/`checkVersion` name the canonical check.
+ */
+struct CanonicalRenderedCheck {
+    std::string_view profileId{renderedProfileId};
+    std::uint32_t    profileVersion{renderedProfileVersion};
+    std::string_view checkId{};
+    std::uint32_t    checkVersion{0};
+
+    [[nodiscard]] constexpr bool operator==(const CanonicalRenderedCheck&) const noexcept = default;
+};
+
+/// The shared `MEDUI-PROFILE-RENDERED` check a `mdux.local/` observation profile maps onto, or
+/// nothing when the local predicate does not compute that shared check's observation.
+///
+/// - `mdux.local/extent-equality`  -> `extent-equality/1`  (R01). `goldenBounds()` is R01: non-empty
+///   ink whose measured extent equals the golden rectangle exactly.
+/// - `mdux.local/tint-composition` -> `tint-composition/1` (R03). `colorHash()` is R03 - it decides
+///   every sample with the same `couldBeBlend()` R03's conformance adapter uses (moved onto this
+///   interface for exactly that reason, #314 Stage B), requires one exact-tint sample, and rejects
+///   empty content.
+/// - `mdux.local/raw-image-digest` -> `rgba8-sha256/1` (R04). `rawImageDigest()` is R04's SHA-256
+///   over tightly packed row-major RGBA8. Arithmetic only - it has no committed baseline and no
+///   production caller, so no outcome under this profile ever reaches `verification.json`.
+///
+/// Two local profiles deliberately map to **nothing**:
+///
+/// - `mdux.local/ink-containment`. `inkContainment()` is *not* R02. R02 (`rectContainedBy` over an
+///   `inflate`d golden, empty ink passes) is a containment test; `inkContainment()` is a compound
+///   predicate - containment against the *node* rectangle, the frame's ink matching the *predicted*
+///   extent, and non-empty content - that is strictly stronger and structurally different. A clipped
+///   glyph fails `inkContainment()` while passing R02, and a MduX `InkContainment` obligation has no
+///   golden rectangle for R02 to test against. Attaching `ink-containment/1` to an `inkContainment()`
+///   finding would assert an R02 result nothing evaluated; a genuine R02 obligation is deferred
+///   (ADR-016 §4, ADR-017 §3).
+/// - `mdux.local/ink-coverage`. `MEDUI-PROFILE-RENDERED` has no localized-text-presence predicate,
+///   so `localizedTextPresence()` stays implementation-local.
+///
+/// Keyed on the whole `ObservationProfile` (id *and* version), so an outcome-changing revision that
+/// takes a local profile to version 2 stops matching here and forces this mapping to be re-reviewed
+/// rather than silently pairing a changed local observation with an unchanged shared id.
+[[nodiscard]] constexpr std::optional<CanonicalRenderedCheck> canonicalRenderedCheckFor(const ObservationProfile& local) noexcept {
+    if (local == extentEqualityProfile) {
+        return CanonicalRenderedCheck{.checkId = "extent-equality", .checkVersion = 1};
+    }
+    if (local == tintCompositionProfile) {
+        return CanonicalRenderedCheck{.checkId = "tint-composition", .checkVersion = 1};
+    }
+    if (local == rawImageDigestProfile) {
+        return CanonicalRenderedCheck{.checkId = "rgba8-sha256", .checkVersion = 1};
+    }
+    return std::nullopt;
+}
 
 /**
  * @brief A verification the shared language lets an author opt a node into.

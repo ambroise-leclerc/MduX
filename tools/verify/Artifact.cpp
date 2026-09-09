@@ -57,6 +57,15 @@ using mdux::core::err;
  * gate - never mistakes MduX's `ColorHash` (a tint predicate) for TrustSC's (a pixel digest). It is
  * a fixed property of the check, so it does not turn this file into the driver-tuple-dependent
  * artifact ADR-014 decision 4 forbids; no measured pixel value is recorded here.
+ *
+ * `candidateProfile` is the ADR-016 §4 / ADR-017 §3 migration: the shared `MEDUI-PROFILE-RENDERED`
+ * `{profile, check}` identity the outcome's local profile maps onto, recorded *beside* the retained
+ * `observationProfile` so the two run together (`spec/profiles.md`: "run old and candidate
+ * obligations together, retain both reports"). It is derived here from the local profile the writer
+ * has already validated, not carried through the driver - there is no independent source to check it
+ * against, and the mapping is pure. An outcome whose local profile has no shared equivalent
+ * (`LocalizedTextPresence` / `mdux.local/ink-coverage`) carries no `candidateProfile` member: it
+ * stays implementation-local after the migration.
  */
 [[nodiscard]] std::optional<evj::Value> outcomeToJson(const Outcome& outcome) {
     evj::Value profile = evj::Value::emptyObject();
@@ -70,6 +79,22 @@ using mdux::core::err;
         || !put(entry, "nodeId", evj::Value::string(outcome.nodeId)) || !put(entry, "observationProfile", std::move(profile))
         || !put(entry, "scope", evj::Value::string(outcome.scope))) {
         return std::nullopt;
+    }
+
+    if (const auto canonical = mdux::verify::canonicalRenderedCheckFor(outcome.profile); canonical.has_value()) {
+        evj::Value candidateProfile = evj::Value::emptyObject();
+        evj::Value candidateCheck   = evj::Value::emptyObject();
+        if (!put(candidateProfile, "id", evj::Value::string(std::string{canonical->profileId}))
+            || !put(candidateProfile, "version", evj::Value::unsignedInteger(canonical->profileVersion))
+            || !put(candidateCheck, "id", evj::Value::string(std::string{canonical->checkId}))
+            || !put(candidateCheck, "version", evj::Value::unsignedInteger(canonical->checkVersion))) {
+            return std::nullopt;
+        }
+        evj::Value candidate = evj::Value::emptyObject();
+        if (!put(candidate, "check", std::move(candidateCheck)) || !put(candidate, "profile", std::move(candidateProfile))
+            || !put(entry, "candidateProfile", std::move(candidate))) {
+            return std::nullopt;
+        }
     }
     return entry;
 }

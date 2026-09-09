@@ -135,19 +135,24 @@ check:
     (Stage C-emitter) emits `profile.id = "MEDUI-PROFILE-RENDERED"` and `check.id` in
     {`extent-equality`, `tint-composition`, `ink-containment`}. That envelope is derived and
     uncommitted, so adopting canonical ids there carries no baseline risk and is done.
-  - **Committed `verification.json` still records `mdux.local/*` per outcome.** Migrating those to
-    the canonical check ids is a change to a **byte-compared** artifact, and per `spec/profiles.md`
-    ("a consumer maps legacy obligations explicitly … runs old and candidate obligations together,
-    retains both reports, and rebakes changed baselines") and MEDUI-DEC-007's rollout ("profile
-    adoption requires a minor release with its own candidate corpus, passed by every implementation
-    claiming the affected capability before any consumer advertises a profile") it is deliberately
-    gated on: a final 0.3.0 minor release rather than `-rc.1`, the cross-implementation pass
-    ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)), and a reviewed migration that
-    runs both identities together and re-bakes each screen bundle.
-  - **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) has **no** `MEDUI-PROFILE-RENDERED`
-    equivalent — the RENDERED profile has four checks and none is a localized-text-presence
-    predicate — so it stays implementation-local after the migration, not mapped. This is the same
-    boundary the derived envelope draws by excluding it.
+  - **Committed `verification.json` records the `mdux.local/` identity and, since #313, a candidate
+    `candidateProfile` beside it for the checks that map.** Migrating to the canonical check ids is a
+    change to a **byte-compared** artifact; per `spec/profiles.md` ("a consumer maps legacy
+    obligations explicitly … runs old and candidate obligations together, retains both reports, and
+    rebakes changed baselines") the [#313 amendment to ADR-016](ADR-016-locally-versioned-observation-profiles.md)
+    added the candidate identity **beside** the retained local one — both identities now run together
+    in the committed bundle — by maintainer instruction on 2026-09-09, ahead of the gate below.
+    Still gated, and still residual: a final 0.3.0 minor release rather than `-rc.1`, the
+    cross-implementation pass ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)), and a
+    reviewed re-bake against the final line, at which point `candidateProfile` stops being candidate.
+  - **Only `Bounds` and `ColorHash` map.** `goldenBounds()` and `colorHash()` compute exactly R01
+    and R03 (R03 via the shared `couldBeBlend`, #314 Stage B), so one evaluation discharges both
+    obligations. `mdux.local/ink-containment` does **not** map: `inkContainment()` is a compound
+    predicate stronger than shared R02 (a clipped glyph fails locally while passing R02), and a MduX
+    `InkContainment` obligation has no golden for R02 to test — a genuine separately-evaluated R02
+    obligation is deferred. `mdux.local/ink-coverage` (`LocalizedTextPresence`) has no
+    `MEDUI-PROFILE-RENDERED` equivalent. Both stay implementation-local, and carry no
+    `candidateProfile`.
 - Rule R04 (`rgba8-sha256`) is exercised as arithmetic against the pinned vectors, but MduX commits
   no image baseline and R04 discharges no obligation — a driver-tuple-dependent digest cannot enter
   a byte-compared artifact (ADR-014 D4, ADR-007 D5), and TrustSC commits none either.
@@ -285,9 +290,12 @@ condition in decision 3 or establish the derived-observation comparison in decis
   (three bounded limitations in decision 3, none weakening an existing required check);
   PAR-REQ-003 **Accepted** with the recorded RENDERED-subset limitation in decision 4.
 - **Still open**: the verifier-area domain review for PAR-REQ-002/003 (recorded in
-  `docs/parity/requirements.md`); the rendered-artifact migration in decision 3 (gated on a final
-  0.3.0 release, #335 and a reviewed re-bake); PAR-REQ-004–010 stay `Proposed / unreviewed`;
-  ADR-016's status remains #313's to record.
+  `docs/parity/requirements.md`); the rendered-artifact migration in decision 3 is **partly
+  delivered** — #313 added the candidate `candidateProfile` identity beside the retained local one
+  in the committed bundle (ADR-016 #313 amendment), and the residual is a final 0.3.0 pin, the #335
+  joint sign-off and a reviewed re-bake against the final line; PAR-REQ-004–010 stay
+  `Proposed / unreviewed`. ADR-016 was recorded **Accepted (2026-09-09, #313)** for the engineering
+  layer, verifier-area domain review still open.
 - **Scope**: the per-capability status statement and the PAR-REQ-001/002/003 dispositions. The gate
   architecture stays in ADR-015/016; the cross-implementation baseline is #335. This is a
   maintainer engineering acceptance, not a certification, validation or production-readiness claim.

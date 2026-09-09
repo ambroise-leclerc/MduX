@@ -37,6 +37,16 @@
   "kind": "screen",
   "outcomes": [
     {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
       "check": "Bounds",
       "finding": "Held",
       "nodeId": "emergency-halt",
@@ -47,6 +57,16 @@
       "scope": "en-US"
     },
     {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
       "check": "ColorHash",
       "finding": "Held",
       "nodeId": "emergency-halt",
@@ -57,6 +77,16 @@
       "scope": "en-US"
     },
     {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
       "check": "Bounds",
       "finding": "Held",
       "nodeId": "insufflation-pressure",
@@ -67,6 +97,16 @@
       "scope": "en-US"
     },
     {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
       "check": "ColorHash",
       "finding": "Held",
       "nodeId": "insufflation-pressure",
@@ -77,6 +117,16 @@
       "scope": "en-US"
     },
     {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
       "check": "Bounds",
       "finding": "Held",
       "nodeId": "ecg-lead-ii",

@@ -428,11 +428,22 @@ worse than none; #255 resolved them by drawing the fields rather than by removin
 Since #313 each outcome also names an `observationProfile` — an id and version identifying *which*
 observation the check performs (`mdux.local/extent-equality`, `tint-composition`, `ink-containment`,
 `ink-coverage`), so a reader never mistakes MduX's `ColorHash` (a tint-composition predicate) for
-TrustSC's (a raw-pixel digest). That id is an identity rather than a measurement, so it does not
-change what ADR-014 decision 4 keeps out. `mdux.verify` also exposes `rawImageDigest()`, the RGBA8
+TrustSC's (a raw-pixel digest). A `Bounds` or `ColorHash` outcome additionally records a candidate
+`candidateProfile` — the shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity
+(`extent-equality/1`, `tint-composition/1`), resolved through one pure `canonicalRenderedCheckFor()`
+— beside the local one, because `goldenBounds()` and `colorHash()` compute exactly R01 and R03, so
+the committed bundle runs both identities together (ADR-016 §4 / ADR-017 §3 migration).
+`InkContainment` and `LocalizedTextPresence` carry none: `inkContainment()` is a compound predicate
+stronger than shared R02, and there is no shared localized-text predicate — both stay
+implementation-local. These are identities rather than measurements, so they do not change what
+ADR-014 decision 4 keeps out. `mdux.verify` also exposes
+`rawImageDigest()`, the RGBA8
 SHA-256 predicate ADR-015 decision 2 names; it has no committed baseline by design
 ([ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md)), returns `NoBaseline` on every
 production call, and is exercised only by `tests/verify/RawImageDigestTests.cpp`.
+`canonicalRenderedCheckFor()` maps its `mdux.local/raw-image-digest` profile to R04's
+`rgba8-sha256/1` for completeness, but since no obligation runs it, no `candidateProfile` for R04
+ever reaches `verification.json` — only the three checks above appear there.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an
