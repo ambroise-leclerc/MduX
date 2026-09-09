@@ -129,7 +129,9 @@ Publish an agreed, versioned compatibility boundary, adopt its verification sema
 (`Bounds`/`ColorHash`/`InkContainment`) now also records a candidate `candidateProfile` naming the
 shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity beside the retained local one, via one
 pure `canonicalRenderedCheckFor()` in `mdux.verify`; `LocalizedTextPresence` has no shared equivalent
-and stays local. No check semantics, finding or runtime behaviour changed. Residual, recorded on
+and stays local. `canonicalRenderedCheckFor()` also maps `raw-image-digest` to R04's `rgba8-sha256/1`,
+but that predicate is fixture-only with no committed baseline, so no R04 `candidateProfile` reaches
+`verification.json`. No check semantics, finding or runtime behaviour changed. Residual, recorded on
 ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint rendered/evidence sign-off, a
 reviewed re-bake against the final line, and the verifier-area domain review for PAR-REQ-002/003.
 

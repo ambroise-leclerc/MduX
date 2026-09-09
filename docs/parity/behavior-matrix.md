@@ -166,7 +166,10 @@ unchanged (`4f114dd`); the delivery is one-sided until [#335](https://github.com
   (`extent-equality`, `ink-containment`, `tint-composition`) — beside each mapped check's local one,
   so the bundle runs both identities together (`spec/profiles.md`). One pure
   `canonicalRenderedCheckFor()` in `mdux.verify` is the mapping, shared with the derived envelope
-  below. `mdux.local/ink-coverage` maps to nothing and stays local. Dropping the `mdux.local/` half
+  below. `canonicalRenderedCheckFor()` also maps `mdux.local/raw-image-digest` to R04's
+  `rgba8-sha256/1`, but no production outcome emits it — `rawImageDigest()` is fixture-only with no
+  committed baseline (above), so no `candidateProfile` for it ever reaches `verification.json`.
+  `mdux.local/ink-coverage` maps to nothing and stays local. Dropping the `mdux.local/` half
   and marking `candidateProfile` non-candidate is still gated on a final 0.3.0 release, the
   cross-implementation pass (#335) and a reviewed re-bake — see
   [ADR-017 §3](../adr/ADR-017-sibling-conformance-gate-status.md).

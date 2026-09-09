@@ -438,6 +438,9 @@ measurements, so they do not change what ADR-014 decision 4 keeps out. `mdux.ver
 SHA-256 predicate ADR-015 decision 2 names; it has no committed baseline by design
 ([ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md)), returns `NoBaseline` on every
 production call, and is exercised only by `tests/verify/RawImageDigestTests.cpp`.
+`canonicalRenderedCheckFor()` maps its `mdux.local/raw-image-digest` profile to R04's
+`rgba8-sha256/1` for completeness, but since no obligation runs it, no `candidateProfile` for R04
+ever reaches `verification.json` — only the three checks above appear there.
 
 Every baker registers through `mdux_bake_artifact()`
 ([`cmake/MduXBake.cmake`](../cmake/MduXBake.cmake)), which creates the bake target, an

@@ -740,17 +740,23 @@ const mdux::spec::Register eachLocalProfileMapsToItsSharedRenderedCheck{
                                         && extent->checkId == "extent-equality" && extent->checkVersion == 1,
                                     "extent-equality -> MEDUI-PROFILE-RENDERED/1 extent-equality/1 (R01)");
 
+                      // Every mapped result names the same shared profile - a wrong `profileId` or
+                      // `profileVersion` on any of them would otherwise slip past this suite.
+                      const auto namesRenderedProfile = [](const std::optional<mv::CanonicalRenderedCheck>& mapped) {
+                          return mapped.has_value() && mapped->profileId == mv::renderedProfileId && mapped->profileVersion == mv::renderedProfileVersion;
+                      };
+
                       const auto containment = mv::canonicalRenderedCheckFor(mv::inkContainmentProfile);
-                      checks.expect(containment.has_value() && containment->checkId == "ink-containment" && containment->checkVersion == 1,
-                                    "ink-containment -> ink-containment/1 (R02)");
+                      checks.expect(namesRenderedProfile(containment) && containment->checkId == "ink-containment" && containment->checkVersion == 1,
+                                    "ink-containment -> MEDUI-PROFILE-RENDERED/1 ink-containment/1 (R02)");
 
                       const auto tint = mv::canonicalRenderedCheckFor(mv::tintCompositionProfile);
-                      checks.expect(tint.has_value() && tint->checkId == "tint-composition" && tint->checkVersion == 1,
-                                    "tint-composition -> tint-composition/1 (R03)");
+                      checks.expect(namesRenderedProfile(tint) && tint->checkId == "tint-composition" && tint->checkVersion == 1,
+                                    "tint-composition -> MEDUI-PROFILE-RENDERED/1 tint-composition/1 (R03)");
 
                       const auto digest = mv::canonicalRenderedCheckFor(mv::rawImageDigestProfile);
-                      checks.expect(digest.has_value() && digest->checkId == "rgba8-sha256" && digest->checkVersion == 1,
-                                    "raw-image-digest -> rgba8-sha256/1 (R04), even though it commits no baseline");
+                      checks.expect(namesRenderedProfile(digest) && digest->checkId == "rgba8-sha256" && digest->checkVersion == 1,
+                                    "raw-image-digest -> MEDUI-PROFILE-RENDERED/1 rgba8-sha256/1 (R04), even though it commits no baseline");
 
                       // `LocalizedTextPresence` is implementation-local: MEDUI-PROFILE-RENDERED has
                       // no localized-text-presence predicate, so it stays local after the migration.
