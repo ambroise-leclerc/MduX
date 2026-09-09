@@ -121,9 +121,9 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312, #314, #315, #316 and #317 are closed; #313 and #318 are in review. The next executable work is
-the three still-unblocked design/spec issues — the scenario compiler (**#319**), the viewport
-contract (**#322**) and the editor API (**#325**). Canonical interfaces land before their consumers,
+#312, #314, #315, #316 and #317 are closed; #313, #318, #319 and #320 are in review. The next
+executable work is the two still-unblocked design/spec issues — the viewport contract (**#322**) and
+the editor API (**#325**). Canonical interfaces land before their consumers,
 and each design issue produces the ADR and canonical types its epic's implementation children then
 consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
@@ -132,21 +132,20 @@ agreed.
 
 ### Next to implement
 
-Assessed 9 September 2026 against `develop`. **#318 and #319 are implemented and in review.**
-Three child issues have all prerequisites met.
+Assessed 9 September 2026 against `develop`. **#318, #319 and #320 are implemented and in review.**
+Two design/spec child issues are the remaining unblocked work.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#320**](https://github.com/ambroise-leclerc/MduX/issues/320) — replay scenarios through the real input/update path | Unblocked by #319 (ADR-020, `mdux.medui.scenario`, `mdux-scenariobake`). Stacks on the #319 branch. | #321 (epic #309), then #324 | `ScenarioRunner` (governed, bounded, no-alloc) over `updateMonitor()` + a host expected/observed trace + a `--replay` example mode. Safety-relevant behaviour verification. |
-| 2 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
-| 3 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the three. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+| 1 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
+| 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
 **#313** is not on this list because it is in review ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341));
 its remaining work is the verifier-area domain review and the ADR-016 residuals, not new
 implementation.
 
-Recommended sequencing: **#320** stacked on the #319 branch is the epic-#309 critical path; take
-**#322** in parallel as a lower-risk design track. #325 last among the unblocked set.
+Recommended sequencing: **#321** (dynamic evidence, blocked on #320's close-out) is the epic-#309
+critical path; **#322** is the epic-#310 design track. #325 last.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
 
@@ -309,7 +308,7 @@ screen gained a `Clock` and an ordinary `Button`, and the second approved locale
 by flattening composite glyphs in the font baker (`tools/text/Truetype.cpp`, ADR-010 decision 5).
 Covered by `monitor_loop_spec`, `text_tools_spec`'s composite cases and `example.monitor.headless{,.fr}`.
 The critical-action host policy (PAR-REQ-006) stays open for domain review and the example executes
-nothing; its scenario replay is #320.
+nothing; its scenario replay is delivered by #320 (`--replay=<id>`, `example.monitor.replay`).
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
@@ -325,17 +324,25 @@ Replay the actual application's bounded event/update path from compiled scenario
 **#319 is implemented** ([ADR-020](adr/ADR-020-bounded-interaction-scenarios-and-replay.md),
 Accepted 2026-09-09): a closed line-oriented `.scenario` DSL, `mdux-scenariobake` /
 `mdux-scenarioemit` (the compiler and the `constexpr` emitter, same library/executable split every
-baker has), the governed bounded `mdux.medui.scenario` module (`CompiledScenario` + `validate()`,
-`ScenarioRunner` added by #320), the committed `generated/scenario/endoscope-monitor-basics/`
+baker has), the governed bounded `mdux.medui.scenario` module (`CompiledScenario` + `validate()`;
+`ScenarioRunner` followed in #320), the committed `generated/scenario/endoscope-monitor-basics/`
 bundle byte-verified by `ctest -L evidence`, and `scenario_tools_spec` / `scenario_spec` /
-`scenario_noheap_spec`. **#320 is now unblocked** and stacks on it: `ScenarioRunner` (the governed
-bounded replay driver over `updateMonitor()`), the host-side expected/observed trace, and a
-`--replay` mode on `MedicalScreenMonitorExample`.
+`scenario_noheap_spec`.
+
+**#320 is implemented** (stacked on the #319 branch): `ScenarioRunner` (the governed, bounded,
+allocation-free replay driver — fills the caller's `EventQueue` from a compiled scenario, checks a
+typed expected/observed pair per obligation against the state each `advance` settles, and fails the
+run on a queue overflow, a failed expectation or a capture that was declared but never reached),
+`examples/support/ScenarioReplay.hpp` (the `updateMonitor()` glue), `tools/scenario/ScenarioTrace`
+(the host step-by-step expected/observed trace), and a `--replay=<id>` mode on
+`MedicalScreenMonitorExample` that renders one offscreen frame per `capture` marker
+(`example.monitor.replay`). The committed `endoscope-monitor-basics` scenario replays clean with
+every expectation held.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **implemented** (ADR-020; `mdux.medui.scenario` + `mdux-scenariobake`/`mdux-scenarioemit`; `.scenario` DSL; committed `endoscope-monitor-basics`; `scenario_tools_spec` + `scenario_spec` + `scenario_noheap_spec`) |
-| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **unblocked** (stacked on #319: `ScenarioRunner` + host trace + monitor `--replay`) |
+| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **implemented** (stacked on #319: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
 | [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **blocked** |
 
 ### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned

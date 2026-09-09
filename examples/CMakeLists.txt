@@ -183,8 +183,12 @@ target_sources(MedicalScreenMonitorExample
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
             FILES ${MDUX_UI_SHADER_MODULE}
+        FILE_SET generated_scenario_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCENARIO_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCENARIO_MODULE}
 )
-add_dependencies(MedicalScreenMonitorExample emit-screen-endoscope-monitor emit-shader-mdux-ui)
+add_dependencies(MedicalScreenMonitorExample emit-screen-endoscope-monitor emit-shader-mdux-ui emit-scenario-endoscope-monitor-basics)
 
 target_link_libraries(MedicalScreenMonitorExample PRIVATE MduX::MduX glfw)
 target_include_directories(MedicalScreenMonitorExample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
