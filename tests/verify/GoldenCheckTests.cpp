@@ -721,34 +721,28 @@ const mdux::spec::Register eachGoldenCheckNamesItsOwnObservation{
     }};
 
 const mdux::spec::Register eachLocalProfileMapsToItsSharedRenderedCheck{
-    "canonicalRenderedCheckFor pairs each local profile with its MEDUI-PROFILE-RENDERED check, and ink-coverage with none",
+    "canonicalRenderedCheckFor pairs a local profile with its shared check only when the predicates agree",
     "evidence-unit",
     [] {
         return speclab::Test("verify-golden-canonical-rendered-mapping")
             .Given("the five mdux.local observation profiles and the pinned MEDUI-PROFILE-RENDERED check ids", [] {})
             .When("canonicalRenderedCheckFor is asked for each", [] {})
-            .Then("the four rendered predicates map to R01-R04's ids at version 1, and ink-coverage maps to nothing",
+            .Then("extent-equality, tint-composition and raw-image-digest map to R01/R03/R04; ink-containment and ink-coverage map to nothing",
                   [] {
                       mdux::spec::Checks checks;
 
                       // The candidate half of the ADR-016 §4 / ADR-017 §3 migration. `spec/profiles.md`
                       // at the pin defines MEDUI-PROFILE-RENDERED/1 with checks extent-equality/1
                       // (R01), ink-containment/1 (R02), tint-composition/1 (R03) and rgba8-sha256/1
-                      // (R04). Each mapped result names that shared profile and one of those checks.
-                      const auto extent = mv::canonicalRenderedCheckFor(mv::extentEqualityProfile);
-                      checks.expect(extent.has_value() && extent->profileId == mv::renderedProfileId && extent->profileVersion == 1
-                                        && extent->checkId == "extent-equality" && extent->checkVersion == 1,
-                                    "extent-equality -> MEDUI-PROFILE-RENDERED/1 extent-equality/1 (R01)");
-
-                      // Every mapped result names the same shared profile - a wrong `profileId` or
-                      // `profileVersion` on any of them would otherwise slip past this suite.
+                      // (R04). A local profile maps only where the local predicate computes that
+                      // shared check's observation.
                       const auto namesRenderedProfile = [](const std::optional<mv::CanonicalRenderedCheck>& mapped) {
                           return mapped.has_value() && mapped->profileId == mv::renderedProfileId && mapped->profileVersion == mv::renderedProfileVersion;
                       };
 
-                      const auto containment = mv::canonicalRenderedCheckFor(mv::inkContainmentProfile);
-                      checks.expect(namesRenderedProfile(containment) && containment->checkId == "ink-containment" && containment->checkVersion == 1,
-                                    "ink-containment -> MEDUI-PROFILE-RENDERED/1 ink-containment/1 (R02)");
+                      const auto extent = mv::canonicalRenderedCheckFor(mv::extentEqualityProfile);
+                      checks.expect(namesRenderedProfile(extent) && extent->checkId == "extent-equality" && extent->checkVersion == 1,
+                                    "extent-equality -> MEDUI-PROFILE-RENDERED/1 extent-equality/1 (R01)");
 
                       const auto tint = mv::canonicalRenderedCheckFor(mv::tintCompositionProfile);
                       checks.expect(namesRenderedProfile(tint) && tint->checkId == "tint-composition" && tint->checkVersion == 1,
@@ -758,8 +752,18 @@ const mdux::spec::Register eachLocalProfileMapsToItsSharedRenderedCheck{
                       checks.expect(namesRenderedProfile(digest) && digest->checkId == "rgba8-sha256" && digest->checkVersion == 1,
                                     "raw-image-digest -> MEDUI-PROFILE-RENDERED/1 rgba8-sha256/1 (R04), even though it commits no baseline");
 
+                      // `inkContainment()` is NOT R02: R02 is a containment test that passes empty ink
+                      // and tests against an inflated golden, while `inkContainment()` is a compound
+                      // predicate (containment vs the node, predicted-vs-measured extent, non-empty)
+                      // that is strictly stronger. A clipped glyph fails locally but passes R02, so
+                      // the local finding cannot stand in for an R02 result - it stays local, and this
+                      // assertion is the guard against reinstating the mapping without a real R02
+                      // obligation (ADR-016 §4).
+                      checks.expect(!mv::canonicalRenderedCheckFor(mv::inkContainmentProfile).has_value(),
+                                    "ink-containment does not map - inkContainment() is stronger than R02");
+
                       // `LocalizedTextPresence` is implementation-local: MEDUI-PROFILE-RENDERED has
-                      // no localized-text-presence predicate, so it stays local after the migration.
+                      // no localized-text-presence predicate.
                       checks.expect(!mv::canonicalRenderedCheckFor(mv::inkCoverageProfile).has_value(),
                                     "ink-coverage has no shared rendered-check equivalent");
 

@@ -223,25 +223,27 @@ const mdux::spec::Register everyOutcomeMustCarryItsOwnObservationProfile{
     }};
 
 const mdux::spec::Register mappedOutcomesAlsoCarryTheirCandidateSharedIdentity{
-    "A mapped rendered check records its MEDUI-PROFILE-RENDERED candidate identity beside the local one and an implementation-local check does not",
+    "Bounds and ColorHash record a MEDUI-PROFILE-RENDERED candidate identity while InkContainment and LocalizedTextPresence do not",
     "evidence-unit",
     [] {
         return speclab::Test("verify-artifact-candidate-profile")
-            .Given("a run over a Bounds, an InkContainment and a LocalizedTextPresence obligation", [] {})
+            .Given("a run over Bounds, ColorHash, InkContainment and LocalizedTextPresence obligations", [] {})
             .When("the artifact is written", [] {})
-            .Then("the first two carry a candidateProfile naming the shared check id; the text-presence one carries none",
+            .Then("Bounds and ColorHash carry a candidateProfile naming the shared check, and InkContainment and LocalizedTextPresence carry none",
                   [] {
                       mdux::spec::Checks checks;
 
                       // ADR-016 §4 / ADR-017 §3: the committed file runs both identities together -
-                      // the retained `mdux.local/` profile and, for a check that has a shared
-                      // rendered-check equivalent, the candidate `MEDUI-PROFILE-RENDERED` identity.
+                      // the retained `mdux.local/` profile and, for a check whose predicate *is* the
+                      // shared rendered-check's observation (R01/R03), the candidate
+                      // `MEDUI-PROFILE-RENDERED` identity. `inkContainment()` is stronger than R02, so
+                      // it stays local like `LocalizedTextPresence`.
                       vu::RunResult result = completedRun();
+                      result.obligations.push_back({.kind = vu::ObligationKind::Golden, .nodeId = "dial", .scope = "en-US", .check = "ColorHash"});
+                      result.outcomes.push_back({.finding = mv::Finding::Held, .nodeId = "dial", .scope = "en-US", .check = "ColorHash",
+                                                 .profile = mv::profileOf(mv::CvCheck::ColorHash)});
                       result.obligations.push_back({.kind = vu::ObligationKind::Text, .nodeId = "title", .scope = "en-US", .check = "LocalizedTextPresence"});
-                      result.outcomes.push_back({.finding = mv::Finding::Held,
-                                                 .nodeId  = "title",
-                                                 .scope   = "en-US",
-                                                 .check   = "LocalizedTextPresence",
+                      result.outcomes.push_back({.finding = mv::Finding::Held, .nodeId = "title", .scope = "en-US", .check = "LocalizedTextPresence",
                                                  .profile = mv::profileOf(mv::TextCheck::LocalizedTextPresence)});
 
                       const auto text = vu::writeVerification(result, "demo");
@@ -257,8 +259,8 @@ const mdux::spec::Register mappedOutcomesAlsoCarryTheirCandidateSharedIdentity{
                           return;
                       }
                       const evj::Value* outcomes = document->find("outcomes");
-                      if (outcomes == nullptr || outcomes->kind() != evj::Value::Kind::Array || outcomes->elements().size() != 3) {
-                          checks.expect(false, "three outcomes, one per obligation");
+                      if (outcomes == nullptr || outcomes->kind() != evj::Value::Kind::Array || outcomes->elements().size() != 4) {
+                          checks.expect(false, "four outcomes, one per obligation");
                           checks.raise();
                           return;
                       }
@@ -274,17 +276,20 @@ const mdux::spec::Register mappedOutcomesAlsoCarryTheirCandidateSharedIdentity{
                           const auto asString = third->asString();
                           return asString.has_value() ? std::string{*asString} : std::string{};
                       };
-
+                      // outcomes are serialised in obligation order: Bounds, InkContainment, ColorHash, LocalizedTextPresence.
                       const std::span<const evj::Value> rows = outcomes->elements();
                       checks.expect(nested(rows[0], "candidateProfile", "profile", "id") == "MEDUI-PROFILE-RENDERED"
                                         && nested(rows[0], "candidateProfile", "check", "id") == "extent-equality",
                                     "the Bounds outcome names the shared extent-equality check");
-                      checks.expect(nested(rows[1], "candidateProfile", "check", "id") == "ink-containment",
-                                    "the InkContainment outcome names the shared ink-containment check");
-                      checks.expect(rows[2].find("candidateProfile") == nullptr,
+                      checks.expect(rows[1].find("candidateProfile") == nullptr,
+                                    "the InkContainment outcome carries no candidateProfile - inkContainment() is stronger than R02");
+                      checks.expect(nested(rows[2], "candidateProfile", "check", "id") == "tint-composition",
+                                    "the ColorHash outcome names the shared tint-composition check");
+                      checks.expect(rows[3].find("candidateProfile") == nullptr,
                                     "the LocalizedTextPresence outcome carries no candidateProfile - it stays implementation-local");
                       // The retained local identity is untouched on every outcome.
-                      checks.expect(text->contains("mdux.local/extent-equality") && text->contains("mdux.local/ink-coverage"),
+                      checks.expect(text->contains("mdux.local/extent-equality") && text->contains("mdux.local/ink-containment")
+                                        && text->contains("mdux.local/ink-coverage"),
                                     "and every outcome still records its mdux.local profile");
                       checks.raise();
                   })

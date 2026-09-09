@@ -125,12 +125,14 @@ Publish an agreed, versioned compatibility boundary, adopt its verification sema
 [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) (Accepted 2026-09-09) — five
 `mdux.local/` observation profiles recorded per outcome in `verification.json`, plus the fixture-only
 `rawImageDigest()` predicate — and the **shared** half is #314 Stage B. The **#313 amendment**
-(2026-09-09) completed the ADR-017 §3 committed-artifact migration: each mapped rendered check
-(`Bounds`/`ColorHash`/`InkContainment`) now also records a candidate `candidateProfile` naming the
-shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity beside the retained local one, via one
-pure `canonicalRenderedCheckFor()` in `mdux.verify`; `LocalizedTextPresence` has no shared equivalent
-and stays local. `canonicalRenderedCheckFor()` also maps `raw-image-digest` to R04's `rgba8-sha256/1`,
-but that predicate is fixture-only with no committed baseline, so no R04 `candidateProfile` reaches
+(2026-09-09) completed the ADR-017 §3 committed-artifact migration: a `Bounds` or `ColorHash` outcome
+now also records a candidate `candidateProfile` naming the shared `MEDUI-PROFILE-RENDERED` `{profile,
+check}` identity (`extent-equality/1`, `tint-composition/1`) beside the retained local one, via one
+pure `canonicalRenderedCheckFor()` in `mdux.verify`, because `goldenBounds()` and `colorHash()`
+compute exactly R01 and R03. `InkContainment` (a compound predicate stronger than shared R02) and
+`LocalizedTextPresence` (no shared equivalent) stay local and carry no `candidateProfile`.
+`canonicalRenderedCheckFor()` also names R04's `rgba8-sha256/1` for `raw-image-digest`, but that
+predicate is fixture-only with no committed baseline, so no R04 `candidateProfile` reaches
 `verification.json`. No check semantics, finding or runtime behaviour changed. Residual, recorded on
 ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint rendered/evidence sign-off, a
 reviewed re-bake against the final line, and the verifier-area domain review for PAR-REQ-002/003.

@@ -60,10 +60,13 @@
  * `rawImageDigestProfile`. Those `mdux.local/` ids are implementation-local (`localProfilePrefix`).
  *
  * The shared rendered-check ids MEDUI-DEC-007 delivered (`MEDUI-PROFILE-RENDERED` in the pinned
- * `spec/profiles.md`) exist alongside them: `canonicalRenderedCheckFor()` maps each local profile
- * that has a shared equivalent onto its canonical `{profile, check}` identity, and the committed
- * `verification.json` records that candidate identity beside the retained `mdux.local/` one (ADR-016
- * §4, ADR-017 §3). The `ink-coverage` profile has no shared equivalent and stays local.
+ * `spec/profiles.md`) exist alongside them: `canonicalRenderedCheckFor()` maps a local profile onto
+ * its canonical `{profile, check}` identity **only when the local predicate computes that shared
+ * check's observation** - `extent-equality`, `tint-composition` and `raw-image-digest` (R01/R03/R04)
+ * do; `ink-containment` (a stronger compound predicate, not R02) and `ink-coverage` (no shared
+ * equivalent) do not and stay implementation-local. The committed `verification.json` records the
+ * candidate identity beside the retained `mdux.local/` one for the checks that map (ADR-016 §4,
+ * ADR-017 §3).
  *
  * ## What a check is given, and what it may never be given
  *
@@ -417,15 +420,30 @@ struct CanonicalRenderedCheck {
 };
 
 /// The shared `MEDUI-PROFILE-RENDERED` check a `mdux.local/` observation profile maps onto, or
-/// nothing when the local profile has no shared rendered-check equivalent.
+/// nothing when the local predicate does not compute that shared check's observation.
 ///
-/// - `mdux.local/extent-equality`  -> `extent-equality/1`  (R01)
-/// - `mdux.local/ink-containment`  -> `ink-containment/1`   (R02)
-/// - `mdux.local/tint-composition` -> `tint-composition/1`  (R03)
-/// - `mdux.local/raw-image-digest` -> `rgba8-sha256/1`      (R04; arithmetic only, no committed baseline)
-/// - `mdux.local/ink-coverage`     -> nothing. `LocalizedTextPresence` is an implementation-local
-///   check (ADR-016, ADR-017 §3): `MEDUI-PROFILE-RENDERED` has four checks and none is a
-///   localized-text-presence predicate, so it stays local after the migration rather than mapped.
+/// - `mdux.local/extent-equality`  -> `extent-equality/1`  (R01). `goldenBounds()` is R01: non-empty
+///   ink whose measured extent equals the golden rectangle exactly.
+/// - `mdux.local/tint-composition` -> `tint-composition/1` (R03). `colorHash()` is R03 - it decides
+///   every sample with the same `couldBeBlend()` R03's conformance adapter uses (moved onto this
+///   interface for exactly that reason, #314 Stage B), requires one exact-tint sample, and rejects
+///   empty content.
+/// - `mdux.local/raw-image-digest` -> `rgba8-sha256/1` (R04). `rawImageDigest()` is R04's SHA-256
+///   over tightly packed row-major RGBA8. Arithmetic only - it has no committed baseline and no
+///   production caller, so no outcome under this profile ever reaches `verification.json`.
+///
+/// Two local profiles deliberately map to **nothing**:
+///
+/// - `mdux.local/ink-containment`. `inkContainment()` is *not* R02. R02 (`rectContainedBy` over an
+///   `inflate`d golden, empty ink passes) is a containment test; `inkContainment()` is a compound
+///   predicate - containment against the *node* rectangle, the frame's ink matching the *predicted*
+///   extent, and non-empty content - that is strictly stronger and structurally different. A clipped
+///   glyph fails `inkContainment()` while passing R02, and a MduX `InkContainment` obligation has no
+///   golden rectangle for R02 to test against. Attaching `ink-containment/1` to an `inkContainment()`
+///   finding would assert an R02 result nothing evaluated; a genuine R02 obligation is deferred
+///   (ADR-016 §4, ADR-017 §3).
+/// - `mdux.local/ink-coverage`. `MEDUI-PROFILE-RENDERED` has no localized-text-presence predicate,
+///   so `localizedTextPresence()` stays implementation-local.
 ///
 /// Keyed on the whole `ObservationProfile` (id *and* version), so an outcome-changing revision that
 /// takes a local profile to version 2 stops matching here and forces this mapping to be re-reviewed
@@ -433,9 +451,6 @@ struct CanonicalRenderedCheck {
 [[nodiscard]] constexpr std::optional<CanonicalRenderedCheck> canonicalRenderedCheckFor(const ObservationProfile& local) noexcept {
     if (local == extentEqualityProfile) {
         return CanonicalRenderedCheck{.checkId = "extent-equality", .checkVersion = 1};
-    }
-    if (local == inkContainmentProfile) {
-        return CanonicalRenderedCheck{.checkId = "ink-containment", .checkVersion = 1};
     }
     if (local == tintCompositionProfile) {
         return CanonicalRenderedCheck{.checkId = "tint-composition", .checkVersion = 1};

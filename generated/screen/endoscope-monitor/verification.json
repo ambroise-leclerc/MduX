@@ -137,16 +137,6 @@
       "scope": "en-US"
     },
     {
-      "candidateProfile": {
-        "check": {
-          "id": "ink-containment",
-          "version": 1
-        },
-        "profile": {
-          "id": "MEDUI-PROFILE-RENDERED",
-          "version": 1
-        }
-      },
       "check": "InkContainment",
       "finding": "Held",
       "nodeId": "screen-title",
@@ -167,16 +157,6 @@
       "scope": "en-US"
     },
     {
-      "candidateProfile": {
-        "check": {
-          "id": "ink-containment",
-          "version": 1
-        },
-        "profile": {
-          "id": "MEDUI-PROFILE-RENDERED",
-          "version": 1
-        }
-      },
       "check": "InkContainment",
       "finding": "Held",
       "nodeId": "emergency-halt",

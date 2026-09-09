@@ -33,21 +33,16 @@ struct CheckClass {
 /// Every check name the run may carry falls in exactly one bucket: mapped to a shared rendered-check
 /// id, a known implementation-local check (`LocalizedTextPresence`, ADR-016), or unrecognised - in
 /// which case the deriver refuses rather than quietly dropping it.
-///
-/// The local-profile -> shared-id mapping is `mdux.verify`'s `canonicalRenderedCheckFor()`, the one
-/// the committed `verification.json` migration also uses (ADR-016 §4), so this deriver and that
-/// writer cannot disagree about which shared id a check carries.
 [[nodiscard]] CheckClass classify(std::string_view localCheck) {
-    const auto cv   = mdux::verify::parseCvCheck(localCheck);
-    const auto text = mdux::verify::parseTextCheck(localCheck);
-    if (!cv.has_value() && !text.has_value()) {
-        return {.kind = Classification::Unknown};
+    if (const auto cv = mdux::verify::parseCvCheck(localCheck)) {
+        return {.kind = Classification::Mapped, .sharedId = *cv == mdux::verify::CvCheck::Bounds ? "extent-equality" : "tint-composition"};
     }
-    const mdux::verify::ObservationProfile local = cv.has_value() ? mdux::verify::profileOf(*cv) : mdux::verify::profileOf(*text);
-    if (const auto canonical = mdux::verify::canonicalRenderedCheckFor(local); canonical.has_value()) {
-        return {.kind = Classification::Mapped, .sharedId = canonical->checkId};
+    if (const auto text = mdux::verify::parseTextCheck(localCheck)) {
+        return *text == mdux::verify::TextCheck::InkContainment
+                   ? CheckClass{.kind = Classification::Mapped, .sharedId = "ink-containment"}
+                   : CheckClass{.kind = Classification::ImplementationLocal};
     }
-    return {.kind = Classification::ImplementationLocal};
+    return {.kind = Classification::Unknown};
 }
 
 [[nodiscard]] std::string_view rowOutcome(mdux::verify::Finding finding) {

@@ -318,34 +318,51 @@ depends on this.
 
 ### Amendment — #313: the committed `verification.json` migration
 
-The second bullet above is now delivered. Each rendered-check outcome in the committed
-`verification.json` records a **`candidateProfile`** beside its retained `observationProfile`: the
-shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity the local profile maps onto. The
-retained `mdux.local/` identity is unchanged — the file runs both identities together, exactly the
-`spec/profiles.md` instruction ("map legacy obligations explicitly … run old and candidate
-obligations together, retain both reports"), rather than relabelling.
+The second bullet above is now delivered. A rendered-check outcome in the committed
+`verification.json` records a **`candidateProfile`** beside its retained `observationProfile` **when
+the local predicate computes the shared check's observation**: the shared `MEDUI-PROFILE-RENDERED`
+`{profile, check}` identity. The retained `mdux.local/` identity is unchanged — the file runs both
+identities together, exactly the `spec/profiles.md` instruction ("map legacy obligations explicitly
+… run old and candidate obligations together, retain both reports"), rather than relabelling.
 
 - **The mapping is one pure function**, `mdux::verify::canonicalRenderedCheckFor(ObservationProfile)`
-  in the governed module: `extent-equality → extent-equality/1` (R01), `ink-containment →
-  ink-containment/1` (R02), `tint-composition → tint-composition/1` (R03), `raw-image-digest →
-  rgba8-sha256/1` (R04). It is keyed on the whole local profile (id **and** version), so an
-  outcome-changing revision that takes a local profile to version 2 stops mapping and forces this
-  pairing to be re-reviewed. The Stage C-emitter deriver (`MeduiEvidence.cpp`) now resolves its
-  shared ids through this same function rather than a second copy of the table.
+  in the governed module. Only three local profiles map, and each because the local predicate *is*
+  the shared observation, so one evaluation legitimately discharges both obligations:
+  - `extent-equality → extent-equality/1` (R01) — `goldenBounds()` is R01 (non-empty, measured
+    extent equals the golden rectangle exactly).
+  - `tint-composition → tint-composition/1` (R03) — `colorHash()` decides every sample with the same
+    `couldBeBlend()` R03's conformance adapter uses (moved onto the module interface for exactly
+    that reason, #314 Stage B), requires one exact-tint sample, and rejects empty content.
+  - `raw-image-digest → rgba8-sha256/1` (R04) — the same SHA-256 over tightly packed RGBA8. It has
+    no committed baseline and no production caller, so no outcome under this profile ever reaches
+    `verification.json`; the mapping is exercised only by fixtures.
+  Keyed on the whole local profile (id **and** version), so an outcome-changing revision that takes a
+  local profile to version 2 stops mapping and forces the pairing to be re-reviewed.
+- **`mdux.local/ink-containment` does not map.** `mdux::verify::inkContainment()` is **not** R02.
+  R02 (`ink-containment/1`) is a containment test — measured ink inside an `inflate`d golden
+  rectangle, empty ink passes. `inkContainment()` is a compound predicate: containment against the
+  *node* rectangle, the frame's ink matching the *predicted* extent, and non-empty content. It is
+  strictly stronger and structurally different — a clipped glyph fails `inkContainment()` while
+  passing R02 — and a MduX `InkContainment` obligation carries no golden rectangle for R02 to test
+  against. Attaching `ink-containment/1` to an `inkContainment()` finding would assert an R02 result
+  that nothing evaluated, so it stays implementation-local (like `ink-coverage`). A genuine R02
+  obligation — a separately evaluated predicate over a golden — is deferred to the reviewed re-bake
+  / a follow-up, and recorded in the residual list below.
+- **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) maps to nothing — `MEDUI-PROFILE-RENDERED`
+  has no localized-text-presence predicate — and its outcomes carry no `candidateProfile` member.
 - **`candidateProfile` is derived in the writer** (`writeVerification()`), from the local profile it
   has already validated against `profileForCheckName()` — there is no independent source to check it
   against and the mapping is pure, so carrying it through the driver would only carry a computed
   value. This is ADR-014 decision 2's "derive, don't trust" applied to the candidate identity.
-- **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) maps to nothing and its outcomes carry no
-  `candidateProfile` member — the same boundary the derived envelope draws.
 - **`schemaVersion` stays `1`.** The addition is additive and outcome-preserving (no finding
   changes), and `evidence::kSchemaVersion` is shared across every evidence artifact — decision 5's
   reasoning for the original `observationProfile` field applies unchanged. `verification.json` is
   byte-compared by `evidence.screen.<id>`, not schema-validated; `docs/recipes/screen.schema.json`
   describes `report.json` and is unaffected. The bundle was regenerated through `mdux-bake-update`.
-- **`rawImageDigest()` is unchanged** — it is still not a `CvCheck`, has no committed baseline and no
-  production caller, and never reaches `verification.json`. Its mapping to `rgba8-sha256/1` exists so
-  the function is total over the five profiles and is exercised only by fixtures.
+- **The Stage C-emitter derived envelope is unchanged by this migration.** `MeduiEvidence.cpp` keeps
+  its own check-name → shared-id mapping (which still maps `InkContainment` to `ink-containment` in
+  the *derived, uncommitted* envelope, its #334 behaviour). Whether that derived envelope should also
+  stop mapping `InkContainment`, on the same reasoning as here, is folded into the residual list.
 
 **Gate deviation, recorded.** Decision 4 and the #314d amendment gate this migration on *a final
 0.3.0 minor release* (the pin is `v0.3.0-rc.1` / `9a57f64`), the #335 cross-implementation pass
@@ -355,7 +372,10 @@ the final tag and the joint sign-off, with the dual-identity design chosen so th
 non-lossy and reversible: the `mdux.local/` identity every gate and reader depends on today is
 untouched, and a later reviewed re-bake against a final 0.3.0 line changes only whether
 `candidateProfile` is still marked candidate. Residual items: the final 0.3.0 pin, the #335 joint
-rendered/evidence sign-off, and the verifier-area domain review (ADR-017, `docs/parity/requirements.md`).
+rendered/evidence sign-off, the verifier-area domain review (ADR-017, `docs/parity/requirements.md`),
+a genuine separately-evaluated R02 obligation for `InkContainment` (a predicate over a golden, if one
+is wanted at all), and the matching decision for the Stage C-emitter derived envelope's
+`InkContainment` mapping.
 
 ## References
 

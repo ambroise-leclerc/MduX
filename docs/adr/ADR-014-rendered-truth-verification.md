@@ -15,11 +15,13 @@ Accepted (2026-08-31)
 > the name of an observation, not a measured value, so recording it per outcome is consistent with
 > decision 4. `schemaVersion` stays `1`.
 >
-> **Further amendment — 2026-09-09, #313.** Each mapped rendered check (`Bounds`, `ColorHash`,
-> `InkContainment`) now also records a candidate `candidateProfile` — the shared
-> `MEDUI-PROFILE-RENDERED` `{profile, check}` identity — beside its retained `mdux.local/` one, so
-> the committed bundle runs both identities together (ADR-016 §4 / ADR-017 §3). Still an identity,
-> not a measurement: decision 4 is unchanged and `schemaVersion` stays `1`.
+> **Further amendment — 2026-09-09, #313.** `Bounds` and `ColorHash` outcomes now also record a
+> candidate `candidateProfile` — the shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity
+> (`extent-equality/1`, `tint-composition/1`) — beside their retained `mdux.local/` one, because
+> `goldenBounds()` and `colorHash()` compute exactly R01 and R03, so the committed bundle runs both
+> identities together (ADR-016 §4 / ADR-017 §3). `InkContainment` and `LocalizedTextPresence` do not
+> map — `inkContainment()` is stronger than shared R02, and there is no shared localized-text
+> predicate. Still an identity, not a measurement: decision 4 is unchanged and `schemaVersion` stays `1`.
 
 ## Shared contract
 
