@@ -370,8 +370,10 @@ const mdux::spec::Register theIrDescribesTheCompileThatProducedIt{
                       checks.expect(budgets != nullptr && !budgets->elements().empty(), "the IR carries the text budgets");
                       if (budgets != nullptr && !budgets->elements().empty()) {
                           const auto& first = budgets->elements().front();
-                          const auto  firstLocale =
-                              first.find("widestLocale") != nullptr ? first.find("widestLocale")->asString().value_or("") : std::string{};
+                          std::string firstLocale;
+                          if (const auto* wl = first.find("widestLocale"); wl != nullptr) {
+                              firstLocale = std::string{wl->asString().value_or("")};
+                          }
                           checks.expect(firstLocale == "en-US" || firstLocale == "fr-FR",
                                         std::format("each budget names one of the approved locales, got '{}'", firstLocale));
                           const auto* extent = first.find("extent");
