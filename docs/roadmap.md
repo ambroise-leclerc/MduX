@@ -121,6 +121,18 @@ Publish an agreed, versioned compatibility boundary, adopt its verification sema
 | [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) |
 | [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) |
 
+**#313 landed its verifier semantics.** The **local** half is
+[ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) (Accepted 2026-09-09) — five
+`mdux.local/` observation profiles recorded per outcome in `verification.json`, plus the fixture-only
+`rawImageDigest()` predicate — and the **shared** half is #314 Stage B. The **#313 amendment**
+(2026-09-09) completed the ADR-017 §3 committed-artifact migration: each mapped rendered check
+(`Bounds`/`ColorHash`/`InkContainment`) now also records a candidate `candidateProfile` naming the
+shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity beside the retained local one, via one
+pure `canonicalRenderedCheckFor()` in `mdux.verify`; `LocalizedTextPresence` has no shared equivalent
+and stays local. No check semantics, finding or runtime behaviour changed. Residual, recorded on
+ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint rendered/evidence sign-off, a
+reviewed re-bake against the final line, and the verifier-area domain review for PAR-REQ-002/003.
+
 The #314 gate landed in four merged stages. **Stage A** ([#331](https://github.com/ambroise-leclerc/MduX/pull/331)):
 `medui-conformance.toml` re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`), the shared-conformance test
 green over all 27 compiler cases at `positions = "full"`, adding `MEDUI-E035` and `MEDUI-E054`.

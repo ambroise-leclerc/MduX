@@ -1,7 +1,12 @@
 # ADR-016: Locally versioned observation profiles for rendered checks
 
 ## Status
-Proposed (2026-09-07)
+Accepted (2026-09-09, #313), by maintainer instruction — engineering acceptance of the
+observation-profile identity layer, the `rawImageDigest()` predicate, the per-outcome
+`observationProfile` field and the #313 committed `candidateProfile` migration. The **verifier-area
+domain review** for the PAR-REQ-002/003 semantics (ADR-017, `docs/parity/requirements.md`) and the
+residual migration items in the #313 amendment (final 0.3.0 pin, #335 joint sign-off) remain open.
+Proposed 2026-09-07.
 
 ## Shared contract
 
@@ -48,8 +53,11 @@ Three constraints shape the answer:
 
 Impact: **potentially safety-relevant**. The change touches the governed `mdux.verify` zone and a
 committed evidence artifact. It changes **no check's semantics and no runtime behaviour** — the four
-existing predicates compute exactly what they computed before; only an identity field is added to
-each outcome, and a fifth predicate is added with no production caller.
+existing predicates compute exactly what they computed before; identity fields are added to each
+outcome (the local `observationProfile`, and — since the #313 amendment — a candidate
+`candidateProfile` for a check with a shared equivalent), and a fifth predicate is added with no
+production caller. No finding changes; the byte-compared bundle differs only by these additive
+members.
 
 No hazard, risk control or software safety class in this repository names the failure mode a
 weaker or misidentified verification check would introduce, and this ADR does not invent one. The
@@ -308,6 +316,47 @@ The migration is therefore split by identity domain:
 [ADR-017 §3](ADR-017-sibling-conformance-gate-status.md) carries the PAR-REQ-002 disposition that
 depends on this.
 
+### Amendment — #313: the committed `verification.json` migration
+
+The second bullet above is now delivered. Each rendered-check outcome in the committed
+`verification.json` records a **`candidateProfile`** beside its retained `observationProfile`: the
+shared `MEDUI-PROFILE-RENDERED` `{profile, check}` identity the local profile maps onto. The
+retained `mdux.local/` identity is unchanged — the file runs both identities together, exactly the
+`spec/profiles.md` instruction ("map legacy obligations explicitly … run old and candidate
+obligations together, retain both reports"), rather than relabelling.
+
+- **The mapping is one pure function**, `mdux::verify::canonicalRenderedCheckFor(ObservationProfile)`
+  in the governed module: `extent-equality → extent-equality/1` (R01), `ink-containment →
+  ink-containment/1` (R02), `tint-composition → tint-composition/1` (R03), `raw-image-digest →
+  rgba8-sha256/1` (R04). It is keyed on the whole local profile (id **and** version), so an
+  outcome-changing revision that takes a local profile to version 2 stops mapping and forces this
+  pairing to be re-reviewed. The Stage C-emitter deriver (`MeduiEvidence.cpp`) now resolves its
+  shared ids through this same function rather than a second copy of the table.
+- **`candidateProfile` is derived in the writer** (`writeVerification()`), from the local profile it
+  has already validated against `profileForCheckName()` — there is no independent source to check it
+  against and the mapping is pure, so carrying it through the driver would only carry a computed
+  value. This is ADR-014 decision 2's "derive, don't trust" applied to the candidate identity.
+- **`mdux.local/ink-coverage`** (`LocalizedTextPresence`) maps to nothing and its outcomes carry no
+  `candidateProfile` member — the same boundary the derived envelope draws.
+- **`schemaVersion` stays `1`.** The addition is additive and outcome-preserving (no finding
+  changes), and `evidence::kSchemaVersion` is shared across every evidence artifact — decision 5's
+  reasoning for the original `observationProfile` field applies unchanged. `verification.json` is
+  byte-compared by `evidence.screen.<id>`, not schema-validated; `docs/recipes/screen.schema.json`
+  describes `report.json` and is unaffected. The bundle was regenerated through `mdux-bake-update`.
+- **`rawImageDigest()` is unchanged** — it is still not a `CvCheck`, has no committed baseline and no
+  production caller, and never reaches `verification.json`. Its mapping to `rgba8-sha256/1` exists so
+  the function is total over the five profiles and is exercised only by fixtures.
+
+**Gate deviation, recorded.** Decision 4 and the #314d amendment gate this migration on *a final
+0.3.0 minor release* (the pin is `v0.3.0-rc.1` / `9a57f64`), the #335 cross-implementation pass
+(only the common syntax subset has passed; joint rendered/evidence sign-off is pending), and a
+reviewed re-bake. It was performed under #313 **by maintainer instruction on 2026-09-09**, ahead of
+the final tag and the joint sign-off, with the dual-identity design chosen so the step is
+non-lossy and reversible: the `mdux.local/` identity every gate and reader depends on today is
+untouched, and a later reviewed re-bake against a final 0.3.0 line changes only whether
+`candidateProfile` is still marked candidate. Residual items: the final 0.3.0 pin, the #335 joint
+rendered/evidence sign-off, and the verifier-area domain review (ADR-017, `docs/parity/requirements.md`).
+
 ## References
 
 - [ADR-014](ADR-014-rendered-truth-verification.md) — decision 4 (no measured pixel in the
@@ -325,8 +374,14 @@ depends on this.
 ## Approval
 
 - **Proposal date:** 2026-09-07
-- **Decision date:** pending
-- **Approved by:** pending — maintainer/domain review requested (safety-relevant verifier area)
+- **Decision date:** 2026-09-09
+- **Approved by:** Ambroise Leclerc, maintainer, by instruction to implement #313. This is the
+  maintainer's engineering acceptance; the **verifier-area domain review** (safety-relevant verifier
+  area, PAR-REQ-002/003) is still requested and open.
 - **Scope:** the observation-profile identity layer, the `rawImageDigest()` predicate and its
-  uncommitted status, and the `verification.json` per-outcome field. Individual PAR-REQ-002/003/009
-  dispositions and the #314 shared gate are separate.
+  uncommitted status, the `verification.json` per-outcome `observationProfile` field, and the
+  #313 `candidateProfile` migration to the shared `MEDUI-PROFILE-RENDERED` ids. Individual
+  PAR-REQ-002/003/009 dispositions and the #314 shared gate are separate.
+- **Still open:** the verifier-area domain review; and the #313-amendment residual items — a final
+  0.3.0 minor pin (currently `v0.3.0-rc.1`), the #335 joint rendered/evidence sign-off, and a
+  reviewed re-bake against the final line (at which point `candidateProfile` stops being candidate).

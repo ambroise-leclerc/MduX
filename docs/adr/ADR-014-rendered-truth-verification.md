@@ -14,6 +14,12 @@ Accepted (2026-08-31)
 > driver-tuple-dependent measured value decision 4 and alternative 6 reject. A profile *identity* is
 > the name of an observation, not a measured value, so recording it per outcome is consistent with
 > decision 4. `schemaVersion` stays `1`.
+>
+> **Further amendment — 2026-09-09, #313.** Each mapped rendered check (`Bounds`, `ColorHash`,
+> `InkContainment`) now also records a candidate `candidateProfile` — the shared
+> `MEDUI-PROFILE-RENDERED` `{profile, check}` identity — beside its retained `mdux.local/` one, so
+> the committed bundle runs both identities together (ADR-016 §4 / ADR-017 §3). Still an identity,
+> not a measurement: decision 4 is unchanged and `schemaVersion` stays `1`.
 
 ## Shared contract
 
@@ -505,7 +511,9 @@ the frame.
 - ADR-015: Versioned sibling observations — decision 2, why a shared check name is not a shared
   observation
 - ADR-016: Locally versioned observation profiles — the profile identities added to these checks,
-  the RGBA8 SHA-256 predicate, and why it has no committed baseline (see the amendment above)
+  the RGBA8 SHA-256 predicate, and why it has no committed baseline; §4 and the #313 amendment, the
+  candidate `MEDUI-PROFILE-RENDERED` identity recorded beside the local one (see the amendments above)
+- ADR-017: Sibling conformance gate status — §3, the committed rendered-id migration and its residual gate
 - `tools/medui/Goldens.cppm` — `collectGoldens()` and the closed `CvCheck` set
 - `tests/render/PixelTests.cpp` and `tests/render/ScreenPixelTests.cpp` — the exact comparator, and
   the rendered golden consumer that replaced the tripwire when decision 5 landed
