@@ -80,10 +80,13 @@ lastCodePoints  = [57, 90]
 
 # The packages this screen's text is validated against (#235). `fontPackage` supplies the glyph
 # metrics every box is measured with; `packages` lists one committed text package per locale the
-# font approves, which today is `en-US` alone.
+# font approves - `en-US` and, since #318, `fr-FR`.
 [text]
 fontPackage = "generated/font/dejavu-ui/package.json"
-packages    = ["generated/text/endoscope-monitor-en-us/package.json"]
+packages    = [
+    "generated/text/endoscope-monitor-en-us/package.json",
+    "generated/text/endoscope-monitor-fr-fr/package.json",
+]
 
 # QOI is decoded only by the host baker. The screen approves the canonical package identity and
 # intrinsic extent; the device receives only committed RGBA8 bytes.

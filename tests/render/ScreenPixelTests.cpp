@@ -115,9 +115,11 @@ constexpr core::ColorRgba8 background{.r = 0, .g = 0, .b = 0, .a = 255};
 /// artifact bakes rather than from three numbers copied out of it.
 constexpr medui::ScreenPackage compiled = medui::generated::screen_endoscope_monitor::package();
 static_assert(compiled.validate().has_value(), "the committed screen's generated form validates");
-static_assert(compiled.approvedTextPackages.size() == 1, "the committed screen approves one locale package");
+static_assert(compiled.approvedTextPackages.size() == 2, "the committed screen approves two locale packages (#318)");
 static_assert(compiled.approvedTextPackages[0].locale == "en-US", "the emitted approval keeps its locale");
 static_assert(compiled.approvedTextPackages[0].packageId == "endoscope-monitor-en-us", "the emitted approval keeps its package id");
+static_assert(compiled.approvedTextPackages[1].locale == "fr-FR", "the second emitted approval is fr-FR");
+static_assert(compiled.approvedTextPackages[1].packageId == "endoscope-monitor-fr-fr", "the second emitted approval keeps its package id");
 static_assert(compiled.approvedImagePackages.size() == 1, "the committed screen approves one image package");
 static_assert(compiled.approvedImagePackages[0].packageId == "brand-mark", "the emitted image approval keeps its package id");
 
@@ -330,7 +332,7 @@ TEST_CASE("The compiled screen is the one the compiler produced", "pixel") {
     CHECK(package.validate().has_value());
     CHECK(package.surfaceWidth == 1280);
     CHECK(package.surfaceHeight == 720);
-    CHECK(package.nodes.size() == 9);
+    CHECK_MESSAGE(package.nodes.size() == 11, std::format("11 nodes since #318 (added Clock + Button), got {}", package.nodes.size()));
 
     // The safety-critical nodes #201 and #261 ask for, reached through the function a traceability
     // export walks rather than by index.
@@ -389,12 +391,15 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
     REQUIRE(recorded.has_value());
     // The Row's synthetic panel, the two fields #255 taught the runtime to paint, and the critical
     // button's face, which #261 paints whether or not a locale is bound.
-    CHECK(recorded->rects == 4);
-    // Five of nine nodes are visited and left undrawn, and the frame says so rather than looking
+    // The Row's synthetic panel, the two fields #255 taught the runtime to paint, and the two
+    // control faces (`emergency-halt` and, since #318, `freeze`), which draw whether or not a
+    // locale is bound.
+    CHECK_MESSAGE(recorded->rects == 5, std::format("5 rects, got {}", recorded->rects));
+    // Six of eleven nodes are visited and left undrawn, and the frame says so rather than looking
     // complete. See this file's header for which, and why each - the status indicator is among them
-    // because no test here binds a state, and an indicator with none is in no state to paint, and so
-    // is the text input, which has no value to display and does not draw an empty box for one.
-    CHECK(recorded->deferred == 5);
+    // because no test here binds a state, the text input has no value to display, and the clock
+    // (#318) has no time bound.
+    CHECK_MESSAGE(recorded->deferred == 6, std::format("6 deferred, got {}", recorded->deferred));
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -415,7 +420,10 @@ TEST_CASE("An authored screen draws its panel where the compiler put it", "pixel
              {    "topbar-background", core::ColorRgba8{.r = 209, .g = 214, .b = 219, .a = 255}},
              {       "emergency-halt",   core::ColorRgba8{.r = 219, .g = 51, .b = 46, .a = 255}},
              {"insufflation-pressure",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
-             {          "ecg-lead-ii",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}}
+             {          "ecg-lead-ii",  core::ColorRgba8{.r = 33, .g = 184, .b = 107, .a = 255}},
+             // The freeze Button's face (#318), `Theme.Colors.Neutral` after the runtime's linear
+             // -> 8-bit quantisation.
+             {               "freeze", core::ColorRgba8{.r = 158, .g = 168, .b = 179, .a = 255}}
     }) {
         const medui::CompiledNode* node = package.find(id);
         REQUIRE(node != nullptr);
@@ -646,12 +654,13 @@ TEST_CASE("An authored screen's label and image reach the pixels the compiler ap
     // image. Asserted as the count rather than as "the label was drawn" so that a future component
     // learning to draw cannot make this scenario pass for a reason it does not name. The status
     // indicator is one of the two that remain: this scenario binds text and an image, not a state.
-    CHECK(recorded->deferred == 3);
-    // The panel, the two fields, the image and the critical button's face, plus one rectangle per
-    // inked glyph of the two runs a bound locale draws. "Endoscope Monitor" is 17 characters of
-    // which the space paints nothing, so 16 glyphs; "HALT" is four more. Five filled rectangles and
-    // twenty glyphs.
-    CHECK(recorded->rects == 25);
+    // One more deferred than before #318: the clock has no time bound here. The status indicator
+    // and the video surface are the others.
+    CHECK_MESSAGE(recorded->deferred == 4, std::format("4 deferred, got {}", recorded->deferred));
+    // The panel, the two fields, the image and the two control faces, plus one rectangle per inked
+    // glyph of the runs a bound locale draws: "Endoscope Monitor" is 16 inked glyphs, "HALT" four,
+    // "FREEZE" six. Six filled rectangles and twenty-six glyphs.
+    CHECK_MESSAGE(recorded->rects == 32, std::format("32 rects, got {}", recorded->rects));
 
     RecordContext recording{.renderer = &*renderer, .list = &*list};
     auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
@@ -761,11 +770,11 @@ TEST_CASE("An authored screen's bound status state reaches the pixels", "pixel")
         const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package), {}, {}, *status);
         REQUIRE(recorded.has_value());
         CHECK(recorded->states == 1);
-        // The video surface and the text input are left: the panel, the image, the label, the two
-        // fields and the indicator all draw. Asserted as the count for the label scenario's reason -
-        // a future component learning to draw must not be able to make this pass for a reason it
-        // does not name.
-        CHECK(recorded->deferred == 2);
+        // The video surface, the text input and the clock (#318) are left: the panel, the image,
+        // the label, the button faces, the two fields and the indicator all draw. Asserted as the
+        // count for the label scenario's reason - a future component learning to draw must not be
+        // able to make this pass for a reason it does not name.
+        CHECK_MESSAGE(recorded->deferred == 3, std::format("3 deferred, got {}", recorded->deferred));
 
         RecordContext recording{.renderer = &*renderer, .list = &*list};
         auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);

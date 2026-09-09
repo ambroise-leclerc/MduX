@@ -95,16 +95,21 @@ const mdux::spec::Register endoscopeMonitorEmitsAValidPassingEnvelope{
                           return;
                       }
 
-                      // 3 Bounds + 2 ColorHash + 2 InkContainment map; the 2 LocalizedTextPresence
-                      // outcomes are implementation-local (mdux.local/ink-coverage) and excluded.
-                      checks.expect(derived->excludedOutcomes == 2,
-                                    std::format("2 implementation-local outcomes excluded, saw {}", derived->excludedOutcomes));
+                      // Per approved locale (en-US and fr-FR since #318): 3 Bounds + 2 ColorHash +
+                      // 3 InkContainment map, and 3 LocalizedTextPresence outcomes are
+                      // implementation-local (mdux.local/ink-coverage) and excluded. The screen
+                      // gained a text-bearing Clock and Button, and the second locale doubles every
+                      // scope - so 16 mapped obligations and 6 excluded across the two scopes.
+                      checks.expect(derived->excludedOutcomes == 6,
+                                    std::format("6 implementation-local outcomes excluded, saw {}", derived->excludedOutcomes));
 
                       const json::Value& envelope     = derived->envelope;
                       const json::Value* obligations  = envelope.find("obligations");
                       const json::Value* rows         = envelope.find("rows");
-                      checks.expect(obligations != nullptr && rows != nullptr && obligations->elements().size() == 7 && rows->elements().size() == 7,
-                                    "7 obligations and 7 rows");
+                      checks.expect(obligations != nullptr && rows != nullptr && obligations->elements().size() == 16 && rows->elements().size() == 16,
+                                    std::format("16 obligations and 16 rows, saw {} / {}",
+                                                obligations != nullptr ? obligations->elements().size() : 0,
+                                                rows != nullptr ? rows->elements().size() : 0));
 
                       // Valid against the shared schema.
                       const std::optional<std::filesystem::path> corpus = corpusRootOrSkip(checks);

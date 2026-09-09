@@ -11,7 +11,12 @@
     {
       "locale": "en-US",
       "packageId": "endoscope-monitor-en-us",
-      "packageSha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
+      "packageSha256": "e260e350260598444907e04980b3ad27e263dcbcc1d3c2c8e5335bf1f0e6e0bf"
+    },
+    {
+      "locale": "fr-FR",
+      "packageId": "endoscope-monitor-fr-fr",
+      "packageSha256": "f9abfd5a63e940443bd8f9a4c64003e84355d2be4173d9ffbb5634212bf99bc8"
     }
   ],
   "budget": {
@@ -51,7 +56,7 @@
     {
       "bounds": {
         "height": 72,
-        "width": 480,
+        "width": 246,
         "x": 240,
         "y": 0
       },
@@ -65,8 +70,36 @@
     {
       "bounds": {
         "height": 72,
+        "width": 110,
+        "x": 486,
+        "y": 0
+      },
+      "id": "wall-clock",
+      "kind": "Clock",
+      "spec": {
+        "format": "TimeSeconds"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
+        "width": 120,
+        "x": 596,
+        "y": 0
+      },
+      "id": "freeze",
+      "kind": "Button",
+      "spec": {
+        "colorToken": "Theme.Colors.Neutral",
+        "labelKey": "STR-EM-FREEZE",
+        "source": "FREEZE"
+      }
+    },
+    {
+      "bounds": {
+        "height": 72,
         "width": 160,
-        "x": 720,
+        "x": 716,
         "y": 0
       },
       "id": "emergency-halt",
@@ -81,8 +114,8 @@
     {
       "bounds": {
         "height": 72,
-        "width": 200,
-        "x": 880,
+        "width": 190,
+        "x": 876,
         "y": 0
       },
       "id": "classifier-state",
@@ -107,8 +140,8 @@
     {
       "bounds": {
         "height": 72,
-        "width": 200,
-        "x": 1080,
+        "width": 214,
+        "x": 1066,
         "y": 0
       },
       "id": "patient-id",

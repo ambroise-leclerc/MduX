@@ -4,12 +4,12 @@
     {
       "id": "endoscope-monitor",
       "role": "screenPackage",
-      "sha256": "6be56d5be1c7bcb11570bb4cedc170458d0b0c2e7a8e0f4d21ff1e7c051a2d74"
+      "sha256": "87d2d8825f2f4661b003fd5426387e1e6d80fd8821a2269c2762259343bcfc04"
     },
     {
       "id": "endoscope-monitor",
       "role": "goldens",
-      "sha256": "599552f0948e2c553e31d136d9fc80a5aa88de75e3e4f4d9887013af93266b09"
+      "sha256": "3593736e5664d3795a3b6aa80c0ddf3d55bd3fa2e6b956a66083dba5809db92d"
     },
     {
       "id": "mdux-ui",
@@ -20,13 +20,25 @@
       "id": "endoscope-monitor-en-us",
       "locale": "en-US",
       "role": "textPackage",
-      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
+      "sha256": "e260e350260598444907e04980b3ad27e263dcbcc1d3c2c8e5335bf1f0e6e0bf"
     },
     {
       "id": "dejavu-ui",
       "locale": "en-US",
       "role": "fontPackage",
-      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
+    },
+    {
+      "id": "endoscope-monitor-fr-fr",
+      "locale": "fr-FR",
+      "role": "textPackage",
+      "sha256": "f9abfd5a63e940443bd8f9a4c64003e84355d2be4173d9ffbb5634212bf99bc8"
+    },
+    {
+      "id": "dejavu-ui",
+      "locale": "fr-FR",
+      "role": "fontPackage",
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
     },
     {
       "id": "brand-mark",
@@ -159,6 +171,26 @@
     {
       "check": "InkContainment",
       "finding": "Held",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
       "nodeId": "emergency-halt",
       "observationProfile": {
         "id": "mdux.local/ink-containment",
@@ -175,10 +207,171 @@
         "version": 1
       },
       "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "check": "ColorHash",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "check": "ColorHash",
+      "finding": "Held",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "check": "Bounds",
+      "finding": "Held",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "InkContainment",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
     }
   ],
   "renderScopes": [
-    "en-US"
+    "en-US",
+    "fr-FR"
   ],
   "schemaVersion": 1
 }

@@ -386,7 +386,13 @@ std::string_view describe(ParseError error) noexcept {
         case ParseError::TruncatedGlyph:
             return "glyf record is non-empty but shorter than the 10-byte header";
         case ParseError::CompositeGlyphRejected:
-            return "numberOfContours == -1; composites are out of v1 scope";
+            return "composite glyph rejected (retired: composites are now flattened)";
+        case ParseError::TruncatedComposite:
+            return "a composite component record extends past the glyf record";
+        case ParseError::CompositeComponentUnsupported:
+            return "a composite component uses point-matching args rather than XY values";
+        case ParseError::CompositeNestingTooDeep:
+            return "composite glyphs reference each other more deeply than the parser allows";
         case ParseError::TruncatedContourEndpoints:
             return "endPtsOfContours or the instruction length field extends past the glyf record";
         case ParseError::TruncatedGlyphInstructions:
@@ -694,9 +700,178 @@ namespace {
     return static_cast<std::int16_t>(sum);
 }
 
+// ---------------------------------------------------------------------------
+// Composite glyphs (#318, S4). A composite record is a list of component entries, each naming a
+// glyph and a placement (a translation, optionally a 2x2 transform). Flattening it into one
+// contour list is the "pre-baking" ADR-010 decision 5 names - it happens once here, on the host,
+// and the atlas the baker commits still carries coverage bitmaps and nothing else. Only the
+// forms DejaVu's Latin/Cyrillic/Greek accented glyphs use are supported: XY-value args (never
+// point matching) and F2Dot14 scales. Advances are unaffected - they come from `hmtx` per glyph.
+// ---------------------------------------------------------------------------
+
+// componentFlags bits per the TrueType/OpenType specification.
+constexpr std::uint16_t compArg1And2AreWords    = 0x0001u;
+constexpr std::uint16_t compArgsAreXYValues     = 0x0002u;
+constexpr std::uint16_t compWeHaveAScale        = 0x0008u;
+constexpr std::uint16_t compMoreComponents      = 0x0020u;
+constexpr std::uint16_t compWeHaveXAndYScale    = 0x0040u;
+constexpr std::uint16_t compWeHaveTwoByTwo      = 0x0080u;
+// 0x0004 ROUND_XY_TO_GRID, 0x0100 WE_HAVE_INSTRUCTIONS, 0x0200 USE_MY_METRICS,
+// 0x0800 SCALED_COMPONENT_OFFSET, 0x1000 UNSCALED_COMPONENT_OFFSET: read past, not acted on -
+// grid rounding and the component-offset scaling flags do not change DejaVu's accented Latin,
+// and instructions/metrics are hinting and advance concerns this parser does not have.
+
+/// The deepest a composite may reference another composite. The spec sets no hard limit; 8 is
+/// far past any real font (DejaVu nests at most twice) and turns a cyclic or pathological
+/// `components` chain into a diagnostic rather than a stack overflow.
+constexpr std::size_t maxCompositeDepth = 8u;
+
+/// F2Dot14 (a 2.14 fixed-point value in an int16) as a double.
+[[nodiscard]] double f2dot14(std::int16_t raw) noexcept {
+    return static_cast<double>(raw) / 16384.0;
+}
+
+// parseGlyphAtDepth resolves a component's referenced glyph, which may itself be composite, so
+// the two functions are mutually recursive.
+[[nodiscard]] Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_t glyphIndex,
+                                                                std::size_t depth) noexcept;
+
+/// Flattens the composite record in `span` (whose 10-byte header the caller already read) into
+/// one `SimpleGlyph` with every component's contours transformed into place.
+[[nodiscard]] Result<SimpleGlyph, ParseError> parseCompositeGlyph(const Font& font, std::uint16_t glyphIndex,
+                                                                  std::span<const std::byte> span,
+                                                                  std::size_t                depth) noexcept {
+    if (depth >= maxCompositeDepth) {
+        return err(ParseError::CompositeNestingTooDeep);
+    }
+
+    SimpleGlyph glyph;
+    glyph.glyphIndex = glyphIndex;
+
+    std::size_t cursor      = 10u;  // past the numberOfContours + bbox header
+    bool        moreToCome  = true;
+    bool        anyPoints   = false;
+    std::int32_t minX = 0, minY = 0, maxX = 0, maxY = 0;
+
+    while (moreToCome) {
+        const auto flags      = beU16(span, cursor);
+        const auto compGlyph  = beU16(span, cursor + 2u);
+        if (!flags || !compGlyph) {
+            return err(ParseError::TruncatedComposite);
+        }
+        cursor += 4u;
+
+        // Args: two int16 (WORDS) or two int8. Only the XY-value form is supported; the
+        // point-matching form (flag clear) places a component by matching a point index in the
+        // parent to one in the child, which no DejaVu Latin glyph uses.
+        if ((*flags & compArgsAreXYValues) == 0u) {
+            return err(ParseError::CompositeComponentUnsupported);
+        }
+        std::int32_t dx = 0;
+        std::int32_t dy = 0;
+        if ((*flags & compArg1And2AreWords) != 0u) {
+            const auto a1 = beI16(span, cursor);
+            const auto a2 = beI16(span, cursor + 2u);
+            if (!a1 || !a2) {
+                return err(ParseError::TruncatedComposite);
+            }
+            dx      = *a1;
+            dy      = *a2;
+            cursor += 4u;
+        } else {
+            if (cursor + 2u > span.size()) {
+                return err(ParseError::TruncatedComposite);
+            }
+            dx      = static_cast<std::int8_t>(std::to_integer<std::uint8_t>(span[cursor]));
+            dy      = static_cast<std::int8_t>(std::to_integer<std::uint8_t>(span[cursor + 1u]));
+            cursor += 2u;
+        }
+
+        // Transform matrix [[a b] [c d]], default identity.
+        double a = 1.0, b = 0.0, c = 0.0, d = 1.0;
+        if ((*flags & compWeHaveAScale) != 0u) {
+            const auto s = beI16(span, cursor);
+            if (!s) {
+                return err(ParseError::TruncatedComposite);
+            }
+            a       = d = f2dot14(*s);
+            cursor += 2u;
+        } else if ((*flags & compWeHaveXAndYScale) != 0u) {
+            const auto sx = beI16(span, cursor);
+            const auto sy = beI16(span, cursor + 2u);
+            if (!sx || !sy) {
+                return err(ParseError::TruncatedComposite);
+            }
+            a       = f2dot14(*sx);
+            d       = f2dot14(*sy);
+            cursor += 4u;
+        } else if ((*flags & compWeHaveTwoByTwo) != 0u) {
+            const auto m00 = beI16(span, cursor);
+            const auto m01 = beI16(span, cursor + 2u);
+            const auto m10 = beI16(span, cursor + 4u);
+            const auto m11 = beI16(span, cursor + 6u);
+            if (!m00 || !m01 || !m10 || !m11) {
+                return err(ParseError::TruncatedComposite);
+            }
+            a       = f2dot14(*m00);
+            b       = f2dot14(*m01);
+            c       = f2dot14(*m10);
+            d       = f2dot14(*m11);
+            cursor += 8u;
+        }
+
+        const auto component = parseGlyphAtDepth(font, *compGlyph, depth + 1u);
+        if (!component) {
+            return err(component.error());
+        }
+
+        const std::size_t base = glyph.points.size();
+        for (const auto& p : component->points) {
+            const double tx = a * static_cast<double>(p.x) + c * static_cast<double>(p.y) + static_cast<double>(dx);
+            const double ty = b * static_cast<double>(p.x) + d * static_cast<double>(p.y) + static_cast<double>(dy);
+            const double rx = std::round(tx);
+            const double ry = std::round(ty);
+            if (rx < -32768.0 || rx > 32767.0 || ry < -32768.0 || ry > 32767.0) {
+                return err(ParseError::CoordinateOverflow);
+            }
+            const auto ix = static_cast<std::int16_t>(rx);
+            const auto iy = static_cast<std::int16_t>(ry);
+            glyph.points.push_back(GlyphPoint{.x = ix, .y = iy, .onCurve = p.onCurve});
+            if (!anyPoints) {
+                minX = maxX = ix;
+                minY = maxY = iy;
+                anyPoints   = true;
+            } else {
+                minX = std::min<std::int32_t>(minX, ix);
+                maxX = std::max<std::int32_t>(maxX, ix);
+                minY = std::min<std::int32_t>(minY, iy);
+                maxY = std::max<std::int32_t>(maxY, iy);
+            }
+        }
+        for (const auto endPt : component->endPtsOfContours) {
+            glyph.endPtsOfContours.push_back(static_cast<std::uint16_t>(base + endPt));
+        }
+
+        moreToCome = (*flags & compMoreComponents) != 0u;
+    }
+
+    // The header bbox of a composite is advisory; the flattened contours are authoritative, so
+    // recompute it from the placed points (and leave the 0..0 header values for an empty one).
+    if (anyPoints) {
+        glyph.xMin = static_cast<std::int16_t>(minX);
+        glyph.yMin = static_cast<std::int16_t>(minY);
+        glyph.xMax = static_cast<std::int16_t>(maxX);
+        glyph.yMax = static_cast<std::int16_t>(maxY);
+    }
+    return glyph;
+}
+
 }  // namespace
 
-Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyphIndex) noexcept {
+namespace {
+
+Result<SimpleGlyph, ParseError> parseGlyphAtDepth(const Font& font, std::uint16_t glyphIndex,
+                                                  std::size_t depth) noexcept {
     if (glyphIndex >= font.numGlyphs) {
         return err(ParseError::GlyphIndexOutOfRange);
     }
@@ -739,7 +914,7 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
     glyph.yMax                  = *beI16(span, 8);
 
     if (numberOfContours < 0) {
-        return err(ParseError::CompositeGlyphRejected);
+        return parseCompositeGlyph(font, glyphIndex, span, depth);
     }
     const auto contours = static_cast<std::size_t>(numberOfContours);
 
@@ -892,6 +1067,12 @@ Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyph
         glyph.points.push_back(GlyphPoint{.x = xCoords[i], .y = yCoords[i], .onCurve = (flags[i] & flagOnCurve) != 0u});
     }
     return glyph;
+}
+
+}  // namespace
+
+Result<SimpleGlyph, ParseError> parseGlyph(const Font& font, std::uint16_t glyphIndex) noexcept {
+    return parseGlyphAtDepth(font, glyphIndex, 0u);
 }
 
 std::optional<std::uint16_t> glyphForCodePoint(const Font& font, char32_t codePoint) noexcept {

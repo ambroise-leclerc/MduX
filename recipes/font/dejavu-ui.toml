@@ -40,15 +40,22 @@
 #
 # ## Why this charset
 #
-# Printable ASCII only, for v1. Two reasons, one of them load-bearing:
+# Printable ASCII plus the accented Latin the approved locales need.
 #
-#   - Every glyph in U+0020..U+007E is a *simple* outline in DejaVu Sans - measured, not assumed:
-#     95 of 95 code points map and 95 of 95 produce outlines with zero composites. The parser
-#     rejects composites (ADR-010's "substitutions the baker did not pre-bake"), so a charset
-#     reaching into accented Latin would fail the bake until composite pre-baking lands.
-#   - The restricted-charset table that makes the character set enforceable rather than
-#     conventional is #161 (S5). Until it exists, keeping the set small keeps the committed
-#     artifact small and the first end-to-end proof honest.
+#   - U+0020..U+007E (`basic-latin-printable`) is every glyph a `en-US` screen draws, and every
+#     one of them is a *simple* outline in DejaVu Sans: 95 of 95 code points map and 95 of 95
+#     produce outlines with zero composites.
+#   - U+00C0..U+00FF plus U+0152..U+0153 (`latin1-accented`) is the French repertoire - the
+#     accented capitals and lowercase, the cedilla, the ligatures and the guillemets. Almost
+#     every one of these is a *composite* glyph in DejaVu Sans (a base letter plus a combining
+#     accent, placed by a transform). Since #318 the TrueType parser flattens a composite into a
+#     flat contour list on the host, in the baker, which is exactly the pre-baking ADR-010
+#     decision 5 names - the atlas the runtime receives still carries coverage bitmaps and baked
+#     advances and nothing else.
+#
+# What is still out of scope, and would still fail the bake: RTL and contextual scripts,
+# ligatured shaping, CFF outlines. A locale needing any of those is not one this font is approved
+# for, and the `.medui` compiler's locale check (#15) is what enforces that.
 
 [package]
 id = "dejavu-ui"
@@ -62,9 +69,10 @@ pixelSize = 16
 
 # Locales this package is approved for. Declared rather than inferred: the .medui compiler (#15)
 # checks a screen's locale against this list, and a font that happens to contain a glyph is not
-# the same as a font a manufacturer approved for that locale.
+# the same as a font a manufacturer approved for that locale. `fr-FR` was added by #318, together
+# with the `latin1-accented` charset range its text package needs.
 [locales]
-ids = ["en-US"]
+ids = ["en-US", "fr-FR"]
 
 # The character set, as parallel arrays of scalars.
 #
@@ -73,8 +81,10 @@ ids = ["en-US"]
 # shape recipes/model/ecg-demo.toml uses for its layers. The baker rejects a length mismatch by
 # name rather than truncating to the shortest array.
 [charset]
-names           = ["basic-latin-printable"]
+names           = ["basic-latin-printable", "latin1-accented", "latin-extended-a-oe"]
 # Decimal, not hex: mdux.tools.toml's subset has no hexadecimal literals, and it says so rather
-# than guessing. 32 is U+0020 (space) and 126 is U+007E (tilde).
-firstCodePoints = [32]
-lastCodePoints  = [126]
+# than guessing. 32..126 is U+0020..U+007E (space to tilde); 171..255 is U+00AB..U+00FF (the
+# guillemets « », the degree/section signs and the accented Latin-1 letters with the cedilla);
+# 338..339 is U+0152..U+0153 (OE / oe).
+firstCodePoints = [32, 171, 338]
+lastCodePoints  = [126, 255, 339]

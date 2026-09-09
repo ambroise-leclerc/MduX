@@ -59,5 +59,9 @@ sidecar = "runs.bin"
 # `STR-EM-HALT` is the `emergency-halt` critical button's label (#261). One word, because the widest
 # translation of it has to fit a 160px face beside four other topbar nodes - and because a control
 # whose label needs a sentence is a control an operator has to read before pressing.
-keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3", "STR-EM-HALT"]
-values = ["Endoscope Monitor", "Class 0", "Class 1", "Class 2", "Class 3", "HALT"]
+#
+# `STR-EM-FREEZE` is the `freeze` Button's label (#318). It is an ordinary `Button` - an open
+# `source:` name, not a closed `SystemEvent` - so nothing outside the host knows what "FREEZE"
+# does; the screen owns only where the control is and what it says.
+keys   = ["STR-EM-TITLE", "STR-EM-CLASS-0", "STR-EM-CLASS-1", "STR-EM-CLASS-2", "STR-EM-CLASS-3", "STR-EM-HALT", "STR-EM-FREEZE"]
+values = ["Endoscope Monitor", "Class 0", "Class 1", "Class 2", "Class 3", "HALT", "FREEZE"]

@@ -2,19 +2,27 @@
   "inputs": [
     {
       "path": "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-      "sha256": "1af81df848711c180b6bf09d91372b616d90e92b4ebf07d5c654c04658bff448"
+      "sha256": "5a2086b9ef140b0fd8f19689cf784d72cb1a070c931db49ebe14fde02b80a3ef"
     },
     {
       "path": "generated/font/dejavu-ui/package.json",
-      "sha256": "34bff16611756b163fc7fbedcfa4935d614d23e4b35c705ccab75f1814f28873"
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/package.json",
-      "sha256": "7544985e5d81aca4168cfcb04f8164cbe222419a860e02d95a059622642f56ac"
+      "sha256": "e260e350260598444907e04980b3ad27e263dcbcc1d3c2c8e5335bf1f0e6e0bf"
     },
     {
       "path": "generated/text/endoscope-monitor-en-us/runs.bin",
-      "sha256": "bd09d7ab2998ac6fdbe9624129387f3d63358d4bede51f59e37096fceb81001d"
+      "sha256": "fa0061a5680ce96d3d1d384e3038c0491e177f0f5b149ae481de3af504b553a8"
+    },
+    {
+      "path": "generated/text/endoscope-monitor-fr-fr/package.json",
+      "sha256": "f9abfd5a63e940443bd8f9a4c64003e84355d2be4173d9ffbb5634212bf99bc8"
+    },
+    {
+      "path": "generated/text/endoscope-monitor-fr-fr/runs.bin",
+      "sha256": "ed62f1e96298a3d3b55a32ba24606cff7076e53058295f53ae289a85a5292ccf"
     },
     {
       "path": "generated/image/brand-mark/package.json",
@@ -61,31 +69,33 @@
     "surfaceHeight": 720,
     "surfaceWidth": 1280,
     "textPackages": [
-      "generated/text/endoscope-monitor-en-us/package.json"
+      "generated/text/endoscope-monitor-en-us/package.json",
+      "generated/text/endoscope-monitor-fr-fr/package.json"
     ],
     "verification": {
       "locales": [
-        "en-US"
+        "en-US",
+        "fr-FR"
       ]
     }
   },
   "outputs": [
     {
       "path": "goldens.json",
-      "sha256": "599552f0948e2c553e31d136d9fc80a5aa88de75e3e4f4d9887013af93266b09"
+      "sha256": "3593736e5664d3795a3b6aa80c0ddf3d55bd3fa2e6b956a66083dba5809db92d"
     },
     {
       "path": "package.json",
-      "sha256": "6be56d5be1c7bcb11570bb4cedc170458d0b0c2e7a8e0f4d21ff1e7c051a2d74"
+      "sha256": "87d2d8825f2f4661b003fd5426387e1e6d80fd8821a2269c2762259343bcfc04"
     },
     {
       "path": "verification.json",
-      "sha256": "db64764a580c9d38eb9b22bb42ff59f36c9edd77cc7a22f3021afff63207c8a0"
+      "sha256": "20a1399e15b7bc70467894729917bb18b5523b2ade7088ab1ae06d0741f05a65"
     }
   ],
   "recipe": {
     "path": "recipes/screen/endoscope-monitor.toml",
-    "sha256": "7207c95d4cf45a57179886e9f2e86a9ab89493f2ff9678406bda38e9da2ca26a"
+    "sha256": "21155e839bb2717f57ab1b56772d9dff732aecfbc15fe4a5d955220bfc561c7a"
   },
   "schemaVersion": 1,
   "stages": [
