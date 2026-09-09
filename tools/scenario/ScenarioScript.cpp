@@ -147,6 +147,24 @@ void report(std::vector<cli::Diagnostic>& diagnostics, std::string_view path, st
     return true;
 }
 
+/// A scenario id: a lowercase slug `[a-z0-9]([a-z0-9-]*[a-z0-9])?`. The emitter maps every
+/// non-alphanumeric character to `_` when it forms a C++ identifier, so if `.`, `_` or a
+/// trailing/leading `-` were allowed here two distinct ids could render the same module name.
+/// Restricting the source id the way a screen or recipe id is already restricted removes that
+/// collision at the door.
+[[nodiscard]] bool isScenarioId(std::string_view text) {
+    if (text.empty() || text.front() == '-' || text.back() == '-') {
+        return false;
+    }
+    for (const char ch : text) {
+        const bool ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Decodes a UTF-8 string to a `std::u32string`, or nullopt on malformed input.
 [[nodiscard]] std::optional<std::u32string> decodeUtf8(std::string_view text) {
     std::u32string out;
@@ -209,6 +227,7 @@ std::optional<Script> parseScript(std::string_view              text,
     bool   inSteps     = false;   // a step directive has appeared; header lines are now closed
     std::size_t pendingEvents = 0;  // events queued since the last `advance`
     std::size_t expectCount   = 0;
+    bool        sawAdvance    = false;  // an `expect`/`capture` before the first `advance` checks nothing
 
     const std::size_t before = diagnostics.size();
     const auto        failed = [&] { return diagnostics.size() != before; };
@@ -230,7 +249,14 @@ std::optional<Script> parseScript(std::string_view              text,
                        "`scenario <id>` must appear once, before any step", "Put it on the first line.");
                 return std::nullopt;
             }
-            script.id   = unquote(f[1]);
+            script.id = unquote(f[1]);
+            if (!isScenarioId(script.id)) {
+                report(diagnostics, scriptPath, lineNo, headerFault,
+                       std::format("'{}' is not a scenario id (a lowercase slug [a-z0-9-], no leading or trailing '-')",
+                                   script.id),
+                       "Match the recipe's `id` and the screen id convention.");
+                return std::nullopt;
+            }
             sawScenario = true;
             continue;
         }
@@ -464,7 +490,14 @@ std::optional<Script> parseScript(std::string_view              text,
             step.kind   = ms::StepKind::Advance;
             step.frames = frames;
             pendingEvents = 0;
+            sawAdvance    = true;
         } else if (directive == "capture") {
+            if (!sawAdvance) {
+                report(diagnostics, scriptPath, lineNo, danglingBatch,
+                       "`capture` before the first `advance` has no settled frame to capture",
+                       "Put an `advance` ahead of it.");
+                return std::nullopt;
+            }
             if (f.size() != 2) {
                 report(diagnostics, scriptPath, lineNo, badArity, "`capture <name>`");
                 return std::nullopt;
@@ -482,6 +515,12 @@ std::optional<Script> parseScript(std::string_view              text,
             step.kind    = ms::StepKind::Capture;
             step.capture = name;
         } else if (directive == "expect") {
+            if (!sawAdvance) {
+                report(diagnostics, scriptPath, lineNo, danglingBatch,
+                       "`expect` before the first `advance` checks state no batch has settled",
+                       "Put an `advance` ahead of it.");
+                return std::nullopt;
+            }
             if (f.size() < 2) {
                 report(diagnostics, scriptPath, lineNo, badArity, "`expect <kind> <args>`");
                 return std::nullopt;
@@ -696,12 +735,6 @@ std::optional<Script> parseScript(std::string_view              text,
     }
 
     // Whole-scenario checks the line loop cannot make.
-    bool sawAdvance = false;
-    for (const ScriptStep& step : script.steps) {
-        if (step.kind == ms::StepKind::Advance) {
-            sawAdvance = true;
-        }
-    }
     if (!sawAdvance) {
         report(diagnostics, scriptPath, lineNo, danglingBatch,
                "the scenario never `advance`s a batch, so it verifies nothing", "Add an `advance` after the events.");

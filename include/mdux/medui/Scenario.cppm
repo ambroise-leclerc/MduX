@@ -186,7 +186,9 @@ struct Expectation {
     FrameStatField            statField{FrameStatField::Unspecified};  ///< FrameStat
     bool                      flag{false};      ///< Overflow
 
-    [[nodiscard]] constexpr bool operator==(const Expectation&) const noexcept = default;
+    // No defaulted operator==: `fieldValue` is a `std::span`, which libc++ leaves without an
+    // equality operator, and a pointer-identity comparison of it would be the wrong semantics
+    // anyway. Nothing compares whole `Expectation`s; the replay reads members by `kind`.
 };
 
 // ===========================================================================
@@ -248,7 +250,7 @@ struct ScenarioStep {
     Expectation               expect{};    ///< Expect
     std::string_view          capture{};   ///< Capture: the marker name
 
-    [[nodiscard]] constexpr bool operator==(const ScenarioStep&) const noexcept = default;
+    // No defaulted operator==: `expect` holds a `std::span` (see `Expectation`).
 };
 
 /// How the replay seeds the demonstration ECG generator before the first frame. `beatPeriod` is

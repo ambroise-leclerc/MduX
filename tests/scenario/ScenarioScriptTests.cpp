@@ -111,9 +111,25 @@ const mdux::spec::Register everyRejectionPathHasItsCode{
                           {"a reused capture name", "SCN007", "advance\ncapture c\ncapture c\n"},
                           {"events after the last advance", "SCN008", "advance\ntext A\n"},
                           {"no advance at all", "SCN008", "pointer down freeze\n"},
+                          {"an expect before the first advance", "SCN008", "expect clock 03:04:05\n"},
+                          {"a capture before the first advance", "SCN008", "capture c\n"},
                       };
 
                       mdux::spec::Checks checks;
+
+                      // A scenario id that is not a lowercase slug: the offending token is in the
+                      // header, so this needs a hand-built script rather than the `header` + body
+                      // fixture. `a_b` would collide with `a-b` after the emitter's identifier
+                      // mapping, which is why the parser refuses it.
+                      for (const std::string_view badId : {"a_b", "a.b", "-lead", "trail-"}) {
+                          std::vector<cli::Diagnostic> diags;
+                          auto script = sc::parseScript(
+                              std::format("scenario {}\nscreen screen-x\nversion 1\nclock 2026-01-02 03:04:05\nadvance\n", badId),
+                              "fixture.scenario", "screen-x", fixtureNodes(), diags);
+                          checks.expect(!script.has_value() && firstCode(diags) == "SCN002",
+                                        std::format("scenario id '{}' -> SCN002, got {}", badId, firstCode(diags)));
+                      }
+
                       for (const RejectionCase& c : cases) {
                           if (c.code == "SCN006") {
                               std::vector<cli::Diagnostic> diags;
@@ -210,11 +226,13 @@ const mdux::spec::Register identifierParity{
         return speclab::Test("scenario-identifier")
             .Given("a set of ids", [] {})
             .When("identifierForScenario() maps each", [] {})
-            .Then("the mapping is prefixed and injective on separators",
+            .Then("the mapping is prefixed and injective over the slug ids the parser admits",
                   [] {
                       mdux::spec::Checks checks;
                       checks.expect(sc::identifierForScenario("endoscope-monitor-basics") == "scenario_endoscope_monitor_basics", "hyphens");
-                      checks.expect(sc::identifierForScenario("a.b") == "scenario_a_b", "dots");
+                      // Within `[a-z0-9-]` (the only ids `isScenarioId` lets through) the `-`->`_`
+                      // map cannot collide: nothing else in the domain produces a `_`.
+                      checks.expect(sc::identifierForScenario("a-b") == "scenario_a_b", "hyphen maps to underscore");
                       checks.expect(sc::identifierForScenario("class") == "scenario_class", "a keyword id is still an identifier");
                       checks.raise();
                   })

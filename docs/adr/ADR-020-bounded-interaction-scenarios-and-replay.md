@@ -105,7 +105,8 @@ hand-written parser like the `.medui` component-body parser — TrustSC's scenar
 batch. `advance N` runs N `updateMonitor()` calls (the first consumes the batch, the rest run
 empty). An `expect` or `capture` after an `advance` checks the state **that advance settled** —
 state bound after the batch, so a check never sees unresolved input. Events after the last
-`advance`, and a scenario with no `advance`, are refused.
+`advance`, an `expect` or `capture` before the first `advance`, and a scenario with no `advance`
+at all, are refused (`SCN008`).
 
 **The typed expectation vocabulary.** `clock`, `field "<value>" [caret N]`, `refused N`,
 `action <node> <SystemEvent> <REQ-ID>`, `button <node> <source>`, `reading <node> <int>`,
@@ -116,6 +117,13 @@ named numeric/state slot the replay fills.
 **Bounds.** `maxScenarioSteps = 256`, `maxScenarioExpectations = 128`, `maxScenarioCaptures = 16`,
 `maxScenarioRequirements = 16` — all `inline constexpr` in `mdux.medui.scenario`, `maxInputEvents`'s
 reasoning applied to the step list.
+
+**Identity.** `scenario <id>` is a lowercase slug (`[a-z0-9-]`, no leading or trailing `-`),
+matching the recipe `id` and the screen id convention. The `constexpr` emitter maps every
+non-alphanumeric character to `_` to form a C++ identifier, so constraining the source id at the
+door (`SCN002`) keeps that map injective and no two scenarios can render the same module name.
+`version <N>` must be the one the build implements — an unsupported version is refused both by the
+parser (`SCN004`) and, defensively, when the emitter reads `scenario.json` back.
 
 ### 2. A scenario compiles to a committed, byte-verified artifact and then to `constexpr` C++
 

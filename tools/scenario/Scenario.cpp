@@ -399,6 +399,10 @@ std::optional<Script> readScenarioDoc(std::span<const std::byte> scenarioJson, s
     if (!sv) {
         return badShape("schemaVersion is not an integer");
     }
+    if (*sv != ms::currentScenarioSchemaVersion) {
+        return badShape(std::format("schemaVersion {} is not the one this build implements ({})", *sv,
+                                    ms::currentScenarioSchemaVersion));
+    }
     script.version = static_cast<std::uint32_t>(*sv);
     if (const auto s = id->asString(); s) {
         script.id = std::string{*s};
