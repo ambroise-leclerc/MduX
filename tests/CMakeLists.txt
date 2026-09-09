@@ -1477,6 +1477,40 @@ if(TARGET glfw)
     mdux_discover_tests(glfw_translation_spec)
 endif()
 
+# The assembled monitor update (`examples/support/MonitorApp.hpp`, #318) - unit-tested with no
+# window, no Vulkan and no display. `updateMonitor()` is `std` and `mdux.medui.*`, so this links
+# MduX::Core and the committed endoscope-monitor screen module and nothing else. The `--headless-smoke`
+# mode of the example is the end-to-end counterpart that also renders a frame.
+add_executable(monitor_loop_spec
+    adapter/MonitorLoopMain.cpp
+    adapter/MonitorLoopTests.cpp
+)
+target_sources(monitor_loop_spec
+    PRIVATE
+        FILE_SET generated_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
+)
+add_dependencies(monitor_loop_spec emit-screen-endoscope-monitor)
+target_link_libraries(monitor_loop_spec PRIVATE MduX::Core speclab::speclab)
+target_include_directories(monitor_loop_spec
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${MDUX_GENERATED_SCREEN_DIR} ${CMAKE_SOURCE_DIR}/examples/support)
+target_compile_definitions(monitor_loop_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(monitor_loop_spec
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(monitor_loop_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(monitor_loop_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(monitor_loop_spec)
+
 # `MedicalScreenMonitorExample` is built by examples/CMakeLists.txt, which is processed before
 # enable_testing() - so its CI checks are registered here instead, where add_test() takes effect.
 #
