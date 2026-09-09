@@ -128,6 +128,20 @@ const mdux::spec::Register aMalformedScenarioIsRefused{
                       neverAdvances.steps = noAdvance;
                       checks.expect(neverAdvances.validate().error() == ms::ScenarioError::NoAdvance,
                                     "a scenario that never advances is refused");
+
+                      // An Expect wedged between queued events and their Advance: loadNextBatch()
+                      // would walk past it, so validate() must reject the ordering rather than let
+                      // the replay silently skip the obligation.
+                      static constexpr ms::ScenarioStep expectInBatch[] = {
+                          {.kind = ms::StepKind::Advance, .frames = 1},
+                          {.kind = ms::StepKind::Text, .text = {.scalar = U'A'}},
+                          {.kind = ms::StepKind::Expect, .expect = {.kind = ms::ExpectKind::RefusedEdits, .count = 1}},
+                          {.kind = ms::StepKind::Advance, .frames = 1},
+                      };
+                      ms::CompiledScenario midBatchExpect = good;
+                      midBatchExpect.steps = expectInBatch;
+                      checks.expect(midBatchExpect.validate().error() == ms::ScenarioError::ExpectationInEventBatch,
+                                    "an expectation after unadvanced events is refused");
                       checks.raise();
                   })
             .Execute();

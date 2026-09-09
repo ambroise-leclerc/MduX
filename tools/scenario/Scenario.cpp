@@ -533,66 +533,156 @@ std::optional<Script> readScenarioDoc(std::span<const std::byte> scenarioJson, s
                     return badShape("an expect step has an unknown kind");
                 }
                 step.expect.kind = *ek;
-                const auto num = [&](const char* key) -> std::int64_t {
+
+                // Strict operand extraction. `readScenarioDoc` reads MduX's own byte-verified
+                // `scenario.json`, so an operand that is absent when the kind needs it, or present
+                // with the wrong JSON type, means the bytes are corrupt - defaulting it would
+                // silently change the obligation being verified.
+                const auto reqStr = [&](const char* key) -> std::optional<std::string> {
                     const auto* v = ex->find(key);
-                    return v != nullptr ? v->asInt().value_or(0) : 0;
+                    if (v == nullptr) {
+                        return std::nullopt;
+                    }
+                    const auto s = v->asString();
+                    return s ? std::optional<std::string>{std::string{*s}} : std::nullopt;
                 };
-                const auto str = [&](const char* key) -> std::string {
+                const auto reqUInt = [&](const char* key) -> std::optional<std::uint64_t> {
                     const auto* v = ex->find(key);
-                    return (v != nullptr && v->asString()) ? std::string{*v->asString()} : std::string{};
+                    if (v == nullptr) {
+                        return std::nullopt;
+                    }
+                    const auto n = v->asUInt();
+                    return n ? std::optional<std::uint64_t>{*n} : std::nullopt;
                 };
+                const auto reqInt = [&](const char* key) -> std::optional<std::int64_t> {
+                    const auto* v = ex->find(key);
+                    if (v == nullptr) {
+                        return std::nullopt;
+                    }
+                    const auto n = v->asInt();
+                    return n ? std::optional<std::int64_t>{*n} : std::nullopt;
+                };
+
                 switch (*ek) {
-                    case ms::ExpectKind::Clock:
-                        if (const auto* c = ex->find("clock"); c != nullptr) {
-                            if (auto cv = clockFrom(*c); cv) {
-                                step.expect.clock = *cv;
-                            }
+                    case ms::ExpectKind::Clock: {
+                        const auto* c  = ex->find("clock");
+                        auto        cv = c != nullptr ? clockFrom(*c) : std::nullopt;
+                        if (!cv) {
+                            return badShape("a clock expectation carries no valid clock");
                         }
+                        step.expect.clock = *cv;
                         break;
+                    }
                     case ms::ExpectKind::Field: {
-                        if (const auto* v = ex->find("value"); v != nullptr) {
-                            for (const json::Value& cp : v->elements()) {
-                                step.expect.fieldValue.push_back(static_cast<char32_t>(cp.asUInt().value_or(0)));
+                        const auto* v = ex->find("value");
+                        if (v == nullptr) {
+                            return badShape("a field expectation carries no value");
+                        }
+                        for (const json::Value& cp : v->elements()) {
+                            const auto scalar = cp.asUInt();
+                            if (!scalar) {
+                                return badShape("a field expectation value has a non-integer code point");
                             }
+                            step.expect.fieldValue.push_back(static_cast<char32_t>(*scalar));
                         }
                         if (const auto* c = ex->find("caret"); c != nullptr) {
+                            const auto caret = c->asUInt();
+                            if (!caret) {
+                                return badShape("a field expectation caret is not an integer");
+                            }
                             step.expect.fieldHasCaret = true;
-                            step.expect.caret         = static_cast<std::uint32_t>(c->asUInt().value_or(0));
+                            step.expect.caret         = static_cast<std::uint32_t>(*caret);
                         }
                         break;
                     }
-                    case ms::ExpectKind::RefusedEdits:
-                        step.expect.count = static_cast<std::uint32_t>(num("count"));
-                        break;
-                    case ms::ExpectKind::Action:
-                        step.expect.nodeId      = str("node");
-                        step.expect.event       = ms::systemEventFromWire(str("event")).value_or(ms::SystemEvent::Unspecified);
-                        step.expect.requirement = str("requirement");
-                        break;
-                    case ms::ExpectKind::ButtonSource:
-                        step.expect.nodeId = str("node");
-                        step.expect.source = str("source");
-                        break;
-                    case ms::ExpectKind::Reading:
-                        step.expect.nodeId = str("node");
-                        step.expect.value  = num("value");
-                        break;
-                    case ms::ExpectKind::State:
-                        step.expect.nodeId = str("node");
-                        step.expect.count  = static_cast<std::uint32_t>(num("index"));
-                        break;
-                    case ms::ExpectKind::LatchArmed:
-                        step.expect.nodeId = str("node");
-                        break;
-                    case ms::ExpectKind::FrameStat:
-                        step.expect.statField = ms::frameStatFieldFromWire(str("field")).value_or(ms::FrameStatField::Unspecified);
-                        step.expect.count     = static_cast<std::uint32_t>(num("count"));
-                        break;
-                    case ms::ExpectKind::Overflow:
-                        if (const auto* v = ex->find("value"); v != nullptr) {
-                            step.expect.flag = v->asBool().value_or(false);
+                    case ms::ExpectKind::RefusedEdits: {
+                        const auto count = reqUInt("count");
+                        if (!count) {
+                            return badShape("a refused expectation needs an integer count");
                         }
+                        step.expect.count = static_cast<std::uint32_t>(*count);
                         break;
+                    }
+                    case ms::ExpectKind::Action: {
+                        const auto node  = reqStr("node");
+                        const auto event = reqStr("event");
+                        const auto req   = reqStr("requirement");
+                        if (!node || !event || !req) {
+                            return badShape("an action expectation needs node, event and requirement strings");
+                        }
+                        const auto sysEvent = ms::systemEventFromWire(*event);
+                        if (!sysEvent) {
+                            return badShape("an action expectation names an unknown SystemEvent");
+                        }
+                        step.expect.nodeId      = *node;
+                        step.expect.event       = *sysEvent;
+                        step.expect.requirement = *req;
+                        break;
+                    }
+                    case ms::ExpectKind::ButtonSource: {
+                        const auto node   = reqStr("node");
+                        const auto source = reqStr("source");
+                        if (!node || !source) {
+                            return badShape("a button expectation needs node and source strings");
+                        }
+                        step.expect.nodeId = *node;
+                        step.expect.source = *source;
+                        break;
+                    }
+                    case ms::ExpectKind::Reading: {
+                        const auto node  = reqStr("node");
+                        const auto value = reqInt("value");
+                        if (!node || !value) {
+                            return badShape("a reading expectation needs a node string and an integer value");
+                        }
+                        step.expect.nodeId = *node;
+                        step.expect.value  = *value;
+                        break;
+                    }
+                    case ms::ExpectKind::State: {
+                        const auto node  = reqStr("node");
+                        const auto index = reqUInt("index");
+                        if (!node || !index) {
+                            return badShape("a state expectation needs a node string and an integer index");
+                        }
+                        step.expect.nodeId = *node;
+                        step.expect.count  = static_cast<std::uint32_t>(*index);
+                        break;
+                    }
+                    case ms::ExpectKind::LatchArmed: {
+                        const auto node = reqStr("node");  // empty string = disarmed
+                        if (!node) {
+                            return badShape("a latch expectation needs a node string");
+                        }
+                        step.expect.nodeId = *node;
+                        break;
+                    }
+                    case ms::ExpectKind::FrameStat: {
+                        const auto field = reqStr("field");
+                        const auto count = reqUInt("count");
+                        if (!field || !count) {
+                            return badShape("a frame expectation needs a field string and an integer count");
+                        }
+                        const auto statField = ms::frameStatFieldFromWire(*field);
+                        if (!statField) {
+                            return badShape("a frame expectation names an unknown FrameStats field");
+                        }
+                        step.expect.statField = *statField;
+                        step.expect.count     = static_cast<std::uint32_t>(*count);
+                        break;
+                    }
+                    case ms::ExpectKind::Overflow: {
+                        const auto* v = ex->find("value");
+                        if (v == nullptr) {
+                            return badShape("an overflow expectation needs a boolean value");
+                        }
+                        const auto flag = v->asBool();
+                        if (!flag) {
+                            return badShape("an overflow expectation value is not a boolean");
+                        }
+                        step.expect.flag = *flag;
+                        break;
+                    }
                     case ms::ExpectKind::Unspecified:
                         return badShape("an expect step has no kind");
                 }

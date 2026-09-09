@@ -498,6 +498,12 @@ std::optional<Script> parseScript(std::string_view              text,
                        "Put an `advance` ahead of it.");
                 return std::nullopt;
             }
+            if (pendingEvents != 0) {
+                report(diagnostics, scriptPath, lineNo, danglingBatch,
+                       "`capture` must directly follow an `advance`, not events that have not been advanced",
+                       "Move it after the next `advance`.");
+                return std::nullopt;
+            }
             if (f.size() != 2) {
                 report(diagnostics, scriptPath, lineNo, badArity, "`capture <name>`");
                 return std::nullopt;
@@ -519,6 +525,13 @@ std::optional<Script> parseScript(std::string_view              text,
                 report(diagnostics, scriptPath, lineNo, danglingBatch,
                        "`expect` before the first `advance` checks state no batch has settled",
                        "Put an `advance` ahead of it.");
+                return std::nullopt;
+            }
+            if (pendingEvents != 0) {
+                report(diagnostics, scriptPath, lineNo, danglingBatch,
+                       "`expect` must directly follow an `advance`, not events that have not been advanced "
+                       "- it would check state a queued batch will still change",
+                       "Move it after the next `advance`.");
                 return std::nullopt;
             }
             if (f.size() < 2) {

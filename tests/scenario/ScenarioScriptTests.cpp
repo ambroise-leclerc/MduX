@@ -113,6 +113,8 @@ const mdux::spec::Register everyRejectionPathHasItsCode{
                           {"no advance at all", "SCN008", "pointer down freeze\n"},
                           {"an expect before the first advance", "SCN008", "expect clock 03:04:05\n"},
                           {"a capture before the first advance", "SCN008", "capture c\n"},
+                          {"an expect after events not yet advanced", "SCN008", "advance\ntext A\nexpect refused 1\nadvance\n"},
+                          {"a capture after events not yet advanced", "SCN008", "advance\npointer down freeze\ncapture c\nadvance\n"},
                       };
 
                       mdux::spec::Checks checks;
@@ -242,6 +244,41 @@ const mdux::spec::Register theEmitterRejectsAMalformedDocument{
                           std::ranges::any_of(diags, [](const cli::Diagnostic& d) { return d.code == "SCE002"; });
                       checks.expect(!outputs.has_value() && sawSce002,
                                     std::format("refused with SCE002, first {}", firstCode(diags)));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register theEmitterRejectsAWrongTypedOperand{
+    "mdux-scenarioemit refuses a scenario.json whose expectation operand is the wrong type",
+    "evidence-unit",
+    [] {
+        return speclab::Test("scenario-emit-wrong-typed-operand")
+            .Given("the committed scenario.json with its overflow value turned into a string", [] {})
+            .When("renderScenario() runs on it", [] {})
+            .Then("it fails rather than silently defaulting the obligation",
+                  [] {
+                      mdux::spec::Checks checks;
+                      std::ifstream     in{repoRoot() / "generated/scenario/endoscope-monitor-basics/scenario.json",
+                                       std::ios::binary};
+                      std::string       doc{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+                      const std::string from = "\"value\": false";
+                      const auto        at   = doc.find(from);
+                      checks.expect(at != std::string::npos, "the overflow expectation is where the test expects it");
+                      if (at != std::string::npos) {
+                          doc.replace(at, from.size(), "\"value\": \"false\"");
+                          const std::filesystem::path bad =
+                              std::filesystem::temp_directory_path() / "mdux-scenario-wrong-typed.json";
+                          {
+                              std::ofstream out{bad, std::ios::binary | std::ios::trunc};
+                              out << doc;
+                          }
+                          std::vector<cli::Diagnostic> diags;
+                          auto                         outputs = sc::renderScenario(bad, diags);
+                          std::filesystem::remove(bad);
+                          checks.expect(!outputs.has_value() && !diags.empty(),
+                                        std::format("refused, first {}", firstCode(diags)));
+                      }
                       checks.raise();
                   })
             .Execute();

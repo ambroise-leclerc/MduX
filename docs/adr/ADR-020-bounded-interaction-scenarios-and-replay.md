@@ -103,10 +103,12 @@ hand-written parser like the `.medui` component-body parser — TrustSC's scenar
 
 **Batching and settling (ADR-018 clause 6).** Events queued between two `advance` lines are one
 batch. `advance N` runs N `updateMonitor()` calls (the first consumes the batch, the rest run
-empty). An `expect` or `capture` after an `advance` checks the state **that advance settled** —
-state bound after the batch, so a check never sees unresolved input. Events after the last
-`advance`, an `expect` or `capture` before the first `advance`, and a scenario with no `advance`
-at all, are refused (`SCN008`).
+empty). An `expect` or `capture` must directly follow an `advance` (or another `expect` / `capture`)
+and checks the state **that advance settled** — state bound after the batch, so a check never sees
+unresolved input. Refused (`SCN008`, and structurally by `CompiledScenario::validate()`): events
+after the last `advance`; an `expect` or `capture` before the first `advance`; an `expect` or
+`capture` wedged between queued events and their `advance` (it would check state a pending batch
+will still change); a scenario with no `advance` at all.
 
 **The typed expectation vocabulary.** `clock`, `field "<value>" [caret N]`, `refused N`,
 `action <node> <SystemEvent> <REQ-ID>`, `button <node> <source>`, `reading <node> <int>`,

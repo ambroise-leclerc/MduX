@@ -279,6 +279,7 @@ enum class ScenarioError : std::uint8_t {
     TooManyRequirements,       ///< more than `maxScenarioRequirements`
     NoAdvance,                 ///< a scenario that never advances a batch verifies nothing
     ExpectationBeforeAdvance,  ///< an `Expect` or `Capture` before the first `Advance`
+    ExpectationInEventBatch,   ///< an `Expect` or `Capture` after events queued since the last `Advance`
     MalformedExpectation,      ///< an `Expect` step whose `kind` is `Unspecified`
     CaptureNameMismatch,       ///< a `Capture` step's name is absent from `captureNames`, or vice versa
     DuplicateCaptureName,      ///< two `captureNames` entries are equal
@@ -296,6 +297,7 @@ enum class ScenarioError : std::uint8_t {
         case ScenarioError::TooManyRequirements:      return "the scenario cites more requirements than the bound allows";
         case ScenarioError::NoAdvance:                return "the scenario never advances a batch, so it verifies nothing";
         case ScenarioError::ExpectationBeforeAdvance: return "an expectation or capture precedes the first advance";
+        case ScenarioError::ExpectationInEventBatch:  return "an expectation or capture follows events that have not been advanced";
         case ScenarioError::MalformedExpectation:     return "an expect step carries no expectation kind";
         case ScenarioError::CaptureNameMismatch:      return "a capture step and the capture-name list disagree";
         case ScenarioError::DuplicateCaptureName:     return "two capture names are equal";
@@ -355,8 +357,9 @@ struct CompiledScenario {
             }
         }
 
-        std::size_t expectations = 0;
-        std::size_t advances     = 0;
+        std::size_t expectations       = 0;
+        std::size_t advances           = 0;
+        bool        eventsSinceAdvance = false;
         for (const ScenarioStep& step : steps) {
             switch (step.kind) {
                 case StepKind::Advance:
@@ -364,6 +367,7 @@ struct CompiledScenario {
                         return mdux::core::err(ScenarioError::ZeroFrameAdvance);
                     }
                     ++advances;
+                    eventsSinceAdvance = false;
                     break;
                 case StepKind::Expect:
                     if (step.expect.kind == ExpectKind::Unspecified) {
@@ -372,11 +376,17 @@ struct CompiledScenario {
                     if (advances == 0) {
                         return mdux::core::err(ScenarioError::ExpectationBeforeAdvance);
                     }
+                    if (eventsSinceAdvance) {
+                        return mdux::core::err(ScenarioError::ExpectationInEventBatch);
+                    }
                     ++expectations;
                     break;
                 case StepKind::Capture:
                     if (advances == 0) {
                         return mdux::core::err(ScenarioError::ExpectationBeforeAdvance);
+                    }
+                    if (eventsSinceAdvance) {
+                        return mdux::core::err(ScenarioError::ExpectationInEventBatch);
                     }
                     if (!nameListed(step.capture)) {
                         return mdux::core::err(ScenarioError::CaptureNameMismatch);
@@ -386,6 +396,7 @@ struct CompiledScenario {
                 case StepKind::Key:
                 case StepKind::Text:
                 case StepKind::Focus:
+                    eventsSinceAdvance = true;
                     break;
             }
         }
