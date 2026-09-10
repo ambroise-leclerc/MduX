@@ -6,6 +6,19 @@ module;
 
 #include <vulkan/vulkan.h>
 
+// Included in the global module fragment so the class lands in the global module (its one inline
+// definition then ODR-merges with the copy `ScenarioRun.cpp` sees, rather than clashing). It names
+// `<vulkan/vulkan.h>` types and these standard-library ones; `import std;` in the purview is too
+// late for a global-module-fragment header, so they are spelled here.
+#include <algorithm>
+#include <cstdint>
+#include <iterator>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "HeadlessDevice.hpp"
+
 module mdux.tools.verify.driver;
 
 import std;
@@ -23,6 +36,7 @@ import mdux.shader.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.package;
+import mdux.tools.verify.artifacts;
 import mdux.tools.verify.diff;
 import mdux.verify;
 
@@ -67,45 +81,6 @@ void warn(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path
                                           .fixHint  = {}});
 }
 
-[[nodiscard]] std::optional<std::vector<std::byte>> readBytes(const std::filesystem::path& path) {
-    std::ifstream file{path, std::ios::binary | std::ios::ate};
-    if (!file) {
-        return std::nullopt;
-    }
-    const std::streamoff size = file.tellg();
-    if (size < 0 || !file.seekg(0)) {
-        return std::nullopt;
-    }
-    std::vector<std::byte> bytes(static_cast<std::size_t>(size));
-    if (size > 0) {
-        file.read(reinterpret_cast<char*>(bytes.data()), size);
-        if (!file) {
-            return std::nullopt;
-        }
-    }
-    return bytes;
-}
-
-[[nodiscard]] std::optional<std::string> readText(const std::filesystem::path& path) {
-    auto bytes = readBytes(path);
-    if (!bytes.has_value()) {
-        return std::nullopt;
-    }
-    if (bytes->empty()) {
-        return std::string{};
-    }
-    return std::string{reinterpret_cast<const char*>(bytes->data()), bytes->size()};
-}
-
-/// The lowercase-hex digest of already-read artifact text, spelled the way every other evidence
-/// record spells one. Taken from the bytes the run actually parsed rather than by re-reading the
-/// file, so what the artifact names is what the verification used.
-[[nodiscard]] std::string hexDigest(std::string_view text) {
-    const auto bytes  = std::as_bytes(std::span{text.data(), text.size()});
-    const auto digest = mdux::evidence::toHex(mdux::evidence::sha256(bytes));
-    return std::string{digest.data(), digest.size()};
-}
-
 [[nodiscard]] bool exactMembers(const json::Value& value, std::initializer_list<std::string_view> expected) {
     if (value.kind() != json::Value::Kind::Object || value.members().size() != expected.size()) {
         return false;
@@ -144,120 +119,6 @@ void warn(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path
         return std::nullopt;
     }
     return static_cast<std::int32_t>(signedValue);
-}
-
-struct OwnedGolden {
-    std::string              nodeId;
-    mdux::medui::NodeRect    bounds{};
-    std::string              textKey;
-    std::string              colorToken;
-    std::vector<mv::CvCheck> checks;
-
-    [[nodiscard]] mv::GoldenEntry view() const noexcept {
-        return mv::GoldenEntry{.nodeId = nodeId, .bounds = bounds, .textKey = textKey, .colorToken = colorToken, .cvChecks = checks};
-    }
-};
-
-[[nodiscard]] std::optional<std::vector<OwnedGolden>>
-readGoldens(const std::filesystem::path& path, std::string& digestOut, std::vector<cli::Diagnostic>& diagnostics) {
-    const auto text = readText(path);
-    if (!text.has_value()) {
-        report(diagnostics, path, "VUI002", "cannot read goldens.json");
-        return std::nullopt;
-    }
-    digestOut = hexDigest(*text);
-    auto root = json::parse(*text);
-    if (!root.has_value() || root->kind() != json::Value::Kind::Array) {
-        report(diagnostics, path, "VUI003", "goldens.json is not a canonical JSON array");
-        return std::nullopt;
-    }
-    auto canonical = json::write(*root);
-    if (!canonical.has_value() || *canonical != *text) {
-        report(diagnostics,
-               path,
-               "VUI003",
-               "goldens.json is not in canonical committed form",
-               "Re-bake with mdux-bake-update; do not hand-edit generated artifacts.");
-        return std::nullopt;
-    }
-
-    std::vector<OwnedGolden> result;
-    result.reserve(root->elements().size());
-    std::unordered_set<std::string> ids;
-    for (const json::Value& item : root->elements()) {
-        const bool        hasText      = item.find("textKey") != nullptr;
-        const bool        hasColor     = item.find("colorToken") != nullptr;
-        const std::size_t expectedSize = 3U + (hasText ? 1U : 0U) + (hasColor ? 1U : 0U);
-        const bool        knownMembers = item.kind() == json::Value::Kind::Object && item.members().size() == expectedSize && item.find("bounds") != nullptr
-                                  && item.find("cvChecks") != nullptr && item.find("nodeId") != nullptr
-                                  && std::ranges::all_of(item.members(), [](const json::Member& member) {
-                                         return member.key == "bounds" || member.key == "colorToken" || member.key == "cvChecks" || member.key == "nodeId"
-                                                || member.key == "textKey";
-                                     });
-        if (!knownMembers) {
-            report(diagnostics, path, "VUI003", "a golden entry has unknown, missing, or wrongly ordered members");
-            return std::nullopt;
-        }
-        const auto         nodeId = stringMember(item, "nodeId");
-        const json::Value* bounds = item.find("bounds");
-        const json::Value* checks = item.find("cvChecks");
-        if (!nodeId.has_value() || nodeId->empty() || bounds == nullptr || checks == nullptr || !exactMembers(*bounds, {"height", "width", "x", "y"})
-            || checks->kind() != json::Value::Kind::Array) {
-            report(diagnostics, path, "VUI003", "a golden entry has an invalid nodeId, bounds, or cvChecks");
-            return std::nullopt;
-        }
-        const auto x      = integerMember(*bounds, "x");
-        const auto y      = integerMember(*bounds, "y");
-        const auto width  = integerMember(*bounds, "width");
-        const auto height = integerMember(*bounds, "height");
-        if (!x || !y || !width || !height) {
-            report(diagnostics, path, "VUI003", "a golden bound is not a 32-bit integer");
-            return std::nullopt;
-        }
-
-        OwnedGolden golden{
-            .nodeId     = std::string{*nodeId},
-            .bounds     = {.x = *x, .y = *y, .width = *width, .height = *height},
-            .textKey    = {},
-            .colorToken = {},
-            .checks     = {}
-        };
-        if (!ids.insert(golden.nodeId).second) {
-            report(diagnostics, path, "VUI003", "goldens.json contains duplicate nodeId '" + golden.nodeId + "'");
-            return std::nullopt;
-        }
-        if (hasText) {
-            const auto value = stringMember(item, "textKey");
-            if (!value.has_value()) {
-                report(diagnostics, path, "VUI003", "a golden textKey is not a string");
-                return std::nullopt;
-            }
-            golden.textKey = *value;
-        }
-        if (hasColor) {
-            const auto value = stringMember(item, "colorToken");
-            if (!value.has_value()) {
-                report(diagnostics, path, "VUI003", "a golden colorToken is not a string");
-                return std::nullopt;
-            }
-            golden.colorToken = *value;
-        }
-        for (const json::Value& checkValue : checks->elements()) {
-            auto name = checkValue.asString();
-            if (!name.has_value()) {
-                report(diagnostics, path, "VUI003", "a cvChecks entry is not a string");
-                return std::nullopt;
-            }
-            auto parsed = mv::parseCvCheck(*name);
-            if (!parsed.has_value()) {
-                report(diagnostics, path, "VUI003", "goldens.json names unknown check '" + std::string{*name} + "'");
-                return std::nullopt;
-            }
-            golden.checks.push_back(*parsed);
-        }
-        result.push_back(std::move(golden));
-    }
-    return result;
 }
 
 /**
@@ -465,329 +326,6 @@ struct TextGround {
     return TextGround{.color = mv::blend(under, field, 255), .composites = 1};
 }
 
-struct ShaderAssets {
-    mdux::shader::ShaderPackage           package;
-    std::vector<std::byte>                sidecar;
-    std::vector<mdux::shader::ModuleView> modules;
-    std::string                           sha256;  ///< of package.json, for #254's artifact
-
-    [[nodiscard]] mdux::shader::PackageView view() const noexcept {
-        return {.id = package.header.id, .spirv = sidecar, .modules = modules, .descriptors = package.descriptors, .pushConstants = package.pushConstants};
-    }
-};
-
-[[nodiscard]] std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
-    const auto packagePath = artifactRoot / "shader" / "mdux-ui" / "package.json";
-    auto       text        = readText(packagePath);
-    if (!text) {
-        report(diagnostics, packagePath, "VUI005", "cannot read the committed mdux-ui shader package");
-        return std::nullopt;
-    }
-    auto package = mdux::shader::ShaderPackage::parse(*text);
-    if (!package.has_value()) {
-        report(diagnostics, packagePath, "VUI005", "invalid mdux-ui shader package: " + std::string{mdux::shader::describe(package.error())});
-        return std::nullopt;
-    }
-    auto canonical = package->write();
-    if (!canonical.has_value() || *canonical != *text) {
-        report(diagnostics, packagePath, "VUI005", "mdux-ui package.json is not canonical");
-        return std::nullopt;
-    }
-    const auto sidecarPath = packagePath.parent_path() / package->sidecarPath;
-    auto       sidecar     = readBytes(sidecarPath);
-    if (!sidecar || sidecar->size() != package->sidecarByteLength || mdux::evidence::sha256(*sidecar) != package->sidecarSha256) {
-        report(diagnostics, sidecarPath, "VUI005", "the mdux-ui shader sidecar does not match package.json");
-        return std::nullopt;
-    }
-    ShaderAssets assets{.package = std::move(*package), .sidecar = std::move(*sidecar), .modules = {}, .sha256 = hexDigest(*text)};
-    assets.modules.reserve(assets.package.modules.size());
-    for (const auto& module : assets.package.modules) {
-        if (module.byteOffset > std::numeric_limits<std::size_t>::max() || module.byteLength > std::numeric_limits<std::size_t>::max()) {
-            report(diagnostics, packagePath, "VUI005", "a shader module range does not fit this host");
-            return std::nullopt;
-        }
-        assets.modules.push_back({.id         = module.id,
-                                  .stage      = module.stage,
-                                  .entryPoint = module.entryPoint,
-                                  .byteOffset = static_cast<std::size_t>(module.byteOffset),
-                                  .byteLength = static_cast<std::size_t>(module.byteLength)});
-    }
-    return assets;
-}
-
-struct LocaleAssets {
-    std::string             locale;
-    std::string             textJson;
-    mdux::text::TextPackage text;
-    std::vector<std::byte>  runs;
-    std::string             fontJson;
-    mdux::font::FontPackage font;
-    std::vector<std::byte>  atlas;
-};
-
-struct ImageAssets {
-    std::string               imageJson;
-    mdux::image::ImagePackage image;
-    std::vector<std::byte>    pixels;
-};
-
-[[nodiscard]] std::optional<ImageAssets>
-loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
-    const auto packagePath = artifactRoot / "image" / approval.packageId / "package.json";
-    auto       imageJson   = readText(packagePath);
-    if (!imageJson) {
-        report(diagnostics, packagePath, "VUI006", "cannot read approved image package");
-        return std::nullopt;
-    }
-    auto image = mdux::image::ImagePackage::parse(*imageJson);
-    if (!image.has_value()) {
-        report(diagnostics, packagePath, "VUI006", "invalid approved image package: " + std::string{mdux::image::describe(image.error())});
-        return std::nullopt;
-    }
-    const auto canonical = image->write();
-    if (!canonical.has_value() || *canonical != *imageJson || image->header.id != approval.packageId || image->width != approval.width
-        || image->height != approval.height || mdux::evidence::sha256(std::as_bytes(std::span{*imageJson})) != approval.packageSha256) {
-        report(diagnostics, packagePath, "VUI006", "approved image identity, extent, digest, or canonical bytes disagree with the screen manifest");
-        return std::nullopt;
-    }
-    const auto pixelsPath = packagePath.parent_path() / image->sidecarPath;
-    auto       pixels     = readBytes(pixelsPath);
-    if (!pixels || pixels->size() != image->sidecarByteLength || mdux::evidence::sha256(*pixels) != image->sidecarSha256) {
-        report(diagnostics, pixelsPath, "VUI006", "image sidecar does not match its package");
-        return std::nullopt;
-    }
-    return ImageAssets{.imageJson = std::move(*imageJson), .image = std::move(*image), .pixels = std::move(*pixels)};
-}
-
-[[nodiscard]] std::optional<LocaleAssets>
-loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
-    const auto textPath = artifactRoot / "text" / approval.packageId / "package.json";
-    auto       textJson = readText(textPath);
-    if (!textJson) {
-        report(diagnostics, textPath, "VUI006", "cannot read approved text package for locale '" + std::string{approval.locale} + "'");
-        return std::nullopt;
-    }
-    auto text = mdux::text::TextPackage::parse(*textJson);
-    if (!text.has_value()) {
-        report(diagnostics, textPath, "VUI006", "invalid approved text package: " + std::string{mdux::text::describe(text.error())});
-        return std::nullopt;
-    }
-    auto canonicalText = text->write();
-    if (!canonicalText.has_value() || *canonicalText != *textJson || text->header.id != approval.packageId || text->locale != approval.locale) {
-        report(diagnostics, textPath, "VUI006", "approved text package identity or canonical bytes disagree with the screen manifest");
-        return std::nullopt;
-    }
-    const auto runsPath = textPath.parent_path() / text->sidecarPath;
-    auto       runs     = readBytes(runsPath);
-    if (!runs || runs->size() != text->sidecarByteLength || mdux::evidence::sha256(*runs) != text->sidecarSha256) {
-        report(diagnostics, runsPath, "VUI006", "text sidecar does not match its package");
-        return std::nullopt;
-    }
-
-    const auto fontPath = artifactRoot / "font" / text->atlasId / "package.json";
-    auto       fontJson = readText(fontPath);
-    if (!fontJson) {
-        report(diagnostics, fontPath, "VUI006", "cannot read the font package named by the text package");
-        return std::nullopt;
-    }
-    auto font = mdux::font::FontPackage::parse(*fontJson);
-    if (!font.has_value()) {
-        report(diagnostics, fontPath, "VUI006", "invalid font package: " + std::string{mdux::font::describe(font.error())});
-        return std::nullopt;
-    }
-    auto canonicalFont = font->write();
-    if (!canonicalFont.has_value() || *canonicalFont != *fontJson || font->id != text->atlasId
-        || std::ranges::find(font->locales, approval.locale) == font->locales.end()) {
-        report(diagnostics, fontPath, "VUI006", "font identity, locale approval, or canonical bytes disagree with the text package");
-        return std::nullopt;
-    }
-    const auto atlasPath = fontPath.parent_path() / font->atlas.path;
-    auto       atlas     = readBytes(atlasPath);
-    if (!atlas || atlas->size() != font->atlas.byteLength) {
-        report(diagnostics, atlasPath, "VUI006", "font atlas length does not match its package");
-        return std::nullopt;
-    }
-    const auto digest = mdux::evidence::toHex(mdux::evidence::sha256(*atlas));
-    if (std::string_view{digest.data(), digest.size()} != font->atlas.sha256) {
-        report(diagnostics, atlasPath, "VUI006", "font atlas digest does not match its package");
-        return std::nullopt;
-    }
-    return LocaleAssets{.locale   = std::string{approval.locale},
-                        .textJson = std::move(*textJson),
-                        .text     = std::move(*text),
-                        .runs     = std::move(*runs),
-                        .fontJson = std::move(*fontJson),
-                        .font     = std::move(*font),
-                        .atlas    = std::move(*atlas)};
-}
-
-class HeadlessDevice {
-public:
-    HeadlessDevice() noexcept {
-        initialise();
-    }
-    ~HeadlessDevice() {
-        if (device_ != VK_NULL_HANDLE)
-            vkDestroyDevice(device_, nullptr);
-        if (instance_ != VK_NULL_HANDLE)
-            vkDestroyInstance(instance_, nullptr);
-    }
-    HeadlessDevice(const HeadlessDevice&)            = delete;
-    HeadlessDevice& operator=(const HeadlessDevice&) = delete;
-
-    [[nodiscard]] bool available() const noexcept {
-        return device_ != VK_NULL_HANDLE;
-    }
-    [[nodiscard]] std::string_view reason() const noexcept {
-        return reason_;
-    }
-    [[nodiscard]] VkDevice device() const noexcept {
-        return device_;
-    }
-    [[nodiscard]] VkPhysicalDevice physicalDevice() const noexcept {
-        return physicalDevice_;
-    }
-    /// `VkPhysicalDeviceProperties.deviceName`, verbatim - the exact producer-scoped backend
-    /// identifier the derived evidence envelope records (#314). Empty before `initialise()` runs.
-    [[nodiscard]] std::string backendName() const noexcept {
-        if (physicalDevice_ == VK_NULL_HANDLE) {
-            return {};
-        }
-        VkPhysicalDeviceProperties properties{};
-        vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
-        return std::string{static_cast<const char*>(properties.deviceName)};
-    }
-    [[nodiscard]] VkQueue queue() const noexcept {
-        return queue_;
-    }
-    [[nodiscard]] std::uint32_t family() const noexcept {
-        return family_;
-    }
-
-private:
-    [[nodiscard]] static bool hasInstanceExtension(std::string_view wanted) noexcept {
-        std::uint32_t count = 0;
-        if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS)
-            return false;
-        std::vector<VkExtensionProperties> values(count);
-        if (vkEnumerateInstanceExtensionProperties(nullptr, &count, values.data()) != VK_SUCCESS)
-            return false;
-        return std::ranges::any_of(values, [wanted](const auto& value) {
-            return wanted == value.extensionName;
-        });
-    }
-
-    void initialise() noexcept {
-        const VkApplicationInfo  app{.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                                     .pNext              = nullptr,
-                                     .pApplicationName   = "mdux-verify-ui",
-                                     .applicationVersion = 1,
-                                     .pEngineName        = "MduX",
-                                     .engineVersion      = 1,
-                                     .apiVersion         = VK_API_VERSION_1_3};
-        std::vector<const char*> instanceExtensions;
-        VkInstanceCreateFlags    flags = 0;
-#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
-        if (hasInstanceExtension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
-            flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-            instanceExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-        }
-#endif
-        const VkInstanceCreateInfo info{.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-                                        .pNext                   = nullptr,
-                                        .flags                   = flags,
-                                        .pApplicationInfo        = &app,
-                                        .enabledLayerCount       = 0,
-                                        .ppEnabledLayerNames     = nullptr,
-                                        .enabledExtensionCount   = static_cast<std::uint32_t>(instanceExtensions.size()),
-                                        .ppEnabledExtensionNames = instanceExtensions.empty() ? nullptr : instanceExtensions.data()};
-        if (vkCreateInstance(&info, nullptr, &instance_) != VK_SUCCESS) {
-            reason_ = "vkCreateInstance failed: no Vulkan loader or usable ICD";
-            return;
-        }
-        std::uint32_t deviceCount = 0;
-        if (vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr) != VK_SUCCESS || deviceCount == 0) {
-            reason_ = "no Vulkan physical device";
-            return;
-        }
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        if (vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data()) != VK_SUCCESS) {
-            reason_ = "physical-device enumeration failed";
-            return;
-        }
-        physicalDevice_           = devices.front();
-        std::uint32_t familyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &familyCount, nullptr);
-        std::vector<VkQueueFamilyProperties> families(familyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &familyCount, families.data());
-        auto family = std::ranges::find_if(families, [](const auto& value) {
-            return (value.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-        });
-        if (family == families.end()) {
-            reason_ = "no graphics-capable Vulkan queue family";
-            return;
-        }
-        family_                                     = static_cast<std::uint32_t>(std::distance(families.begin(), family));
-        const float                        priority = 1.0F;
-        const VkDeviceQueueCreateInfo      queueInfo{.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                                     .pNext            = nullptr,
-                                                     .flags            = 0,
-                                                     .queueFamilyIndex = family_,
-                                                     .queueCount       = 1,
-                                                     .pQueuePriorities = &priority};
-        std::vector<VkExtensionProperties> extensions;
-        while (true) {
-            std::uint32_t extensionCount = 0;
-            if (vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, nullptr) != VK_SUCCESS) {
-                reason_ = "device-extension count enumeration failed";
-                return;
-            }
-            if (extensionCount == 0) {
-                extensions.clear();
-                break;
-            }
-            extensions.resize(extensionCount);
-            const VkResult enumerated = vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, extensions.data());
-            if (enumerated == VK_SUCCESS) {
-                extensions.resize(extensionCount);
-                break;
-            }
-            if (enumerated != VK_INCOMPLETE) {
-                reason_ = "device-extension enumeration failed";
-                return;
-            }
-        }
-        std::vector<const char*> enabled;
-        if (std::ranges::any_of(extensions, [](const auto& value) {
-                return std::string_view{value.extensionName} == "VK_KHR_portability_subset";
-            })) {
-            enabled.push_back("VK_KHR_portability_subset");
-        }
-        const VkDeviceCreateInfo deviceInfo{.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                                            .pNext                   = nullptr,
-                                            .flags                   = 0,
-                                            .queueCreateInfoCount    = 1,
-                                            .pQueueCreateInfos       = &queueInfo,
-                                            .enabledLayerCount       = 0,
-                                            .ppEnabledLayerNames     = nullptr,
-                                            .enabledExtensionCount   = static_cast<std::uint32_t>(enabled.size()),
-                                            .ppEnabledExtensionNames = enabled.empty() ? nullptr : enabled.data(),
-                                            .pEnabledFeatures        = nullptr};
-        if (vkCreateDevice(physicalDevice_, &deviceInfo, nullptr, &device_) != VK_SUCCESS) {
-            reason_ = "vkCreateDevice failed";
-            return;
-        }
-        vkGetDeviceQueue(device_, family_, 0, &queue_);
-    }
-
-    VkInstance       instance_{VK_NULL_HANDLE};
-    VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
-    VkDevice         device_{VK_NULL_HANDLE};
-    VkQueue          queue_{VK_NULL_HANDLE};
-    std::uint32_t    family_{0};
-    std::string_view reason_{};
-};
-
 [[nodiscard]] Outcome own(const mv::CheckOutcome& outcome) {
     return {.finding         = outcome.finding,
             .nodeId          = std::string{outcome.nodeId},
@@ -843,6 +381,159 @@ void recordFrame(VkCommandBuffer commandBuffer, void* context) {
 }
 
 }  // namespace
+
+// `OwnedGolden` is defined in the module interface (it is exported for the scenario-capture driver,
+// #321). This is its reader's implementation; the anonymous-namespace helpers it calls
+// (`readText`, `report`, `hexDigest`, `json`, `stringMember`, …) remain visible here.
+std::optional<std::vector<OwnedGolden>>
+readGoldens(const std::filesystem::path& path, std::string& digestOut, std::vector<cli::Diagnostic>& diagnostics) {
+    const auto text = readText(path);
+    if (!text.has_value()) {
+        report(diagnostics, path, "VUI002", "cannot read goldens.json");
+        return std::nullopt;
+    }
+    digestOut = hexDigest(*text);
+    auto root = json::parse(*text);
+    if (!root.has_value() || root->kind() != json::Value::Kind::Array) {
+        report(diagnostics, path, "VUI003", "goldens.json is not a canonical JSON array");
+        return std::nullopt;
+    }
+    auto canonical = json::write(*root);
+    if (!canonical.has_value() || *canonical != *text) {
+        report(diagnostics,
+               path,
+               "VUI003",
+               "goldens.json is not in canonical committed form",
+               "Re-bake with mdux-bake-update; do not hand-edit generated artifacts.");
+        return std::nullopt;
+    }
+
+    std::vector<OwnedGolden> result;
+    result.reserve(root->elements().size());
+    std::unordered_set<std::string> ids;
+    for (const json::Value& item : root->elements()) {
+        const bool        hasText      = item.find("textKey") != nullptr;
+        const bool        hasColor     = item.find("colorToken") != nullptr;
+        const std::size_t expectedSize = 3U + (hasText ? 1U : 0U) + (hasColor ? 1U : 0U);
+        const bool        knownMembers = item.kind() == json::Value::Kind::Object && item.members().size() == expectedSize && item.find("bounds") != nullptr
+                                  && item.find("cvChecks") != nullptr && item.find("nodeId") != nullptr
+                                  && std::ranges::all_of(item.members(), [](const json::Member& member) {
+                                         return member.key == "bounds" || member.key == "colorToken" || member.key == "cvChecks" || member.key == "nodeId"
+                                                || member.key == "textKey";
+                                     });
+        if (!knownMembers) {
+            report(diagnostics, path, "VUI003", "a golden entry has unknown, missing, or wrongly ordered members");
+            return std::nullopt;
+        }
+        const auto         nodeId = stringMember(item, "nodeId");
+        const json::Value* bounds = item.find("bounds");
+        const json::Value* checks = item.find("cvChecks");
+        if (!nodeId.has_value() || nodeId->empty() || bounds == nullptr || checks == nullptr || !exactMembers(*bounds, {"height", "width", "x", "y"})
+            || checks->kind() != json::Value::Kind::Array) {
+            report(diagnostics, path, "VUI003", "a golden entry has an invalid nodeId, bounds, or cvChecks");
+            return std::nullopt;
+        }
+        const auto x      = integerMember(*bounds, "x");
+        const auto y      = integerMember(*bounds, "y");
+        const auto width  = integerMember(*bounds, "width");
+        const auto height = integerMember(*bounds, "height");
+        if (!x || !y || !width || !height) {
+            report(diagnostics, path, "VUI003", "a golden bound is not a 32-bit integer");
+            return std::nullopt;
+        }
+
+        OwnedGolden golden{
+            .nodeId     = std::string{*nodeId},
+            .bounds     = {.x = *x, .y = *y, .width = *width, .height = *height},
+            .textKey    = {},
+            .colorToken = {},
+            .checks     = {}
+        };
+        if (!ids.insert(golden.nodeId).second) {
+            report(diagnostics, path, "VUI003", "goldens.json contains duplicate nodeId '" + golden.nodeId + "'");
+            return std::nullopt;
+        }
+        if (hasText) {
+            const auto value = stringMember(item, "textKey");
+            if (!value.has_value()) {
+                report(diagnostics, path, "VUI003", "a golden textKey is not a string");
+                return std::nullopt;
+            }
+            golden.textKey = *value;
+        }
+        if (hasColor) {
+            const auto value = stringMember(item, "colorToken");
+            if (!value.has_value()) {
+                report(diagnostics, path, "VUI003", "a golden colorToken is not a string");
+                return std::nullopt;
+            }
+            golden.colorToken = *value;
+        }
+        for (const json::Value& checkValue : checks->elements()) {
+            auto name = checkValue.asString();
+            if (!name.has_value()) {
+                report(diagnostics, path, "VUI003", "a cvChecks entry is not a string");
+                return std::nullopt;
+            }
+            auto parsed = mv::parseCvCheck(*name);
+            if (!parsed.has_value()) {
+                report(diagnostics, path, "VUI003", "goldens.json names unknown check '" + std::string{*name} + "'");
+                return std::nullopt;
+            }
+            golden.checks.push_back(*parsed);
+        }
+        result.push_back(std::move(golden));
+    }
+    return result;
+}
+
+
+FrameEvaluation evaluateFrame(const mdux::medui::ScreenPackage&          screen,
+                              std::span<const mv::GoldenEntry>           goldens,
+                              mv::RenderScope                            scope,
+                              const mdux::medui::TextBinding*            binding,
+                              std::span<const std::byte>                 atlas,
+                              const mv::FramebufferView&                 frame) {
+    FrameEvaluation result;
+    const bool      hasText = binding != nullptr;
+
+    for (const mv::GoldenEntry& golden : goldens) {
+        // The caller's pre-render pass rejects both of these, so reaching either here means that
+        // validation and rendering have drifted apart. Say so rather than dereferencing null.
+        const auto* node = screen.find(golden.nodeId);
+        if (node == nullptr) {
+            result.failure = "validated golden node '" + std::string{golden.nodeId} + "' vanished before render";
+            return result;
+        }
+        const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node), goldenCompositesFor(*node, hasText));
+        if (!expectation.has_value()) {
+            result.failure = "validated golden expectation for node '" + std::string{golden.nodeId}
+                             + "' became unconstructible before render: " + std::string{mv::describe(expectation.error())};
+            return result;
+        }
+        for (mv::CvCheck check : golden.cvChecks) {
+            const auto checked = check == mv::CvCheck::Bounds ? mv::goldenBounds(frame, *expectation) : mv::colorHash(frame, *expectation);
+            result.outcomes.push_back(own(checked));
+        }
+    }
+
+    if (hasText) {
+        for (const auto& node : screen.nodes) {
+            if (mv::textKeyOf(node).empty())
+                continue;
+            const TextGround textGround  = textGroundFor(screen, node);
+            const auto       expectation = mv::TextExpectation::create(screen, node, *binding, atlas, scope, textGround.color, textGround.composites);
+            if (!expectation.has_value()) {
+                result.failure = "validated text expectation for node '" + std::string{node.id}
+                                 + "' became unconstructible before render: " + std::string{mv::describe(expectation.error())};
+                return result;
+            }
+            result.outcomes.push_back(own(mv::inkContainment(frame, *expectation)));
+            result.outcomes.push_back(own(mv::localizedTextPresence(frame, *expectation)));
+        }
+    }
+    return result;
+}
 
 PlanResult enumerate(const mdux::medui::ScreenPackage& screen, std::span<const mv::GoldenEntry> goldens) {
     PlanResult                    result;
@@ -1142,37 +833,20 @@ RunResult run(const std::filesystem::path& requestedScreenDirectory, const RunOp
         // it is drawn on rather than every failure the run has accumulated.
         const std::size_t scopeOutcomeBase = result.outcomes.size();
 
-        for (const mv::GoldenEntry& golden : goldens) {
-            // The pre-render pass above rejects both of these, so reaching either here means that
-            // validation and rendering have drifted apart. Say so rather than dereferencing null.
-            const auto* node = screen.find(golden.nodeId);
-            if (node == nullptr) {
-                report(result.diagnostics, packagePath, "VUI008", "validated golden node '" + std::string{golden.nodeId} + "' vanished before render");
-                return result;
-            }
-            const auto expectation = mv::GoldenExpectation::create(golden, screen, scope, groundFor(screen, *node), goldenCompositesFor(*node, hasText));
-            if (!expectation.has_value()) {
-                report(result.diagnostics,
-                       packagePath,
-                       "VUI008",
-                       "validated golden expectation for node '" + std::string{golden.nodeId}
-                           + "' became unconstructible before render: " + std::string{mv::describe(expectation.error())});
-                return result;
-            }
-            for (mv::CvCheck check : golden.cvChecks) {
-                const auto checked = check == mv::CvCheck::Bounds ? mv::goldenBounds(*framebuffer, *expectation) : mv::colorHash(*framebuffer, *expectation);
-                result.outcomes.push_back(own(checked));
-            }
+        // The golden and mandatory-text obligations for this scope, against this frame. Shared
+        // verbatim with the scenario-capture driver (#321) as `evaluateFrame()`.
+        auto evaluated = evaluateFrame(screen,
+                                       goldens,
+                                       scope,
+                                       hasText ? &*binding : nullptr,
+                                       hasText ? std::span<const std::byte>{locale->atlas} : std::span<const std::byte>{},
+                                       *framebuffer);
+        if (evaluated.failure.has_value()) {
+            report(result.diagnostics, packagePath, "VUI008", std::move(*evaluated.failure));
+            return result;
         }
-        if (hasText) {
-            for (const auto& node : screen.nodes) {
-                if (mv::textKeyOf(node).empty())
-                    continue;
-                const TextGround textGround = textGroundFor(screen, node);
-                const auto expectation = mv::TextExpectation::create(screen, node, *binding, locale->atlas, scope, textGround.color, textGround.composites);
-                result.outcomes.push_back(own(mv::inkContainment(*framebuffer, *expectation)));
-                result.outcomes.push_back(own(mv::localizedTextPresence(*framebuffer, *expectation)));
-            }
+        for (Outcome& outcome : evaluated.outcomes) {
+            result.outcomes.push_back(std::move(outcome));
         }
 
         // Written here rather than after the loop, because `pixels` is the target's own storage and

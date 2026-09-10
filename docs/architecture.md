@@ -123,7 +123,8 @@ performs no checking and confers no compliance.
 | `MduXImageBakeLib` | `tools/image/` | `mdux-imagebake`; its dependency-free QOI decoder is host-only and writes a committed straight-alpha RGBA8 sidecar (#256) |
 | `MduXMeduiLib` | `tools/medui/` | the `.medui` compiler (#15); the shared `MEDUI-E` diagnostic registry (#191), parser (#192), component/theme/locale semantic analyzer (#193), integer-only bounded layout solver (#194), the text-budget check that measures resolved boxes against the widest approved translation (#195), and the golden references that say where safety-critical content must appear (#196), the canonical package with its two C++ emitters (#197), the compiler driver behind `mdux-meduic` (#198), and the machine-readable contract `--grammar` and `--explain` publish (#263) |
 | `MduXScenarioLib` | `tools/scenario/` | the interaction-scenario compiler (#319, ADR-020): the closed line-oriented `.scenario` parser with `SCN0NN` diagnostics, `mdux-scenariobake` (a `.scenario` → committed `generated/scenario/<id>/` bundle, byte-verified like a screen), and `mdux-scenarioemit` (that bundle → `constexpr` `mdux.medui.scenario` C++). Reads the committed screen `package.json` to resolve `pointer <node>` directives. Also hosts `mdux.tools.scenario.trace` (#320): the host-side `renderTraceText()` that turns a `ReplayReport` + `CompiledScenario` into a deterministic step-by-step expected/observed trace |
-| `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses |
+| `MduXVerifyUiLib` | `tools/verify/` | `mdux-verify-ui` (#253): committed-artifact loading, complete golden/text obligation planning, headless offscreen rendering once per locale, owning outcomes and distinct check-failed/run-impossible statuses. Exports `evaluateFrame()` (the per-scope golden/text check pass), `readGoldens()`, the `mdux.tools.verify.artifacts` module (shader/text/font/image loaders + digest helpers) and the shared `HeadlessDevice.hpp`, all reused unchanged by the scenario-capture verifier |
+| `MduXVerifyScenarioLib` | `tools/verify-scenario/` | `mdux-verify-scenario` / `mdux-verify-scenario-bake` (#321, ADR-021): the dynamic rendered-evidence gate. Replays the committed `.scenario` through the assembled `updateMonitor()` loop (linking the examples-zone glue) per approved locale, renders every `capture` frame through the production offscreen adapter, and commits `scenario-verification.json` — one binding obligation per `Expect` step per locale, one rendered obligation per golden/text check per capture per locale (via `evaluateFrame()`, minus golden `ColorHash` on a node whose content the scenario drives, plus `mdux.verify::regionPainted()` on that node), one capture obligation per marker. The `CompiledScenario`, the screen and every package are read from `generated/` and used directly for the replay and render, so the digest recorded is of the bytes replayed; an internally inconsistent edit fails a binding obligation, and `evidence.scenario.<id>`'s byte comparison catches a same-id edit that stays consistent but never re-baked. Missing / duplicate / surplus outcomes fail the reconcile; per-backend capture digests stay diagnostic |
 
 Host tools parse untrusted input, so they are deliberately outside the governed zone. They are
 never linked into `MduXCore` or `MduX` and are absent from the install/export set.
@@ -195,7 +196,7 @@ Eight artifacts are committed today:
 | `generated/text/endoscope-monitor-fr-fr/` | `mdux-textbake` | `runs.bin` |
 | `generated/image/brand-mark/` | `mdux-imagebake` | `pixels.rgba` |
 | `generated/screen/endoscope-monitor/` | `mdux-meduic`, then `mdux-verify-bake` | `package.json` + `goldens.json` + `verification.json` |
-| `generated/scenario/endoscope-monitor-basics/` | `mdux-scenariobake` | `scenario.json` |
+| `generated/scenario/endoscope-monitor-basics/` | `mdux-scenariobake`, then `mdux-verify-scenario-bake` | `scenario.json` + `scenario-verification.json` |
 
 The screen is the one entry whose payload is not opaque bytes, and ADR-012 explains why: a screen
 cannot bake vertices, because five of the eleven components in the dictionary — `NumericDisplay`,
@@ -355,6 +356,26 @@ never reached fails the run. `examples/support/ScenarioReplay.hpp` is the `updat
 `MedicalScreenMonitorExample --replay=<id>` renders one offscreen frame per `capture`
 (`example.monitor.replay`); the GPU-free replay path is covered by `scenario_spec` and a full-loop
 no-alloc case in `scenario_noheap_spec`.
+
+`mdux-verify-scenario` (#321, ADR-021) turns that replay into committed evidence. It links the
+`ScenarioReplay.hpp` / `MonitorApp.hpp` update-and-record glue and the lean `MonitorFrame.hpp` frame
+path, but embeds no compiled scenario or screen: it rebuilds the `CompiledScenario` from
+`scenario.json` with `mdux.tools.scenario::readScenarioDoc()` and loads the screen, goldens, shader,
+per-locale text/font and image packages from `generated/` with the shared `mdux.tools.verify.artifacts`
+loaders — so the digest it records is of the bytes it actually replayed and rendered against. It
+attests that run, not source-to-recipe identity: an internally inconsistent edit fails a binding
+obligation here, while a same-id edit that stays consistent but never re-baked is a byte difference
+in `evidence.scenario.<id>`. For each `capture` it renders the settled frame through `mdux.render.offscreen` and
+discharges the screen's own golden and mandatory-text obligations against it —
+`mdux::tools::verify::evaluateFrame()`, factored unchanged out of the screen driver's per-scope
+check loop, minus golden `ColorHash` on a node whose content the scenario drives, plus
+`mdux.verify::regionPainted()` (governed, `mdux.local/region-painted`) on each such node so a
+scene-driven node that went blank is still caught — plus one binding obligation per `Expect` step
+and one capture obligation per marker. Missing, duplicate and surplus outcomes fail the reconcile
+before the artifact is written. `mdux-verify-scenario-bake` writes the findings to the committed,
+byte-verified `scenario-verification.json` (no measured pixel); a per-backend `rgba8-sha256` manifest
+and the capture PNGs are diagnostic attachments. `verify.scenario.<id>` gates the committed bundle on
+the GPU legs beside the retained `verify.screen.<id>`.
 
 `goldens.json` is a sidecar with a different consumer — #16's frame verifier, not the runtime — and a
 different rule. ADR-011 puts **every `@safety_critical` node and every node with an explicit

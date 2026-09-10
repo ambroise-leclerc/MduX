@@ -90,7 +90,7 @@ CODE_RE = re.compile(r'"([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*\d{3})"')
 OPTION_RE = re.compile(r'"(--[a-z][a-z-]*)(?:=|\\n|"| )')
 
 SINGLE_VALUE_KEYWORDS = ("KIND", "ID", "TOOL", "RECIPE")
-LIST_KEYWORDS = ("SOURCES", "OUTPUTS")
+LIST_KEYWORDS = ("SOURCES", "OUTPUTS", "THEN_TOOLS")
 
 
 def parse_bake_call(body: str) -> dict:
@@ -205,7 +205,17 @@ def artifacts_by_tool(root: Path) -> dict[str, list[dict]]:
         call = parse_bake_call(match.group("body"))
         tool = call.get("TOOL")
         if tool is not None:
-            record(tool, call, sorted(call.get("OUTPUTS", [])), call.get("KIND", ""))
+            outputs = sorted(call.get("OUTPUTS", []))
+            kind = call.get("KIND", "")
+            # `THEN_TOOLS` extends a bake into a sequence (the scenario bundle: `mdux-scenariobake`
+            # compiles it, then `mdux-verify-scenario-bake` renders every capture and adds
+            # scenario-verification.json). A manifest naming one tool would tell a consumer how to
+            # produce an incomplete bundle - the same reason the screen wrapper records both stages.
+            then_tools = call.get("THEN_TOOLS", [])
+            chain = [tool, *then_tools]
+            record(tool, call, outputs, kind, chain)
+            for follower in then_tools:
+                record(follower, call, outputs, kind, chain)
 
     wrapper = screen_wrapper(root)
     for match in SCREEN_RE.finditer(text):

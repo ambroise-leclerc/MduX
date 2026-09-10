@@ -1,0 +1,1138 @@
+{
+  "captures": [
+    "freeze-pressed",
+    "halt-activated"
+  ],
+  "id": "endoscope-monitor-basics",
+  "inputs": [
+    {
+      "id": "endoscope-monitor-basics",
+      "role": "scenarioPackage",
+      "sha256": "5b8fd9740cb581e1e6702a838da2d71381b170a1d41740d8f53a91b862b83fdf"
+    },
+    {
+      "id": "endoscope-monitor",
+      "role": "screenPackage",
+      "sha256": "87d2d8825f2f4661b003fd5426387e1e6d80fd8821a2269c2762259343bcfc04"
+    },
+    {
+      "id": "endoscope-monitor",
+      "role": "goldens",
+      "sha256": "3593736e5664d3795a3b6aa80c0ddf3d55bd3fa2e6b956a66083dba5809db92d"
+    },
+    {
+      "id": "mdux-ui",
+      "role": "shaderPackage",
+      "sha256": "5389d2cdffeff9f971b925607a9be82d18cec559336fd420d8a440bd993cfb71"
+    },
+    {
+      "id": "endoscope-monitor-en-us",
+      "locale": "en-US",
+      "role": "textPackage",
+      "sha256": "e260e350260598444907e04980b3ad27e263dcbcc1d3c2c8e5335bf1f0e6e0bf"
+    },
+    {
+      "id": "dejavu-ui",
+      "locale": "en-US",
+      "role": "fontPackage",
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
+    },
+    {
+      "id": "endoscope-monitor-fr-fr",
+      "locale": "fr-FR",
+      "role": "textPackage",
+      "sha256": "f9abfd5a63e940443bd8f9a4c64003e84355d2be4173d9ffbb5634212bf99bc8"
+    },
+    {
+      "id": "dejavu-ui",
+      "locale": "fr-FR",
+      "role": "fontPackage",
+      "sha256": "36db1eed9e397ebf057f703116f683a5b47dd6d5e8ac9b39a2445cdc42b139e7"
+    },
+    {
+      "id": "brand-mark",
+      "role": "imagePackage",
+      "sha256": "f778b0361c8fd93b577094e505a328115f6d306451da0648c7e63d81e722eb22"
+    }
+  ],
+  "kind": "scenario",
+  "outcomes": [
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "ColorHash",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "wall-clock",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "classifier-state",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "ColorHash",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "wall-clock",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "classifier-state",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "expectKind": "clock",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 1
+    },
+    {
+      "expectKind": "state",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 2
+    },
+    {
+      "expectKind": "reading",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 3
+    },
+    {
+      "expectKind": "latch",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 4
+    },
+    {
+      "expectKind": "overflow",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 5
+    },
+    {
+      "expectKind": "field",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 12
+    },
+    {
+      "expectKind": "refused",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 13
+    },
+    {
+      "expectKind": "button",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 17
+    },
+    {
+      "expectKind": "latch",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 18
+    },
+    {
+      "expectKind": "action",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 23
+    },
+    {
+      "expectKind": "state",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 26
+    },
+    {
+      "expectKind": "clock",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "en-US",
+      "step": 27
+    },
+    {
+      "capture": "freeze-pressed",
+      "finding": "Held",
+      "kind": "capture",
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "finding": "Held",
+      "kind": "capture",
+      "scope": "en-US"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "ColorHash",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "freeze-pressed",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "wall-clock",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "classifier-state",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "tint-composition",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "ColorHash",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/tint-composition",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "candidateProfile": {
+        "check": {
+          "id": "extent-equality",
+          "version": 1
+        },
+        "profile": {
+          "id": "MEDUI-PROFILE-RENDERED",
+          "version": 1
+        }
+      },
+      "capture": "halt-activated",
+      "check": "Bounds",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/extent-equality",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "screen-title",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "freeze",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "InkContainment",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-containment",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "LocalizedTextPresence",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "emergency-halt",
+      "observationProfile": {
+        "id": "mdux.local/ink-coverage",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "wall-clock",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "classifier-state",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "insufflation-pressure",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "ecg-lead-ii",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "expectKind": "clock",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 1
+    },
+    {
+      "expectKind": "state",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 2
+    },
+    {
+      "expectKind": "reading",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 3
+    },
+    {
+      "expectKind": "latch",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 4
+    },
+    {
+      "expectKind": "overflow",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 5
+    },
+    {
+      "expectKind": "field",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 12
+    },
+    {
+      "expectKind": "refused",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 13
+    },
+    {
+      "expectKind": "button",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 17
+    },
+    {
+      "expectKind": "latch",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 18
+    },
+    {
+      "expectKind": "action",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 23
+    },
+    {
+      "expectKind": "state",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 26
+    },
+    {
+      "expectKind": "clock",
+      "finding": "Held",
+      "kind": "binding",
+      "scope": "fr-FR",
+      "step": 27
+    },
+    {
+      "capture": "freeze-pressed",
+      "finding": "Held",
+      "kind": "capture",
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "finding": "Held",
+      "kind": "capture",
+      "scope": "fr-FR"
+    }
+  ],
+  "renderScopes": [
+    "en-US",
+    "fr-FR"
+  ],
+  "schemaVersion": 1
+}

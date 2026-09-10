@@ -284,6 +284,7 @@ bare `string_view` — so the module graph stays acyclic.
 - [ADR-016](ADR-016-locally-versioned-observation-profiles.md) / [ADR-018](ADR-018-bounded-input-and-update-order.md)
   — the implementation-local stance this mirrors
 - [ADR-019](ADR-019-windowed-presentation-and-input-adapter.md) — the adapter the monitor replay reuses
+- [ADR-021](ADR-021-dynamic-scenario-capture-evidence.md) — the dynamic-frame evidence gate (#321)
 - [Prospective requirements](../parity/requirements.md) — PAR-REQ-005, PAR-REQ-008
 - [Pinned behavior matrix](../parity/behavior-matrix.md) — the scenario-replay comparison
 - Issues [#309](https://github.com/ambroise-leclerc/MduX/issues/309),
@@ -305,10 +306,14 @@ bare `string_view` — so the module graph stays acyclic.
   `template:` — and trace order — the ring's `oldest`/`count` — are explicit). The
   cross-implementation half stays [#335](https://github.com/ambroise-leclerc/MduX/issues/335); the
   viewport row/bin half stays [#322](https://github.com/ambroise-leclerc/MduX/issues/322).
-- **Still open**: the critical-action host execution / audit policy (PAR-REQ-006, domain review);
-  the dynamic-frame evidence gate with committed capture digests (#321). PAR-REQ-009/010 keep
-  their own status. The replay runner, its host trace and the monitor `--replay` wiring were
-  delivered by #320.
+- **Still open**: the critical-action host execution / audit policy (PAR-REQ-006, domain review).
+  PAR-REQ-009/010 keep their own status. The replay runner, its host trace and the monitor
+  `--replay` wiring were delivered by #320. **The dynamic-frame evidence gate is #321**
+  ([ADR-021](ADR-021-dynamic-scenario-capture-evidence.md), Proposed 2026-09-10):
+  `mdux-verify-scenario` replays each approved locale, renders every `capture` frame through the
+  production offscreen adapter and commits `scenario-verification.json` (portable structural
+  obligations only — the per-backend capture digest stays a diagnostic attachment, ADR-021
+  decision 3).
 - **Scope**: the `.scenario` format, its diagnostics, the committed artifact and its ownership, the
   `constexpr` emit, the governed bounded data types, and the replay contract (batching/settling,
   deterministic advancement, expected/observed traces, capture invocation, no-alloc governed path).

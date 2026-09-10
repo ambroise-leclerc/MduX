@@ -967,4 +967,22 @@ CheckOutcome rawImageDigest(const FramebufferView& frame, const RawImageExpectat
     return outcome;
 }
 
+CheckOutcome regionPainted(const FramebufferView& frame, NodeRect rect, ColorRgba8 ground, std::string_view nodeId, RenderScope scope) noexcept {
+    CheckOutcome outcome = opened(nodeId, scope, "RegionPainted", regionPaintedProfile, rect);
+    if (!frame.contains(rect)) {
+        return failed(outcome, Finding::RegionOutsideFrame);
+    }
+    for (Px y = rect.y; y < rect.y + rect.height; ++y) {
+        for (Px x = rect.x; x < rect.x + rect.width; ++x) {
+            const std::optional<ColorRgba8> pixel = frame.pixelAt(x, y);
+            if (pixel.has_value() && !isGround(*pixel, ground, 0)) {
+                outcome.found      = NodeRect{.x = x, .y = y, .width = 1, .height = 1};
+                outcome.foundValid = true;
+                return outcome;
+            }
+        }
+    }
+    return failed(outcome, Finding::NothingPainted);
+}
+
 }  // namespace mdux::verify

@@ -186,10 +186,15 @@ const mdux::spec::Register theCommittedScenarioBakesAndVerifies{
                           checks.expect(first->reportJson == second->reportJson, "two bakes produce one report.json");
                           checks.expect(first->stepCount == 28, std::format("28 steps, got {}", first->stepCount));
 
-                          std::vector<cli::Diagnostic> dv;
-                          const bool verified = sc::verify(*first, repoRoot() / "generated/scenario/endoscope-monitor-basics/scenario.json",
-                                                           repoRoot() / "generated/scenario/endoscope-monitor-basics/report.json", dv);
-                          checks.expect(verified, std::format("the committed bundle matches the fresh bake, first {}", firstCode(dv)));
+                          // Since #321 the committed bundle is a two-stage artifact: mdux-scenariobake
+                          // writes scenario.json and a report, then mdux-verify-scenario-bake adds
+                          // scenario-verification.json and extends the report with its stage. So the
+                          // committed scenario.json must match this bake byte for byte, while the
+                          // committed report.json is a superset of it - `evidence.scenario.<id>` and
+                          // `scenario_tools_spec`'s emit round-trip cover the rest.
+                          std::ifstream committed{repoRoot() / "generated/scenario/endoscope-monitor-basics/scenario.json", std::ios::binary};
+                          const std::string committedScenario{std::istreambuf_iterator<char>(committed), std::istreambuf_iterator<char>()};
+                          checks.expect(first->scenarioJson == committedScenario, "the committed scenario.json matches the fresh bake");
                       }
                       checks.raise();
                   })

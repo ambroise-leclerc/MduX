@@ -264,15 +264,27 @@
           "kind": "scenario",
           "outputs": [
             "report.json",
+            "scenario-verification.json",
             "scenario.json"
           ],
           "recipe": "recipes/scenario/endoscope-monitor-basics.toml",
           "sources": [
+            "generated/font/dejavu-ui/atlas.bin",
+            "generated/font/dejavu-ui/package.json",
+            "generated/image/brand-mark/package.json",
+            "generated/image/brand-mark/pixels.rgba",
             "generated/screen/endoscope-monitor/package.json",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
+            "generated/text/endoscope-monitor-en-us/package.json",
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "generated/text/endoscope-monitor-fr-fr/package.json",
+            "generated/text/endoscope-monitor-fr-fr/runs.bin",
             "recipes/scenario/endoscope-monitor-basics/basics.scenario"
           ],
           "toolchain": [
-            "mdux-scenariobake"
+            "mdux-scenariobake",
+            "mdux-verify-scenario-bake"
           ]
         }
       ],
@@ -648,6 +660,98 @@
         "--help"
       ],
       "sourceDirectory": "tools/verify"
+    },
+    {
+      "bakes": [],
+      "diagnosticCodes": [
+        "VSC001",
+        "VSC002",
+        "VSC003",
+        "VSC004",
+        "VSC005",
+        "VSC007",
+        "VSC008",
+        "VSC009",
+        "VSC010",
+        "VSC011",
+        "VSC012",
+        "VSC013",
+        "VSC014",
+        "VSC101"
+      ],
+      "entryPoint": "tools/verify-scenario/VerifyScenarioMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::VerifyScenarioLib"
+      ],
+      "name": "mdux-verify-scenario",
+      "options": [
+        "--capture-digest-out",
+        "--format",
+        "--frame-image-dir",
+        "--help",
+        "--locales",
+        "--scenario"
+      ],
+      "sourceDirectory": "tools/verify-scenario"
+    },
+    {
+      "bakes": [
+        {
+          "id": "endoscope-monitor-basics",
+          "kind": "scenario",
+          "outputs": [
+            "report.json",
+            "scenario-verification.json",
+            "scenario.json"
+          ],
+          "recipe": "recipes/scenario/endoscope-monitor-basics.toml",
+          "sources": [
+            "generated/font/dejavu-ui/atlas.bin",
+            "generated/font/dejavu-ui/package.json",
+            "generated/image/brand-mark/package.json",
+            "generated/image/brand-mark/pixels.rgba",
+            "generated/screen/endoscope-monitor/package.json",
+            "generated/shader/mdux-ui/package.json",
+            "generated/shader/mdux-ui/shaders.spv",
+            "generated/text/endoscope-monitor-en-us/package.json",
+            "generated/text/endoscope-monitor-en-us/runs.bin",
+            "generated/text/endoscope-monitor-fr-fr/package.json",
+            "generated/text/endoscope-monitor-fr-fr/runs.bin",
+            "recipes/scenario/endoscope-monitor-basics/basics.scenario"
+          ],
+          "toolchain": [
+            "mdux-scenariobake",
+            "mdux-verify-scenario-bake"
+          ]
+        }
+      ],
+      "diagnosticCodes": [
+        "VSC001",
+        "VSC002",
+        "VSC003",
+        "VSC004",
+        "VSC005",
+        "VSC007",
+        "VSC008",
+        "VSC009",
+        "VSC010",
+        "VSC011",
+        "VSC012",
+        "VSC013",
+        "VSC014",
+        "VSC101"
+      ],
+      "entryPoint": "tools/verify-scenario/VerifyScenarioBakeMain.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::VerifyScenarioLib"
+      ],
+      "name": "mdux-verify-scenario-bake",
+      "options": [
+        "--help"
+      ],
+      "sourceDirectory": "tools/verify-scenario"
     },
     {
       "bakes": [],

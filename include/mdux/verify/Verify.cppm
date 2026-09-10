@@ -391,6 +391,11 @@ inline constexpr ObservationProfile inkCoverageProfile{"mdux.local/ink-coverage"
 /// `rawImageDigest()`: SHA-256 over tightly packed row-major RGBA8 of a rectangle. Uncommitted;
 /// see ADR-016 for why it exists without a committed baseline.
 inline constexpr ObservationProfile rawImageDigestProfile{"mdux.local/raw-image-digest", 1};
+/// `regionPainted()`: some pixel of a rectangle is not the ground - "content was drawn here",
+/// nothing about *what*. For a scene-driven node whose exact rendered content a rendered-truth
+/// check cannot pin without on-device shaping (a live `NumericDisplay` value, a typed field);
+/// #321 / ADR-021.
+inline constexpr ObservationProfile regionPaintedProfile{"mdux.local/region-painted", 1};
 
 /// The shared rendered-check profile MduX claims in `medui-conformance.toml` (since #314 Stage B):
 /// MedUI's `MEDUI-PROFILE-RENDERED`, the candidate delivery of MEDUI-DEC-007. Unlike
@@ -584,6 +589,9 @@ enum class TextCheck : std::uint8_t {
     }
     if (name == "RawImageDigest") {
         return rawImageDigestProfile;
+    }
+    if (name == "RegionPainted") {
+        return regionPaintedProfile;
     }
     return std::nullopt;
 }
@@ -1401,5 +1409,25 @@ struct CheckOutcome {
  * `Finding::RegionOutsideFrame`, a failure rather than a skip.
  */
 [[nodiscard]] CheckOutcome rawImageDigest(const FramebufferView& frame, const RawImageExpectation& expectation) noexcept;
+
+/**
+ * @brief `RegionPainted`: some pixel of `rect` is not `ground` - content was drawn there.
+ *
+ * The weakest honest claim a rendered-truth check can make about a **scene-driven** node - a live
+ * `NumericDisplay` value, a typed `patient-id` field - whose exact rendered glyphs a verifier cannot
+ * predict without on-device text shaping (ADR-010 forbids that). It catches the node going blank; it
+ * says nothing about *which* value is shown, which is what the scenario's binding obligation - the
+ * settled state equals the pinned value - asserts instead (#321, ADR-021).
+ *
+ * `ground` is the driver's resolved value - its fixed clear colour, or the tint of a compiled panel
+ * beneath the node - never a colour read back from the frame. `Finding::NothingPainted` when every
+ * pixel of `rect` is `ground`; `Finding::RegionOutsideFrame` when `rect` is not inside the frame.
+ * `found` carries the first painted pixel's position when one is found.
+ */
+[[nodiscard]] CheckOutcome regionPainted(const FramebufferView& frame,
+                                         mdux::medui::NodeRect  rect,
+                                         mdux::core::ColorRgba8 ground,
+                                         std::string_view       nodeId,
+                                         RenderScope            scope) noexcept;
 
 }  // namespace mdux::verify
