@@ -2,6 +2,12 @@
 # generated/scenario/endoscope-monitor-basics/, which is committed and byte-verified by
 # `ctest -L evidence` on every active toolchain (ADR-007, ADR-020).
 #
+# Since #321 (ADR-021) the bundle has a second stage: mdux-verify-scenario-bake replays the scenario
+# through the assembled updateMonitor() loop, renders every `capture` frame through the production
+# offscreen adapter in each approved locale, and adds the committed scenario-verification.json (the
+# per-obligation findings; no measured pixel). `verify.scenario.<id>` re-verifies the committed
+# bundle on the GPU legs.
+#
 # ## What a scenario is
 #
 # A `.scenario` script is a reviewed, ordered list of platform events, batch advances, typed

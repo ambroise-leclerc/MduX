@@ -947,6 +947,35 @@ endif()
 add_test(NAME verify_ui_pixel_test COMMAND verify_ui_pixel_test)
 set_tests_properties(verify_ui_pixel_test PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
 
+# verify_scenario_spec (issue #321, ADR-021) - the dynamic scenario-capture verifier.
+#
+# Links MduX::VerifyScenarioLib, so it drags the generated screen/shader/scenario modules and the
+# embedded committed packages the tool does. Most scenarios are pure - obligation enumeration, the
+# fail-closed reconciliation, the artifact writer's refusals, CLI policy - and run everywhere; the
+# one real replay ("verify-scenario-committed", label pixel) needs a device, and treats an absent
+# one as an infrastructure failure because the bake proved a device existed (cmake/MduXCompileScreen
+# .cmake's reasoning). The suite exit status is not 77, so a device that vanished fails rather than
+# skips - matching verify.scenario.<id>.
+add_executable(verify_scenario_spec
+    verify-scenario/ScenarioSpecMain.cpp
+    verify-scenario/ScenarioVerifyTests.cpp
+)
+target_link_libraries(verify_scenario_spec PRIVATE MduX::VerifyScenarioLib speclab::speclab)
+target_include_directories(verify_scenario_spec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(verify_scenario_spec PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+set_target_properties(verify_scenario_spec PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(verify_scenario_spec PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(verify_scenario_spec PRIVATE /experimental:module /std:c++latest)
+endif()
+mdux_discover_tests(verify_scenario_spec)
+
 # .medui compiler host-tools suite (issues #191, #192, #193, #194, #195, #196)
 #
 # Links MduX::MeduiLib. Two groups of scenarios: the diagnostic registry's invariants (#191) -

@@ -144,8 +144,9 @@ Two design/spec child issues are the remaining unblocked work.
 its remaining work is the verifier-area domain review and the ADR-016 residuals, not new
 implementation.
 
-Recommended sequencing: **#321** (dynamic evidence, blocked on #320's close-out) is the epic-#309
-critical path; **#322** is the epic-#310 design track. #325 last.
+Recommended sequencing: **#321** (dynamic evidence) is **implemented** (ADR-021, Proposed —
+verifier-area domain review open), closing the epic-#309 critical path through the verifier; **#322**
+is the epic-#310 design track. #325 last.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
 
@@ -275,7 +276,8 @@ The **#335 issue was closed** (PR #337) once the shared syntax baseline was reco
 substantive gap it names — a full cross-implementation rendered/evidence sign-off — is **not** closed
 and is carried as an explicit residual on [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md)
 and [ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md). It gates the #313 committed-artifact
-migration and the #321 dynamic-evidence gate.
+migration; the #321 dynamic-evidence gate ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md))
+is implementation-local and carries the cross-implementation half as the same #335 residual.
 
 ### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
 
@@ -339,11 +341,27 @@ run on a queue overflow, a failed expectation or a capture that was declared but
 (`example.monitor.replay`). The committed `endoscope-monitor-basics` scenario replays clean with
 every expectation held.
 
+**#321 is implemented** ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md), Proposed
+2026-09-10 — verifier-area domain review open): `mdux-verify-scenario` / `mdux-verify-scenario-bake`
+(the verdict driver and the `THEN_TOOLS` bake stage, sharing `MduX::VerifyUiLib` for the atomic
+publish and `evaluateFrame()` — factored unchanged out of the screen driver's per-scope check loop so
+the two gates run the identical `mdux.verify` predicates). It replays the committed scenario through
+the assembled `updateMonitor()` loop in every approved locale, renders each `capture` frame through
+the production offscreen adapter, and discharges: one **binding** obligation per `Expect` step per
+locale (the settled value equals the pinned one), one **rendered** obligation per golden/text check
+per capture per locale (the screen's own obligations, minus the tint check on a node whose content
+the scenario drives), and one **capture** obligation per marker. `scenario-verification.json` is
+committed and byte-verified by `evidence.scenario.<id>` — findings only, no measured pixel; per-capture
+frame PNGs and a per-backend `rgba8-sha256` manifest are diagnostic attachments (ADR-021 decision 3,
+the prospective PAR-REQ-009 disposition). New `verify.scenario.<id>` CI gate beside the retained
+`verify.screen.<id>`; `verify_scenario_spec` covers the fail-closed set (wrong value, dropped/missing
+outcome, duplicate, omitted capture, substituted package).
+
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **implemented** (ADR-020; `mdux.medui.scenario` + `mdux-scenariobake`/`mdux-scenarioemit`; `.scenario` DSL; committed `endoscope-monitor-basics`; `scenario_tools_spec` + `scenario_spec` + `scenario_noheap_spec`) |
 | [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **implemented** (stacked on #319: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
-| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **blocked** |
+| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **implemented** (ADR-021, Proposed; `mdux-verify-scenario`/`-bake`, `evaluateFrame()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
 
 ### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
 

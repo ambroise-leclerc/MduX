@@ -17,6 +17,7 @@ export module mdux.tools.verify.driver;
 import std;
 import mdux.core.units;
 import mdux.medui.schema;
+import mdux.medui.screen;
 import mdux.tools.cli;
 import mdux.verify;
 
@@ -56,6 +57,31 @@ struct PlanResult {
 };
 
 /**
+ * @brief One `goldens.json` entry, owned so it outlives the reader, with a `view()` into it.
+ *
+ * The committed-goldens reader is exposed (#321, ADR-021) so the scenario-capture driver discharges
+ * the identical golden obligations against a scenario's capture frames. `readGoldens()` performs the
+ * same canonical-form, duplicate-id and unknown-check refusals it always has; nothing about that
+ * changed when it moved out of the anonymous namespace.
+ */
+struct OwnedGolden {
+    std::string                       nodeId;
+    mdux::medui::NodeRect             bounds{};
+    std::string                       textKey;
+    std::string                       colorToken;
+    std::vector<mdux::verify::CvCheck> checks;
+
+    [[nodiscard]] mdux::verify::GoldenEntry view() const noexcept {
+        return mdux::verify::GoldenEntry{.nodeId = nodeId, .bounds = bounds, .textKey = textKey, .colorToken = colorToken, .cvChecks = checks};
+    }
+};
+
+/// Parses a committed `goldens.json`, sets `digestOut` to its lowercase-hex SHA-256, and reports one
+/// diagnostic (VUI002/VUI003) per fault. `std::nullopt` on any fault.
+[[nodiscard]] std::optional<std::vector<OwnedGolden>>
+readGoldens(const std::filesystem::path& path, std::string& digestOut, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
+
+/**
  * @brief Enumerates the entire golden-by-scope and text-by-approved-locale obligation set.
  *
  * Pure and exposed for direct library tests. Production obtains `goldens` from the committed
@@ -84,6 +110,39 @@ struct Outcome {
         return finding == mdux::verify::Finding::Held;
     }
 };
+
+/**
+ * @brief Runs every golden and mandatory-text obligation for one render scope against one frame.
+ *
+ * The per-scope check loop `run()` already performs, factored out unchanged so the scenario-capture
+ * driver (#321, ADR-021) discharges the identical rendered-truth obligations against the frame a
+ * `.scenario` capture settled - a different frame, the same checks, the same `mdux.verify`
+ * expectations derived from the committed artifacts.
+ *
+ * @param screen  the compiled screen the frame was rendered from
+ * @param goldens the committed `goldens.json` entries, as `run()` read them
+ * @param scope   the render scope - an approved locale, or the locale-free scope
+ * @param binding the authenticated text binding for `scope`'s locale, or `nullptr` for a textless
+ *                screen or the locale-free scope
+ * @param atlas   the coverage sheet the bound font package describes; empty when `binding` is null
+ * @param frame   the readback to check
+ *
+ * `failure` is set only when validation and rendering have drifted apart - a golden naming a node
+ * that vanished, or an expectation that became unconstructible after the pre-render pass accepted it.
+ * A caller treats that as an impossible run (VUI008 / `CouldNotRun`), never as a check that did not
+ * hold. When it is empty, `outcomes` holds exactly one entry per enumerated obligation for `scope`.
+ */
+struct FrameEvaluation {
+    std::vector<Outcome>       outcomes;
+    std::optional<std::string> failure;
+};
+
+[[nodiscard]] FrameEvaluation evaluateFrame(const mdux::medui::ScreenPackage&          screen,
+                                            std::span<const mdux::verify::GoldenEntry> goldens,
+                                            mdux::verify::RenderScope                  scope,
+                                            const mdux::medui::TextBinding*            binding,
+                                            std::span<const std::byte>                 atlas,
+                                            const mdux::verify::FramebufferView&       frame);
 
 /**
  * @brief One committed artifact the run bound, named by role rather than by filesystem path.

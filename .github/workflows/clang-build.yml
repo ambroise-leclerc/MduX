@@ -252,3 +252,14 @@ jobs:
         name: verify-diff-clang
         path: build-clang/verify-diff/
         if-no-files-found: ignore
+
+    # The scenario-capture verifier's frames (#321, ADR-021 decision 3): one PNG per capture per
+    # locale, a diagnostic attachment for a person looking at why `verify.scenario.<id>` failed.
+    # Never committed; `if-no-files-found: ignore` for the same reason as the diff images above.
+    - name: Upload the scenario-capture frames
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: verify-scenario-frames-clang
+        path: build-clang/verify-scenario-frames/
+        if-no-files-found: ignore

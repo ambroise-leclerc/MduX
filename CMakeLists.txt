@@ -636,35 +636,10 @@ mdux_emit_screen_package(
     OUT_DIR MDUX_GENERATED_SCREEN_DIR
 )
 
-# The first committed interaction scenario (#319, ADR-020). A `.scenario` script becomes a
-# committed `generated/scenario/<id>/` bundle the same way a `.medui` screen does - one
-# mdux_bake_artifact() registration, one evidence.scenario.<id> byte comparison - then
-# mdux-scenarioemit renders it into `constexpr` C++ #320's replay consumes. The screen package is
-# a SOURCE: the compiler resolves `pointer <node>` against it, and re-laying-out the screen
-# re-bakes the scenario.
-mdux_bake_artifact(
-    KIND scenario
-    ID endoscope-monitor-basics
-    TOOL mdux-scenariobake
-    RECIPE recipes/scenario/endoscope-monitor-basics.toml
-    SOURCES
-        recipes/scenario/endoscope-monitor-basics/basics.scenario
-        generated/screen/endoscope-monitor/package.json
-    OUTPUTS
-        scenario.json
-        report.json
-)
-
-include(cmake/MduXScenarioEmit.cmake)
-mdux_emit_scenario_package(
-    ID endoscope-monitor-basics
-    OUT_MODULE MDUX_ENDOSCOPE_SCENARIO_MODULE
-    OUT_DIR MDUX_GENERATED_SCENARIO_DIR
-)
-
-# Generated C++ for that package (issue #121). Build-tree only, never committed - see
+# Generated C++ for the mdux-ui shader package (issue #121). Build-tree only, never committed - see
 # cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
 # module form; the header form exists for a translation unit that cannot import a named module.
+# Emitted before the scenario bake below so `mdux-verify-scenario` can link the module.
 include(cmake/MduXShaderEmit.cmake)
 mdux_emit_shader_package(
     ID mdux-ui
@@ -677,6 +652,142 @@ mdux_emit_shader_package(
     OUT_MODULE MDUX_TRIANGLE_SHADER_MODULE
     OUT_DIR MDUX_GENERATED_SHADER_DIR
 )
+
+# The first committed interaction scenario (#319, ADR-020) as generated `constexpr` C++ #320's
+# replay and #321's capture verifier consume. Build-tree only, never committed.
+include(cmake/MduXScenarioEmit.cmake)
+mdux_emit_scenario_package(
+    ID endoscope-monitor-basics
+    OUT_MODULE MDUX_ENDOSCOPE_SCENARIO_MODULE
+    OUT_DIR MDUX_GENERATED_SCENARIO_DIR
+)
+
+# ---------------------------------------------------------------------------
+# mdux-verify-scenario / mdux-verify-scenario-bake (issue #321, ADR-021) - dynamic-evidence driver
+# ---------------------------------------------------------------------------
+#
+# The scenario-capture half of rendered-truth verification. It replays a committed `.scenario`
+# through the assembled `updateMonitor()` loop (the examples-zone glue it deliberately links, ADR-021
+# decision 1) and verifies the frame each `capture` marker settles, in every approved locale, against
+# the screen's own golden and text obligations. Shares `MduX::VerifyUiLib` for the atomic bundle
+# publish, the report extension and `evaluateFrame()` - so the scenario gate and the screen gate
+# cannot disagree about what a rendered check means. An internal build tool: never installed, never
+# exported, and no example links it.
+#
+# Defined here rather than in tools/CMakeLists.txt because it links the same generated
+# screen/shader/scenario modules and embedded committed packages the monitor example does, and the
+# MDUX_*_MODULE variables and the mdux_embed_blob custom commands must be created in the same
+# directory scope as the target that consumes them.
+add_library(MduXVerifyScenarioLib STATIC)
+add_library(MduX::VerifyScenarioLib ALIAS MduXVerifyScenarioLib)
+
+target_sources(MduXVerifyScenarioLib
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/tools
+        FILES
+            tools/verify-scenario/ScenarioDriver.cppm
+            tools/verify-scenario/ScenarioArtifact.cppm
+    PRIVATE
+        tools/verify-scenario/ScenarioDriver.cpp
+        tools/verify-scenario/ScenarioArtifact.cpp
+)
+target_compile_features(MduXVerifyScenarioLib PUBLIC cxx_std_23)
+target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib MduX::MduX Vulkan::Vulkan)
+target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX_warnings)
+# `HeadlessDevice.hpp` (shared with the screen driver) and the examples-support replay glue.
+target_include_directories(MduXVerifyScenarioLib PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples
+)
+set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXVerifyScenarioLib PRIVATE /experimental:module /std:c++latest)
+endif()
+if(UNIX)
+    target_link_libraries(MduXVerifyScenarioLib PUBLIC Threads::Threads)
+endif()
+
+# The generated screen/shader/scenario modules and the embedded committed packages, exactly as
+# MedicalScreenMonitorExample wires them.
+target_sources(MduXVerifyScenarioLib
+    PRIVATE
+        FILE_SET vs_screen_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
+        FILE_SET vs_shader_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
+            FILES ${MDUX_UI_SHADER_MODULE}
+        FILE_SET vs_scenario_modules
+            TYPE CXX_MODULES
+            BASE_DIRS ${MDUX_GENERATED_SCENARIO_DIR}
+            FILES ${MDUX_ENDOSCOPE_SCENARIO_MODULE}
+)
+add_dependencies(MduXVerifyScenarioLib
+    emit-screen-endoscope-monitor emit-shader-mdux-ui emit-scenario-endoscope-monitor-basics)
+foreach(_vs_blob
+        "font/dejavu-ui/package.json|dejavuUiPackageJson"
+        "font/dejavu-ui/atlas.bin|dejavuUiAtlas"
+        "text/endoscope-monitor-en-us/package.json|endoscopeTextEnUsPackageJson"
+        "text/endoscope-monitor-en-us/runs.bin|endoscopeTextEnUsRuns"
+        "text/endoscope-monitor-fr-fr/package.json|endoscopeTextFrFrPackageJson"
+        "text/endoscope-monitor-fr-fr/runs.bin|endoscopeTextFrFrRuns"
+        "image/brand-mark/package.json|brandMarkPackageJson"
+        "image/brand-mark/pixels.rgba|brandMarkPixels")
+    string(REPLACE "|" ";" _vs_pair "${_vs_blob}")
+    list(GET _vs_pair 0 _vs_file)
+    list(GET _vs_pair 1 _vs_symbol)
+    mdux_embed_blob(MduXVerifyScenarioLib
+        FILE ${CMAKE_SOURCE_DIR}/generated/${_vs_file}
+        SYMBOL ${_vs_symbol})
+endforeach()
+
+# The scenario bundle, now with the dynamic rendered-evidence stage (#321). Same single
+# mdux_bake_artifact() registration and one evidence.scenario.<id> byte comparison; the second stage
+# renders every capture and adds scenario-verification.json. The screen package is a SOURCE (the
+# compiler resolves `pointer <node>` against it); the shader, font, text and image packages are
+# SOURCES too because the capture verifier renders against them - a change to any must re-verify.
+mdux_bake_artifact(
+    KIND scenario
+    ID endoscope-monitor-basics
+    TOOL mdux-scenariobake
+    THEN_TOOLS mdux-verify-scenario-bake
+    RECIPE recipes/scenario/endoscope-monitor-basics.toml
+    SOURCES
+        recipes/scenario/endoscope-monitor-basics/basics.scenario
+        generated/screen/endoscope-monitor/package.json
+        generated/shader/mdux-ui/package.json
+        generated/shader/mdux-ui/shaders.spv
+        generated/font/dejavu-ui/package.json
+        generated/font/dejavu-ui/atlas.bin
+        generated/text/endoscope-monitor-en-us/package.json
+        generated/text/endoscope-monitor-en-us/runs.bin
+        generated/text/endoscope-monitor-fr-fr/package.json
+        generated/text/endoscope-monitor-fr-fr/runs.bin
+        generated/image/brand-mark/package.json
+        generated/image/brand-mark/pixels.rgba
+    OUTPUTS
+        scenario.json
+        report.json
+        scenario-verification.json
+)
+
+# The CI gate #321 asks for, beside the retained verify.screen.<id> (ADR-021 decision 5). Its
+# subject is the committed bundle, and it runs on the GPU legs - `mdux-verify-scenario` has no skip
+# status, so an absent device is a Failed run, not a Skipped one (cmake/MduXCompileScreen.cmake's
+# reasoning). The frame directory is under the build tree; CI uploads it on failure.
+add_test(NAME "verify.scenario.endoscope-monitor-basics"
+    COMMAND mdux-verify-scenario
+        "--scenario=${CMAKE_SOURCE_DIR}/generated/scenario/endoscope-monitor-basics"
+        "--locales=all"
+        "--frame-image-dir=${CMAKE_BINARY_DIR}/verify-scenario-frames"
+)
+set_tests_properties("verify.scenario.endoscope-monitor-basics" PROPERTIES LABELS "verify")
 
 # The ECG model package as compile-time-validated source (issue #153). Only metadata, layer
 # descriptors and golden vectors are emitted; weights remain the separately embedded blob.

@@ -663,3 +663,36 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(mdux-verify-bake PRIVATE /experimental:module /std:c++latest)
 endif()
+
+# ---------------------------------------------------------------------------
+# mdux-verify-scenario / mdux-verify-scenario-bake (issue #321, ADR-021) - dynamic-evidence driver
+# ---------------------------------------------------------------------------
+#
+# The scenario-capture half of rendered-truth verification. It replays a committed `.scenario`
+# through the assembled `updateMonitor()` loop (the examples-zone glue it deliberately links, ADR-021
+# decision 1) and verifies the frame each `capture` marker settles, in every approved locale, against
+# the screen's own golden and text obligations. Shares `MduX::VerifyUiLib` for the atomic bundle
+# publish, the report extension and `evaluateFrame()`. An internal build tool: never installed, never
+# exported, and no example links it.
+#
+# The executables are declared here (so the tool manifest and `mdux_bake_artifact(... THEN_TOOLS ...)`
+# find them), but the library `MduXVerifyScenarioLib` is defined in the root CMakeLists.txt after the
+# `mdux_emit_*` calls: it links the generated screen/shader/scenario modules and the embedded
+# committed packages the monitor example does, and those variables and custom commands must be
+# created in the same directory scope as the target. The raw name here is a forward reference CMake
+# resolves at generate time.
+add_executable(mdux-verify-scenario verify-scenario/VerifyScenarioMain.cpp)
+target_link_libraries(mdux-verify-scenario PRIVATE MduXVerifyScenarioLib MduX_warnings)
+
+add_executable(mdux-verify-scenario-bake verify-scenario/VerifyScenarioBakeMain.cpp)
+target_link_libraries(mdux-verify-scenario-bake PRIVATE MduXVerifyScenarioLib MduX_warnings)
+
+foreach(_vs_target mdux-verify-scenario mdux-verify-scenario-bake)
+    set_target_properties(${_vs_target} PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    if(TARGET __CMAKE::CXX23)
+        set_target_properties(${_vs_target} PROPERTIES CXX_MODULE_STD ON)
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(${_vs_target} PRIVATE /experimental:module /std:c++latest)
+    endif()
+endforeach()

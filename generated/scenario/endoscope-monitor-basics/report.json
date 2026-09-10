@@ -12,19 +12,40 @@
   "options": {
     "id": "endoscope-monitor-basics",
     "screen": "endoscope-monitor",
-    "source": "recipes/scenario/endoscope-monitor-basics/basics.scenario"
+    "source": "recipes/scenario/endoscope-monitor-basics/basics.scenario",
+    "verification": {
+      "captures": [
+        "freeze-pressed",
+        "halt-activated"
+      ],
+      "locales": [
+        "en-US",
+        "fr-FR"
+      ]
+    }
   },
   "outputs": [
     {
       "path": "scenario.json",
       "sha256": "5b8fd9740cb581e1e6702a838da2d71381b170a1d41740d8f53a91b862b83fdf"
+    },
+    {
+      "path": "scenario-verification.json",
+      "sha256": "24bfc349ac4b9d57dfc5b9e05f3f902fb780bc746fcb25d65b25a76c40fc8afe"
     }
   ],
   "recipe": {
     "path": "recipes/scenario/endoscope-monitor-basics.toml",
-    "sha256": "5cb4961c89eef615fdd6761ab12858596767f46c197f1e97f35432f21f26084d"
+    "sha256": "1d3fdf6daf90ad2f59db12d20486de7ae9365cf412cbc24ae00a69db6c3a984d"
   },
   "schemaVersion": 1,
+  "stages": [
+    {
+      "output": "scenario-verification.json",
+      "tool": "mdux-verify-scenario-bake",
+      "toolVersion": "0.8.0"
+    }
+  ],
   "tool": "mdux-scenariobake",
   "toolVersion": "0.8.0"
 }

@@ -61,10 +61,6 @@ import mdux.render.offscreen;
 import mdux.shader.generated.mdux_ui;
 import mdux.shader.schema;
 
-#include "support/GlfwPresentationAdapter.hpp"
-#include "support/MonitorApp.hpp"
-#include "support/ScenarioReplay.hpp"
-
 #include "brandMarkPackageJson.hpp"
 #include "brandMarkPixels.hpp"
 #include "dejavuUiAtlas.hpp"
@@ -74,6 +70,12 @@ import mdux.shader.schema;
 #include "endoscopeTextFrFrPackageJson.hpp"
 #include "endoscopeTextFrFrRuns.hpp"
 
+#include "support/GlfwPresentationAdapter.hpp"
+#include "support/MonitorApp.hpp"
+#include "support/ScenarioReplay.hpp"
+// After the embedded-blob headers above: BoundScreen::load() names their accessors.
+#include "support/MonitorFrame.hpp"
+
 namespace {
 
 namespace core = mdux::core;
@@ -82,170 +84,14 @@ namespace ms   = mdux::medui;
 namespace mx   = mdux::examples;
 namespace rnd  = mdux::render;
 
-enum class Locale { EnUs, FrFr };
-
-[[nodiscard]] std::string_view localeTag(Locale locale) noexcept {
-    return locale == Locale::FrFr ? "fr-FR" : "en-US";
-}
-
-/// An embedded blob's bytes as UTF-8 text, for the `*Package::parse()` calls.
-[[nodiscard]] std::string_view asText(std::span<const std::byte> bytes) noexcept {
-    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
-
-/// The compiled screen and the committed packages a device joins it to at start-up, for one locale.
-///
-/// Held on the heap for the life of the program and never moved: `TextBinding` / `ImageBinding`
-/// keep pointers into `font` / `text` / `image`, so a move would dangle them.
-struct BoundScreen {
-    ms::ScreenPackage         screen{ms::generated::screen_endoscope_monitor::package()};
-    mdux::font::FontPackage    font{};
-    mdux::text::TextPackage    text{};
-    mdux::image::ImagePackage  image{};
-    ms::TextBinding            textBinding{};
-    ms::ImageBinding           imageBinding{};
-
-    BoundScreen()                              = default;
-    BoundScreen(const BoundScreen&)            = delete;
-    BoundScreen& operator=(const BoundScreen&) = delete;
-
-    /// The authored surface extent the screen was compiled for - the `UiRenderer` viewport.
-    [[nodiscard]] core::Extent2D surface() const noexcept {
-        return {screen.surfaceWidth, screen.surfaceHeight};
-    }
-
-    /// Parses the embedded font / text / image packages for `locale` and builds the two bindings, or
-    /// prints why and returns `nullptr`.
-    [[nodiscard]] static std::unique_ptr<BoundScreen> load(Locale locale) {
-        auto bound = std::make_unique<BoundScreen>();
-
-        const std::span<const std::byte> textJson =
-            locale == Locale::FrFr ? endoscopeTextFrFrPackageJson() : endoscopeTextEnUsPackageJson();
-        const std::span<const std::byte> textRuns =
-            locale == Locale::FrFr ? endoscopeTextFrFrRuns() : endoscopeTextEnUsRuns();
-
-        auto font  = mdux::font::FontPackage::parse(asText(dejavuUiPackageJson()));
-        auto text  = mdux::text::TextPackage::parse(asText(textJson));
-        auto image = mdux::image::ImagePackage::parse(asText(brandMarkPackageJson()));
-        if (!font || !text || !image) {
-            std::cerr << "monitor: a committed package did not parse\n";
-            return nullptr;
-        }
-        bound->font  = std::move(*font);
-        bound->text  = std::move(*text);
-        bound->image = std::move(*image);
-
-        auto textBinding = ms::TextBinding::create(bound->screen, bound->font, bound->text, textJson, textRuns);
-        if (!textBinding) {
-            std::cerr << "monitor: the committed text artifacts were refused: " << ms::describe(textBinding.error()) << '\n';
-            return nullptr;
-        }
-        bound->textBinding = *textBinding;
-
-        auto imageBinding = ms::ImageBinding::create(bound->screen, bound->image, brandMarkPackageJson(), brandMarkPixels());
-        if (!imageBinding) {
-            std::cerr << "monitor: the committed image artifacts were refused: " << ms::describe(imageBinding.error()) << '\n';
-            return nullptr;
-        }
-        bound->imageBinding = *imageBinding;
-        return bound;
-    }
-};
-
-/// Storage a caller sizes once from the screen's own budget, as a device would.
-struct FrameStorage {
-    std::vector<draw::UiVertex>    vertices;
-    std::vector<draw::Index>       indices;
-    std::vector<draw::DrawCommand> commands;
-
-    explicit FrameStorage(const draw::DrawBudget& budget)
-        : vertices(budget.maxVertices), indices(budget.maxIndices), commands(budget.maxCommands) {}
-};
-
-/// Builds this frame's `DrawList` from the screen and one snapshot of the demonstration state
-/// (ADR-018 clause 6, steps 3-4): the ECG trace, the pressure reading, the deterministic clock, the
-/// classifier state and the `patient-id` field value are all bound here, after `updateMonitor()`
-/// resolved the batch, so a capture never shows input the operator has not seen resolved.
-[[nodiscard]] mdux::core::Result<draw::DrawList, ms::ScreenError> recordMonitorFrame(const BoundScreen&    bound,
-                                                                                    FrameStorage&         storage,
-                                                                                    const mx::DemoState&  state,
-                                                                                    const mx::MonitorClock& clock) {
-    auto list = draw::DrawList::create(storage.vertices, storage.indices, storage.commands, bound.screen.budget);
-    if (!list) {
-        std::cerr << "monitor: draw list refused: " << draw::describe(list.error()) << '\n';
-        return mdux::core::err(ms::ScreenError::BudgetExhausted);
-    }
-
-    const ms::SampleRing                 traceView = state.ecg.view();
-    const std::array<ms::SignalSlot, 1>  signalSlots{
-        ms::SignalSlot{.streamSource = mx::kTraceStream, .ring = &traceView, .style = mx::monitorTraceStyle}
-    };
-    ms::SignalBinding signals{};
-    if (auto made = ms::SignalBinding::create(bound.screen, signalSlots); made) {
-        signals = *made;
-    } else {
-        std::cerr << "monitor: signal binding refused: " << ms::describe(made.error()) << '\n';
-        return mdux::core::err(ms::ScreenError::BudgetExhausted);
-    }
-
-    const std::array<ms::ReadingSlot, 1> readingSlots{
-        ms::ReadingSlot{.nodeId = mx::kPressureNode, .rendering = mx::kPressureRendering, .value = state.pressureTenths}
-    };
-    ms::ReadingBinding readings{};
-    if (auto made = ms::ReadingBinding::create(bound.screen, readingSlots, &clock.now, mx::kClockColorToken); made) {
-        readings = *made;
-    } else {
-        std::cerr << "monitor: reading binding refused: " << ms::describe(made.error()) << '\n';
-        return mdux::core::err(ms::ScreenError::BudgetExhausted);
-    }
-
-    const std::array<ms::StatusSlot, 1> statusSlots{
-        ms::StatusSlot{.nodeId = mx::kStatusNode, .state = state.classifierState}
-    };
-    ms::StatusBinding status{};
-    if (auto made = ms::StatusBinding::create(bound.screen, statusSlots); made) {
-        status = *made;
-    } else {
-        std::cerr << "monitor: status binding refused: " << ms::describe(made.error()) << '\n';
-        return mdux::core::err(ms::ScreenError::BudgetExhausted);
-    }
-
-    std::array<ms::TextInputSlot, 1> inputSlots{};
-    ms::TextInputBinding             inputs{};
-    if (state.field) {
-        inputSlots[0] = ms::TextInputSlot{.nodeId = state.field->nodeId(),
-                                          .text   = state.field->value(),
-                                          .caret  = state.field->caret()};
-        auto made = ms::TextInputBinding::create(bound.screen, inputSlots);
-        if (!made) {
-            // Fail closed rather than render a deferred field: a monitor that silently drops the
-            // patient id it was asked to show is the wrong failure.
-            std::cerr << "monitor: text input binding refused: " << ms::describe(made.error()) << '\n';
-            return mdux::core::err(made.error());
-        }
-        inputs = *made;
-    }
-
-    const auto recorded =
-        ms::render(bound.screen, *list, bound.textBinding, bound.imageBinding, signals, readings, status, inputs);
-    if (!recorded) {
-        std::cerr << "monitor: render refused: " << ms::describe(recorded.error()) << '\n';
-        return mdux::core::err(recorded.error());
-    }
-    return std::move(*list);
-}
-
-/// A `UiRenderer` for `context` with the committed font coverage atlas and the brand-mark image
-/// atlas, so text and the logo draw as themselves rather than white blocks.
-[[nodiscard]] mdux::core::Result<rnd::UiRenderer, rnd::RenderError> makeRenderer(const rnd::VulkanRenderContext& context,
-                                                                                const BoundScreen&             bound) {
-    return rnd::UiRenderer::createWithAtlases(context, mdux::shader::generated::mdux_ui::package(), bound.screen.budget,
-                                              dejavuUiAtlas(), bound.font.atlas.width, bound.font.atlas.height,
-                                              brandMarkPixels(), bound.image.width, bound.image.height);
-}
-
-/// The near-black ground the screen is composited over.
-constexpr core::ColorRgba8 kClear{.r = 6, .g = 8, .b = 10, .a = 255};
+// Promoted to examples/support/MonitorFrame.hpp so the scenario verifier (#321) shares the
+// exact screen-binding and frame-recording path this example uses.
+using mx::asText;
+using mx::BoundScreen;
+using mx::kClear;
+using mx::Locale;
+using mx::localeTag;
+using mx::makeRenderer;
 
 // ---------------------------------------------------------------------------
 // Interactive / smoke-test mode
@@ -295,7 +141,7 @@ int runWindowed(bool smokeTest, Locale locale) {
     }
     mx::WindowEventPump pump{window->handle(), queue, *mapping};
 
-    FrameStorage storage{bound->screen.budget};
+    mx::FrameStorage storage{bound->screen.budget};
 
     constexpr std::uint32_t        smokeFramesRequired = 3;
     constexpr std::chrono::seconds smokeDeadline{30};
@@ -358,7 +204,7 @@ int runWindowed(bool smokeTest, Locale locale) {
             std::println("Button press: node='freeze' source='{}' - the host owns this action, not MduX", *update.buttonSource);
         }
 
-        auto list = recordMonitorFrame(*bound, storage, state, clock);
+        auto list = recordMonitorFrame(bound->screen, bound->textBinding, bound->imageBinding, storage, state, clock);
         if (!list) {
             return 1;
         }
@@ -526,8 +372,8 @@ int runHeadlessSmoke(Locale locale) {
         return 1;
     }
 
-    FrameStorage storage{bound->screen.budget};
-    auto         list = recordMonitorFrame(*bound, storage, state, clock);
+    mx::FrameStorage storage{bound->screen.budget};
+    auto         list = recordMonitorFrame(bound->screen, bound->textBinding, bound->imageBinding, storage, state, clock);
     if (!list) {
         return 1;
     }
@@ -618,11 +464,11 @@ int runReplay(std::string_view scenarioId, Locale locale) {
         return 1;
     }
 
-    FrameStorage storage{bound->screen.budget};
+    mx::FrameStorage storage{bound->screen.budget};
     bool         captureFailed = false;
 
     const auto captureFn = [&](const mx::ScenarioCaptureContext& ctx) {
-        auto list = recordMonitorFrame(*bound, storage, ctx.state, ctx.clock);
+        auto list = recordMonitorFrame(bound->screen, bound->textBinding, bound->imageBinding, storage, ctx.state, ctx.clock);
         if (!list) {
             captureFailed = true;
             return;
