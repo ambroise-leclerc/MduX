@@ -34,6 +34,7 @@ import mdux.shader.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.package;
+import mdux.tools.scenario;
 import mdux.tools.verify.diff;
 import mdux.tools.verify.driver;
 import mdux.verify;
@@ -235,7 +236,8 @@ std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&        
 }
 
 RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>& outcomes, std::vector<cli::Diagnostic>& diagnostics) {
-    RunState state = RunState::Passed;
+    RunState    state      = RunState::Passed;
+    std::size_t discharged = 0;
 
     for (const Obligation& obligation : obligations) {
         std::size_t matches = 0;
@@ -246,6 +248,7 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
                 held = outcome.held;
             }
         }
+        discharged += matches;
         if (matches == 0) {
             // A missing outcome is a failure, not an absence: ADR-021 decision 2, PAR-REQ-003.
             outcomes.push_back(Outcome{.kind       = obligation.kind,
@@ -308,6 +311,16 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
             report(diagnostics, {}, "VSC101", std::format("{} obligation did not hold: {}: {}", toWire(obligation.kind), detail, finding));
             state = RunState::ChecksFailed;
         }
+    }
+
+    // Every outcome must discharge an enumerated obligation - a surplus outcome means the outcome
+    // set does not correspond to the obligation set, and the verdict must not stay `Passed`. The
+    // screen driver makes the same size comparison; `writeScenarioVerification()` rejects it later,
+    // but the exit-status path is this function's.
+    if (discharged < outcomes.size()) {
+        report(diagnostics, {}, "VSC014",
+               std::format("{} outcome(s) discharge no enumerated obligation", outcomes.size() - discharged));
+        state = RunState::ChecksFailed;
     }
     return state;
 }
@@ -453,17 +466,21 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
 
     mx::FrameStorage storage{bound->screen.budget};
 
-    LegContext leg{.result     = &result,
-                   .options    = &options,
-                   .bound      = bound.get(),
-                   .renderer   = &*renderer,
-                   .target     = &target,
-                   .queue      = device.queue(),
-                   .scope      = mv::RenderScope::forLocale(scopeTag),
-                   .scopeTag   = scopeTag,
-                   .goldens    = goldens,
-                   .scenarioId = scenarioId,
-                   .storage    = &storage};
+    LegContext leg{.result            = &result,
+                   .options           = &options,
+                   .bound             = bound.get(),
+                   .renderer          = &*renderer,
+                   .target            = &target,
+                   .queue             = device.queue(),
+                   .scope             = mv::RenderScope::forLocale(scopeTag),
+                   .scopeTag          = scopeTag,
+                   .goldens           = goldens,
+                   .scenarioId        = scenarioId,
+                   .storage           = &storage,
+                   .invoked           = {},
+                   .renderFailed      = {},
+                   .structuralFailure = false,
+                   .structuralMessage = {}};
 
     std::array<ms::StepOutcome, ms::maxScenarioExpectations> outcomeStorage{};
     const ms::ReplayReport replay = mx::replayMonitorScenario(scenario,
@@ -550,13 +567,40 @@ RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& 
         return result;
     }
 
-    // The reviewed artifact is the JSON; the generated module is a mechanical rendering of it and
-    // carries the same `static_assert(scenario.validate())`. Guard the two agree on identity, then
-    // hold the `constexpr` form.
+    // The reviewed artifact is the JSON; the generated module is a mechanical rendering of it. This
+    // build holds only the `constexpr` form, so before recording its digest as evidence the verifier
+    // must prove the committed `scenario.json` on disk really *is* that scenario.
+    //
+    // Parsed with `mdux.tools.scenario::readScenarioDoc()` - the same reader `mdux-scenarioemit` uses
+    // - and then compared field for field and step for step against the `constexpr`. A substring
+    // match on the id (this guard's previous form) accepted a same-id file whose steps had been
+    // swapped for another scenario's, which would record one digest while rendering another.
     const ms::CompiledScenario scenario = generatedScenario::package();
-    if (dir.filename() != std::string_view{scenario.id} || scenarioText->find(std::string{"\"id\": \""} + std::string{scenario.id} + "\"") == std::string::npos) {
+
+    std::vector<cli::Diagnostic> documentDiagnostics;
+    const auto                   document = mdux::tools::scenario::readScenarioDoc(
+        std::as_bytes(std::span{scenarioText->data(), scenarioText->size()}), scenarioPath.generic_string(), documentDiagnostics);
+    if (!document.has_value()) {
+        for (auto& diagnostic : documentDiagnostics) {
+            result.diagnostics.push_back(std::move(diagnostic));
+        }
+        return result;
+    }
+
+    const bool sameHeader = document->id == scenario.id && document->screenId == scenario.screenId
+                         && document->version == scenario.schemaVersion && document->clock == scenario.pinnedClock
+                         && document->sampleSeed == scenario.sampleSeed
+                         && std::ranges::equal(document->requirements, scenario.requirements)
+                         && std::ranges::equal(document->captureNames, scenario.captureNames);
+    const bool sameSteps = document->steps.size() == scenario.steps.size()
+                        && std::ranges::equal(document->steps, scenario.steps, [](const auto& scriptStep, const ms::ScenarioStep& compiledStep) {
+                               return scriptStep.kind == compiledStep.kind && scriptStep.frames == compiledStep.frames
+                                   && scriptStep.expect.kind == compiledStep.expect.kind
+                                   && std::string_view{scriptStep.capture} == compiledStep.capture;
+                           });
+    if (dir.filename() != std::string_view{scenario.id} || !sameHeader || !sameSteps) {
         report(result.diagnostics, scenarioPath, "VSC002",
-               std::format("scenario.json does not name '{}' - this build verifies only the committed '{}' scenario", scenario.id, scenario.id));
+               std::format("committed scenario.json is not the reviewed '{}' scenario this build verifies", scenario.id));
         return result;
     }
     if (const auto valid = scenario.validate(); !valid.has_value()) {

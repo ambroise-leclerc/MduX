@@ -693,8 +693,12 @@ target_sources(MduXVerifyScenarioLib
         tools/verify-scenario/ScenarioArtifact.cpp
 )
 target_compile_features(MduXVerifyScenarioLib PUBLIC cxx_std_23)
-target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib MduX::MduX Vulkan::Vulkan)
-target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX_warnings)
+# Only MduX::VerifyUiLib is a usage requirement: the module interfaces re-export
+# `mdux.tools.verify.driver` and nothing else. MduX (render.offscreen/vulkan), the scenario reader
+# and Vulkan are PRIVATE - the .cpp files need them, consumers do not, and a PUBLIC MduX would make
+# a consumer inherit `MduX_options`' version macros a second time (GCC -Werror redefinition).
+target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib)
+target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX::MduX MduX::ScenarioLib Vulkan::Vulkan MduX_warnings)
 # `HeadlessDevice.hpp` (shared with the screen driver) and the examples-support replay glue.
 target_include_directories(MduXVerifyScenarioLib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify
@@ -708,7 +712,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXVerifyScenarioLib PRIVATE /experimental:module /std:c++latest)
 endif()
 if(UNIX)
-    target_link_libraries(MduXVerifyScenarioLib PUBLIC Threads::Threads)
+    target_link_libraries(MduXVerifyScenarioLib PRIVATE Threads::Threads)
 endif()
 
 # The generated screen/shader/scenario modules and the embedded committed packages, exactly as
@@ -730,7 +734,7 @@ target_sources(MduXVerifyScenarioLib
 )
 add_dependencies(MduXVerifyScenarioLib
     emit-screen-endoscope-monitor emit-shader-mdux-ui emit-scenario-endoscope-monitor-basics)
-foreach(_vs_blob
+foreach(vsBlob
         "font/dejavu-ui/package.json|dejavuUiPackageJson"
         "font/dejavu-ui/atlas.bin|dejavuUiAtlas"
         "text/endoscope-monitor-en-us/package.json|endoscopeTextEnUsPackageJson"
@@ -739,12 +743,12 @@ foreach(_vs_blob
         "text/endoscope-monitor-fr-fr/runs.bin|endoscopeTextFrFrRuns"
         "image/brand-mark/package.json|brandMarkPackageJson"
         "image/brand-mark/pixels.rgba|brandMarkPixels")
-    string(REPLACE "|" ";" _vs_pair "${_vs_blob}")
-    list(GET _vs_pair 0 _vs_file)
-    list(GET _vs_pair 1 _vs_symbol)
+    string(REPLACE "|" ";" vsPair "${vsBlob}")
+    list(GET vsPair 0 vsFile)
+    list(GET vsPair 1 vsSymbol)
     mdux_embed_blob(MduXVerifyScenarioLib
-        FILE ${CMAKE_SOURCE_DIR}/generated/${_vs_file}
-        SYMBOL ${_vs_symbol})
+        FILE ${CMAKE_SOURCE_DIR}/generated/${vsFile}
+        SYMBOL ${vsSymbol})
 endforeach()
 
 # The scenario bundle, now with the dynamic rendered-evidence stage (#321). Same single

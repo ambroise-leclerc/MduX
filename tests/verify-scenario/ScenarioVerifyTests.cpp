@@ -215,6 +215,58 @@ const mdux::spec::Register reconcileRejectsDuplicate{
             .Execute();
     }};
 
+const mdux::spec::Register reconcileRejectsSurplusOutcome{
+    "reconcile fails closed on an outcome that discharges no enumerated obligation", "evidence-unit", [] {
+        return speclab::Test("verify-scenario-reconcile-surplus")
+            .Given("one obligation and two outcomes, only one of which pairs with it", [] {})
+            .When("reconcile pairs them", [] {})
+            .Then("VSC014 is reported and the verdict is ChecksFailed",
+                  [] {
+                      mdux::spec::Checks           checks;
+                      const std::array             obligations{binding("en-US", 1, "clock")};
+                      std::vector<vs::Outcome>     outcomes{heldBinding("en-US", 1, "clock"), heldBinding("fr-FR", 9, "reading")};
+                      std::vector<cli::Diagnostic> diagnostics;
+                      const vs::RunState           state = vs::reconcile(obligations, outcomes, diagnostics);
+                      checks.expect(state == vs::RunState::ChecksFailed, "a surplus outcome fails the run - the verdict cannot stay Passed");
+                      checks.expect(hasCode(diagnostics, "VSC014"), "the surplus outcome is named");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register substitutedScenarioSteps{
+    "A scenario.json whose steps do not match the reviewed constexpr is rejected before any render", "evidence-unit", [] {
+        return speclab::Test("verify-scenario-substituted-steps")
+            .Given("a copy of the committed scenario.json with one advance step's frame count changed", [] {})
+            .When("mdux-verify-scenario is pointed at it", [] {})
+            .Then("VSC002 is reported and no device is created",
+                  [] {
+                      mdux::spec::Checks             checks;
+                      mdux::test::TemporaryDirectory scratch{"verify-scenario-substituted-steps"};
+                      const std::filesystem::path   dir = scratch.path() / "endoscope-monitor-basics";
+                      std::filesystem::create_directories(dir);
+                      std::ifstream in{kBundle / "scenario.json", std::ios::binary};
+                      std::string   text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+                      // The last `advance` in the committed scenario drives 27 frames; make it 26. The
+                      // JSON still parses, but the step sequence no longer matches the constexpr.
+                      const auto pos = text.find("\"frames\": 27");
+                      checks.expect(pos != std::string::npos, "the committed scenario has the expected advance");
+                      if (pos != std::string::npos) {
+                          text.replace(pos, std::string_view{"\"frames\": 27"}.size(), "\"frames\": 26");
+                      }
+                      std::ofstream out{dir / "scenario.json", std::ios::binary};
+                      out << text;
+                      out.close();
+
+                      const vs::RunResult result = vs::run(dir);
+                      checks.expect(result.state == vs::RunState::CouldNotRun, "a step-substituted scenario is an impossible run");
+                      checks.expect(hasCode(result.diagnostics, "VSC002"), "the substitution is named");
+                      checks.expect(result.renderCount == 0, "nothing rendered");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 // --- The artifact writer -----------------------------------------------------------------------
 
 const mdux::spec::Register writerCanonicalises{

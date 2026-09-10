@@ -66,7 +66,13 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const std::filesystem::path bundle = arguments[2];
+    // Normalised so a trailing separator does not leave `filename()` empty - the scenario id passed
+    // to `writeScenarioVerification()` below must be the bundle directory's name, and a `PackageHeader`
+    // with an empty id would commit an artifact that `PackageHeader::readFrom()` then rejects.
+    std::filesystem::path bundle = std::filesystem::path{arguments[2]}.lexically_normal();
+    if (!bundle.has_filename()) {
+        bundle = bundle.parent_path();
+    }
 
     // The committed `generated/` tree is the artifact root: the scenario bundle being verified is the
     // freshly baked one in the build tree, while the screen, shader, font, text and image packages it

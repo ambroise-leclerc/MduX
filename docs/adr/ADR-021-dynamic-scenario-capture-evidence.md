@@ -128,26 +128,35 @@ enumerates:
   settled clock / field / reading / status / latch / refused-count / overflow equals the pinned
   value. A non-`Held` outcome, a batch larger than the queue (`QueueTooSmall`), an unreached step
   (`OutcomeStorageFull`) or a malformed scenario each fail the run.
-- **Rendered obligations** — for each `(Cⱼ, Lᵢ)` pair (`m · n`), the scenario gate runs the **same
-  golden and mandatory-text obligation set `mdux-verify-ui` enumerates for the screen** against the
-  frame that capture settled, in that locale: `Bounds` / `ColorHash` on each golden-bearing node,
-  `InkContainment` / `LocalizedTextPresence` on each `textKey` node. The predicates, the
-  expectations (derived from the committed artifacts, never from the caller) and the observation
-  profiles are `mdux.verify`'s, unchanged — the scenario gate renders a different *frame*, not a
-  different *check*. This is the concrete meaning of "dynamic rendered evidence": the rendered-truth
-  checks, on the frame the interaction produced.
+- **Rendered obligations** — for each `(Cⱼ, Lᵢ)` pair, the scenario gate runs the golden and
+  mandatory-text obligation set `mdux-verify-ui` enumerates for the screen against the frame that
+  capture settled, in that locale: `Bounds` / `ColorHash` on each golden-bearing node,
+  `InkContainment` / `LocalizedTextPresence` on each `textKey` node — **minus golden `ColorHash` on
+  any node whose content the scenario drives** (`contentIsSceneDriven()`: the pressure reading, the
+  classifier state, the `patient-id` field, the ECG trace). The static baseline verified a
+  NumericDisplay's default face; one showing "12.0 mmHg" paints digit glyphs whose edges are a
+  legitimate third colour a ground-and-tint blend cannot be, so the tint check on those nodes is
+  filtered before the set is counted or evaluated — golden `Bounds` on them still holds. The
+  predicates, the expectations (derived from the committed artifacts, never from the caller) and the
+  observation profiles are `mdux.verify`'s, unchanged: the scenario gate renders a different *frame*,
+  not a different *check*.
 - **Capture-completeness obligations** — one per declared `captureNames` entry: the replay handed
   that marker's frame to the callback (`markCaptured`), and the callback rendered a readback of the
   screen's authored extent. A declared marker no `Capture` step produces, or one the replay never
   reaches, is `CaptureNotInvoked` and fails the run.
 
-`scenario-verification.json` records one entry per obligation with its identities and finding, and
-`mdux-verify-scenario-bake` refuses to write the artifact unless the outcome count equals the
-enumerated obligation count and each outcome pairs with its obligation by
-`(scope, capture, node, check)` — the same fail-closed pairing check `writeVerification()` makes
-for the screen bundle. Missing, duplicate, unknown, unsupported and not-run rows are all rejected.
-Substitution is caught earlier: every input is digested and a non-canonical or digest-mismatched
-screen, scenario, text, font or shader package stops the run before a frame is rendered.
+`scenario-verification.json` records one entry per obligation with its identities and finding.
+`run()` reconciles the outcomes against the enumerated obligations *before* writing: each outcome is
+paired with its obligation by the whole identity tuple
+`(kind, scope, capture, stepIndex, expectKind, nodeId, check)`, a missing pairing appends a failed
+outcome (VSC010), a duplicated one is flagged (VSC011), and an outcome that discharges no obligation
+fails the verdict (VSC014). `mdux-verify-scenario-bake` then refuses to write the artifact at all
+unless the outcome count equals the obligation count and each pair agrees — the same fail-closed
+check `writeVerification()` makes for the screen bundle. Missing, duplicate, unknown, unsupported and
+not-run rows are all rejected. Substitution is caught earlier: `scenario.json` is parsed with the
+shared `mdux.tools.scenario` reader and compared field for field and step for step against the
+reviewed `constexpr` scenario this build holds, every other input is digested, and a non-canonical
+or digest-mismatched screen, text, font or shader package stops the run before a frame is rendered.
 
 ### 3. Committed byte-verified evidence versus diagnostic attachments
 
@@ -272,7 +281,11 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   discharges the obligation set), `ScenarioArtifact.{cppm,cpp}`
   (`mdux.tools.verify.scenario.artifact` — `writeScenarioVerification()`, `extendScenarioReport()`,
   reusing `publishBundle` / `BundleFile`), `VerifyScenarioMain.cpp`, `VerifyScenarioBakeMain.cpp`.
-  `MduXVerifyScenarioLib` links `MduX::VerifyUiLib MduX::MduX Vulkan::Vulkan`.
+  `MduXVerifyScenarioLib` PUBLIC-links `MduX::VerifyUiLib` only (its interfaces re-export
+  `mdux.tools.verify.driver` and nothing else); `MduX::MduX`, `MduX::ScenarioLib` (the
+  `scenario.json` reader) and `Vulkan::Vulkan` are PRIVATE. `run()` parses `scenario.json` with
+  `mdux.tools.scenario::readScenarioDoc()` and rejects any file whose header or step sequence
+  differs from the reviewed `constexpr` scenario (`VSC002`).
 - `tools/verify/Driver.{cppm,cpp}`: export `evaluateFrame()`, factored from the per-scope check
   loop with no behaviour change. `tools/verify/HeadlessDevice.hpp`: the Vulkan 1.3 headless
   bring-up, moved out of `Driver.cpp`'s anonymous namespace, `#include`d by both drivers as a
@@ -286,10 +299,11 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   the `endoscope-monitor-basics` `mdux_bake_artifact()` call, and a `verify.scenario.<id>` ctest
   registered beside it (label `verify`, no `SKIP_RETURN_CODE`).
 - `tests/verify-scenario/`: `verify_scenario_spec` (`MduX::VerifyScenarioLib`, `MDUX_REPO_ROOT`
-  defined) — the positive run in both locales, and the negative set the issue names: wrong
-  text/value/state, stale data, dropped input, omitted capture, substituted package. GPU-gated
-  render cases carry label `pixel` with `SKIP_RETURN_CODE 77`; enumeration and rejection cases run
-  everywhere.
+  defined) — the positive run in both locales, and the fail-closed set the issue names: a binding
+  outcome the replay marked failed (wrong pinned value), a missing outcome (dropped input / omitted
+  capture), a duplicated outcome, a surplus outcome, a substituted screen package, a scenario id
+  mismatch and a scenario whose steps differ from the reviewed `constexpr`. The real replay carries
+  label `pixel`; the pure enumeration / reconciliation / rejection cases run everywhere.
 - CI: the four build workflows already run `ctest -L verify` and `-L evidence`; add a
   `verify-scenario-frames/` upload-artifact-on-failure step to the Clang (lavapipe) and macOS
   (MoltenVK) legs.

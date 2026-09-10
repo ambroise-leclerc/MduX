@@ -677,6 +677,7 @@
         "VSC011",
         "VSC012",
         "VSC013",
+        "VSC014",
         "VSC101"
       ],
       "entryPoint": "tools/verify-scenario/VerifyScenarioMain.cpp",
@@ -738,6 +739,7 @@
         "VSC011",
         "VSC012",
         "VSC013",
+        "VSC014",
         "VSC101"
       ],
       "entryPoint": "tools/verify-scenario/VerifyScenarioBakeMain.cpp",
