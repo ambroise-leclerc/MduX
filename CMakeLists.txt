@@ -713,6 +713,16 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MduXVerifyScenarioLib PRIVATE /experimental:module /std:c++latest)
 endif()
+# GCC 16's -Wmaybe-uninitialized fires a false positive inside `std::string`'s inlined destructor
+# reached through `examples/support/MonitorFrame.hpp`'s `BoundScreen::load()` (an `import std` +
+# aggressive-inlining artifact - the members are value-initialised). Scoped to the one file that
+# consumes that header, and only under GCC; a source COMPILE_OPTIONS entry lands after the
+# `MduX_warnings` interface flags, so it actually takes effect. The example that owns the header
+# does not build with -Werror at all.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(tools/verify-scenario/ScenarioDriver.cpp
+        PROPERTIES COMPILE_OPTIONS -Wno-maybe-uninitialized)
+endif()
 if(UNIX)
     target_link_libraries(MduXVerifyScenarioLib PRIVATE Threads::Threads)
 endif()
