@@ -669,7 +669,6 @@
         "VSC003",
         "VSC004",
         "VSC005",
-        "VSC006",
         "VSC007",
         "VSC008",
         "VSC009",
@@ -682,7 +681,9 @@
       ],
       "entryPoint": "tools/verify-scenario/VerifyScenarioMain.cpp",
       "grammar": "tool-specific",
-      "libraries": [],
+      "libraries": [
+        "MduX::VerifyScenarioLib"
+      ],
       "name": "mdux-verify-scenario",
       "options": [
         "--capture-digest-out",
@@ -731,7 +732,6 @@
         "VSC003",
         "VSC004",
         "VSC005",
-        "VSC006",
         "VSC007",
         "VSC008",
         "VSC009",
@@ -744,7 +744,9 @@
       ],
       "entryPoint": "tools/verify-scenario/VerifyScenarioBakeMain.cpp",
       "grammar": "tool-specific",
-      "libraries": [],
+      "libraries": [
+        "MduX::VerifyScenarioLib"
+      ],
       "name": "mdux-verify-scenario-bake",
       "options": [
         "--help"

@@ -594,11 +594,13 @@ target_sources(MduXVerifyUiLib
         FILE_SET CXX_MODULES
         BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            verify/Artifacts.cppm
             verify/Driver.cppm
             verify/Artifact.cppm
             verify/Diff.cppm
             verify/MeduiEvidence.cppm
     PRIVATE
+        verify/Artifacts.cpp
         verify/Driver.cpp
         verify/Artifact.cpp
         verify/Diff.cpp
@@ -670,22 +672,55 @@ endif()
 #
 # The scenario-capture half of rendered-truth verification. It replays a committed `.scenario`
 # through the assembled `updateMonitor()` loop (the examples-zone glue it deliberately links, ADR-021
-# decision 1) and verifies the frame each `capture` marker settles, in every approved locale, against
-# the screen's own golden and text obligations. Shares `MduX::VerifyUiLib` for the atomic bundle
-# publish, the report extension and `evaluateFrame()`. An internal build tool: never installed, never
-# exported, and no example links it.
+# decision 1) and verifies the frame each `capture` marker settles against the screen's own golden
+# and text obligations, in every approved locale. Shares `MduX::VerifyUiLib` for the committed
+# artifact loaders, `evaluateFrame()` and the atomic publish - so the scenario gate and the screen
+# gate cannot disagree about what a rendered check means, or about what "the committed mdux-ui
+# shader" is.
 #
-# The executables are declared here (so the tool manifest and `mdux_bake_artifact(... THEN_TOOLS ...)`
-# find them), but the library `MduXVerifyScenarioLib` is defined in the root CMakeLists.txt after the
-# `mdux_emit_*` calls: it links the generated screen/shader/scenario modules and the embedded
-# committed packages the monitor example does, and those variables and custom commands must be
-# created in the same directory scope as the target. The raw name here is a forward reference CMake
-# resolves at generate time.
+# Not a module target: `ScenarioDriver.cpp` / `ScenarioArtifact.cpp` are ordinary translation units
+# that `import` the modules they need and `#include` the global-module examples-support glue in
+# ordinary code - a module interface would attach a declaration of that glue to the module, and
+# Clang rejects the linkage mismatch. The API is the two plain headers, on the PUBLIC include path.
+#
+# It reads every committed artifact from `generated/` at run time (like `mdux-verify-ui`), so it
+# embeds nothing and links no generated module - a scenario edit never needs the tool rebuilt.
+add_library(MduXVerifyScenarioLib STATIC
+    verify-scenario/ScenarioDriver.cpp
+    verify-scenario/ScenarioArtifact.cpp
+    verify-scenario/ScenarioDriver.hpp
+    verify-scenario/ScenarioArtifact.hpp
+)
+add_library(MduX::VerifyScenarioLib ALIAS MduXVerifyScenarioLib)
+
+target_compile_features(MduXVerifyScenarioLib PUBLIC cxx_std_23)
+# Only MduX::VerifyUiLib is a usage requirement (consumers `import mdux.tools.verify.driver` etc.
+# themselves). MduX (render), the scenario reader and Vulkan are PRIVATE - the .cpp files need them,
+# and a PUBLIC MduX would make a consumer inherit `MduX_options`' version macros a second time
+# (GCC -Werror redefinition).
+target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib)
+target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX::MduX MduX::ScenarioLib Vulkan::Vulkan MduX_warnings)
+# PUBLIC `tools/` so a consumer's `#include "verify-scenario/ScenarioDriver.hpp"` resolves; PRIVATE
+# `tools/verify` and `examples` for `HeadlessDevice.hpp` and the examples-support replay glue.
+target_include_directories(MduXVerifyScenarioLib PUBLIC ${CMAKE_SOURCE_DIR}/tools)
+target_include_directories(MduXVerifyScenarioLib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/verify ${CMAKE_SOURCE_DIR}/examples)
+
+set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(MduXVerifyScenarioLib PRIVATE /experimental:module /std:c++latest)
+endif()
+if(UNIX)
+    target_link_libraries(MduXVerifyScenarioLib PRIVATE Threads::Threads)
+endif()
+
 add_executable(mdux-verify-scenario verify-scenario/VerifyScenarioMain.cpp)
-target_link_libraries(mdux-verify-scenario PRIVATE MduXVerifyScenarioLib MduX_warnings)
+target_link_libraries(mdux-verify-scenario PRIVATE MduX::VerifyScenarioLib MduX_warnings)
 
 add_executable(mdux-verify-scenario-bake verify-scenario/VerifyScenarioBakeMain.cpp)
-target_link_libraries(mdux-verify-scenario-bake PRIVATE MduXVerifyScenarioLib MduX_warnings)
+target_link_libraries(mdux-verify-scenario-bake PRIVATE MduX::VerifyScenarioLib MduX_warnings)
 
 foreach(vsTarget mdux-verify-scenario mdux-verify-scenario-bake)
     set_target_properties(${vsTarget} PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)

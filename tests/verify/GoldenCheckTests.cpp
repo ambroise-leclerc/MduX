@@ -285,6 +285,47 @@ const mdux::spec::Register aRegionOffTheFrameIsNotAPass{
             .Execute();
     }};
 
+const mdux::spec::Register regionPaintedSeesContentButNotItsValue{
+    "RegionPainted holds when a scene-driven node drew anything and fails only when it went blank",
+    "evidence-unit",
+    [] {
+        return speclab::Test("verify-region-painted")
+            .Given("the rectangle of a live NumericDisplay and the driver's resolved ground", [] {})
+            .When("the node draws its value, then a different value, then nothing, then off the frame", [] {})
+            .Then("only the blank frame and the off-frame rectangle fail - a wrong value is the scenario's binding obligation to catch",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      constexpr ms::NodeRect rect{4, 4, 8, 6};
+                      const mv::RenderScope  scope = mv::RenderScope::forLocale("en-US");
+
+                      // "120 mmHg": some glyph pixels land inside the box.
+                      Canvas reading120{16, 20, ground};
+                      reading120.fill({5, 5, 2, 1}, ColorRgba8{.r = 200, .g = 210, .b = 220, .a = 255});
+                      const mv::CheckOutcome shown = mv::regionPainted(reading120.view(), rect, ground, "insufflation-pressure", scope);
+                      checks.expect(shown.held(), "a node that painted its value satisfies the check");
+                      checks.expect(shown.profile == mv::regionPaintedProfile, "the outcome is tagged with the region-painted profile");
+
+                      // A different value still paints *something* in the box: RegionPainted cannot
+                      // tell 999 from 120, and ADR-021 does not ask it to - `expect reading` does.
+                      Canvas reading999{16, 20, ground};
+                      reading999.fill({7, 5, 3, 1}, ColorRgba8{.r = 200, .g = 210, .b = 220, .a = 255});
+                      checks.expect(mv::regionPainted(reading999.view(), rect, ground, "insufflation-pressure", scope).held(),
+                                    "a wrong-but-present value is not this check's to reject");
+
+                      Canvas blank{16, 20, ground};
+                      const mv::CheckOutcome gone = mv::regionPainted(blank.view(), rect, ground, "insufflation-pressure", scope);
+                      checks.expect(gone.finding == mv::Finding::NothingPainted, "a node that went blank is caught");
+                      checks.expect(!gone.held(), "which is a failure, not a skip");
+
+                      Canvas                 small{8, 8, ground};
+                      const mv::CheckOutcome off = mv::regionPainted(small.view(), rect, ground, "insufflation-pressure", scope);
+                      checks.expect(off.finding == mv::Finding::RegionOutsideFrame, "a rectangle off the frame fails rather than reading past it");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 const mdux::spec::Register theTintIsComparedExactly{
     "ColorHash separates the wrong colour from a colour that never reaches its tint",
     "evidence-unit",

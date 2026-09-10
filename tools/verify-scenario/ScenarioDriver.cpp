@@ -2,11 +2,19 @@
  * @file ScenarioDriver.cpp
  * @brief Replay, capture rendering, obligation enumeration and reconciliation for mdux-verify-scenario.
  *
- * **Not a module.** It links the examples-zone replay glue and the `mdux_embed_blob` committed
- * packages, all of which are global-module; a module implementation unit would attach a declaration
- * of one to this module and Clang would reject the linkage mismatch. So this is an ordinary
- * translation unit that `import`s the modules it needs and `#include`s the rest in ordinary code -
- * exactly `MedicalScreenMonitorExample.cpp`'s arrangement. See `ScenarioDriver.hpp`.
+ * **Not a module.** It links the examples-zone replay glue, which is global-module; a module
+ * implementation unit would attach a declaration of it to the module and Clang would reject the
+ * linkage mismatch. So this is an ordinary translation unit that `import`s the modules it needs and
+ * `#include`s the rest in ordinary code. See `ScenarioDriver.hpp`.
+ *
+ * ## Everything is read from `generated/` on disk
+ *
+ * The verifier records the digest of each artifact it read as evidence, so it must render and replay
+ * against **those** bytes, not a `constexpr` copy compiled into the tool: it reconstructs the
+ * `CompiledScenario` from `scenario.json` with the shared `mdux.tools.scenario` reader, and loads
+ * the screen, goldens and the shader / font / text / image packages with `mdux-verify-ui`'s own
+ * loaders (`mdux.tools.verify.artifacts`). The executable embeds nothing screen- or
+ * scenario-specific.
  */
 import std;
 import mdux.core.result;
@@ -21,35 +29,25 @@ import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.medui.trace;
 import mdux.medui.scenario;
-import mdux.medui.generated.screen_endoscope_monitor;
-import mdux.medui.generated.scenario_endoscope_monitor_basics;
 import mdux.render.offscreen;
 import mdux.render.vulkan;
-import mdux.shader.generated.mdux_ui;
 import mdux.shader.schema;
 import mdux.text.schema;
 import mdux.tools.cli;
 import mdux.tools.medui.package;
 import mdux.tools.scenario;
+import mdux.tools.scenario.script;
+import mdux.tools.verify.artifacts;
 import mdux.tools.verify.diff;
 import mdux.tools.verify.driver;
 import mdux.verify;
 
-// After `import std;`, in ordinary code: `<vulkan/vulkan.h>`, the shared headless device, the
-// `mdux_embed_blob` committed-package accessors (they reach `std::span` / `std::byte` through
-// `import std`, their designed usage), and the examples-support replay glue.
+// After `import std;`, in ordinary code: `<vulkan/vulkan.h>`, the shared headless device, and the
+// examples-support replay glue (every entity in these headers is `inline` or a type - no link
+// symbol, and no embedded blob or generated module is named).
 #include <vulkan/vulkan.h>
 
 #include "HeadlessDevice.hpp"
-
-#include "brandMarkPackageJson.hpp"
-#include "brandMarkPixels.hpp"
-#include "dejavuUiAtlas.hpp"
-#include "dejavuUiPackageJson.hpp"
-#include "endoscopeTextEnUsPackageJson.hpp"
-#include "endoscopeTextEnUsRuns.hpp"
-#include "endoscopeTextFrFrPackageJson.hpp"
-#include "endoscopeTextFrFrRuns.hpp"
 
 #include "support/MonitorApp.hpp"
 #include "support/ScenarioReplay.hpp"
@@ -65,11 +63,7 @@ namespace ms  = mdux::medui;
 namespace mv  = mdux::verify;
 namespace mx  = mdux::examples;
 namespace rnd = mdux::render;
-
-/// The `constexpr` scenario this build verifies. The tool is single-scenario, as
-/// `MedicalScreenMonitorExample --replay` is - a second one adds one generated-module file set and
-/// one `run()` branch (ADR-021, Consequences).
-namespace generatedScenario = mdux::medui::generated::scenario_endoscope_monitor_basics;
+namespace sc  = mdux::tools::scenario;
 
 void report(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path& file, std::string code, std::string message, std::string fix = {}) {
     diagnostics.push_back(cli::Diagnostic{.file     = file.generic_string(),
@@ -87,32 +81,9 @@ void warn(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path
                                           .fixHint  = {}});
 }
 
-[[nodiscard]] std::optional<std::string> readText(const std::filesystem::path& path) {
-    std::ifstream file{path, std::ios::binary | std::ios::ate};
-    if (!file) {
-        return std::nullopt;
-    }
-    const std::streamoff size = file.tellg();
-    if (size < 0 || !file.seekg(0)) {
-        return std::nullopt;
-    }
-    std::string text(static_cast<std::size_t>(size), '\0');
-    if (size > 0) {
-        file.read(text.data(), size);
-        if (!file) {
-            return std::nullopt;
-        }
-    }
-    return text;
-}
-
-/// Lowercase-hex SHA-256, the spelling every other evidence record uses.
-[[nodiscard]] std::string hexDigest(std::span<const std::byte> bytes) {
+[[nodiscard]] std::string sha256Hex(std::span<const std::byte> bytes) {
     const auto digest = mdux::evidence::toHex(mdux::evidence::sha256(bytes));
     return std::string{digest.data(), digest.size()};
-}
-[[nodiscard]] std::string hexDigest(std::string_view text) {
-    return hexDigest(std::as_bytes(std::span{text.data(), text.size()}));
 }
 
 [[nodiscard]] std::filesystem::path normalize(std::filesystem::path path) {
@@ -127,10 +98,75 @@ void warn(std::vector<cli::Diagnostic>& diagnostics, const std::filesystem::path
     return path;
 }
 
+// ---------------------------------------------------------------------------
+// Rebuilding a `CompiledScenario` from the committed `scenario.json` on disk.
+// ---------------------------------------------------------------------------
+
+/// The `CompiledScenario` the verifier replays, rebuilt from a parsed `Script` rather than from a
+/// `constexpr` module - so every value, event coordinate and expectation it checks is the one the
+/// committed JSON carries. Spans view `script`, which the caller keeps alive; `steps` and the two
+/// name-view vectors are owned here.
+struct OwnedScenario {
+    sc::Script                    script;
+    std::vector<ms::ScenarioStep> steps;
+    std::vector<std::string_view> requirementViews;
+    std::vector<std::string_view> captureViews;
+
+    explicit OwnedScenario(sc::Script parsed) : script{std::move(parsed)} {
+        requirementViews.assign(script.requirements.begin(), script.requirements.end());
+        captureViews.assign(script.captureNames.begin(), script.captureNames.end());
+        steps.reserve(script.steps.size());
+        for (const sc::ScriptStep& s : script.steps) {
+            ms::ScenarioStep step{.kind = s.kind, .frames = s.frames};
+            switch (s.kind) {
+                case ms::StepKind::Pointer: step.pointer = s.pointer; break;
+                case ms::StepKind::Key:     step.key     = s.key; break;
+                case ms::StepKind::Text:    step.text    = s.text; break;
+                case ms::StepKind::Focus:   step.focus   = ms::FocusEvent{.kind = s.focusKind, .nodeId = s.focusNode}; break;
+                case ms::StepKind::Capture: step.capture = s.capture; break;
+                case ms::StepKind::Expect:
+                    step.expect = ms::Expectation{.kind          = s.expect.kind,
+                                                  .clock         = s.expect.clock,
+                                                  .fieldValue    = std::span<const char32_t>{s.expect.fieldValue.data(), s.expect.fieldValue.size()},
+                                                  .fieldHasCaret = s.expect.fieldHasCaret,
+                                                  .caret         = s.expect.caret,
+                                                  .count         = s.expect.count,
+                                                  .nodeId        = s.expect.nodeId,
+                                                  .event         = s.expect.event,
+                                                  .requirement   = s.expect.requirement,
+                                                  .source        = s.expect.source,
+                                                  .value         = s.expect.value,
+                                                  .statField     = s.expect.statField,
+                                                  .flag          = s.expect.flag};
+                    break;
+                case ms::StepKind::Advance: break;
+            }
+            steps.push_back(step);
+        }
+    }
+    OwnedScenario(const OwnedScenario&)            = delete;
+    OwnedScenario& operator=(const OwnedScenario&) = delete;
+
+    [[nodiscard]] ms::CompiledScenario view() const noexcept {
+        return ms::CompiledScenario{.id            = script.id,
+                                    .screenId      = script.screenId,
+                                    .schemaVersion = script.version,
+                                    .pinnedClock   = script.clock,
+                                    .sampleSeed    = script.sampleSeed,
+                                    .requirements  = requirementViews,
+                                    .captureNames  = captureViews,
+                                    .steps         = steps};
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
 /// The command-buffer recorder `OffscreenTarget::renderAndRead()` calls, once, inside the pass.
 struct Recording {
-    rnd::UiRenderer*         renderer{nullptr};
-    const mdux::draw::DrawList* list{nullptr};
+    rnd::UiRenderer*               renderer{nullptr};
+    const mdux::draw::DrawList*    list{nullptr};
     std::optional<rnd::RenderError> error;
 };
 
@@ -141,28 +177,44 @@ void recordFrame(VkCommandBuffer commandBuffer, void* context) {
     }
 }
 
+/// The near-black ground every scene-driven node is composited over. The endoscope screen packs
+/// those nodes edge to edge with no panel beneath, so `groundFor()` would return exactly this - the
+/// offscreen clear colour, which is also what the window presents (`mx::kClear`).
+constexpr mdux::core::ColorRgba8 kSceneGround = mx::kClear;
+
 /**
- * @brief Whether `node` is a golden node whose *content* this scenario drives with live data.
+ * @brief Whether `nodeId` names a node whose *content* this scenario drives with live data.
  *
- * A capture frame binds the pressure reading, the classifier state, the `patient-id` field and the
- * ECG trace (`recordMonitorFrame()`), so those nodes render content the static screen gate never
- * bound. Golden `Bounds` still applies - the node fills its declared box - but golden `ColorHash`
- * does not: the static baseline verified a NumericDisplay's default face, and a NumericDisplay
- * showing "12.0 mmHg" paints digit glyphs whose edges are a legitimate third colour a
- * ground-and-tint blend cannot be. ADR-021 decision 2: the rendered obligations are the screen's,
- * minus the tint check where the interaction changed the content.
+ * A capture frame binds the pressure reading, the classifier state, the `patient-id` field, the
+ * `wall-clock` and the ECG trace (`recordMonitorFrame()`). Those nodes render content the static
+ * screen gate never bound, so on a capture frame: golden `Bounds` still applies (the node fills its
+ * box), golden `ColorHash` does **not** (a NumericDisplay showing "12.0 mmHg" paints digit glyphs
+ * whose edges are a legitimate third colour a ground-and-tint blend cannot be), and the gate adds a
+ * `RegionPainted` check instead (ADR-021 decision 2).
  */
 [[nodiscard]] bool contentIsSceneDriven(const ms::ScreenPackage& screen, std::string_view nodeId) {
     if (nodeId == mx::kPressureNode || nodeId == mx::kStatusNode || nodeId == mx::kPatientNode) {
         return true;
     }
     const ms::CompiledNode* node = screen.find(nodeId);
-    return node != nullptr && std::holds_alternative<ms::SignalTraceSpec>(node->payload);
+    return node != nullptr
+        && (std::holds_alternative<ms::SignalTraceSpec>(node->payload) || std::holds_alternative<ms::ClockSpec>(node->payload));
 }
 
-/// True for a rendered obligation the scenario gate must not raise on a scene-driven node.
+/// The nodes `contentIsSceneDriven()` selects, in screen order.
+[[nodiscard]] std::vector<std::string_view> sceneDrivenNodes(const ms::ScreenPackage& screen) {
+    std::vector<std::string_view> ids;
+    for (const ms::CompiledNode& node : screen.nodes) {
+        if (contentIsSceneDriven(screen, node.id)) {
+            ids.push_back(node.id);
+        }
+    }
+    return ids;
+}
+
+/// True for a golden `ColorHash` obligation the scenario gate must not raise on a scene-driven node.
 [[nodiscard]] bool skipRenderedObligation(const ms::ScreenPackage& screen, std::string_view nodeId, std::string_view check) {
-    return check == mdux::verify::spell(mdux::verify::CvCheck::ColorHash) && contentIsSceneDriven(screen, nodeId);
+    return check == mv::spell(mv::CvCheck::ColorHash) && contentIsSceneDriven(screen, nodeId);
 }
 
 /// The obligation an outcome discharges, as `reconcile()` keys them.
@@ -176,42 +228,50 @@ void recordFrame(VkCommandBuffer commandBuffer, void* context) {
                       .check      = outcome.check};
 }
 
+/// One rendered `Outcome` from a governed `CheckOutcome`, tagged for a capture and locale.
+[[nodiscard]] Outcome rendered(std::string capture, std::string scope, const mv::CheckOutcome& checked) {
+    return Outcome{.kind       = ObligationKind::Rendered,
+                   .scope      = std::move(scope),
+                   .capture    = std::move(capture),
+                   .stepIndex  = 0,
+                   .expectKind = {},
+                   .nodeId     = std::string{checked.nodeId},
+                   .check      = std::string{checked.check},
+                   .held       = checked.held(),
+                   .finding    = checked.finding,
+                   .profile    = checked.profile};
+}
+
 }  // namespace
 
-std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&               scenario,
-                                             std::span<const std::string_view>         locales,
-                                             const ms::ScreenPackage&                  screen,
-                                             std::span<const mv::GoldenEntry>          goldens) {
+std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&                scenario,
+                                             std::span<const std::string_view>          locales,
+                                             const ms::ScreenPackage&                   screen,
+                                             std::span<const mv::GoldenEntry>           goldens) {
     std::vector<Obligation> obligations;
-
-    // The rendered obligations for one frame: exactly what the screen gate enumerates for this
-    // screen, minus the render-scope loop (this driver scopes per capture per locale instead).
-    const mdux::tools::verify::PlanResult plan = mdux::tools::verify::enumerate(screen, goldens);
+    const auto              plan       = mdux::tools::verify::enumerate(screen, goldens);
+    const auto              sceneNodes = sceneDrivenNodes(screen);
 
     for (const std::string_view locale : locales) {
-        // binding: one per Expect step
+        // binding: one per Expect step.
         for (std::size_t i = 0; i < scenario.steps.size(); ++i) {
-            const ms::ScenarioStep& step = scenario.steps[i];
-            if (step.kind != ms::StepKind::Expect) {
+            if (scenario.steps[i].kind != ms::StepKind::Expect) {
                 continue;
             }
             obligations.push_back(Obligation{.kind       = ObligationKind::Binding,
                                              .scope      = std::string{locale},
                                              .capture    = {},
                                              .stepIndex  = i,
-                                             .expectKind = std::string{ms::toWire(step.expect.kind)},
+                                             .expectKind = std::string{ms::toWire(scenario.steps[i].expect.kind)},
                                              .nodeId     = {},
                                              .check      = {}});
         }
 
-        // rendered: every golden/text check, per declared capture (minus the tint check on a node
-        // whose content the scenario drives - see `contentIsSceneDriven()`).
         for (const std::string_view capture : scenario.captureNames) {
+            // rendered: every golden/text check the screen gate enumerates, minus the tint check on
+            // a scene-driven node.
             for (const mdux::tools::verify::Obligation& item : plan.obligations) {
-                if (item.scope != locale) {
-                    continue;  // `enumerate()` already produced one obligation per approved locale
-                }
-                if (skipRenderedObligation(screen, item.nodeId, item.check)) {
+                if (item.scope != locale || skipRenderedObligation(screen, item.nodeId, item.check)) {
                     continue;
                 }
                 obligations.push_back(Obligation{.kind       = ObligationKind::Rendered,
@@ -222,10 +282,18 @@ std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&        
                                                  .nodeId     = item.nodeId,
                                                  .check      = item.check});
             }
-        }
-
-        // capture: one per declared marker
-        for (const std::string_view capture : scenario.captureNames) {
+            // rendered: a `RegionPainted` check per scene-driven node - it drew *something* (the
+            // settled *value* is the binding obligation's, not a rendered check's).
+            for (const std::string_view node : sceneNodes) {
+                obligations.push_back(Obligation{.kind       = ObligationKind::Rendered,
+                                                 .scope      = std::string{locale},
+                                                 .capture    = std::string{capture},
+                                                 .stepIndex  = 0,
+                                                 .expectKind = {},
+                                                 .nodeId     = std::string{node},
+                                                 .check      = "RegionPainted"});
+            }
+            // capture: one per declared marker.
             obligations.push_back(Obligation{.kind       = ObligationKind::Capture,
                                              .scope      = std::string{locale},
                                              .capture    = std::string{capture},
@@ -245,13 +313,18 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
     for (const Obligation& obligation : obligations) {
         std::size_t matches = 0;
         bool        held    = false;
+        std::string finding;
         for (const Outcome& outcome : outcomes) {
             if (obligationOf(outcome) == obligation) {
                 ++matches;
-                held = outcome.held;
+                held    = outcome.held;
+                finding = obligation.kind == ObligationKind::Rendered ? std::string{mv::spell(outcome.finding)} : "did not hold";
             }
         }
         discharged += matches;
+
+        const std::string where = std::format("scope '{}', capture '{}', step {}, node '{}', check '{}'",
+                                               obligation.scope, obligation.capture, obligation.stepIndex, obligation.nodeId, obligation.check);
         if (matches == 0) {
             // A missing outcome is a failure, not an absence: ADR-021 decision 2, PAR-REQ-003.
             outcomes.push_back(Outcome{.kind       = obligation.kind,
@@ -264,65 +337,24 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
                                        .held       = false,
                                        .finding    = mv::Finding::Held,
                                        .profile    = {}});
-            report(diagnostics,
-                   {},
-                   "VSC010",
-                   std::format("{} obligation (scope '{}', capture '{}', step {}, node '{}', check '{}') produced no outcome",
-                               toWire(obligation.kind),
-                               obligation.scope,
-                               obligation.capture,
-                               obligation.stepIndex,
-                               obligation.nodeId,
-                               obligation.check));
+            report(diagnostics, {}, "VSC010", std::format("{} obligation ({}) produced no outcome", toWire(obligation.kind), where));
             state = RunState::ChecksFailed;
             continue;
         }
         if (matches > 1) {
-            report(diagnostics,
-                   {},
-                   "VSC011",
-                   std::format("{} obligation (scope '{}', capture '{}', step {}, node '{}', check '{}') has {} outcomes",
-                               toWire(obligation.kind),
-                               obligation.scope,
-                               obligation.capture,
-                               obligation.stepIndex,
-                               obligation.nodeId,
-                               obligation.check,
-                               matches));
+            report(diagnostics, {}, "VSC011", std::format("{} obligation ({}) has {} outcomes", toWire(obligation.kind), where, matches));
             state = RunState::ChecksFailed;
         }
         if (!held) {
-            // One line per obligation that did not hold, so a CI log is actionable.
-            std::string detail;
-            switch (obligation.kind) {
-                case ObligationKind::Rendered:
-                    detail = std::format("capture '{}', scope '{}', node '{}', check '{}'", obligation.capture, obligation.scope, obligation.nodeId, obligation.check);
-                    break;
-                case ObligationKind::Binding:
-                    detail = std::format("scope '{}', expect step {} ({})", obligation.scope, obligation.stepIndex, obligation.expectKind);
-                    break;
-                case ObligationKind::Capture:
-                    detail = std::format("capture '{}', scope '{}'", obligation.capture, obligation.scope);
-                    break;
-            }
-            std::string finding;
-            for (const Outcome& outcome : outcomes) {
-                if (obligationOf(outcome) == obligation) {
-                    finding = obligation.kind == ObligationKind::Rendered ? std::string{mv::spell(outcome.finding)} : "did not hold";
-                }
-            }
-            report(diagnostics, {}, "VSC101", std::format("{} obligation did not hold: {}: {}", toWire(obligation.kind), detail, finding));
+            report(diagnostics, {}, "VSC101", std::format("{} obligation did not hold: {}: {}", toWire(obligation.kind), where, finding));
             state = RunState::ChecksFailed;
         }
     }
 
-    // Every outcome must discharge an enumerated obligation - a surplus outcome means the outcome
-    // set does not correspond to the obligation set, and the verdict must not stay `Passed`. The
-    // screen driver makes the same size comparison; `writeScenarioVerification()` rejects it later,
-    // but the exit-status path is this function's.
+    // Every outcome must discharge an enumerated obligation - a surplus means the outcome set does
+    // not correspond to the obligation set, and the verdict must not stay `Passed`.
     if (discharged < outcomes.size()) {
-        report(diagnostics, {}, "VSC014",
-               std::format("{} outcome(s) discharge no enumerated obligation", outcomes.size() - discharged));
+        report(diagnostics, {}, "VSC014", std::format("{} outcome(s) discharge no enumerated obligation", outcomes.size() - discharged));
         state = RunState::ChecksFailed;
     }
     return state;
@@ -330,32 +362,42 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
 
 namespace {
 
-/// Everything the per-capture callback and the post-replay pass share for one locale leg.
-struct LegContext {
-    RunResult*                   result{nullptr};
-    const RunOptions*            options{nullptr};
-    const mx::BoundScreen*       bound{nullptr};
-    rnd::UiRenderer*             renderer{nullptr};
-    rnd::OffscreenTarget*        target{nullptr};
-    VkQueue                      queue{VK_NULL_HANDLE};
-    mv::RenderScope              scope{mv::RenderScope::localeFree()};
-    std::string                  scopeTag;
-    std::span<const mv::GoldenEntry> goldens;
-    std::string_view             scenarioId;
-    mx::FrameStorage*            storage{nullptr};
-    std::set<std::string>        invoked;         ///< markers whose frame the replay handed us
-    std::set<std::string>        renderFailed;    ///< markers whose capture render did not complete
-    bool                         structuralFailure{false};
-    std::string                  structuralMessage;
+/// The packages one approved locale's frame is rendered from, with the screen and shader shared
+/// across locales.
+struct LocaleRender {
+    ms::TextBinding  textBinding;
+    ms::ImageBinding imageBinding;
+    rnd::UiRenderer  renderer;
 };
 
-/// Renders one capture frame and discharges its rendered obligations. A render or evaluation failure
-/// is recorded on the leg and never silently swallowed.
+/// Everything the per-capture callback and the post-replay pass share for one locale leg.
+struct LegContext {
+    RunResult*                      result{nullptr};
+    const RunOptions*               options{nullptr};
+    const ms::ScreenPackage*        screen{nullptr};
+    LocaleRender*                   render{nullptr};
+    rnd::OffscreenTarget*           target{nullptr};
+    VkQueue                         queue{VK_NULL_HANDLE};
+    mv::RenderScope                 scope{mv::RenderScope::localeFree()};
+    std::string                     scopeTag;
+    std::span<const mv::GoldenEntry> goldens;
+    std::span<const std::byte>      atlas;
+    std::span<const std::string_view> sceneNodes;
+    std::string_view                scenarioId;
+    mx::FrameStorage*               storage{nullptr};
+    std::set<std::string>           invoked;
+    std::set<std::string>           renderFailed;
+    bool                            structuralFailure{false};
+    std::string                     structuralMessage;
+};
+
+/// Renders one capture frame and discharges its rendered obligations. A render or evaluation
+/// failure is recorded on the leg and never silently swallowed.
 void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
     const std::string marker{ctx.name};
     leg.invoked.insert(marker);
 
-    auto list = mx::recordMonitorFrame(leg.bound->screen, leg.bound->textBinding, leg.bound->imageBinding, *leg.storage, ctx.state, ctx.clock);
+    auto list = mx::recordMonitorFrame(*leg.screen, leg.render->textBinding, leg.render->imageBinding, *leg.storage, ctx.state, ctx.clock);
     if (!list) {
         leg.renderFailed.insert(marker);
         report(leg.result->diagnostics, {}, "VSC008",
@@ -363,19 +405,19 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
         return;
     }
 
-    Recording recording{.renderer = leg.renderer, .list = &*list, .error = std::nullopt};
+    Recording recording{.renderer = &leg.render->renderer, .list = &*list, .error = std::nullopt};
     auto      pixels = leg.target->renderAndRead(leg.queue, mx::kClear, recordFrame, &recording);
     if (recording.error.has_value() || !pixels.has_value()) {
-        const std::string reason = recording.error.has_value() ? std::string{rnd::describe(*recording.error)}
-                                                               : std::string{rnd::describe(pixels.error())};
+        const std::string reason = recording.error.has_value() ? std::string{rnd::describe(*recording.error)} : std::string{rnd::describe(pixels.error())};
         leg.renderFailed.insert(marker);
         report(leg.result->diagnostics, {}, "VSC008", std::format("capture '{}' ({}): render/readback failed: {}", marker, leg.scopeTag, reason));
         return;
     }
     ++leg.result->renderCount;
 
-    const auto extent = leg.bound->surface();
-    const auto frame  = mv::FramebufferView::createPacked(*pixels, extent.width, extent.height);
+    const auto width  = static_cast<mdux::core::Px>(leg.screen->surfaceWidth);
+    const auto height = static_cast<mdux::core::Px>(leg.screen->surfaceHeight);
+    const auto frame  = mv::FramebufferView::createPacked(*pixels, width, height);
     if (!frame.has_value()) {
         leg.renderFailed.insert(marker);
         report(leg.result->diagnostics, {}, "VSC008",
@@ -383,15 +425,16 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
         return;
     }
 
-    auto evaluated = mdux::tools::verify::evaluateFrame(leg.bound->screen, leg.goldens, leg.scope, &leg.bound->textBinding, dejavuUiAtlas(), *frame);
+    // The screen's own golden and mandatory-text obligations, against this frame.
+    auto evaluated = mdux::tools::verify::evaluateFrame(*leg.screen, leg.goldens, leg.scope, &leg.render->textBinding, leg.atlas, *frame);
     if (evaluated.failure.has_value()) {
         leg.structuralFailure = true;
         leg.structuralMessage = std::format("capture '{}' ({}): {}", marker, leg.scopeTag, *evaluated.failure);
         return;
     }
     for (const mdux::tools::verify::Outcome& o : evaluated.outcomes) {
-        if (skipRenderedObligation(leg.bound->screen, o.nodeId, o.check)) {
-            continue;  // the scenario drives this node's content; its tint check is not an obligation
+        if (skipRenderedObligation(*leg.screen, o.nodeId, o.check)) {
+            continue;
         }
         leg.result->outcomes.push_back(Outcome{.kind       = ObligationKind::Rendered,
                                                .scope      = leg.scopeTag,
@@ -405,13 +448,19 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
                                                .profile    = o.profile});
     }
 
+    // `RegionPainted` per scene-driven node: it drew something.
+    for (const std::string_view node : leg.sceneNodes) {
+        const ms::CompiledNode* compiled = leg.screen->find(node);
+        if (compiled == nullptr) {
+            continue;
+        }
+        leg.result->outcomes.push_back(rendered(marker, leg.scopeTag, mv::regionPainted(*frame, compiled->bounds, kSceneGround, node, leg.scope)));
+    }
+
     // Diagnostic attachments (ADR-021 decision 3): the PNG and the per-backend digest. Neither is
     // committed; a failure to write either is a warning, never a verdict.
-    const std::string stem = std::format("{}.{}.{}", leg.scenarioId, marker, leg.scopeTag);
-    leg.result->captureDigests.push_back(RunResult::CaptureDigest{
-        .capture = marker,
-        .scope   = leg.scopeTag,
-        .sha256  = hexDigest(std::as_bytes(std::span{pixels->data(), pixels->size()}))});
+    leg.result->captureDigests.push_back(
+        RunResult::CaptureDigest{.capture = marker, .scope = leg.scopeTag, .sha256 = sha256Hex(std::as_bytes(std::span{pixels->data(), pixels->size()}))});
 
     if (!leg.options->frameImageDirectory.empty()) {
         std::error_code created;
@@ -419,9 +468,9 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
         if (created) {
             warn(leg.result->diagnostics, leg.options->frameImageDirectory, "VSC009", "cannot create the frame image directory: " + created.message());
         } else {
-            const std::filesystem::path path = leg.options->frameImageDirectory / (stem + ".frame.png");
-            const auto                  encoded =
-                mdux::tools::verify::encodePng(*pixels, static_cast<std::uint32_t>(extent.width), static_cast<std::uint32_t>(extent.height));
+            const std::filesystem::path path =
+                leg.options->frameImageDirectory / std::format("{}.{}.{}.frame.png", leg.scenarioId, marker, leg.scopeTag);
+            const auto encoded = mdux::tools::verify::encodePng(*pixels, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
             std::ofstream out{path, std::ios::binary | std::ios::trunc};
             out.write(reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
             if (out && !encoded.empty()) {
@@ -433,25 +482,55 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
     }
 }
 
-/// Runs one approved locale: loads its committed packages, replays, and records every outcome.
-/// Returns false only on a structural impossibility (it has set `result.state` and reported); a
-/// check that ran and did not hold is a recorded outcome, not a false return.
-[[nodiscard]] bool runLeg(RunResult&                  result,
-                          const RunOptions&           options,
-                          const ms::CompiledScenario& scenario,
-                          std::span<const mv::GoldenEntry> goldens,
-                          std::string_view             scenarioId,
-                          mx::Locale                   locale,
-                          HeadlessDevice&              device,
-                          rnd::OffscreenTarget&        target) {
-    const std::string scopeTag{mx::localeTag(locale)};
-
-    auto bound = mx::BoundScreen::load(locale);
-    if (!bound) {
-        report(result.diagnostics, {}, "VSC006", std::format("the committed packages for locale '{}' were refused", scopeTag));
-        result.state = RunState::CouldNotRun;
-        return false;
+/// Builds the per-locale bindings and renderer from already-loaded, already-authenticated assets.
+[[nodiscard]] std::optional<LocaleRender> makeLocaleRender(const ms::ScreenPackage&                    screen,
+                                                           const mdux::tools::verify::LocaleAssets&    locale,
+                                                           const mdux::tools::verify::ImageAssets*     image,
+                                                           const mdux::tools::verify::ShaderAssets&    shader,
+                                                           const rnd::VulkanRenderContext&             context,
+                                                           std::string&                               error) {
+    auto textBinding = ms::TextBinding::create(screen, locale.font, locale.text, std::as_bytes(std::span{locale.textJson}), locale.runs);
+    if (!textBinding) {
+        error = "text binding refused: " + std::string{ms::describe(textBinding.error())};
+        return std::nullopt;
     }
+    ms::ImageBinding imageBinding{};
+    if (image != nullptr) {
+        auto made = ms::ImageBinding::create(screen, image->image, std::as_bytes(std::span{image->imageJson}), image->pixels);
+        if (!made) {
+            error = "image binding refused: " + std::string{ms::describe(made.error())};
+            return std::nullopt;
+        }
+        imageBinding = *made;
+    }
+
+    const auto fontWidth  = locale.font.atlas.width;
+    const auto fontHeight = locale.font.atlas.height;
+    auto renderer = image != nullptr ? rnd::UiRenderer::createWithAtlases(context, shader.view(), screen.budget, locale.atlas, fontWidth, fontHeight,
+                                                                          image->pixels, image->image.width, image->image.height)
+                                     : rnd::UiRenderer::createWithCoverageAtlas(context, shader.view(), screen.budget, locale.atlas, fontWidth, fontHeight);
+    if (!renderer) {
+        error = "renderer creation failed: " + std::string{rnd::describe(renderer.error())};
+        return std::nullopt;
+    }
+    return LocaleRender{.textBinding = *textBinding, .imageBinding = std::move(imageBinding), .renderer = std::move(*renderer)};
+}
+
+/// Runs one approved locale: builds its render state, replays, records every outcome. Returns false
+/// only on a structural impossibility (it has set `result.state` and reported).
+[[nodiscard]] bool runLeg(RunResult&                                result,
+                          const RunOptions&                         options,
+                          const ms::CompiledScenario&               scenario,
+                          const ms::ScreenPackage&                  screen,
+                          std::span<const mv::GoldenEntry>          goldens,
+                          std::span<const std::string_view>         sceneNodes,
+                          std::string_view                          scenarioId,
+                          const mdux::tools::verify::LocaleAssets&  locale,
+                          const mdux::tools::verify::ImageAssets*   image,
+                          const mdux::tools::verify::ShaderAssets&  shader,
+                          HeadlessDevice&                           device,
+                          rnd::OffscreenTarget&                     target) {
+    const std::string scopeTag = locale.locale;
 
     const rnd::VulkanRenderContext context{.device           = device.device(),
                                            .physicalDevice   = device.physicalDevice(),
@@ -459,47 +538,43 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
                                            .subpass          = 0,
                                            .queue            = device.queue(),
                                            .queueFamilyIndex = device.family(),
-                                           .viewport         = bound->surface()};
-    auto renderer = mx::makeRenderer(context, *bound);
-    if (!renderer.has_value()) {
-        report(result.diagnostics, {}, "VSC007", std::format("verification renderer creation failed for locale '{}': {}", scopeTag, rnd::describe(renderer.error())));
+                                           .viewport         = {screen.surfaceWidth, screen.surfaceHeight}};
+    std::string localeError;
+    auto        render = makeLocaleRender(screen, locale, image, shader, context, localeError);
+    if (!render.has_value()) {
+        report(result.diagnostics, {}, "VSC007", std::format("locale '{}': {}", scopeTag, localeError));
         result.state = RunState::CouldNotRun;
         return false;
     }
 
-    mx::FrameStorage storage{bound->screen.budget};
-
-    LegContext leg{.result            = &result,
-                   .options           = &options,
-                   .bound             = bound.get(),
-                   .renderer          = &*renderer,
-                   .target            = &target,
-                   .queue             = device.queue(),
-                   .scope             = mv::RenderScope::forLocale(scopeTag),
-                   .scopeTag          = scopeTag,
-                   .goldens           = goldens,
-                   .scenarioId        = scenarioId,
-                   .storage           = &storage,
-                   .invoked           = {},
-                   .renderFailed      = {},
-                   .structuralFailure = false,
-                   .structuralMessage = {}};
+    mx::FrameStorage storage{screen.budget};
+    LegContext       leg{.result            = &result,
+                         .options           = &options,
+                         .screen            = &screen,
+                         .render            = &*render,
+                         .target            = &target,
+                         .queue             = device.queue(),
+                         .scope             = mv::RenderScope::forLocale(scopeTag),
+                         .scopeTag          = scopeTag,
+                         .goldens           = goldens,
+                         .atlas             = locale.atlas,
+                         .sceneNodes        = sceneNodes,
+                         .scenarioId        = scenarioId,
+                         .storage           = &storage,
+                         .invoked           = {},
+                         .renderFailed      = {},
+                         .structuralFailure = false,
+                         .structuralMessage = {}};
 
     std::array<ms::StepOutcome, ms::maxScenarioExpectations> outcomeStorage{};
-    const ms::ReplayReport replay = mx::replayMonitorScenario(scenario,
-                                                              bound->screen,
-                                                              bound->font,
-                                                              outcomeStorage,
-                                                              [&leg](const mx::ScenarioCaptureContext& ctx) { captureFrame(leg, ctx); });
+    const ms::ReplayReport                                   replay = mx::replayMonitorScenario(
+        scenario, screen, locale.font, outcomeStorage, [&leg](const mx::ScenarioCaptureContext& ctx) { captureFrame(leg, ctx); });
 
     if (leg.structuralFailure) {
         report(result.diagnostics, {}, "VSC008", leg.structuralMessage);
         result.state = RunState::CouldNotRun;
         return false;
     }
-
-    // A batch larger than the queue, or the runner's storage overrunning ours, is a structural
-    // mismatch between the scenario and this build - not a check that did not hold.
     if (replay.fault == ms::ReplayFault::QueueTooSmall || replay.fault == ms::ReplayFault::OutcomeStorageFull
         || replay.fault == ms::ReplayFault::MalformedScenario) {
         report(result.diagnostics, {}, "VSC005",
@@ -510,8 +585,7 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
 
     // binding outcomes: one per Expect step, from the runner's own per-step record.
     for (std::size_t i = 0; i < scenario.steps.size(); ++i) {
-        const ms::ScenarioStep& step = scenario.steps[i];
-        if (step.kind != ms::StepKind::Expect) {
+        if (scenario.steps[i].kind != ms::StepKind::Expect) {
             continue;
         }
         const ms::StepOutcome* found = nullptr;
@@ -525,22 +599,20 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
                                           .scope      = scopeTag,
                                           .capture    = {},
                                           .stepIndex  = i,
-                                          .expectKind = std::string{ms::toWire(step.expect.kind)},
+                                          .expectKind = std::string{ms::toWire(scenario.steps[i].expect.kind)},
                                           .nodeId     = {},
                                           .check      = {},
                                           .held       = found != nullptr && found->held,
                                           .finding    = mv::Finding::Held,
                                           .profile    = {}});
         if (found == nullptr) {
-            report(result.diagnostics, {}, "VSC012",
-                   std::format("locale '{}': the replay produced no outcome for expect step {}", scopeTag, i));
+            report(result.diagnostics, {}, "VSC012", std::format("locale '{}': the replay produced no outcome for expect step {}", scopeTag, i));
         }
     }
 
     // capture outcomes: one per declared marker.
     for (const std::string_view capture : scenario.captureNames) {
         const std::string marker{capture};
-        const bool        held = leg.invoked.contains(marker) && !leg.renderFailed.contains(marker);
         result.outcomes.push_back(Outcome{.kind       = ObligationKind::Capture,
                                           .scope      = scopeTag,
                                           .capture    = marker,
@@ -548,7 +620,7 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
                                           .expectKind = {},
                                           .nodeId     = {},
                                           .check      = {},
-                                          .held       = held,
+                                          .held       = leg.invoked.contains(marker) && !leg.renderFailed.contains(marker),
                                           .finding    = mv::Finding::Held,
                                           .profile    = {}});
         if (!leg.invoked.contains(marker)) {
@@ -562,59 +634,41 @@ void captureFrame(LegContext& leg, const mx::ScenarioCaptureContext& ctx) {
 
 RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& options) {
     RunResult                   result;
-    const std::filesystem::path dir         = normalize(scenarioDirectory);
+    const std::filesystem::path dir          = normalize(scenarioDirectory);
     const auto                  scenarioPath = dir / "scenario.json";
-    const auto                  scenarioText = readText(scenarioPath);
+    const auto                  scenarioText = mdux::tools::verify::readText(scenarioPath);
     if (!scenarioText.has_value()) {
         report(result.diagnostics, scenarioPath, "VSC001", "cannot read scenario.json");
         return result;
     }
 
-    // The reviewed artifact is the JSON; the generated module is a mechanical rendering of it. This
-    // build holds only the `constexpr` form, so before recording its digest as evidence the verifier
-    // must prove the committed `scenario.json` on disk really *is* that scenario.
-    //
-    // Parsed with `mdux.tools.scenario::readScenarioDoc()` - the same reader `mdux-scenarioemit` uses
-    // - and then compared field for field and step for step against the `constexpr`. A substring
-    // match on the id (this guard's previous form) accepted a same-id file whose steps had been
-    // swapped for another scenario's, which would record one digest while rendering another.
-    const ms::CompiledScenario scenario = generatedScenario::package();
-
-    std::vector<cli::Diagnostic> documentDiagnostics;
-    const auto                   document = mdux::tools::scenario::readScenarioDoc(
-        std::as_bytes(std::span{scenarioText->data(), scenarioText->size()}), scenarioPath.generic_string(), documentDiagnostics);
-    if (!document.has_value()) {
-        for (auto& diagnostic : documentDiagnostics) {
+    // Rebuild the scenario from the committed bytes with the same reader `mdux-scenarioemit` uses -
+    // so the replay checks the values, events and expectations *this file* carries, and the digest
+    // recorded below is of what was actually replayed.
+    std::vector<cli::Diagnostic> scenarioDiagnostics;
+    auto parsed = sc::readScenarioDoc(std::as_bytes(std::span{scenarioText->data(), scenarioText->size()}), scenarioPath.generic_string(), scenarioDiagnostics);
+    if (!parsed.has_value()) {
+        for (auto& diagnostic : scenarioDiagnostics) {
             result.diagnostics.push_back(std::move(diagnostic));
         }
         return result;
     }
-
-    const bool sameHeader = document->id == scenario.id && document->screenId == scenario.screenId
-                         && document->version == scenario.schemaVersion && document->clock == scenario.pinnedClock
-                         && document->sampleSeed == scenario.sampleSeed
-                         && std::ranges::equal(document->requirements, scenario.requirements)
-                         && std::ranges::equal(document->captureNames, scenario.captureNames);
-    const bool sameSteps = document->steps.size() == scenario.steps.size()
-                        && std::ranges::equal(document->steps, scenario.steps, [](const auto& scriptStep, const ms::ScenarioStep& compiledStep) {
-                               return scriptStep.kind == compiledStep.kind && scriptStep.frames == compiledStep.frames
-                                   && scriptStep.expect.kind == compiledStep.expect.kind
-                                   && std::string_view{scriptStep.capture} == compiledStep.capture;
-                           });
-    if (dir.filename() != std::string_view{scenario.id} || !sameHeader || !sameSteps) {
+    const OwnedScenario        owned{std::move(*parsed)};
+    const ms::CompiledScenario scenario = owned.view();
+    if (dir.filename() != std::string_view{scenario.id}) {
         report(result.diagnostics, scenarioPath, "VSC002",
-               std::format("committed scenario.json is not the reviewed '{}' scenario this build verifies", scenario.id));
+               std::format("scenario.json id '{}' does not match its directory '{}'", scenario.id, dir.filename().generic_string()));
         return result;
     }
     if (const auto valid = scenario.validate(); !valid.has_value()) {
         report(result.diagnostics, scenarioPath, "VSC003", std::string{ms::describe(valid.error())});
         return result;
     }
-    result.inputs.push_back({.role = "scenarioPackage", .id = std::string{scenario.id}, .locale = {}, .sha256 = hexDigest(*scenarioText)});
+    result.inputs.push_back({.role = "scenarioPackage", .id = std::string{scenario.id}, .locale = {}, .sha256 = sha256Hex(std::as_bytes(std::span{*scenarioText}))});
 
-    // The screen bundle the scenario is scripted against.
+    // The screen the scenario is scripted against.
     const std::filesystem::path screenDir  = options.artifactRoot / "screen" / std::string{scenario.screenId};
-    const auto                  screenText = readText(screenDir / "package.json");
+    const auto                  screenText = mdux::tools::verify::readText(screenDir / "package.json");
     if (!screenText.has_value()) {
         report(result.diagnostics, screenDir / "package.json", "VSC004", "cannot read the screen package the scenario names");
         return result;
@@ -626,12 +680,12 @@ RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& 
         }
         return result;
     }
-    const ms::ScreenPackage diskScreen = screenRead.document.package();
-    if (mdux::tools::medui::writePackage(diskScreen) != *screenText || diskScreen.id != scenario.screenId) {
+    const ms::ScreenPackage screen = screenRead.document.package();
+    if (mdux::tools::medui::writePackage(screen) != *screenText || screen.id != scenario.screenId) {
         report(result.diagnostics, screenDir / "package.json", "VSC004", "the screen package is non-canonical or its id does not match the scenario");
         return result;
     }
-    result.inputs.push_back({.role = "screenPackage", .id = std::string{scenario.screenId}, .locale = {}, .sha256 = hexDigest(*screenText)});
+    result.inputs.push_back({.role = "screenPackage", .id = std::string{scenario.screenId}, .locale = {}, .sha256 = mdux::tools::verify::hexDigest(*screenText)});
 
     std::string goldensDigest;
     auto        ownedGoldens = mdux::tools::verify::readGoldens(screenDir / "goldens.json", goldensDigest, result.diagnostics);
@@ -645,36 +699,56 @@ RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& 
         goldenViews.push_back(g.view());
     }
 
-    // The approved locales - the manifest, which this run may not narrow.
-    std::vector<std::string_view> localeTags;
-    std::vector<mx::Locale>       locales;
-    for (const auto& approval : diskScreen.approvedTextPackages) {
-        localeTags.push_back(approval.locale);
-        if (approval.locale == "fr-FR") {
-            locales.push_back(mx::Locale::FrFr);
-        } else if (approval.locale == "en-US") {
-            locales.push_back(mx::Locale::EnUs);
-        } else {
-            report(result.diagnostics, screenDir / "package.json", "VSC004",
-                   std::format("the scenario verifier links no committed packages for approved locale '{}'", approval.locale));
+    // The committed shader, and every approved locale's committed text / font packages and the
+    // committed image - loaded and authenticated exactly as `mdux-verify-ui` loads them.
+    auto shader = mdux::tools::verify::loadShader(options.artifactRoot, result.diagnostics);
+    if (!shader.has_value()) {
+        return result;
+    }
+    result.inputs.push_back({.role = "shaderPackage", .id = std::string{shader->package.header.id}, .locale = {}, .sha256 = shader->sha256});
+
+    std::vector<mdux::tools::verify::LocaleAssets> locales;
+    locales.reserve(screen.approvedTextPackages.size());
+    for (const auto& approval : screen.approvedTextPackages) {
+        auto assets = mdux::tools::verify::loadLocale(approval, options.artifactRoot, result.diagnostics);
+        if (!assets.has_value()) {
             return result;
         }
+        result.inputs.push_back(
+            {.role = "textPackage", .id = std::string{assets->text.header.id}, .locale = assets->locale, .sha256 = mdux::tools::verify::hexDigest(assets->textJson)});
+        result.inputs.push_back(
+            {.role = "fontPackage", .id = std::string{assets->font.id}, .locale = assets->locale, .sha256 = mdux::tools::verify::hexDigest(assets->fontJson)});
+        locales.push_back(std::move(*assets));
     }
     if (locales.empty()) {
-        report(result.diagnostics, scenarioPath, "VSC003", "the screen the scenario names approves no locale");
+        report(result.diagnostics, screenDir / "package.json", "VSC004", "the screen the scenario names approves no locale");
         return result;
     }
 
-    // Per-locale committed digests, for the artifact's `inputs`.
-    result.inputs.push_back({.role = "fontPackage", .id = "dejavu-ui", .locale = {}, .sha256 = hexDigest(mx::asText(dejavuUiPackageJson()))});
-    result.inputs.push_back({.role = "imagePackage", .id = "brand-mark", .locale = {}, .sha256 = hexDigest(mx::asText(brandMarkPackageJson()))});
-    for (const mx::Locale locale : locales) {
-        const std::string tag{mx::localeTag(locale)};
-        const auto        packageJson = locale == mx::Locale::FrFr ? endoscopeTextFrFrPackageJson() : endoscopeTextEnUsPackageJson();
-        result.inputs.push_back({.role = "textPackage", .id = "endoscope-monitor-" + tag, .locale = tag, .sha256 = hexDigest(mx::asText(packageJson))});
+    // Built only now that `locales` has stopped growing: a view taken during the loop above would
+    // dangle when the vector reallocated (and `LocaleAssets::locale`'s SSO buffer moved with it).
+    std::vector<std::string_view> localeTags;
+    localeTags.reserve(locales.size());
+    for (const auto& asset : locales) {
+        localeTags.push_back(asset.locale);
     }
 
-    result.obligations = enumerateObligations(scenario, localeTags, diskScreen, goldenViews);
+    std::optional<mdux::tools::verify::ImageAssets> image;
+    if (!screen.approvedImagePackages.empty()) {
+        if (screen.approvedImagePackages.size() != 1) {
+            report(result.diagnostics, screenDir / "package.json", "VSC004", "the scenario verifier supports exactly one approved image package");
+            return result;
+        }
+        image = mdux::tools::verify::loadImage(screen.approvedImagePackages.front(), options.artifactRoot, result.diagnostics);
+        if (!image.has_value()) {
+            return result;
+        }
+        result.inputs.push_back(
+            {.role = "imagePackage", .id = std::string{image->image.header.id}, .locale = {}, .sha256 = mdux::tools::verify::hexDigest(image->imageJson)});
+    }
+
+    const auto sceneNodes = sceneDrivenNodes(screen);
+    result.obligations    = enumerateObligations(scenario, localeTags, screen, goldenViews);
 
     HeadlessDevice device;
     if (!device.available()) {
@@ -685,23 +759,22 @@ RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& 
     }
     result.backend = device.backendName();
 
-    const mdux::core::Extent2D extent{.width = diskScreen.surfaceWidth, .height = diskScreen.surfaceHeight};
+    const mdux::core::Extent2D extent{.width = screen.surfaceWidth, .height = screen.surfaceHeight};
     auto                       target = rnd::OffscreenTarget::create(device.device(), device.physicalDevice(), extent, device.family());
     if (!target.has_value()) {
         report(result.diagnostics, scenarioPath, "VSC007", "verification run could not create its offscreen target: " + std::string{rnd::describe(target.error())});
         return result;
     }
 
-    for (const mx::Locale locale : locales) {
-        if (!runLeg(result, options, scenario, goldenViews, scenario.id, locale, device, *target)) {
+    for (const auto& locale : locales) {
+        if (!runLeg(result, options, scenario, screen, goldenViews, sceneNodes, scenario.id, locale, image.has_value() ? &*image : nullptr, *shader, device,
+                    *target)) {
             return result;
         }
     }
 
     result.state = reconcile(result.obligations, result.outcomes, result.diagnostics);
 
-    // The diagnostic digest manifest (ADR-021 decision 3): the backend-specific baseline, never
-    // committed and never byte-compared.
     if (!options.captureDigestPath.empty() && !result.captureDigests.empty()) {
         std::error_code created;
         std::filesystem::create_directories(options.captureDigestPath.parent_path(), created);
@@ -715,7 +788,6 @@ RunResult run(const std::filesystem::path& scenarioDirectory, const RunOptions& 
             warn(result.diagnostics, options.captureDigestPath, "VSC009", "cannot write the capture digest manifest");
         }
     }
-
     return result;
 }
 

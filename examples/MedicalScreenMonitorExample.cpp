@@ -75,6 +75,8 @@ import mdux.shader.schema;
 #include "support/ScenarioReplay.hpp"
 // After the embedded-blob headers above: BoundScreen::load() names their accessors.
 #include "support/MonitorFrame.hpp"
+// After the embedded-blob headers above: BoundScreen::load() / makeRenderer() name their accessors.
+#include "support/MonitorScreen.hpp"
 
 namespace {
 

@@ -350,18 +350,23 @@ the assembled `updateMonitor()` loop in every approved locale, renders each `cap
 the production offscreen adapter, and discharges: one **binding** obligation per `Expect` step per
 locale (the settled value equals the pinned one), one **rendered** obligation per golden/text check
 per capture per locale (the screen's own obligations, minus the tint check on a node whose content
-the scenario drives), and one **capture** obligation per marker. `scenario-verification.json` is
-committed and byte-verified by `evidence.scenario.<id>` — findings only, no measured pixel; per-capture
-frame PNGs and a per-backend `rgba8-sha256` manifest are diagnostic attachments (ADR-021 decision 3,
-the prospective PAR-REQ-009 disposition). New `verify.scenario.<id>` CI gate beside the retained
-`verify.screen.<id>`; `verify_scenario_spec` covers the fail-closed set (wrong value, dropped/missing
-outcome, duplicate, omitted capture, substituted package).
+the scenario drives, plus governed `mdux.verify::regionPainted()` on that node — it drew something,
+not what), and one **capture** obligation per marker. It embeds no compiled scenario or screen: it
+rebuilds the `CompiledScenario` from `scenario.json` and loads every package from `generated/` with
+the shared `mdux.tools.verify.artifacts` loaders, so it replays and renders the bytes it records a
+digest of — an altered `scenario.json` is replayed as written and fails its own altered expectation.
+`scenario-verification.json` is committed and byte-verified by `evidence.scenario.<id>` — findings
+only, no measured pixel; per-capture frame PNGs and a per-backend `rgba8-sha256` manifest are
+diagnostic attachments (ADR-021 decision 3, the prospective PAR-REQ-009 disposition). New
+`verify.scenario.<id>` CI gate beside the retained `verify.screen.<id>`; `verify_scenario_spec`
+covers the fail-closed set (wrong value, dropped/missing outcome, duplicate, surplus, omitted
+capture, substituted package, altered-scenario replay).
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **implemented** (ADR-020; `mdux.medui.scenario` + `mdux-scenariobake`/`mdux-scenarioemit`; `.scenario` DSL; committed `endoscope-monitor-basics`; `scenario_tools_spec` + `scenario_spec` + `scenario_noheap_spec`) |
 | [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **implemented** (stacked on #319: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
-| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **implemented** (ADR-021, Proposed; `mdux-verify-scenario`/`-bake`, `evaluateFrame()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
+| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **implemented** (ADR-021, Proposed; `mdux-verify-scenario`/`-bake` reading every artifact from `generated/`, `evaluateFrame()` + `mdux.verify::regionPainted()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
 
 ### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
 

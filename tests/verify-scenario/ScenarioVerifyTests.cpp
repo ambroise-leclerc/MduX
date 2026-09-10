@@ -11,6 +11,7 @@ import std;
 import speclab;
 import mdux.core.result;
 import mdux.core.units;
+import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.medui.schema;
 import mdux.medui.scenario;
@@ -241,11 +242,12 @@ const mdux::spec::Register reconcileRejectsSurplusOutcome{
     }};
 
 const mdux::spec::Register substitutedScenarioSteps{
-    "A scenario.json whose steps do not match the reviewed constexpr is rejected before any render", "evidence-unit", [] {
+    "An altered scenario.json is replayed as written, not silently attested against a stale copy", "pixel", [] {
         return speclab::Test("verify-scenario-substituted-steps")
-            .Given("a copy of the committed scenario.json with one advance step's frame count changed", [] {})
-            .When("mdux-verify-scenario is pointed at it", [] {})
-            .Then("VSC002 is reported and no device is created",
+            .Given("a copy of the committed scenario.json with the final advance's frame count changed 27 -> 26", [] {})
+            .When("mdux-verify-scenario replays it", [] {})
+            .Then("the replay reaches the pinned expectation the missing frame would have settled and fails it, "
+                  "and the evidence records the digest of the file that was replayed",
                   [] {
                       mdux::spec::Checks             checks;
                       mdux::test::TemporaryDirectory scratch{"verify-scenario-substituted-steps"};
@@ -253,8 +255,10 @@ const mdux::spec::Register substitutedScenarioSteps{
                       std::filesystem::create_directories(dir);
                       std::ifstream in{kBundle / "scenario.json", std::ios::binary};
                       std::string   text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-                      // The last `advance` in the committed scenario drives 27 frames; make it 26. The
-                      // JSON still parses, but the step sequence no longer matches the constexpr.
+                      // The last `advance` drives 27 frames, settling `expect clock 08:00:31`. Drop it
+                      // to 26 and the clock lands a second short: the JSON still parses, but the run it
+                      // describes is a different one, and the verifier now replays *that* one rather
+                      // than a constexpr copy of the committed steps (#321 finding 1, ADR-021).
                       const auto pos = text.find("\"frames\": 27");
                       checks.expect(pos != std::string::npos, "the committed scenario has the expected advance");
                       if (pos != std::string::npos) {
@@ -264,10 +268,37 @@ const mdux::spec::Register substitutedScenarioSteps{
                       out << text;
                       out.close();
 
-                      const vs::RunResult result = vs::run(dir);
-                      checks.expect(result.state == vs::RunState::CouldNotRun, "a step-substituted scenario is an impossible run");
-                      checks.expect(hasCode(result.diagnostics, "VSC002"), "the substitution is named");
-                      checks.expect(result.renderCount == 0, "nothing rendered");
+                      // The scenario is the tampered copy; every other committed artifact is the real
+                      // one, so only the altered steps differ from the committed run.
+                      const vs::RunResult result =
+                          vs::run(dir, vs::RunOptions{.artifactRoot = kRepo / "generated", .frameImageDirectory = {}, .captureDigestPath = {}});
+                      if (result.state == vs::RunState::NoRenderDevice) {
+                          checks.expect(false, "a device rendered the captures at bake time but is unavailable now");
+                          checks.raise();
+                          return;
+                      }
+                      checks.expect(result.state == vs::RunState::ChecksFailed,
+                                    std::format("the shortened replay no longer settles the pinned clock (state {})", static_cast<int>(result.state)));
+                      checks.expect(hasCode(result.diagnostics, "VSC101"), "a pinned expectation is named as not held");
+
+                      const auto scenarioDigest = [&](std::span<const mdux::tools::verify::BoundArtifact> inputs) -> std::string {
+                          for (const auto& artifact : inputs) {
+                              if (artifact.role == "scenarioPackage") {
+                                  return artifact.sha256;
+                              }
+                          }
+                          return {};
+                      };
+                      const auto committedBytes = [] {
+                          std::ifstream f{kBundle / "scenario.json", std::ios::binary};
+                          return std::string{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+                      }();
+                      const auto committedHex = mdux::evidence::toHex(
+                          mdux::evidence::sha256(std::as_bytes(std::span{committedBytes.data(), committedBytes.size()})));
+                      const std::string recorded  = scenarioDigest(result.inputs);
+                      const std::string committed{committedHex.data(), committedHex.size()};
+                      checks.expect(!recorded.empty() && recorded != committed,
+                                    "the recorded scenario digest is the altered file's, not the committed one");
                       checks.raise();
                   })
             .Execute();

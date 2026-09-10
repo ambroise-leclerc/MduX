@@ -74,8 +74,10 @@ no action (it records an `ActionTrace`, exactly as the replay does) and renders 
   input digests, and nothing more is claimed.
 - **Traceability**: `scenario-verification.json` records, per obligation, the scenario id, the
   cited requirement ids, the render scope, the capture marker, the check, the finding, and every
-  input digest (scenario, screen, per-locale text and font, shader). A run leaves a complete
-  scenario × locale × capture × check matrix or it fails.
+  input digest — the scenario, the screen, its goldens, the `shader/mdux-ui` package, each approved locale's
+  text and font packages, and the brand-mark image, each read from `generated/` and used directly
+  for the render it names. A run leaves a complete scenario × locale × capture × check matrix or it
+  fails.
 - **Cybersecurity**: unaffected. The tool reads only committed artifacts under `generated/`,
   digests each, and refuses a non-canonical or digest-mismatched input. It is a build tool, never
   installed, never linked into `MduXCore` or `MduX`.
@@ -102,17 +104,22 @@ split ADR-014 established:
 
 The library `MduXVerifyScenarioLib` links `MduX::VerifyUiLib` (for the atomic publish, the report
 extension and the shared artifact loaders), `MduX::MduX` (`mdux.render.offscreen`, `mdux.draw`),
-`mdux.verify`, and `#include`s `examples/support/MonitorApp.hpp`, `ScenarioReplay.hpp` and the new
-`examples/support/MonitorFrame.hpp`. It holds the `CompiledScenario` through the generated module
-`mdux.medui.generated.scenario_<id>`, exactly as `scenario_spec` and the monitor example do — the
-generated C++ is a mechanical rendering of the byte-verified `scenario.json` and carries its
-`static_assert(scenario.validate())`.
+`MduX::ScenarioLib` (the `scenario.json` reader), `mdux.verify`, and `#include`s
+`examples/support/MonitorApp.hpp`, `ScenarioReplay.hpp` and the lean new
+`examples/support/MonitorFrame.hpp`. It embeds **nothing** screen- or scenario-specific: it holds no
+generated `constexpr` scenario or screen module and no `mdux_embed_blob` package. Every artifact it
+replays and renders against is read from `generated/` on disk at run time (Decision 2), so the digest
+it records is of the bytes it actually used, and a scenario or screen edit never needs the tool
+rebuilt.
 
 **Why this boundary crossing is admitted rather than worked around.** The settled dynamic state a
 capture shows — the classifier position, the insufflation pressure, the field value — is produced
 by application logic that lives in the examples zone and nowhere else. A generic screen-runtime
 replay (Alternative below) has no such state to bind and would verify a static frame under a
-dynamic name. `mdux_verify_trust_zones()` constrains only *governed* targets (that they reach no
+dynamic name. The examples-zone code the tool links is the update loop and the frame recorder
+(`updateMonitor()`, `recordMonitorFrame()`); the compiled scenario, the compiled screen and the
+font / text / image / shader packages it drives them with are read from `generated/`, not linked,
+so what is reviewed as an example is the interaction logic and nothing else. `mdux_verify_trust_zones()` constrains only *governed* targets (that they reach no
 Vulkan or windowing dependency); a host tool linking an examples-zone header is outside its scope
 and always has been. The tool executes nothing, and the replayed logic is a reviewed, committed
 example, so the risk the trust-zone split exists to contain — untrusted or unreviewed code in the
@@ -133,13 +140,18 @@ enumerates:
   capture settled, in that locale: `Bounds` / `ColorHash` on each golden-bearing node,
   `InkContainment` / `LocalizedTextPresence` on each `textKey` node — **minus golden `ColorHash` on
   any node whose content the scenario drives** (`contentIsSceneDriven()`: the pressure reading, the
-  classifier state, the `patient-id` field, the ECG trace). The static baseline verified a
-  NumericDisplay's default face; one showing "12.0 mmHg" paints digit glyphs whose edges are a
-  legitimate third colour a ground-and-tint blend cannot be, so the tint check on those nodes is
-  filtered before the set is counted or evaluated — golden `Bounds` on them still holds. The
-  predicates, the expectations (derived from the committed artifacts, never from the caller) and the
-  observation profiles are `mdux.verify`'s, unchanged: the scenario gate renders a different *frame*,
-  not a different *check*.
+  classifier state, the `patient-id` field, the ECG trace, the wall clock), **plus a `RegionPainted`
+  check on each of those scene-driven nodes**. The static baseline verified a NumericDisplay's
+  default face; one showing "12.0 mmHg" paints digit glyphs whose edges are a legitimate third
+  colour a ground-and-tint blend cannot be, so the tint check on those nodes is filtered before the
+  set is counted or evaluated — golden `Bounds` on them still holds, and `RegionPainted`
+  (`mdux.verify::regionPainted()`, governed, `mdux.local/region-painted`) adds the one honest claim a
+  rendered check can make about a value it cannot predict: the node drew *something* over the
+  driver's resolved ground, so it did not go blank. *Which* value it drew is the binding obligation's
+  to assert, not a rendered check's (Decision 4). The predicates, the expectations (derived from the
+  committed artifacts, never from the caller) and the observation profiles are `mdux.verify`'s: the
+  scenario gate renders a different *frame*, and adds one governed predicate for the scene-driven
+  case, but runs no check the screen gate could not.
 - **Capture-completeness obligations** — one per declared `captureNames` entry: the replay handed
   that marker's frame to the callback (`markCaptured`), and the callback rendered a readback of the
   screen's authored extent. A declared marker no `Capture` step produces, or one the replay never
@@ -153,10 +165,21 @@ outcome (VSC010), a duplicated one is flagged (VSC011), and an outcome that disc
 fails the verdict (VSC014). `mdux-verify-scenario-bake` then refuses to write the artifact at all
 unless the outcome count equals the obligation count and each pair agrees — the same fail-closed
 check `writeVerification()` makes for the screen bundle. Missing, duplicate, unknown, unsupported and
-not-run rows are all rejected. Substitution is caught earlier: `scenario.json` is parsed with the
-shared `mdux.tools.scenario` reader and compared field for field and step for step against the
-reviewed `constexpr` scenario this build holds, every other input is digested, and a non-canonical
-or digest-mismatched screen, text, font or shader package stops the run before a frame is rendered.
+not-run rows are all rejected.
+
+**Substitution is caught by replaying what is committed, not by comparing against a `constexpr`.**
+`scenario.json` is parsed with the shared `mdux.tools.scenario::readScenarioDoc()` reader and
+rebuilt into the `CompiledScenario` the replay drives — so every value, event coordinate and pinned
+expectation the replay checks is the one *that file* carries, and the digest recorded in `inputs` is
+of the bytes that were replayed. A scenario edited to pin a different value, drive a different
+number of frames or type a different character is therefore replayed as written: the settled state
+no longer matches the altered expectation and a binding obligation fails (`VSC101`). The screen,
+goldens, shader, per-locale text and font, and image packages are all read from `generated/`,
+digested, checked for canonical form, and — the point of Decision 1's disk model — used *directly*
+for the bindings, the replay and the render, so the package the evidence names is the package that
+was rendered. A non-canonical or digest-mismatched input stops the run before a frame is drawn
+(`VSC004`); a malformed or wrong-id scenario stops it before the screen is even resolved
+(`VSC001` / `VSC002` / `VSC003`).
 
 ### 3. Committed byte-verified evidence versus diagnostic attachments
 
@@ -184,8 +207,19 @@ review** that also gates ADR-016/ADR-017's residuals:
 - The committed scenario gate makes **no exact-pixel claim**. It asserts portable structural
   obligations: settled binding values equal the scenario's pinned expectations, and each capture
   frame discharges the screen's own golden/text rendered-truth obligations (extent equality, tint
-  composition within the device-rounding allowance, localized-run coverage) — all under the
-  `mdux.local/` profiles, none of which commits a pixel value.
+  composition within the device-rounding allowance, localized-run coverage) plus `RegionPainted` on
+  the scene-driven nodes — all under the `mdux.local/` profiles, none of which commits a pixel value.
+- **A scene-driven node's exact rendered value is verified as settled state, not as pixels.** A
+  `NumericDisplay` showing the insufflation pressure, or the `patient-id` field showing what was
+  typed, renders glyphs whose shapes a rendered-truth check cannot predict without running the
+  device's own text shaper over the live value — which [ADR-010](ADR-010-no-on-device-text-shaping.md)
+  forbids in a host tool, and which no committed golden captures. The gate therefore splits the
+  claim: the **binding obligation** asserts the replay settled the pinned value (the pressure is
+  `120`, the field is `A7`), exactly and portably, and **`RegionPainted`** asserts the node then
+  drew that value rather than going blank. A frame that rendered the wrong number from the right
+  state is a rendering defect the golden `Bounds` extent and, on a device that has declared a
+  presentation profile, the `captures.sha256` baseline would catch; the committed gate does not
+  claim to.
 - An **exact-pixel** claim over a capture stays a **backend-specific baseline** (the
   `captures.sha256` diagnostic manifest), available to a future consumer that has declared a
   presentation/backend profile, and is never a committed gate — the same stance ADR-016 records
@@ -220,10 +254,19 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   Rejected: it reverses ADR-014 decision 4 and ADR-016, makes `evidence.scenario.<id>` fail on any
   driver or Mesa update while every check still holds, and TrustSC commits none either. The digest
   lives in the diagnostic manifest instead.
-- **A new bespoke "region is painted" pixel predicate in the tool.** Rejected: a rendered check
-  belongs in governed `mdux.verify`, not in a host tool (ADR-014 decision 1). The screen's existing
-  golden set already pins `insufflation-pressure`, `ecg-lead-ii` and `emergency-halt`, which is
-  what the dynamic frame must still satisfy; no new predicate is needed.
+- **A "region is painted" check implemented in the host tool.** Rejected on where it lives, not on
+  whether it is needed: a rendered check belongs in governed `mdux.verify` (ADR-014 decision 1), so
+  `regionPainted()` was added there, under `mdux.local/region-painted`, with its own unit coverage —
+  the tool only enumerates it. It *is* needed: dropping golden `ColorHash` on a scene-driven
+  NumericDisplay (a live value legitimately paints a third colour) left the frozen-pressure and
+  typed-field regions with no rendered check that they drew anything at all, so a frame that
+  rendered those nodes blank while the settled state was correct would have held every remaining
+  obligation. `RegionPainted` closes that; the pinned *value* stays the binding obligation's to
+  assert (Decision 4).
+- **A rendered check that verifies the scene-driven node shows the pinned value's glyphs.** Rejected:
+  it needs the device's text shaper run over the live value at verify time, which ADR-010 forbids in
+  a host tool, and no committed golden carries that run. The binding obligation already asserts the
+  value portably and exactly; `RegionPainted` asserts it was drawn.
 - **A second ADR for the tool and a third for the PAR-REQ-009 disposition.** Rejected: ADR-020 set
   the precedent of one record for a format and its consumers' contract, and the disposition is a
   direct consequence of Decision 3.
@@ -241,8 +284,10 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   repository.
 - One committed artifact per scenario, byte-compared on every toolchain, links each obligation to
   its scenario, requirements and input digests. An incomplete run fails closed.
-- The rendered checks are `mdux.verify`'s, unchanged: the scenario gate cannot claim more about a
-  frame than the screen gate can, and a predicate improvement reaches both.
+- The rendered checks are governed `mdux.verify` predicates: the scenario gate cannot claim more
+  about a frame than a governed check allows, and a predicate improvement reaches every consumer.
+  The one predicate this work adds, `regionPainted()`, lands in `mdux.verify` with its own tests, not
+  in the tool.
 - The screen gate is untouched in behaviour and guarded by its existing tests.
 
 ### Negative
@@ -254,10 +299,10 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
 - A host tool now `#include`s an examples-zone header. Mitigation: Decision 1 states the boundary
   crossing, its justification and why the mechanical trust-zone check is unaffected; the replayed
   logic is a committed, reviewed example.
-- The tool is currently single-scenario (it links the one generated scenario module and matches by
-  id), as `MedicalScreenMonitorExample --replay` already is. Mitigation: a second scenario adds one
-  generated-module file set and one `enumerate`/replay call; the obligation model is generic. The
-  roadmap already frames second-artifact support as wiring, not design.
+- The tool matches the bundle it is pointed at by directory name and its `scenario.json`'s own id;
+  it is not wired to a second scenario yet. Mitigation: because it reads the bundle from disk rather
+  than linking a generated module, a second scenario adds a `mdux_bake_artifact` registration and a
+  `verify.scenario.<id>` ctest and nothing in the tool. The obligation model is generic.
 
 ### Risks
 
@@ -268,36 +313,52 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   build tree, never staged into `generated/`, the "no source-tree writes" CI gate would catch a
   regression, and `scenario-verification.json` — the committed file — contains no pixel value.
 - **A capture frame's dynamic content drifts from the scenario's pinned state without a finding.**
-  Mitigation: the binding obligations pin the settled state and the rendered obligations pin the
-  frame; a drift in either is a recorded `Finding`, and `ecg-lead-ii` / `insufflation-pressure` /
-  `emergency-halt` goldens hold the dynamic frame to the same extent-and-tint claims as the static
-  one.
+  Mitigation: the binding obligations pin the settled state exactly and portably, and the rendered
+  obligations pin the frame — golden `Bounds` on every scene-driven node, `RegionPainted` that it
+  drew at all, and the full golden/text set on every static node. What no committed check covers is a
+  scene-driven node that drew the *wrong* value from the *right* state (Decision 4): that needs
+  on-device shaping ADR-010 forbids here, and the `captures.sha256` diagnostic baseline is where a
+  profile-declaring consumer would catch it.
 
 ## Implementation Notes
 
-- `tools/verify-scenario/`: `ScenarioDriver.{hpp,cpp}` (loads the committed bundle, replays each
-  approved locale through `replayMonitorScenario()`, renders each capture with `recordMonitorFrame()`
-  + a headless `OffscreenTarget`, enumerates and discharges the obligation set),
+- `tools/verify-scenario/`: `ScenarioDriver.{hpp,cpp}` (reads `scenario.json` and rebuilds the
+  `CompiledScenario` with `mdux.tools.scenario::readScenarioDoc()`, loads the screen / goldens /
+  shader / per-locale text+font / image packages from `generated/` with the shared
+  `mdux.tools.verify.artifacts` loaders, replays each approved locale through
+  `replayMonitorScenario()`, renders each capture with `recordMonitorFrame()` + a headless
+  `OffscreenTarget` built from the disk-loaded shader, enumerates and discharges the obligation set),
   `ScenarioArtifact.{hpp,cpp}` (`writeScenarioVerification()`, `extendScenarioReport()`, reusing
   `publishBundle` / `BundleFile`), `VerifyScenarioMain.cpp`, `VerifyScenarioBakeMain.cpp`. These are
-  **not C++20 modules** — they link the global-module examples-support glue and the `mdux_embed_blob`
-  committed packages, and a module interface would attach a declaration of one to the module, which
-  Clang rejects at link; they are plain headers with an include-order contract, like
-  `ScenarioReplay.hpp`. `MduXVerifyScenarioLib` PUBLIC-links `MduX::VerifyUiLib` only (consumers
-  `import mdux.tools.verify.driver` / `mdux.tools.verify.artifact` themselves); `MduX::MduX`,
-  `MduX::ScenarioLib` (the `scenario.json` reader) and `Vulkan::Vulkan` are PRIVATE — a PUBLIC MduX
+  **not C++20 modules** — they link the global-module examples-support glue (`updateMonitor()`,
+  `replayMonitorScenario()`, `recordMonitorFrame()`), and a module interface would attach a
+  declaration of one to the module, which Clang rejects at link; they are plain headers with an
+  include-order contract, like `ScenarioReplay.hpp`. `MduXVerifyScenarioLib` PUBLIC-links
+  `MduX::VerifyUiLib` only (consumers `import mdux.tools.verify.driver` / `mdux.tools.verify.artifact`
+  themselves); `MduX::MduX`, `MduX::ScenarioLib` and `Vulkan::Vulkan` are PRIVATE — a PUBLIC MduX
   would make a consumer inherit `MduX_options`' version macros twice (GCC `-Werror` redefinition).
-  `run()` parses `scenario.json` with `mdux.tools.scenario::readScenarioDoc()` and rejects any file
-  whose header or step sequence differs from the reviewed `constexpr` scenario (`VSC002`).
-- `tools/verify/Driver.{cppm,cpp}`: export `evaluateFrame()`, factored from the per-scope check
-  loop with no behaviour change. `tools/verify/HeadlessDevice.hpp`: the Vulkan 1.3 headless
-  bring-up, moved out of `Driver.cpp`'s anonymous namespace, `#include`d by both drivers as a
-  module-private implementation detail (no module interface exposes a Vulkan type).
-- `examples/support/MonitorFrame.hpp`: `FrameStorage` and `recordMonitorFrame(screen, textBinding,
-  imageBinding, storage, state, clock)`, lifted unchanged from `MedicalScreenMonitorExample.cpp` and
-  parameterised on the already-loaded packages so the tool and the example share one frame path.
-  `makeRenderer()` stays in the example (it reads the generated shader module); the tool builds its
-  renderer from the disk-loaded shader package, as `mdux-verify-ui` does.
+- `tools/verify/Artifacts.{cppm,cpp}` (`module mdux.tools.verify.artifacts`): `readBytes` /
+  `readText` / `hexDigest` and `loadShader` / `loadLocale` / `loadImage`, moved unchanged out of
+  `Driver.cpp`'s anonymous namespace (`VUI005` / `VUI006` diagnostics unchanged) so the screen gate
+  and the scenario gate load and authenticate the committed shader, font, text and image packages
+  through **one** implementation and cannot disagree about what the committed `shader/mdux-ui`
+  package is.
+- `tools/verify/Driver.{cppm,cpp}`: export `evaluateFrame()` and `readGoldens()` / `OwnedGolden`,
+  factored from the per-scope check loop / anonymous namespace with no behaviour change.
+  `tools/verify/HeadlessDevice.hpp`: the Vulkan 1.3 headless bring-up, moved out of `Driver.cpp`'s
+  anonymous namespace, `#include`d by both drivers as a module-private implementation detail (no
+  module interface exposes a Vulkan type).
+- `include/mdux/verify/Verify.cppm`, `src/verify/Verify.cpp`: `regionPainted(frame, rect, ground,
+  nodeId, scope)` and `regionPaintedProfile` (`mdux.local/region-painted`, v1) — the governed
+  weakest-honest-claim check for a scene-driven node, `Finding::NothingPainted` when the rectangle is
+  entirely the ground and `Finding::RegionOutsideFrame` when it leaves the frame; unit coverage in
+  `tests/verify/GoldenCheckTests.cpp`. `profileForCheckName("RegionPainted")` maps it.
+- `examples/support/MonitorFrame.hpp`: the lean shared frame path — `FrameStorage` and
+  `recordMonitorFrame(screen, textBinding, imageBinding, storage, state, clock)`, parameterised on
+  already-loaded packages, naming no `mdux_embed_blob` and no generated module. The blob- and
+  generated-module-dependent `BoundScreen` / `makeRenderer` moved to the new
+  `examples/support/MonitorScreen.hpp`, which only `MedicalScreenMonitorExample.cpp` includes; the
+  tool builds its bindings and renderer from the disk-loaded packages instead.
 - `CMakeLists.txt`: `THEN_TOOLS mdux-verify-scenario-bake` + `OUTPUTS scenario-verification.json` on
   the `endoscope-monitor-basics` `mdux_bake_artifact()` call, and a `verify.scenario.<id>` ctest
   registered beside it (label `verify`, no `SKIP_RETURN_CODE`).
@@ -305,8 +366,11 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
   defined) — the positive run in both locales, and the fail-closed set the issue names: a binding
   outcome the replay marked failed (wrong pinned value), a missing outcome (dropped input / omitted
   capture), a duplicated outcome, a surplus outcome, a substituted screen package, a scenario id
-  mismatch and a scenario whose steps differ from the reviewed `constexpr`. The real replay carries
-  label `pixel`; the pure enumeration / reconciliation / rejection cases run everywhere.
+  mismatch, and an altered `scenario.json` that is *replayed as written* — the shortened final
+  advance no longer settles the pinned clock, a binding obligation fails (`VSC101`), and the digest
+  recorded in `inputs` is the altered file's, proving the verifier attests the run it made rather
+  than a stale copy. The real replays carry label `pixel`; the pure enumeration / reconciliation /
+  rejection cases run everywhere.
 - CI: the four build workflows already run `ctest -L verify` and `-L evidence`; add a
   `verify-scenario-frames/` upload-artifact-on-failure step to the Clang (lavapipe) and macOS
   (MoltenVK) legs.
@@ -318,6 +382,8 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
 
 - [ADR-004](ADR-004-trust-zones-in-cpp.md) — the governed / adapter / host-tools split
 - [ADR-007](ADR-007-evidence-pipeline-doctrine.md) — canonical form, byte-identity, bake reports
+- [ADR-010](ADR-010-no-on-device-text-shaping.md) — why a host tool cannot shape the live value's
+  glyphs at verify time, so a scene-driven node's exact rendered content is not a committed claim
 - [ADR-014](ADR-014-rendered-truth-verification.md) — what a rendered check may claim; decisions
   2 (derive, don't trust), 3 (a skipped check is a failure), 4 (no measured pixel is committed)
 - [ADR-016](ADR-016-locally-versioned-observation-profiles.md) — observation-profile identity; why
@@ -330,8 +396,10 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
 - Issues [#309](https://github.com/ambroise-leclerc/MduX/issues/309),
   [#320](https://github.com/ambroise-leclerc/MduX/issues/320),
   [#321](https://github.com/ambroise-leclerc/MduX/issues/321)
-- `tools/verify/Driver.cppm`, `tools/verify/Artifact.cppm`, `include/mdux/verify/Verify.cppm`,
-  `include/mdux/medui/Scenario.cppm`, `examples/support/ScenarioReplay.hpp`
+- `tools/verify/Driver.cppm`, `tools/verify/Artifacts.cppm`, `tools/verify/Artifact.cppm`,
+  `include/mdux/verify/Verify.cppm`, `include/mdux/medui/Scenario.cppm`,
+  `tools/scenario/Scenario.cppm` (`readScenarioDoc`), `examples/support/ScenarioReplay.hpp`,
+  `examples/support/MonitorFrame.hpp`, `examples/support/MonitorScreen.hpp`
 
 ## Approval
 

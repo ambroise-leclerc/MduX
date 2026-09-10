@@ -639,7 +639,6 @@ mdux_emit_screen_package(
 # Generated C++ for the mdux-ui shader package (issue #121). Build-tree only, never committed - see
 # cmake/MduXShaderEmit.cmake. The renderer (#124) and the triangle example (#122) consume the
 # module form; the header form exists for a translation unit that cannot import a named module.
-# Emitted before the scenario bake below so `mdux-verify-scenario` can link the module.
 include(cmake/MduXShaderEmit.cmake)
 mdux_emit_shader_package(
     ID mdux-ui
@@ -662,106 +661,11 @@ mdux_emit_scenario_package(
     OUT_DIR MDUX_GENERATED_SCENARIO_DIR
 )
 
-# ---------------------------------------------------------------------------
-# mdux-verify-scenario / mdux-verify-scenario-bake (issue #321, ADR-021) - dynamic-evidence driver
-# ---------------------------------------------------------------------------
-#
-# The scenario-capture half of rendered-truth verification. It replays a committed `.scenario`
-# through the assembled `updateMonitor()` loop (the examples-zone glue it deliberately links, ADR-021
-# decision 1) and verifies the frame each `capture` marker settles, in every approved locale, against
-# the screen's own golden and text obligations. Shares `MduX::VerifyUiLib` for the atomic bundle
-# publish, the report extension and `evaluateFrame()` - so the scenario gate and the screen gate
-# cannot disagree about what a rendered check means. An internal build tool: never installed, never
-# exported, and no example links it.
-#
-# Defined here rather than in tools/CMakeLists.txt because it links the same generated
-# screen/shader/scenario modules and embedded committed packages the monitor example does, and the
-# MDUX_*_MODULE variables and the mdux_embed_blob custom commands must be created in the same
-# directory scope as the target that consumes them.
-add_library(MduXVerifyScenarioLib STATIC)
-add_library(MduX::VerifyScenarioLib ALIAS MduXVerifyScenarioLib)
-
-# Not a module target: ScenarioDriver.cpp / ScenarioArtifact.cpp are ordinary translation units
-# (they link global-module examples glue and `mdux_embed_blob` packages - a module interface would
-# carry a linkage the definitions do not). The API is the two plain headers, on the PUBLIC include
-# path.
-target_sources(MduXVerifyScenarioLib
-    PRIVATE
-        tools/verify-scenario/ScenarioDriver.cpp
-        tools/verify-scenario/ScenarioArtifact.cpp
-        tools/verify-scenario/ScenarioDriver.hpp
-        tools/verify-scenario/ScenarioArtifact.hpp
-)
-target_compile_features(MduXVerifyScenarioLib PUBLIC cxx_std_23)
-# Only MduX::VerifyUiLib is a usage requirement (consumers `import mdux.tools.verify.driver` /
-# `mdux.tools.verify.artifact` themselves). MduX (render.offscreen/vulkan), the scenario reader and
-# Vulkan are PRIVATE - the .cpp files need them, and a PUBLIC MduX would make a consumer inherit
-# `MduX_options`' version macros a second time (GCC -Werror redefinition).
-target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib)
-target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX::MduX MduX::ScenarioLib Vulkan::Vulkan MduX_warnings)
-# PUBLIC `tools/` so a consumer's `#include "verify-scenario/ScenarioDriver.hpp"` resolves; PRIVATE
-# `tools/verify` and `examples` for `HeadlessDevice.hpp` and the examples-support replay glue.
-target_include_directories(MduXVerifyScenarioLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
-target_include_directories(MduXVerifyScenarioLib PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples
-)
-set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
-if(TARGET __CMAKE::CXX23)
-    set_target_properties(MduXVerifyScenarioLib PROPERTIES CXX_MODULE_STD ON)
-endif()
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(MduXVerifyScenarioLib PRIVATE /experimental:module /std:c++latest)
-endif()
-# GCC 16's -Wmaybe-uninitialized fires a false positive inside `std::string`'s inlined destructor
-# reached through `examples/support/MonitorFrame.hpp`'s `BoundScreen::load()` (an `import std` +
-# aggressive-inlining artifact - the members are value-initialised). Scoped to the one file that
-# consumes that header, and only under GCC; a source COMPILE_OPTIONS entry lands after the
-# `MduX_warnings` interface flags, so it actually takes effect. The example that owns the header
-# does not build with -Werror at all.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set_source_files_properties(tools/verify-scenario/ScenarioDriver.cpp
-        PROPERTIES COMPILE_OPTIONS -Wno-maybe-uninitialized)
-endif()
-if(UNIX)
-    target_link_libraries(MduXVerifyScenarioLib PRIVATE Threads::Threads)
-endif()
-
-# The generated screen/shader/scenario modules and the embedded committed packages, exactly as
-# MedicalScreenMonitorExample wires them.
-target_sources(MduXVerifyScenarioLib
-    PRIVATE
-        FILE_SET vs_screen_modules
-            TYPE CXX_MODULES
-            BASE_DIRS ${MDUX_GENERATED_SCREEN_DIR}
-            FILES ${MDUX_ENDOSCOPE_SCREEN_MODULE}
-        FILE_SET vs_shader_modules
-            TYPE CXX_MODULES
-            BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
-            FILES ${MDUX_UI_SHADER_MODULE}
-        FILE_SET vs_scenario_modules
-            TYPE CXX_MODULES
-            BASE_DIRS ${MDUX_GENERATED_SCENARIO_DIR}
-            FILES ${MDUX_ENDOSCOPE_SCENARIO_MODULE}
-)
-add_dependencies(MduXVerifyScenarioLib
-    emit-screen-endoscope-monitor emit-shader-mdux-ui emit-scenario-endoscope-monitor-basics)
-foreach(vsBlob
-        "font/dejavu-ui/package.json|dejavuUiPackageJson"
-        "font/dejavu-ui/atlas.bin|dejavuUiAtlas"
-        "text/endoscope-monitor-en-us/package.json|endoscopeTextEnUsPackageJson"
-        "text/endoscope-monitor-en-us/runs.bin|endoscopeTextEnUsRuns"
-        "text/endoscope-monitor-fr-fr/package.json|endoscopeTextFrFrPackageJson"
-        "text/endoscope-monitor-fr-fr/runs.bin|endoscopeTextFrFrRuns"
-        "image/brand-mark/package.json|brandMarkPackageJson"
-        "image/brand-mark/pixels.rgba|brandMarkPixels")
-    string(REPLACE "|" ";" vsPair "${vsBlob}")
-    list(GET vsPair 0 vsFile)
-    list(GET vsPair 1 vsSymbol)
-    mdux_embed_blob(MduXVerifyScenarioLib
-        FILE ${CMAKE_SOURCE_DIR}/generated/${vsFile}
-        SYMBOL ${vsSymbol})
-endforeach()
+# mdux-verify-scenario / mdux-verify-scenario-bake (issue #321, ADR-021) are defined in
+# tools/CMakeLists.txt. The verifier reads every committed artifact (scenario.json, the screen
+# package, goldens, and the shader / font / text / image packages) from generated/ at run time -
+# like mdux-verify-ui - so it embeds nothing and links no generated module; a scenario edit never
+# needs the tool rebuilt.
 
 # The scenario bundle, now with the dynamic rendered-evidence stage (#321). Same single
 # mdux_bake_artifact() registration and one evidence.scenario.<id> byte comparison; the second stage
