@@ -269,9 +269,13 @@ std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&        
 
         for (const std::string_view capture : scenario.captureNames) {
             // rendered: every golden/text check the screen gate enumerates, minus the tint check on
-            // a scene-driven node.
+            // a scene-driven node. A golden check the plan scopes locale-free - which `enumerate()`
+            // does for a screen with no text-bearing node - still renders once per approved locale
+            // here (`captureFrame()` evaluates it under `forLocale(...)` and tags the outcome with
+            // the locale), so map it onto every locale rather than dropping it as a surplus.
             for (const mdux::tools::verify::Obligation& item : plan.obligations) {
-                if (item.scope != locale || skipRenderedObligation(screen, item.nodeId, item.check)) {
+                const bool appliesHere = item.scope == locale || item.scope == mv::localeFreeScopeName;
+                if (!appliesHere || skipRenderedObligation(screen, item.nodeId, item.check)) {
                     continue;
                 }
                 obligations.push_back(Obligation{.kind       = ObligationKind::Rendered,
@@ -307,8 +311,13 @@ std::vector<Obligation> enumerateObligations(const ms::CompiledScenario&        
 }
 
 RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>& outcomes, std::vector<cli::Diagnostic>& diagnostics) {
-    RunState    state      = RunState::Passed;
-    std::size_t discharged = 0;
+    RunState state = RunState::Passed;
+
+    // The surplus check below asks whether a *recorded* outcome discharges no obligation, so it is
+    // taken against the outcomes the run produced - not against the failed placeholders the missing
+    // branch appends, each of which carries its own obligation's key by construction.
+    const std::size_t recordedOutcomes = outcomes.size();
+    std::size_t       discharged       = 0;
 
     for (const Obligation& obligation : obligations) {
         std::size_t matches = 0;
@@ -351,10 +360,10 @@ RunState reconcile(std::span<const Obligation> obligations, std::vector<Outcome>
         }
     }
 
-    // Every outcome must discharge an enumerated obligation - a surplus means the outcome set does
-    // not correspond to the obligation set, and the verdict must not stay `Passed`.
-    if (discharged < outcomes.size()) {
-        report(diagnostics, {}, "VSC014", std::format("{} outcome(s) discharge no enumerated obligation", outcomes.size() - discharged));
+    // Every recorded outcome must discharge an enumerated obligation - a surplus means the outcome
+    // set does not correspond to the obligation set, and the verdict must not stay `Passed`.
+    if (discharged < recordedOutcomes) {
+        report(diagnostics, {}, "VSC014", std::format("{} outcome(s) discharge no enumerated obligation", recordedOutcomes - discharged));
         state = RunState::ChecksFailed;
     }
     return state;

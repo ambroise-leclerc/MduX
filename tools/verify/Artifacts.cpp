@@ -147,8 +147,9 @@ loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesyst
         return std::nullopt;
     }
     auto canonicalText = text->write();
-    if (!canonicalText.has_value() || *canonicalText != *textJson || text->header.id != approval.packageId || text->locale != approval.locale) {
-        report(diagnostics, textPath, "VUI006", "approved text package identity or canonical bytes disagree with the screen manifest");
+    if (!canonicalText.has_value() || *canonicalText != *textJson || text->header.id != approval.packageId || text->locale != approval.locale
+        || mdux::evidence::sha256(std::as_bytes(std::span{*textJson})) != approval.packageSha256) {
+        report(diagnostics, textPath, "VUI006", "approved text package identity, digest, or canonical bytes disagree with the screen manifest");
         return std::nullopt;
     }
     const auto runsPath = textPath.parent_path() / text->sidecarPath;

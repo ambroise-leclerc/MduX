@@ -353,8 +353,9 @@ per capture per locale (the screen's own obligations, minus the tint check on a 
 the scenario drives, plus governed `mdux.verify::regionPainted()` on that node — it drew something,
 not what), and one **capture** obligation per marker. It embeds no compiled scenario or screen: it
 rebuilds the `CompiledScenario` from `scenario.json` and loads every package from `generated/` with
-the shared `mdux.tools.verify.artifacts` loaders, so it replays and renders the bytes it records a
-digest of — an altered `scenario.json` is replayed as written and fails its own altered expectation.
+the shared `mdux.tools.verify.artifacts` loaders, so it attests the run it made from those bytes (an
+internally inconsistent edit fails a binding obligation); a canonical same-id edit that never
+re-baked is `evidence.scenario.<id>`'s byte comparison to catch.
 `scenario-verification.json` is committed and byte-verified by `evidence.scenario.<id>` — findings
 only, no measured pixel; per-capture frame PNGs and a per-backend `rgba8-sha256` manifest are
 diagnostic attachments (ADR-021 decision 3, the prospective PAR-REQ-009 disposition). New

@@ -198,6 +198,7 @@ const mdux::spec::Register reconcileRejectsMissingOutcome{
                       checks.expect(state == vs::RunState::ChecksFailed, "a missing outcome is a failure, not an absence");
                       checks.expect(hasCode(diagnostics, "VSC010"), "the missing obligation is named");
                       checks.expect(outcomes.size() == 2, "a failed outcome was appended so the counts pair");
+                      checks.expect(!hasCode(diagnostics, "VSC014"), "the appended placeholder is not counted as a surplus outcome");
                       checks.raise();
                   })
             .Execute();

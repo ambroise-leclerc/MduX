@@ -167,19 +167,30 @@ unless the outcome count equals the obligation count and each pair agrees — th
 check `writeVerification()` makes for the screen bundle. Missing, duplicate, unknown, unsupported and
 not-run rows are all rejected.
 
-**Substitution is caught by replaying what is committed, not by comparing against a `constexpr`.**
-`scenario.json` is parsed with the shared `mdux.tools.scenario::readScenarioDoc()` reader and
-rebuilt into the `CompiledScenario` the replay drives — so every value, event coordinate and pinned
-expectation the replay checks is the one *that file* carries, and the digest recorded in `inputs` is
-of the bytes that were replayed. A scenario edited to pin a different value, drive a different
-number of frames or type a different character is therefore replayed as written: the settled state
-no longer matches the altered expectation and a binding obligation fails (`VSC101`). The screen,
-goldens, shader, per-locale text and font, and image packages are all read from `generated/`,
-digested, checked for canonical form, and — the point of Decision 1's disk model — used *directly*
-for the bindings, the replay and the render, so the package the evidence names is the package that
-was rendered. A non-canonical or digest-mismatched input stops the run before a frame is drawn
-(`VSC004`); a malformed or wrong-id scenario stops it before the screen is even resolved
-(`VSC001` / `VSC002` / `VSC003`).
+**Two gates, two claims — the verifier attests the run it made; the bake comparison attests
+source-to-artifact identity.**
+
+- `mdux-verify-scenario` (`verify.scenario.<id>`) rebuilds the `CompiledScenario` from
+  `scenario.json` with the shared `mdux.tools.scenario::readScenarioDoc()` reader and reads the
+  screen, goldens, shader, per-locale text/font and image packages from `generated/` — digesting
+  each, checking it for canonical form, and using it *directly* for the bindings, the replay and the
+  render (the point of Decision 1's disk model). It therefore attests exactly one thing: that the
+  bytes it recorded a digest of are the bytes it replayed and rendered, and that every obligation
+  those inputs generate held. It does **not** compare `scenario.json` against a reviewed source: a
+  canonical, same-id edit whose altered inputs and altered expectations stay self-consistent is
+  replayed as written and can pass. An edit that makes the scenario *internally* inconsistent —
+  a pinned value the interaction no longer settles, a frame count that lands the clock a second
+  short — fails a binding obligation (`VSC101`), and a non-canonical or digest-mismatched screen /
+  text / font / image / shader package stops the run before a frame is drawn (`VSC004`); a malformed
+  or wrong-id scenario stops it before the screen is resolved (`VSC001` / `VSC002` / `VSC003`).
+- `evidence.scenario.<id>` is what catches a `scenario.json` (or any bundle file) that drifted from
+  the reviewed recipe: it byte-compares the freshly baked bundle against the committed one on every
+  toolchain leg, exactly as `evidence.screen.<id>` does. A same-id edit that never re-baked is a
+  byte difference there, whether or not the verifier's self-consistent replay would have passed.
+
+The two are complementary and neither subsumes the other: the bake comparison proves the committed
+bytes are the recipe's output, and the verifier proves those committed bytes replay and render to
+the findings recorded beside them.
 
 ### 3. Committed byte-verified evidence versus diagnostic attachments
 
