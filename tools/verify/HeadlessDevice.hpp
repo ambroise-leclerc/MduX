@@ -16,22 +16,17 @@
  * verbatim `VkPhysicalDeviceProperties.deviceName`, host-dependent and never committed (ADR-007
  * decision 5), used only for a diagnostic line and the derived evidence envelope's `backend` token.
  *
- * ## Included in the global module fragment
+ * ## Where to include it
  *
- * Both including translation units put `#include <vulkan/vulkan.h>` **and this header** in their
- * global module fragment, before `module …;`. That keeps the class from being attached to either
- * module - a header attached to two different modules is two types with one mangled name, an ODR
- * clash at link. This header therefore names its own standard-library dependencies rather than
- * relying on a later `import std;`.
+ * The class must land in the **global module** in every translation unit that uses it, so its one
+ * inline definition ODR-merges rather than clashing. `Driver.cpp` (a module) includes it in the
+ * global module fragment, after `<vulkan/vulkan.h>` and the `<vector>` / `<string>` / `<algorithm>`
+ * headers it needs; `ScenarioRun.cpp` (not a module) includes it in ordinary code, after
+ * `import std;` and `#include <vulkan/vulkan.h>`. This header itself names no standard-library
+ * header - the includer supplies `std::vector`, `std::string`, `std::ranges`, `std::string_view`
+ * either way, the same arrangement the `mdux_embed_blob` headers use.
  */
 #pragma once
-
-#include <algorithm>
-#include <cstdint>
-#include <iterator>
-#include <string>
-#include <string_view>
-#include <vector>
 
 namespace mdux::tools::verify {
 

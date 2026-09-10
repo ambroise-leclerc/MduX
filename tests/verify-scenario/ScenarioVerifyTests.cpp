@@ -9,14 +9,20 @@
  */
 import std;
 import speclab;
+import mdux.core.result;
+import mdux.core.units;
+import mdux.evidence.json;
+import mdux.medui.schema;
+import mdux.medui.scenario;
 import mdux.tools.cli;
 import mdux.tools.verify.driver;
-import mdux.tools.verify.scenario.artifact;
-import mdux.tools.verify.scenario.driver;
 import mdux.verify;
 
 #include "../framework/SpecLabBridge.hpp"
 #include "../framework/TemporaryDirectory.hpp"
+
+#include "verify-scenario/ScenarioDriver.hpp"
+#include "verify-scenario/ScenarioArtifact.hpp"
 
 namespace {
 

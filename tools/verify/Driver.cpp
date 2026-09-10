@@ -6,9 +6,17 @@ module;
 
 #include <vulkan/vulkan.h>
 
-// A plain header, not a module, and included here in the global module fragment so it is not
-// attached to this module: it names `<vulkan/vulkan.h>` types while this module's interface does
-// not, and it is shared with the scenario-capture driver (#321, ADR-021).
+// Included in the global module fragment so the class lands in the global module (its one inline
+// definition then ODR-merges with the copy `ScenarioRun.cpp` sees, rather than clashing). It names
+// `<vulkan/vulkan.h>` types and these standard-library ones; `import std;` in the purview is too
+// late for a global-module-fragment header, so they are spelled here.
+#include <algorithm>
+#include <cstdint>
+#include <iterator>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "HeadlessDevice.hpp"
 
 module mdux.tools.verify.driver;

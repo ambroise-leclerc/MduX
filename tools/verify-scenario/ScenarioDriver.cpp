@@ -1,17 +1,13 @@
 /**
  * @file ScenarioDriver.cpp
  * @brief Replay, capture rendering, obligation enumeration and reconciliation for mdux-verify-scenario.
+ *
+ * **Not a module.** It links the examples-zone replay glue and the `mdux_embed_blob` committed
+ * packages, all of which are global-module; a module implementation unit would attach a declaration
+ * of one to this module and Clang would reject the linkage mismatch. So this is an ordinary
+ * translation unit that `import`s the modules it needs and `#include`s the rest in ordinary code -
+ * exactly `MedicalScreenMonitorExample.cpp`'s arrangement. See `ScenarioDriver.hpp`.
  */
-module;
-
-#include <vulkan/vulkan.h>
-
-// Shared with the screen driver (#253): the Vulkan 1.3 headless bring-up. A plain header, included
-// in the global module fragment so it is not attached to this module - see the header.
-#include "HeadlessDevice.hpp"
-
-module mdux.tools.verify.scenario.driver;
-
 import std;
 import mdux.core.result;
 import mdux.core.units;
@@ -39,8 +35,13 @@ import mdux.tools.verify.diff;
 import mdux.tools.verify.driver;
 import mdux.verify;
 
-// The examples-support replay glue this host tool deliberately links (ADR-021 decision 1). The
-// embedded-blob headers come first: `BoundScreen::load()` names their accessors.
+// After `import std;`, in ordinary code: `<vulkan/vulkan.h>`, the shared headless device, the
+// `mdux_embed_blob` committed-package accessors (they reach `std::span` / `std::byte` through
+// `import std`, their designed usage), and the examples-support replay glue.
+#include <vulkan/vulkan.h>
+
+#include "HeadlessDevice.hpp"
+
 #include "brandMarkPackageJson.hpp"
 #include "brandMarkPixels.hpp"
 #include "dejavuUiAtlas.hpp"
@@ -53,6 +54,8 @@ import mdux.verify;
 #include "support/MonitorApp.hpp"
 #include "support/ScenarioReplay.hpp"
 #include "support/MonitorFrame.hpp"
+
+#include "ScenarioDriver.hpp"
 
 namespace mdux::tools::verify::scenario {
 namespace {

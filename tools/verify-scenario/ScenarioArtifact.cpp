@@ -1,18 +1,24 @@
 /**
  * @file ScenarioArtifact.cpp
  * @brief Implementation of `scenario-verification.json` and the report members it adds.
+ *
+ * Not a module - see `ScenarioDriver.cpp`. An ordinary translation unit that `import`s what it needs
+ * and `#include`s the driver's plain header.
  */
-module;
-
-module mdux.tools.verify.scenario.artifact;
-
 import std;
 import mdux.core.result;
+import mdux.core.units;
 import mdux.evidence.digest;
 import mdux.evidence.json;
 import mdux.evidence.report;
-import mdux.tools.verify.scenario.driver;
+import mdux.medui.schema;
+import mdux.medui.scenario;
+import mdux.tools.cli;
+import mdux.tools.verify.driver;
 import mdux.verify;
+
+#include "ScenarioDriver.hpp"
+#include "ScenarioArtifact.hpp"
 
 namespace mdux::tools::verify::scenario {
 namespace {

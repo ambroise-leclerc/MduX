@@ -4,8 +4,14 @@
  *        scenario bundle (#321, ADR-021).
  */
 import std;
+import mdux.core.units;
+import mdux.medui.schema;
+import mdux.medui.scenario;
 import mdux.tools.cli;
-import mdux.tools.verify.scenario.driver;
+import mdux.tools.verify.driver;
+import mdux.verify;
+
+#include "verify-scenario/ScenarioDriver.hpp"
 
 int main(int argc, char** argv) {
     namespace cli = mdux::tools::cli;

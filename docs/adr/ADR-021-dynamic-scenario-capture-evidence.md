@@ -275,17 +275,20 @@ private `tools/verify/HeadlessDevice.hpp` included by both drivers.
 
 ## Implementation Notes
 
-- `tools/verify-scenario/`: `ScenarioDriver.{cppm,cpp}` (`mdux.tools.verify.scenario.driver` —
-  loads the committed bundle, replays each approved locale through `replayMonitorScenario()`,
-  renders each capture with `recordMonitorFrame()` + a headless `OffscreenTarget`, enumerates and
-  discharges the obligation set), `ScenarioArtifact.{cppm,cpp}`
-  (`mdux.tools.verify.scenario.artifact` — `writeScenarioVerification()`, `extendScenarioReport()`,
-  reusing `publishBundle` / `BundleFile`), `VerifyScenarioMain.cpp`, `VerifyScenarioBakeMain.cpp`.
-  `MduXVerifyScenarioLib` PUBLIC-links `MduX::VerifyUiLib` only (its interfaces re-export
-  `mdux.tools.verify.driver` and nothing else); `MduX::MduX`, `MduX::ScenarioLib` (the
-  `scenario.json` reader) and `Vulkan::Vulkan` are PRIVATE. `run()` parses `scenario.json` with
-  `mdux.tools.scenario::readScenarioDoc()` and rejects any file whose header or step sequence
-  differs from the reviewed `constexpr` scenario (`VSC002`).
+- `tools/verify-scenario/`: `ScenarioDriver.{hpp,cpp}` (loads the committed bundle, replays each
+  approved locale through `replayMonitorScenario()`, renders each capture with `recordMonitorFrame()`
+  + a headless `OffscreenTarget`, enumerates and discharges the obligation set),
+  `ScenarioArtifact.{hpp,cpp}` (`writeScenarioVerification()`, `extendScenarioReport()`, reusing
+  `publishBundle` / `BundleFile`), `VerifyScenarioMain.cpp`, `VerifyScenarioBakeMain.cpp`. These are
+  **not C++20 modules** — they link the global-module examples-support glue and the `mdux_embed_blob`
+  committed packages, and a module interface would attach a declaration of one to the module, which
+  Clang rejects at link; they are plain headers with an include-order contract, like
+  `ScenarioReplay.hpp`. `MduXVerifyScenarioLib` PUBLIC-links `MduX::VerifyUiLib` only (consumers
+  `import mdux.tools.verify.driver` / `mdux.tools.verify.artifact` themselves); `MduX::MduX`,
+  `MduX::ScenarioLib` (the `scenario.json` reader) and `Vulkan::Vulkan` are PRIVATE — a PUBLIC MduX
+  would make a consumer inherit `MduX_options`' version macros twice (GCC `-Werror` redefinition).
+  `run()` parses `scenario.json` with `mdux.tools.scenario::readScenarioDoc()` and rejects any file
+  whose header or step sequence differs from the reviewed `constexpr` scenario (`VSC002`).
 - `tools/verify/Driver.{cppm,cpp}`: export `evaluateFrame()`, factored from the per-scope check
   loop with no behaviour change. `tools/verify/HeadlessDevice.hpp`: the Vulkan 1.3 headless
   bring-up, moved out of `Driver.cpp`'s anonymous namespace, `#include`d by both drivers as a

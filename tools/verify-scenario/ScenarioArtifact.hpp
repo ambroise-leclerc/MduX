@@ -1,5 +1,5 @@
 /**
- * @file ScenarioArtifact.cppm
+ * @file ScenarioArtifact.hpp
  * @brief `scenario-verification.json`, and the members it adds to the scenario bundle's report.
  *
  * @compliance ADR-004 Trust zones in C++ (host-tools zone)
@@ -24,16 +24,16 @@
  * diagnostic attachment instead. Findings are outcome-preserving identities the way the screen
  * bundle's are: nothing here is named `passed`, `valid` or `correct`.
  */
-module;
+#pragma once
 
-export module mdux.tools.verify.scenario.artifact;
+/**
+ * ## Not a C++20 module - a plain header, for `ScenarioDriver.hpp`'s reason.
+ *
+ * Include **after** `import std;`, `import mdux.core.result;`, `import mdux.evidence.json;` and
+ * `#include "ScenarioDriver.hpp"` (which needs its own imports first - see there).
+ */
 
-import std;
-import mdux.core.result;
-import mdux.evidence.json;
-import mdux.tools.verify.scenario.driver;
-
-export namespace mdux::tools::verify::scenario {
+namespace mdux::tools::verify::scenario {
 
 /// The file name this writer owns, fixed so the CMake `OUTPUTS` entry and the writer cannot drift.
 inline constexpr std::string_view verificationFileName = "scenario-verification.json";

@@ -1,5 +1,5 @@
 /**
- * @file ScenarioDriver.cppm
+ * @file ScenarioDriver.hpp
  * @brief Host-only dynamic-evidence driver: replays a committed `.scenario` and verifies the frames
  *        its `capture` markers settle, in every approved locale (#321, ADR-021).
  *
@@ -23,26 +23,26 @@
  * plus a **capture** obligation per declared marker: the replay reached it and the readback formed.
  *
  * The governed predicates and the atomic bundle publish are not here; they are `mdux.verify`'s and
- * `mdux.tools.verify.artifact`'s. This module owns artifact I/O, the replay wiring, a headless
- * device and the complete obligation enumeration. It is neither installed nor linked into a device
- * target.
+ * `mdux.tools.verify.artifact`'s. This tool owns artifact I/O, the replay wiring, a headless device
+ * and the complete obligation enumeration. It is neither installed nor linked into a device target.
  */
-module;
+#pragma once
 
-export module mdux.tools.verify.scenario.driver;
+/**
+ * ## Not a C++20 module - an examples-adjacent plain header
+ *
+ * This tool links the examples-zone replay glue (`ScenarioReplay.hpp`, `MonitorApp.hpp`) and the
+ * embedded committed packages (`mdux_embed_blob`), which are global-module - a module interface
+ * would carry a linkage its definitions do not, and Clang rejects the mismatch at link
+ * (`undefined reference to 'foo@this.module()'`). So this is a plain header with an include-order
+ * contract, like `ScenarioReplay.hpp` and `MonitorFrame.hpp`.
+ *
+ * Include **after** `import std;`, `import mdux.core.units;`, `import mdux.medui.schema;`,
+ * `import mdux.medui.scenario;`, `import mdux.tools.cli;`, `import mdux.tools.verify.driver;` and
+ * `import mdux.verify;`.
+ */
 
-import std;
-import mdux.core.units;
-import mdux.medui.schema;
-import mdux.medui.scenario;
-import mdux.tools.cli;
-import mdux.verify;
-
-// Re-exported: `RunResult::inputs` is `std::vector<mdux::tools::verify::BoundArtifact>`, and the
-// artifact writer and tests reach `evaluateFrame()` / `Outcome` through this module.
-export import mdux.tools.verify.driver;
-
-export namespace mdux::tools::verify::scenario {
+namespace mdux::tools::verify::scenario {
 
 inline constexpr std::string_view toolName = "mdux-verify-scenario";
 

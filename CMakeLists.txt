@@ -681,25 +681,27 @@ mdux_emit_scenario_package(
 add_library(MduXVerifyScenarioLib STATIC)
 add_library(MduX::VerifyScenarioLib ALIAS MduXVerifyScenarioLib)
 
+# Not a module target: ScenarioDriver.cpp / ScenarioArtifact.cpp are ordinary translation units
+# (they link global-module examples glue and `mdux_embed_blob` packages - a module interface would
+# carry a linkage the definitions do not). The API is the two plain headers, on the PUBLIC include
+# path.
 target_sources(MduXVerifyScenarioLib
-    PUBLIC
-        FILE_SET CXX_MODULES
-        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/tools
-        FILES
-            tools/verify-scenario/ScenarioDriver.cppm
-            tools/verify-scenario/ScenarioArtifact.cppm
     PRIVATE
         tools/verify-scenario/ScenarioDriver.cpp
         tools/verify-scenario/ScenarioArtifact.cpp
+        tools/verify-scenario/ScenarioDriver.hpp
+        tools/verify-scenario/ScenarioArtifact.hpp
 )
 target_compile_features(MduXVerifyScenarioLib PUBLIC cxx_std_23)
-# Only MduX::VerifyUiLib is a usage requirement: the module interfaces re-export
-# `mdux.tools.verify.driver` and nothing else. MduX (render.offscreen/vulkan), the scenario reader
-# and Vulkan are PRIVATE - the .cpp files need them, consumers do not, and a PUBLIC MduX would make
-# a consumer inherit `MduX_options`' version macros a second time (GCC -Werror redefinition).
+# Only MduX::VerifyUiLib is a usage requirement (consumers `import mdux.tools.verify.driver` /
+# `mdux.tools.verify.artifact` themselves). MduX (render.offscreen/vulkan), the scenario reader and
+# Vulkan are PRIVATE - the .cpp files need them, and a PUBLIC MduX would make a consumer inherit
+# `MduX_options`' version macros a second time (GCC -Werror redefinition).
 target_link_libraries(MduXVerifyScenarioLib PUBLIC MduX::VerifyUiLib)
 target_link_libraries(MduXVerifyScenarioLib PRIVATE MduX::MduX MduX::ScenarioLib Vulkan::Vulkan MduX_warnings)
-# `HeadlessDevice.hpp` (shared with the screen driver) and the examples-support replay glue.
+# PUBLIC `tools/` so a consumer's `#include "verify-scenario/ScenarioDriver.hpp"` resolves; PRIVATE
+# `tools/verify` and `examples` for `HeadlessDevice.hpp` and the examples-support replay glue.
+target_include_directories(MduXVerifyScenarioLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 target_include_directories(MduXVerifyScenarioLib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify
     ${CMAKE_CURRENT_SOURCE_DIR}/examples

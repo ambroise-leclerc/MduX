@@ -16,10 +16,18 @@
  * recorded failure red is `verify.scenario.<id>` and `evidence.scenario.<id>`.
  */
 import std;
+import mdux.core.result;
+import mdux.core.units;
+import mdux.evidence.json;
+import mdux.medui.schema;
+import mdux.medui.scenario;
 import mdux.tools.cli;
 import mdux.tools.verify.artifact;
-import mdux.tools.verify.scenario.artifact;
-import mdux.tools.verify.scenario.driver;
+import mdux.tools.verify.driver;
+import mdux.verify;
+
+#include "verify-scenario/ScenarioDriver.hpp"
+#include "verify-scenario/ScenarioArtifact.hpp"
 
 namespace {
 
