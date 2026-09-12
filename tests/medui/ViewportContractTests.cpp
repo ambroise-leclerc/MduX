@@ -201,6 +201,38 @@ const mdux::spec::Register rampHandlesADegenerateStyleWithoutFaulting{
             .Execute();
     }};
 
+const mdux::spec::Register aFullScaleRangeStillSeparatesItsRamp{
+    "A full-scale range maps its midpoint and its maximum, rather than folding both to the low colour",
+    "evidence-unit",
+    [] {
+        return speclab::Test("viewport-full-scale-range-separates-ramp")
+            .Given("a range spanning the whole float line, and samples at its middle and its top", [] {})
+            .When("each is mapped through the ramp", [] {})
+            .Then("the middle sample is the ramp's midpoint colour and the top sample is its high end, not both the low end",
+                  [] {
+                      // Every value here is finite, so `validate()`'s checks pass - and `maximum -
+                      // minimum` overflows to infinity in float, exactly the arithmetic
+                      // `mdux::medui::rowFor()` in Trace.cpp already had to widen to double for.
+                      // Before that widening, this scenario returned black for both 0.0F and
+                      // FLT_MAX instead of grey and white - the largest sample indistinguishable
+                      // from the smallest, which is the one failure a monitor must not have.
+                      constexpr core::ColorRgba8   black{.r = 0, .g = 0, .b = 0, .a = 255};
+                      constexpr core::ColorRgba8   white{.r = 255, .g = 255, .b = 255, .a = 255};
+                      constexpr float               extreme = std::numeric_limits<float>::max();
+                      constexpr ms::WaterfallStyle wide{.minimum = -extreme, .maximum = extreme, .lowColor = black, .highColor = white};
+
+                      const core::ColorRgba8 mid = ms::waterfallCellColor(0.0F, wide);
+                      const core::ColorRgba8 top = ms::waterfallCellColor(extreme, wide);
+
+                      mdux::spec::Checks checks;
+                      checks.expect(mid == core::ColorRgba8{.r = 128, .g = 128, .b = 128, .a = 255},
+                                    std::format("the midpoint is mid-grey (128), got ({}, {}, {})", mid.r, mid.g, mid.b));
+                      checks.expect(top == white, std::format("the maximum is white (255), got ({}, {}, {})", top.r, top.g, top.b));
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 // ---------------------------------------------------------------------------
 // The ring
 // ---------------------------------------------------------------------------

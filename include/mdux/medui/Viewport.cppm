@@ -138,10 +138,10 @@ inline constexpr std::size_t maxWaterfallBins = 32;
  * ring's capacity.
  */
 struct WaterfallGrid {
-    std::span<const float> storage{};    ///< `bins` scalars per row, row-major, owned by the caller
-    std::size_t            bins{0};      ///< scalars per row - fixed for the ring's life
-    std::size_t            oldestRow{0}; ///< index, in rows, of the oldest live row
-    std::size_t            rowCount{0};  ///< live rows, at most the ring's capacity
+    std::span<const float> storage{};     ///< `bins` scalars per row, row-major, owned by the caller
+    std::size_t            bins{0};       ///< scalars per row - fixed for the ring's life
+    std::size_t            oldestRow{0};  ///< index, in rows, of the oldest live row
+    std::size_t            rowCount{0};   ///< live rows, at most the ring's capacity
 
     /// The ring's total capacity in rows, or 0 when `bins` is 0 (a degenerate ring with no shape).
     [[nodiscard]] constexpr std::size_t totalRows() const noexcept {
@@ -192,12 +192,18 @@ enum class WaterfallError : std::uint8_t {
 
 [[nodiscard]] constexpr std::string_view describe(WaterfallError error) noexcept {
     switch (error) {
-        case WaterfallError::MalformedGrid:   return "the grid's shape does not describe a position in its own storage";
-        case WaterfallError::TooManyRows:     return "the grid holds more live rows than maxWaterfallRows admits";
-        case WaterfallError::TooManyBins:     return "the grid declares more bins per row than maxWaterfallBins admits";
-        case WaterfallError::NonFiniteSample: return "a live sample is a NaN or an infinity";
-        case WaterfallError::MalformedStyle:  return "the numeric range is empty, inverted, or not finite";
-        case WaterfallError::BandTooSmall:    return "the node's rectangle has fewer pixels than the grid has rows or bins";
+        case WaterfallError::MalformedGrid:
+            return "the grid's shape does not describe a position in its own storage";
+        case WaterfallError::TooManyRows:
+            return "the grid holds more live rows than maxWaterfallRows admits";
+        case WaterfallError::TooManyBins:
+            return "the grid declares more bins per row than maxWaterfallBins admits";
+        case WaterfallError::NonFiniteSample:
+            return "a live sample is a NaN or an infinity";
+        case WaterfallError::MalformedStyle:
+            return "the numeric range is empty, inverted, or not finite";
+        case WaterfallError::BandTooSmall:
+            return "the node's rectangle has fewer pixels than the grid has rows or bins";
     }
     // Named rather than defaulted so that a new enumerator is a warning at this switch instead of a
     // silent empty description later.
@@ -258,7 +264,7 @@ waterfallCellRect(const mdux::core::Rect& band, std::size_t rows, std::size_t co
 /// the result cannot depend on whether a compiler fuses them, which matters here for the same
 /// cross-toolchain reason it matters there.
 [[nodiscard]] constexpr std::uint8_t lerpByte(std::uint8_t low, std::uint8_t high, float t) noexcept {
-    const float span      = static_cast<float>(high) - static_cast<float>(low);
+    const float span       = static_cast<float>(high) - static_cast<float>(low);
     const float scaled     = t * span;
     const float positioned = static_cast<float>(low) + scaled;
     const float rounded    = positioned + 0.5F;
@@ -274,21 +280,37 @@ waterfallCellRect(const mdux::core::Rect& band, std::size_t rows, std::size_t co
  * `minimum`" rather than propagated, matching `medui::quantise()`'s "NaN maps to the low end of the
  * scale it cannot interpret" doctrine.
  *
+ * The span and the offset are widened to `double` before they are subtracted, not after - exactly
+ * `mdux::medui::rowFor()`'s reasoning in `Trace.cpp`. `validate()` (and the ordering check just
+ * below) only requires `minimum`/`maximum` finite and `maximum > minimum`, which a range of
+ * `[-FLT_MAX, FLT_MAX]` satisfies while its *difference* overflows to infinity in `float` - and at
+ * the top of that range the offset overflows too, so the float path divides one infinity by another
+ * and sends a NaN `t` into `lerpByte()`'s float-to-byte cast, which is undefined behaviour. The
+ * difference of two finite floats is exact in `double` and cannot overflow there, so nothing is
+ * rounded here that was not rounded before, and `t` is exactly rounded once on the way back to
+ * `float`.
+ *
  * Total, like `waterfallCellRect()`: a degenerate `style` (an empty or non-finite range) is a defect
  * `validate()` already refuses before a frame is recorded, and this function's fallback for one -
  * `style.lowColor`, unchanged - exists so a caller who calls it anyway gets a defined colour rather
  * than a divide against zero.
  */
 [[nodiscard]] constexpr mdux::core::ColorRgba8 waterfallCellColor(float value, const WaterfallStyle& style) noexcept {
-    const float span = style.maximum - style.minimum;
-    if (!(span > 0.0F) || !std::isfinite(style.minimum) || !std::isfinite(style.maximum)) {
+    if (!std::isfinite(style.minimum) || !std::isfinite(style.maximum) || !(style.maximum > style.minimum)) {
         return style.lowColor;
     }
 
-    const float clamped = !(value >= style.minimum) ? style.minimum   // NaN or below the low rail
-                         : value > style.maximum     ? style.maximum
-                                                      : value;
-    const float t = (clamped - style.minimum) / span;
+    const double span   = static_cast<double>(style.maximum) - static_cast<double>(style.minimum);
+    const double offset = static_cast<double>(value) - static_cast<double>(style.minimum);
+    float        t      = static_cast<float>(offset / span);
+
+    // `!(t > 0.0F)` rather than `t < 0.0F`, so a NaN - from a NaN `value` - lands on the low rail
+    // instead of falling through both comparisons, matching `rowFor()`'s reasoning in `Trace.cpp`.
+    if (!(t > 0.0F)) {
+        t = 0.0F;
+    } else if (t > 1.0F) {
+        t = 1.0F;
+    }
 
     return mdux::core::ColorRgba8{
         .r = lerpByte(style.lowColor.r, style.highColor.r, t),
@@ -333,8 +355,7 @@ validate(const mdux::core::Rect& band, const WaterfallGrid& grid, const Waterfal
         return mdux::core::err(WaterfallError::TooManyRows);
     }
 
-    if (grid.rowCount > 0 &&
-        (band.width < static_cast<mdux::core::Px>(grid.bins) || band.height < static_cast<mdux::core::Px>(grid.rowCount))) {
+    if (grid.rowCount > 0 && (band.width < static_cast<mdux::core::Px>(grid.bins) || band.height < static_cast<mdux::core::Px>(grid.rowCount))) {
         return mdux::core::err(WaterfallError::BandTooSmall);
     }
 
