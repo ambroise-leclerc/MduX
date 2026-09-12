@@ -52,8 +52,9 @@
 > Proposed): no schema extension and no governed colour token, a row-granularity `WaterfallGrid`, and
 > the pure composition math (`waterfallCellRect()`, `waterfallCellColor()`, `validate()`) in the new
 > header-only `mdux.medui.viewport` module — data and composition math only, no `Screen.cppm`
-> binding, which stays #323's. Epic #310's next unblocked child is **#323**; **#325** (epic #311)
-> remains the sole unblocked design/spec issue outside #310.
+> binding, which stays #323's. Epic #310's next child, **#323**, is conditionally unblocked pending
+> ADR-022's ratification; **#325** (epic #311) remains the sole unconditionally unblocked design/spec
+> issue outside #310.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -156,7 +157,8 @@ agreed.
 
 Assessed 12 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
 epics #307, #308 and #309 are closed. #322 is delivered** (ADR-022, Proposed). One design/spec child
-issue and #322's implementation successor are the remaining unblocked work.
+issue is fully unblocked; #322's implementation successor is conditionally unblocked, pending
+ADR-022's ratification.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
@@ -427,14 +429,14 @@ already sets, applied to colour), `waterfallCellRect()` (remainder-absorbing til
 `validate()`. `maxWaterfallRows = 16` / `maxWaterfallBins = 32` cost exactly half the committed
 `endoscope-monitor` screen's 4096/6144 `DrawBudget` at full history. Data and composition math only:
 no `Schema.cppm` or `Screen.cppm` change, and no binding to a live screen or `DrawList` — that is
-#323's. Covered by 16 GPU-free scenarios in `tests/medui/ViewportContractTests.cpp` (`medui_spec`).
+#323's. Covered by 15 GPU-free scenarios in `tests/medui/ViewportContractTests.cpp` (`medui_spec`).
 Residual: maintainer engineering acceptance and a domain review of the demonstrator ramp/bounds'
 lack of clinical grounding.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-022, Proposed; `mdux.medui.viewport`: `WaterfallGrid`, `WaterfallStyle`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()`) |
-| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) ✓ (pending ratification) · **unblocked** |
+| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) delivered (ADR-022) · **conditionally unblocked** — pending ADR-022's ratification |
 | [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **blocked on #323** |
 
 ### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned

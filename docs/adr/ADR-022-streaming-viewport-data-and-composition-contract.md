@@ -220,7 +220,7 @@ rest of that screen already carries.
 - Bullet 3 of the issue is resolved with no upstream MedUI decision needed, and no change to
   `Schema.cppm`, `Screen.cppm` or `medui-conformance.toml`.
 - The composition and colour math are pure, `constexpr`, `noexcept` and header-only - testable without
-  a `DrawList`, a screen, or a GPU, and already covered by 16 scenarios in
+  a `DrawList`, a screen, or a GPU, and already covered by 15 scenarios in
   `tests/medui/ViewportContractTests.cpp` (`medui_spec`), all passing.
 - The eventual render step (#323) has nothing left to design: it calls `validate()` once, then
   `addSolidRect(waterfallCellRect(...), waterfallCellColor(...))` per cell, reusing machinery every
@@ -261,7 +261,7 @@ rest of that screen already carries.
 - `tests/medui/ViewportContractTests.cpp` (`medui_spec`): cell tiling (exact and remainder-absorbing),
   degenerate-index rectangles, ramp endpoints/clamping/degenerate-style fallback, wrapped-ring read
   order, the well-formed and every malformed-input validation path, `describe()` coverage, and the
-  cost-model-versus-budget arithmetic Decision 8 states. 16 scenarios, GPU-free, run in the existing
+  cost-model-versus-budget arithmetic Decision 8 states. 15 scenarios, GPU-free, run in the existing
   `medui_spec` binary.
 - No change to `Schema.cppm`, `Screen.cppm`, `medui-conformance.toml`, any recipe, or any committed
   `generated/` artifact. `#323` is expected to add a `ViewportBinding` to `mdux.medui.screen` (the
