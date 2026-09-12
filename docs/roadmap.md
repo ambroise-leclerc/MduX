@@ -32,6 +32,21 @@
 > flattening in the font baker (ADR-010 decision 5). Of the remaining child issues, three more are
 > unblocked — **#319, #322, #325** — and the [Next to implement](#next-to-implement) subsection
 > records the recommended order.
+>
+> **Update, 10 September 2026 — three Phase-2 epics closed.** **#313** merged
+> ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341)) and **#307 closed** with all three
+> children done; the cross-implementation rendered/evidence joint sign-off with TrustSC is carried
+> as the documented residual on [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) and
+> [ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md), as it was for
+> [#335](https://github.com/ambroise-leclerc/MduX/issues/335). **#318** merged and **#308 closed**
+> (all four input/monitor children done; the PAR-REQ-006 critical-action host policy stays open for
+> domain review). **#319**, **#320** and **#321** merged ([PRs #344](https://github.com/ambroise-leclerc/MduX/pull/344),
+> [#345](https://github.com/ambroise-leclerc/MduX/pull/345),
+> [#346](https://github.com/ambroise-leclerc/MduX/pull/346)) and **#309 closed** — dynamic scenario
+> replay and the `verify.scenario.<id>` evidence gate ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md),
+> Proposed; verifier-area domain review open). Two Phase-2 epics remain: **#310** (streaming
+> `VulkanViewport`) and **#311** (authoring tools / Studio), both untouched. The next executable
+> work is the two unblocked design/spec issues, **#322** and **#325**.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -48,10 +63,10 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 |---|---|
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
-| Phase 2 epics | 5 open: #307–#311 |
-| Phase 2 child issues | 16 total (#312–#327): 5 closed (#312, #314, #315, #316, #317), #313 in review (PR #341), #318 implemented (in review), 9 open |
+| Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310, #311 |
+| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open (#322–#327) |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#319](https://github.com/ambroise-leclerc/MduX/issues/319), [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — #318 implemented; see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — the two remaining design/spec issues; see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -61,10 +76,10 @@ are superseded; closing the original backlog does not imply complete application
 | Area | MduX at the assessed head | TrustSC at the assessed head | Remaining work |
 |---|---|---|---|
 | Architecture and governance | Governed core, separate Vulkan adapter and host tools; requirement/hazard/verification records, traceability and evidence exports exist. | Governed crates, presentation adapter and host tools; corresponding governance records and application facade exist. | Preserve boundaries; add application integration rather than rebuild governance. |
-| MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. #314 re-pinned to `v0.3.0-rc.1` and gates all 27 compiler cases from the pinned corpus. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | #307: TrustSC re-pin and joint sign-off ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)); the MduX corpus-derived gate is delivered. |
-| Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | #308: bounded interaction, editing and a presented medical monitor. |
+| MedUI compilation | Published grammar, stable diagnostics, resolved IR, C++ emitters and committed screen bundles. Claims syntax, semantics, layout and safety with full diagnostic positions. #314 re-pinned to `v0.3.0-rc.1` and gates all 27 compiler cases from the pinned corpus. | Build-time compilation and Rust output; current shared manifest claims syntax with line-only positions against an older pin. | Epic #307 **closed** (all children done); the MduX corpus-derived gate is delivered. Residual: the TrustSC re-pin and the joint rendered/evidence sign-off, carried on [ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) / [ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md) ([#335](https://github.com/ambroise-leclerc/MduX/issues/335)). |
+| Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | Epic #308 **closed**: bounded interaction, editing and the presented `MedicalScreenMonitorExample` in two approved locales are delivered. Residual: the PAR-REQ-006 critical-action host policy is open for domain review. |
 | Presentation and streaming | `UiRenderer` consumes host Vulkan resources; `MedicalScreenMonitorExample` (#318, ADR-018 clause 6) presents the committed `endoscope-monitor` screen in a window, runs the assembled `updateMonitor()` loop with every live component bound, and routes real pointer/keyboard input through `mdux.medui.input`, in two approved locales. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
-| Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate, versioned `mdux.local/tint-composition` v1; the raw RGBA8 digest is a separate `mdux.local/raw-image-digest` with no committed baseline. #314 gates `MEDUI-PROFILE-RENDERED`/`-EVIDENCE` against the pinned corpus and emits a derived RENDERED envelope. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 predicate meaning is resolved and gated on the MduX side; #309 verifies dynamic application behavior without weakening the static gate. |
+| Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate, versioned `mdux.local/tint-composition` v1; the raw RGBA8 digest is a separate `mdux.local/raw-image-digest` with no committed baseline. #314 gates `MEDUI-PROFILE-RENDERED`/`-EVIDENCE` against the pinned corpus and emits a derived RENDERED envelope. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 predicate meaning is resolved and gated on the MduX side. Epic #309 **closed**: the `verify.scenario.<id>` gate verifies dynamic scenario captures without weakening the static screen gate ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md), Proposed; verifier-area domain review open). |
 | Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311: host editing/preview interfaces and Studio integration, with a reuse decision before a fork. |
 | Evidence, ML and text | Recipe-driven committed artifacts, cross-toolchain byte checks, shared host/device inference kernels, fail-closed model creation and bounded runtime bindings. | Baked font/image/shader/model artifacts, deterministic inference and bounded draw paths; the screen/text join still allocates at startup. | Retain existing MduX guarantees. TrustSC #47 is a sibling-side tightening proposal, not missing MduX work. |
 | Platform evidence | MSVC/Windows, GCC/Linux, Clang/libc++ on Linux and Apple Silicon macOS, with pixel/evidence gates and sanitizers. | Current CI builds/tests the Rust workspace on Linux with lavapipe, baker verification, monitor smoke and Studio preview checks. | Do not trade MduX's wider platform coverage for API similarity. |
@@ -121,41 +136,49 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312, #314, #315, #316 and #317 are closed; #313, #318, #319 and #320 are in review. The next
-executable work is the two still-unblocked design/spec issues — the viewport contract (**#322**) and
-the editor API (**#325**). Canonical interfaces land before their consumers,
-and each design issue produces the ADR and canonical types its epic's implementation children then
-consume. The
+#312–#321 are all closed, and with them **epics #307, #308 and #309**. The next executable work is
+the two still-unblocked design/spec issues — the viewport contract (**#322**) and the editor API
+(**#325**) — under the two remaining epics **#310** and **#311**. Canonical interfaces land before
+their consumers, and each design issue produces the ADR and canonical types its epic's implementation
+children then consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
 unblocks. No new version number or release date is assigned until a deliverable and its evidence are
 agreed.
 
 ### Next to implement
 
-Assessed 9 September 2026 against `develop`. **#318, #319 and #320 are implemented and in review.**
-Two design/spec child issues are the remaining unblocked work.
+Assessed 10 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
+epics #307, #308 and #309 are closed.** Two design/spec child issues are the remaining unblocked
+work.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
 | 1 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
 | 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
-**#313** is not on this list because it is in review ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341));
-its remaining work is the verifier-area domain review and the ADR-016 residuals, not new
-implementation.
+The three closed epics leave documented residuals rather than open implementation: the #307 TrustSC
+joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
+host policy, and the #309 / ADR-021 verifier-area domain review — one shared domain review covers
+the last two together with the ADR-016/017 items.
 
-Recommended sequencing: **#321** (dynamic evidence) is **implemented** (ADR-021, Proposed —
-verifier-area domain review open), closing the epic-#309 critical path through the verifier; **#322**
-is the epic-#310 design track. #325 last.
+Recommended sequencing: **#322** is the epic-#310 design track and comes first; **#325** (epic #311)
+last, since epic #311 is the furthest out.
 
-### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · planned
+### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
 Publish an agreed, versioned compatibility boundary, adopt its verification semantics in MduX, and enforce normalized cross-implementation observations. Preserve intentional differences in language, supported safety classes and resource ownership.
+
+**Epic closed 10 September 2026** with all three children merged to `develop`. The one substantive
+gap that remains — a full cross-implementation rendered/evidence joint sign-off with TrustSC — is not
+tracked as an open child; it is carried as an explicit residual on
+[ADR-016](adr/ADR-016-locally-versioned-observation-profiles.md) and
+[ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md), the same disposition
+[#335](https://github.com/ambroise-leclerc/MduX/issues/335) was closed under.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) | Define the sibling behavior matrix and versioned MedUI decisions | **closed** (PRs #329, #338) |
-| [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **in review** ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341)); local half + #314 Stage B merged |
+| [#313](https://github.com/ambroise-leclerc/MduX/issues/313) | Implement agreed verification semantics without weakening existing evidence | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **closed** ([PR #341](https://github.com/ambroise-leclerc/MduX/pull/341), merged 2026-09-09); local half + #314 Stage B. Verifier-area domain review for PAR-REQ-002/003 carried as an ADR-016 residual |
 | [#314](https://github.com/ambroise-leclerc/MduX/issues/314) | Gate sibling conformance against one pinned observation corpus | [#312](https://github.com/ambroise-leclerc/MduX/issues/312), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **closed** (five stages, PRs #331–#336) |
 
 **#313 landed its verifier semantics.** The **local** half is
@@ -176,8 +199,9 @@ its finding cannot stand in for an R02 result — was addressed by not mapping `
 Residual, recorded on ADR-016: a final 0.3.0 minor pin (currently `-rc.1`), the #335 joint
 rendered/evidence sign-off, a reviewed re-bake against the final line, a genuine separately-evaluated
 R02 obligation for `InkContainment` if one is wanted, the matching decision for the Stage C-emitter
-derived envelope, and the verifier-area domain review for PAR-REQ-002/003. **#313 closes when the
-domain review completes.**
+derived envelope, and the verifier-area domain review for PAR-REQ-002/003. **#313 was closed on
+merge (PR #341, 2026-09-09)**; those items stay tracked on ADR-016 rather than on the issue, and the
+verifier-area domain review is now shared with the ADR-021 (#321) review.
 
 The #314 gate landed in four merged stages. **Stage A** ([#331](https://github.com/ambroise-leclerc/MduX/pull/331)):
 `medui-conformance.toml` re-pinned to MedUI `v0.3.0-rc.1` (`9a57f64`), the shared-conformance test
@@ -279,9 +303,13 @@ and [ADR-017 §3](adr/ADR-017-sibling-conformance-gate-status.md). It gates the 
 migration; the #321 dynamic-evidence gate ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md))
 is implementation-local and carries the cross-implementation half as the same #335 residual.
 
-### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · planned
+### [#308](https://github.com/ambroise-leclerc/MduX/issues/308) — Interactive medical monitor and bounded input handling · closed
 
 Deliver one interactive monitor whose platform events flow through a bounded governed model into the existing screen bindings and real Vulkan presentation, with a deterministic headless path using the same application logic.
+
+**Epic closed 10 September 2026** with all four children (#315–#318) merged to `develop`. The one
+residual — the PAR-REQ-006 critical-action host policy — stays open for domain review; the example
+resolves and traces critical actions but executes nothing.
 
 **#315 and #316 landed the input contract and its model.** [ADR-018](adr/ADR-018-bounded-input-and-update-order.md)
 (Accepted 2026-09-08) and the header-only `mdux.medui.input` module define the closed
@@ -317,11 +345,15 @@ nothing; its scenario replay is delivered by #320 (`--replay=<id>`, `example.mon
 | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) | Define bounded input events, application update order and action policy | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) · **closed** (ADR-018, `mdux.medui.input`) |
 | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) | Implement the bounded event queue and controlled text-editing model | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) · **closed** (`EventQueue`, `FieldEditor`) |
 | [#317](https://github.com/ambroise-leclerc/MduX/issues/317) | Add an optional medical-screen presentation and input adapter | [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **closed** (ADR-019, `SurfaceMapping`, `GlfwPresentationAdapter.hpp`, `MedicalScreenMonitorExample`) |
-| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#317](https://github.com/ambroise-leclerc/MduX/issues/317) ✓ · **implemented** (`MonitorApp.hpp` + `updateMonitor()`, `Clock`/`Button` on the screen, `fr-FR` via composite-glyph baking, `monitor_loop_spec` + `example.monitor.headless{,.fr}`) |
+| [#318](https://github.com/ambroise-leclerc/MduX/issues/318) | Deliver the interactive monitor with two approved locales | [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#317](https://github.com/ambroise-leclerc/MduX/issues/317) ✓ · **closed** ([PR #343](https://github.com/ambroise-leclerc/MduX/pull/343), merged 2026-09-09: `MonitorApp.hpp` + `updateMonitor()`, `Clock`/`Button` on the screen, `fr-FR` via composite-glyph baking, `monitor_loop_spec` + `example.monitor.headless{,.fr}`) |
 
-### [#309](https://github.com/ambroise-leclerc/MduX/issues/309) — Deterministic interaction scenarios and dynamic UI evidence · planned
+### [#309](https://github.com/ambroise-leclerc/MduX/issues/309) — Deterministic interaction scenarios and dynamic UI evidence · closed
 
 Replay the actual application's bounded event/update path from compiled scenarios, then verify the resulting dynamic frames and emit complete, traceable evidence.
+
+**Epic closed 10 September 2026** with all three children (#319–#321) merged to `develop`
+(PRs #344, #345, #346). Residual: [ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md) is
+Proposed, and its verifier-area domain review — shared with the ADR-016/017 items — is open.
 
 **#319 is implemented** ([ADR-020](adr/ADR-020-bounded-interaction-scenarios-and-replay.md),
 Accepted 2026-09-09): a closed line-oriented `.scenario` DSL, `mdux-scenariobake` /
@@ -365,9 +397,9 @@ capture, substituted package, altered-scenario replay).
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **implemented** (ADR-020; `mdux.medui.scenario` + `mdux-scenariobake`/`mdux-scenarioemit`; `.scenario` DSL; committed `endoscope-monitor-basics`; `scenario_tools_spec` + `scenario_spec` + `scenario_noheap_spec`) |
-| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **implemented** (stacked on #319: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
-| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **implemented** (ADR-021, Proposed; `mdux-verify-scenario`/`-bake` reading every artifact from `generated/`, `evaluateFrame()` + `mdux.verify::regionPainted()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
+| [#319](https://github.com/ambroise-leclerc/MduX/issues/319) | Compile bounded interaction scenarios on the host | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓, [#315](https://github.com/ambroise-leclerc/MduX/issues/315) ✓ · **closed** ([PR #344](https://github.com/ambroise-leclerc/MduX/pull/344), merged 2026-09-09: ADR-020; `mdux.medui.scenario` + `mdux-scenariobake`/`mdux-scenarioemit`; `.scenario` DSL; committed `endoscope-monitor-basics`; `scenario_tools_spec` + `scenario_spec` + `scenario_noheap_spec`) |
+| [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **closed** ([PR #345](https://github.com/ambroise-leclerc/MduX/pull/345), merged 2026-09-09: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
+| [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **closed** ([PR #346](https://github.com/ambroise-leclerc/MduX/pull/346), merged 2026-09-10: ADR-021, Proposed; `mdux-verify-scenario`/`-bake` reading every artifact from `generated/`, `evaluateFrame()` + `mdux.verify::regionPainted()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
 
 ### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
 
@@ -921,5 +953,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Original programme: 13 closed epics and six shipped waves. Phase 2: five planned epics and
-sixteen child issues, linked above. Status assessed 6 September 2026._
+_Original programme: 13 closed epics and six shipped waves. Phase 2: 3 of 5 epics closed
+(#307, #308, #309); 2 open (#310, #311) with 6 open child issues (#322–#327). Status assessed
+10 September 2026._
