@@ -220,30 +220,35 @@ enum class WaterfallError : std::uint8_t {
 }
 
 /**
- * @brief The pixel rectangle cell `(row, col)` of a `rows`-by-`cols` grid occupies inside `band`.
+ * @brief The pixel rectangle cell `(row, col)` of a `rows`-by-`cols` grid occupies inside `nodeBand`.
  *
- * Remainder-absorbing division: every cell but the last in each axis gets `band.width / cols` (or
- * `band.height / rows`) pixels, and the last one in each axis keeps whatever integer division left
- * over. That is what makes the cells tile `band` exactly - the union of every `waterfallCellRect()`
- * call over a fixed `(rows, cols)` is `band` itself, with no gap and no cell spilling past its far
- * edge, so no clip rectangle is needed to promise that a device holding this contract does not
- * already give for free.
+ * Remainder-absorbing division: every cell but the last in each axis gets `nodeBand.width / cols`
+ * (or `nodeBand.height / rows`) pixels, and the last one in each axis keeps whatever integer
+ * division left over. That is what makes the cells tile `nodeBand` exactly - the union of every
+ * `waterfallCellRect()` call over a fixed `(rows, cols)` is `nodeBand` itself, with no gap and no
+ * cell spilling past its far edge, so no clip rectangle is needed to promise that a device holding
+ * this contract does not already give for free.
  *
  * Total rather than `Result`-returning: a rectangle is a value type with no failure mode of its own
  * (`core::Rect` itself has none), and the only ways to call this outside its contract - `rows` or
  * `cols` zero, or `row`/`col` past them - are caller bugs a validated `WaterfallGrid` already
- * excludes by construction. Both degenerate to a zero-area rectangle at `band`'s origin rather than
- * an out-of-range computation, so a caller that does call it out of contract gets a value that reads
- * as "nothing" rather than undefined behaviour.
+ * excludes by construction. Both degenerate to a zero-area rectangle at `nodeBand`'s origin rather
+ * than an out-of-range computation, so a caller that does call it out of contract gets a value that
+ * reads as "nothing" rather than undefined behaviour.
+ *
+ * The parameter is `nodeBand`, not `band`: a `constexpr` function defined in a module interface has
+ * its body re-checked against each importing translation unit on MSVC, and a parameter named `band`
+ * triggered `C4459` (a parameter hiding a global) in `ViewportContractTests.cpp`, which declares its
+ * own file-scope `band` fixture. The rename avoids the collision rather than suppressing the warning.
  */
 [[nodiscard]] constexpr mdux::core::Rect
-waterfallCellRect(const mdux::core::Rect& band, std::size_t rows, std::size_t cols, std::size_t row, std::size_t col) noexcept {
+waterfallCellRect(const mdux::core::Rect& nodeBand, std::size_t rows, std::size_t cols, std::size_t row, std::size_t col) noexcept {
     if (rows == 0 || cols == 0 || row >= rows || col >= cols) {
-        return mdux::core::Rect{.x = band.x, .y = band.y, .width = 0, .height = 0};
+        return mdux::core::Rect{.x = nodeBand.x, .y = nodeBand.y, .width = 0, .height = 0};
     }
 
-    const auto cellWidth  = static_cast<mdux::core::Px>(static_cast<std::int64_t>(band.width) / static_cast<std::int64_t>(cols));
-    const auto cellHeight = static_cast<mdux::core::Px>(static_cast<std::int64_t>(band.height) / static_cast<std::int64_t>(rows));
+    const auto cellWidth  = static_cast<mdux::core::Px>(static_cast<std::int64_t>(nodeBand.width) / static_cast<std::int64_t>(cols));
+    const auto cellHeight = static_cast<mdux::core::Px>(static_cast<std::int64_t>(nodeBand.height) / static_cast<std::int64_t>(rows));
 
     const auto originX = static_cast<mdux::core::Px>(static_cast<std::int64_t>(col) * static_cast<std::int64_t>(cellWidth));
     const auto originY = static_cast<mdux::core::Px>(static_cast<std::int64_t>(row) * static_cast<std::int64_t>(cellHeight));
@@ -252,10 +257,10 @@ waterfallCellRect(const mdux::core::Rect& band, std::size_t rows, std::size_t co
     const bool lastRow = row + 1 == rows;
 
     return mdux::core::Rect{
-        .x      = band.x + originX,
-        .y      = band.y + originY,
-        .width  = lastCol ? band.width - originX : cellWidth,
-        .height = lastRow ? band.height - originY : cellHeight,
+        .x      = nodeBand.x + originX,
+        .y      = nodeBand.y + originY,
+        .width  = lastCol ? nodeBand.width - originX : cellWidth,
+        .height = lastRow ? nodeBand.height - originY : cellHeight,
     };
 }
 
@@ -321,21 +326,24 @@ waterfallCellRect(const mdux::core::Rect& band, std::size_t rows, std::size_t co
 }
 
 /**
- * @brief Whether `grid` and `style` describe a waterfall `band` could show, without recording
+ * @brief Whether `grid` and `style` describe a waterfall `nodeBand` could show, without recording
  *        anything.
  *
  * Checks every refusal this contract admits, in the order `mdux.medui.trace`'s own validation
  * checks its analogues: the style first (a malformed ramp domain makes every sample's colour
- * undefined), the grid's shape, the two type-level caps, whether `band` has room for one pixel per
- * row and per bin at the grid's *live* extent, and finally every live sample's finiteness.
+ * undefined), the grid's shape, the two type-level caps, whether `nodeBand` has room for one pixel
+ * per row and per bin at the grid's *live* extent, and finally every live sample's finiteness.
  *
  * This is the whole of what #322 delivers toward drawing a waterfall: it proves a frame *could* be
  * recorded. Turning that into `DrawList` primitives - one `addSolidRect()` per
  * `waterfallCellRect()`, tinted by `waterfallCellColor()` - is #323's, exactly as turning a proven
  * `SampleRing` into stroke quads is `recordTrace()`'s and not this module's analogue's.
+ *
+ * The parameter is `nodeBand` rather than `band` for the same MSVC-module reason
+ * `waterfallCellRect()`'s is - see its doc comment.
  */
 [[nodiscard]] constexpr mdux::core::ResultVoid<WaterfallError>
-validate(const mdux::core::Rect& band, const WaterfallGrid& grid, const WaterfallStyle& style) noexcept {
+validate(const mdux::core::Rect& nodeBand, const WaterfallGrid& grid, const WaterfallStyle& style) noexcept {
     if (!std::isfinite(style.minimum) || !std::isfinite(style.maximum) || !(style.maximum > style.minimum)) {
         return mdux::core::err(WaterfallError::MalformedStyle);
     }
@@ -355,7 +363,7 @@ validate(const mdux::core::Rect& band, const WaterfallGrid& grid, const Waterfal
         return mdux::core::err(WaterfallError::TooManyRows);
     }
 
-    if (grid.rowCount > 0 && (band.width < static_cast<mdux::core::Px>(grid.bins) || band.height < static_cast<mdux::core::Px>(grid.rowCount))) {
+    if (grid.rowCount > 0 && (nodeBand.width < static_cast<mdux::core::Px>(grid.bins) || nodeBand.height < static_cast<mdux::core::Px>(grid.rowCount))) {
         return mdux::core::err(WaterfallError::BandTooSmall);
     }
 
