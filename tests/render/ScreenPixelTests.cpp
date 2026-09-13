@@ -1269,18 +1269,34 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
     const auto cornerIndex = static_cast<std::size_t>(band.y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(band.x);
     CHECK_MESSAGE(before[cornerIndex] != after[cornerIndex], "the corner cell changed between the two grids");
 
-    // Clipping and neighbouring controls: every node on this screen is full width and the layout
-    // stacks them vertically (`endoscope-view` above `insufflation-pressure`, edge to edge, per the
-    // recipe), so the row just past the viewport's bottom edge is the pressure reading's own
-    // reserved field - unbound in this scenario, hence opaque and unchanging. Checked across the
-    // whole row, not one pixel: a spill confined to a single column would still move a pixel this
-    // scenario did not happen to sample. Identical in both frames unless the waterfall painted at
-    // least one row past its own rectangle, anywhere along it.
-    REQUIRE(band.bottom() < static_cast<core::Px>(surface.height));
-    std::size_t movedNeighbourPixels = 0;
+    // Clipping and neighbouring controls. Every node on this screen is full width and the layout
+    // stacks them vertically, edge to edge, in the recipe's own declaration order - `topbar` first,
+    // then `endoscope-view`, then `insufflation-pressure` - and `render()` paints nodes in exactly
+    // that order. That cuts the check in half: `insufflation-pressure` draws its own opaque
+    // reserved field *after* the viewport (it is unbound in this scenario, so that field is drawn
+    // unconditionally, covering its whole rectangle every time), so a downward spill would be
+    // painted over before this frame is ever read back - a pixel check there would pass whether or
+    // not the viewport spilled, which is not a check worth writing. That direction is instead the
+    // unit-level guarantee `waterfallCellRect()`'s own tests already establish (#322,
+    // `viewport-cells-tile-the-band`): the cells cannot exceed `band` on either axis, full stop,
+    // independent of paint order.
+    //
+    // The topbar row, in contrast, draws *before* the viewport and nothing repaints it afterward -
+    // so it is a real, uncovered witness, and an upward spill would leave a mark there that survives
+    // to the readback. Compared for *equality between the two frames* rather than against a
+    // predicted tint: the topbar's seven child controls (`brand-mark`, `screen-title`, `wall-clock`,
+    // `freeze`, `emergency-halt`, `classifier-state`, `patient-id`) between them span the full
+    // 1280px width with no gap, so `topbar-background`'s own token is not actually visible anywhere
+    // along this row and predicting it here would be duplicating those controls' own pixel tests for
+    // no reason. Neither frame binds any of them differently, so the row is identical between
+    // "before" and "after" unless the viewport painted into it - which is the one fact this check
+    // needs, and the only one it claims.
+    REQUIRE(band.y > 0);
+    std::size_t disturbedAboveViewport = 0;
     for (core::Px x = band.x; x < band.right(); ++x) {
-        const auto index      = static_cast<std::size_t>(band.bottom()) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
-        movedNeighbourPixels += static_cast<std::size_t>(before[index] != after[index]);
+        const auto index        = static_cast<std::size_t>(band.y - 1) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+        disturbedAboveViewport += static_cast<std::size_t>(before[index] != after[index]);
     }
-    CHECK_MESSAGE(movedNeighbourPixels == 0, std::format("{} pixels just below the viewport's bottom edge moved", movedNeighbourPixels));
+    CHECK_MESSAGE(disturbedAboveViewport == 0,
+                  std::format("{} pixels in the topbar row just above the viewport differ between the two grids", disturbedAboveViewport));
 }
