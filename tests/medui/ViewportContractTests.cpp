@@ -534,7 +534,7 @@ const mdux::spec::Register recordedCellsMatchTheCompositionFunctions{
             .Execute();
     }};
 
-const mdux::spec::Register recordingPropagatesValidateSRefusal{
+const mdux::spec::Register recordingPropagatesValidateRefusal{
     "recordWaterfall() refuses exactly what validate() refuses, and records nothing",
     "evidence-unit",
     [] {

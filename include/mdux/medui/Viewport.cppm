@@ -184,9 +184,10 @@ struct WaterfallStyle {
     [[nodiscard]] constexpr bool operator==(const WaterfallStyle&) const noexcept = default;
 };
 
-/// Why a waterfall was refused. Every one but `ListRejected` leaves the caller's own state exactly
-/// as it found it, because everything up to that point is read-only; `recordWaterfall()` rolls its
-/// own writes back on `ListRejected` so the same is true of it.
+/// Why a waterfall was refused. `validate()` never writes, so every refusal it makes leaves the
+/// caller's own state exactly as it found it; `recordWaterfall()` can return any of these *after*
+/// it has started recording too (a grid that somehow fails its own re-read mid-loop, or `DrawList`
+/// declining a cell), and rolls its own writes back on every one of them, so the same is true there.
 enum class WaterfallError : std::uint8_t {
     MalformedGrid,    ///< `bins` is 0, does not divide `storage`, or `oldestRow`/`rowCount` is out of range
     TooManyRows,      ///< `rowCount` exceeds `maxWaterfallRows`
@@ -399,8 +400,11 @@ validate(const mdux::core::Rect& nodeBand, const WaterfallGrid& grid, const Wate
  *
  * Calls `validate()` first, so every refusal it can make - a malformed grid, an oversized one, a
  * non-finite sample, a degenerate style, a band with no room - is made here too, unchanged, before a
- * single cell is written. Past that point the only way left to fail is `list` itself declining a
- * write, which is `ListRejected`.
+ * single cell is written. Past that point the ordinary way left to fail is `list` itself declining a
+ * write (`ListRejected`); the loop also re-reads `grid.at(row, col)` per cell rather than trusting
+ * the walk `validate()` already made, and reports `MalformedGrid` on the defensive path that should
+ * be unreachable for a caller who has not mutated `grid` since - see the implementation for why that
+ * is still checked rather than assumed. Either way the writes made so far are rolled back.
  *
  * Recorded row-major, oldest row first and left bin first within each row - the ascending order the
  * module comment fixes for both axes - so a `DrawList` that merges consecutive same-clip primitives
