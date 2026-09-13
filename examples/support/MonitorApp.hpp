@@ -150,6 +150,13 @@ private:
 inline constexpr std::int64_t waterfallBandHalfWidth = 4;
 
 [[nodiscard]] constexpr float syntheticWaterfallCell(std::size_t row, std::size_t bin, std::size_t bins) noexcept {
+    if (bins == 0) {
+        // A degenerate row width is a caller defect this generator cannot draw anything sensible
+        // for - `row % bins` below would be a division by zero. The floor value is the same one a
+        // real, out-of-range distance already returns, so a caller that somehow reaches this still
+        // gets a defined, dim cell rather than undefined behaviour.
+        return 0.05F;
+    }
     const auto peak     = static_cast<std::int64_t>(row % bins);
     const auto position = static_cast<std::int64_t>(bin);
     auto       distance = peak - position;

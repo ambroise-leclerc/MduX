@@ -88,8 +88,11 @@ Panel is an additional synthesized Row-background node, not authored component s
 
 Sources: [MduX payloads][m-schema], [screen renderer/bindings][m-screen],
 [TrustSC payloads][t-schema], [compiler defaults][t-compiler], [renderer][t-renderer] and
-[input model][t-input]. Dynamic draw bindings existing in MduX do not mean the current static
-verification driver supplies those values; dynamic driver/capture work remains #319–#321.
+[input model][t-input]. Dynamic draw bindings existing in MduX do not mean the *static* screen
+verification driver (`mdux-verify-ui`, `verify.screen.<id>`) supplies those values - it still does
+not, by design (ADR-022 decision 7). The dynamic replay and capture work that does, #319-#321, is
+delivered; PAR-REQ-009's exact-pixel disposition for it is still pending the verifier-area domain
+review.
 
 ## Interaction boundary
 

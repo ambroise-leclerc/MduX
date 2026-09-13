@@ -498,8 +498,8 @@ obligations) and reviewed as a diff of exactly that one addition. A new
 GPU-rendered bytes against that prediction - proving ring wrap and successive updates actually reach
 the pixels, and that neither grid paints past the node's own rectangle into
 `insufflation-pressure`'s field directly below it. No `.medui` recipe, `Schema.cppm` or
-`medui-conformance.toml` changed. Residual: the same ADR-022 ratification #322/#323 carry - epic
-#310 is otherwise complete.
+`medui-conformance.toml` changed. Residual: the same ADR-022 ratification #322/#323/#324 all carry -
+epic #310 is otherwise complete.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|

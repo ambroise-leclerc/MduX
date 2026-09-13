@@ -1133,8 +1133,7 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
     REQUIRE(viewportNode != nullptr);
     const auto* spec = std::get_if<medui::VulkanViewportSpec>(&viewportNode->payload);
     REQUIRE(spec != nullptr);
-    const core::Rect band{
-        .x = viewportNode->bounds.x, .y = viewportNode->bounds.y, .width = viewportNode->bounds.width, .height = viewportNode->bounds.height};
+    const core::Rect band{.x = viewportNode->bounds.x, .y = viewportNode->bounds.y, .width = viewportNode->bounds.width, .height = viewportNode->bounds.height};
 
     const auto& gpu    = sharedDevice();
     auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
@@ -1159,18 +1158,18 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
                                                   image.image.height);
     REQUIRE(renderer.has_value());
 
-    constexpr std::size_t          rows = 4;
-    constexpr std::size_t          bins = 8;
-    constexpr core::ColorRgba8     low{.r = 12, .g = 10, .b = 20, .a = 255};
-    constexpr core::ColorRgba8     high{.r = 220, .g = 140, .b = 40, .a = 255};
+    constexpr std::size_t           rows     = 4;
+    constexpr std::size_t           bins     = 8;
+    constexpr std::size_t           capacity = rows + 2;  // headroom, so a ring can wrap without growing
+    constexpr core::ColorRgba8      low{.r = 12, .g = 10, .b = 20, .a = 255};
+    constexpr core::ColorRgba8      high{.r = 220, .g = 140, .b = 40, .a = 255};
     constexpr medui::WaterfallStyle style{.minimum = 0.0F, .maximum = 1.0F, .lowColor = low, .highColor = high};
 
-    /// One frame of the committed screen with the viewport bound to `rows`x`bins` of `storage`,
-    /// read back as pixels. A lambda rather than two copies, `frameFor()`'s reason in the status
-    /// scenario above: the point is the *difference* between two grids, and a difference needs both
-    /// halves produced the same way.
-    const auto frameFor = [&](std::span<const float, rows * bins> storage) {
-        const medui::WaterfallGrid grid{.storage = storage, .bins = bins, .oldestRow = 0, .rowCount = rows};
+    /// One frame of the committed screen with the viewport bound to `grid`, read back as pixels. A
+    /// lambda rather than two copies, `frameFor()`'s reason in the status scenario above: the point
+    /// is the *difference* between two grids, and a difference needs both halves produced the same
+    /// way.
+    const auto frameFor = [&](const medui::WaterfallGrid& grid) {
         const std::array<medui::ViewportSlot, 1> slots{
             medui::ViewportSlot{.streamSource = spec->streamSource, .grid = &grid, .style = style}
         };
@@ -1197,14 +1196,19 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
         return std::vector<core::ColorRgba8>{pixels->begin(), pixels->end()};
     };
 
-    /// Every predicted cell of `storage` against the render `frameFor(storage)` produced.
-    const auto checkAgainstPrediction = [&](std::span<const float, rows * bins> storage, const std::vector<core::ColorRgba8>& pixels, std::string_view when) {
+    /// Every predicted cell of `grid` against the render `frameFor(grid)` produced. Reads the
+    /// expected sample through `grid.at(row, col)` - the ring's own logical-to-physical mapping -
+    /// rather than the storage array directly, so a renderer that read the wrong physical row (one
+    /// that ignored `oldestRow`, say) would be caught here, not just one that read the wrong value.
+    const auto checkAgainstPrediction = [&](const medui::WaterfallGrid& grid, const std::vector<core::ColorRgba8>& pixels, std::string_view when) {
         std::size_t wrongCells = 0;
         for (std::size_t row = 0; row < rows; ++row) {
             for (std::size_t col = 0; col < bins; ++col) {
-                const core::Rect        cell     = medui::waterfallCellRect(band, rows, bins, row, col);
-                const core::ColorRgba8  expected = medui::waterfallCellColor(storage[(row * bins) + col], style);
-                std::size_t             wrongInside = 0;
+                const std::optional<float> sample = grid.at(row, col);
+                REQUIRE(sample.has_value());
+                const core::Rect       cell        = medui::waterfallCellRect(band, rows, bins, row, col);
+                const core::ColorRgba8 expected    = medui::waterfallCellColor(*sample, style);
+                std::size_t            wrongInside = 0;
                 for (core::Px y = cell.y; y < cell.bottom(); ++y) {
                     for (core::Px x = cell.x; x < cell.right(); ++x) {
                         const auto index = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
@@ -1218,29 +1222,46 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
         CHECK_MESSAGE(wrongCells == 0, std::format("{}: {} of {} cells do not match waterfallCellColor()'s prediction", when, wrongCells, rows * bins));
     };
 
-    // "Before": a ramp across the row, repeated for every row - every cell distinct, so a transposed
-    // or reversed rendering would be caught, not only a uniformly wrong one.
-    std::array<float, rows * bins> beforeStorage{};
-    for (std::size_t row = 0; row < rows; ++row) {
-        for (std::size_t col = 0; col < bins; ++col) {
-            beforeStorage[(row * bins) + col] = static_cast<float>(col) / static_cast<float>(bins - 1);
+    /// Writes `rows`x`bins` logical values into `storage` (sized for `capacity` physical rows) so
+    /// that a `WaterfallGrid{storage, bins, oldestRow, rows}` reads logical row `r`, bin `c` back as
+    /// `value(r, c)` - wrapping physical rows past `capacity` exactly as a real ring would.
+    const auto layOutRing = [&](std::array<float, capacity * bins>& storage, std::size_t oldestRow, auto value) {
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::size_t physicalRow = (oldestRow + row) % capacity;
+            for (std::size_t col = 0; col < bins; ++col) {
+                storage[(physicalRow * bins) + col] = value(row, col);
+            }
         }
-    }
+    };
+
+    // "Before": a ramp across the row, repeated for every row - every cell distinct, so a transposed
+    // or reversed rendering would be caught, not only a uniformly wrong one. `oldestRow = 0`, so
+    // logical and physical rows coincide here.
+    std::array<float, capacity * bins> beforeStorage{};
+    const auto                         rampValue = [](std::size_t /*row*/, std::size_t col) {
+        return static_cast<float>(col) / static_cast<float>(bins - 1);
+    };
+    layOutRing(beforeStorage, 0, rampValue);
+    const medui::WaterfallGrid beforeGrid{.storage = beforeStorage, .bins = bins, .oldestRow = 0, .rowCount = rows};
+
     // "After": the reverse ramp - as different from "before" as this style's domain allows, so the
     // two frames' pixels inside the viewport cannot coincide by accident, the way a ring wrap or a
-    // fresh row would actually change what is on screen.
-    std::array<float, rows * bins> afterStorage{};
-    for (std::size_t row = 0; row < rows; ++row) {
-        for (std::size_t col = 0; col < bins; ++col) {
-            afterStorage[(row * bins) + col] = 1.0F - beforeStorage[(row * bins) + col];
-        }
-    }
+    // fresh row would actually change what is on screen - laid out at a non-zero `oldestRow` that
+    // wraps past the end of `storage` (`oldestRow + rows > capacity`), so this scenario also exercises
+    // the ring's own wraparound, not only the identity case `oldestRow == 0` leaves untested.
+    std::array<float, capacity * bins> afterStorage{};
+    constexpr std::size_t              afterOldestRow = 4;
+    static_assert(afterOldestRow != 0 && afterOldestRow + rows > capacity, "this scenario must exercise a wrap, not just a non-zero offset");
+    layOutRing(afterStorage, afterOldestRow, [&](std::size_t row, std::size_t col) {
+        return 1.0F - rampValue(row, col);
+    });
+    const medui::WaterfallGrid afterGrid{.storage = afterStorage, .bins = bins, .oldestRow = afterOldestRow, .rowCount = rows};
 
-    const std::vector<core::ColorRgba8> before = frameFor(beforeStorage);
-    const std::vector<core::ColorRgba8> after  = frameFor(afterStorage);
+    const std::vector<core::ColorRgba8> before = frameFor(beforeGrid);
+    const std::vector<core::ColorRgba8> after  = frameFor(afterGrid);
 
-    checkAgainstPrediction(beforeStorage, before, "before");
-    checkAgainstPrediction(afterStorage, after, "after");
+    checkAgainstPrediction(beforeGrid, before, "before");
+    checkAgainstPrediction(afterGrid, after, "after");
 
     // Successive updates actually reach the pixels: the corner cell is `low` before and `high`
     // after (or the reverse), never the same colour twice - the one claim a golden `ColorHash`
@@ -1251,9 +1272,15 @@ TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "p
     // Clipping and neighbouring controls: every node on this screen is full width and the layout
     // stacks them vertically (`endoscope-view` above `insufflation-pressure`, edge to edge, per the
     // recipe), so the row just past the viewport's bottom edge is the pressure reading's own
-    // reserved field - unbound in this scenario, hence opaque and unchanging. Identical in both
-    // frames unless the waterfall painted at least one row past its own rectangle.
+    // reserved field - unbound in this scenario, hence opaque and unchanging. Checked across the
+    // whole row, not one pixel: a spill confined to a single column would still move a pixel this
+    // scenario did not happen to sample. Identical in both frames unless the waterfall painted at
+    // least one row past its own rectangle, anywhere along it.
     REQUIRE(band.bottom() < static_cast<core::Px>(surface.height));
-    const auto neighbourIndex = static_cast<std::size_t>(band.bottom()) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(band.x);
-    CHECK_MESSAGE(before[neighbourIndex] == after[neighbourIndex], "the pixel just below the viewport's bottom edge did not move");
+    std::size_t movedNeighbourPixels = 0;
+    for (core::Px x = band.x; x < band.right(); ++x) {
+        const auto index      = static_cast<std::size_t>(band.bottom()) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+        movedNeighbourPixels += static_cast<std::size_t>(before[index] != after[index]);
+    }
+    CHECK_MESSAGE(movedNeighbourPixels == 0, std::format("{} pixels just below the viewport's bottom edge moved", movedNeighbourPixels));
 }
