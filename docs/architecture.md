@@ -88,7 +88,7 @@ are ordinary `PRIVATE` sources.
 | `mdux.medui.reading` | `include/mdux/medui/Reading.cppm` | `src/medui/Reading.cpp` |
 | `mdux.medui.screen` | `include/mdux/medui/Screen.cppm` | `src/medui/Screen.cpp` |
 | `mdux.medui.trace` | `include/mdux/medui/Trace.cppm` | `src/medui/Trace.cpp` |
-| `mdux.medui.viewport` | `include/mdux/medui/Viewport.cppm` | header-only |
+| `mdux.medui.viewport` | `include/mdux/medui/Viewport.cppm` | `src/medui/Viewport.cpp` |
 | `mdux.medui.scenario` | `include/mdux/medui/Scenario.cppm` | header-only |
 | `mdux.verify` | `include/mdux/verify/Verify.cppm` | `src/verify/Verify.cpp` |
 
@@ -235,17 +235,22 @@ composition an additive draw list and a `ColorHash` golden both admit; an *unbou
 unchanged, which is why the committed screen's pixel and `verify` legs are unchanged too — both
 render it without signals.
 
-`mdux.medui.viewport` (#322, [ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md))
-is the same idea generalised to two dimensions for `VulkanViewport`, and data-and-composition math
-only: a `WaterfallGrid` rings at *row* granularity rather than `SampleRing`'s scalar one, because a
-waterfall's producer emits a whole row at a time, and `waterfallCellRect()`/`waterfallCellColor()`
-compute where a cell lands and what it paints without touching a `DrawList`. `VulkanViewport` has
-never carried a governed colour token — `fieldColorToken()` has no case for it, and the compiler's
-own golden-reference pass already lists it beside `Image` and `Clock` as declaring none — so this
-module keeps that exclusion rather than reversing it: the two-colour ramp `WaterfallStyle` carries is
-caller-supplied and unverified, exactly as `TraceStyle`'s numeric range already is. Binding this
-contract to a live screen and a `DrawList` — the `SignalBinding`/`recordTrace()` analogue — is #323's
-work, not this module's; nothing here changes `Schema.cppm` or `Screen.cppm`.
+`mdux.medui.viewport` (#322/#323, [ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md))
+is the same idea generalised to two dimensions for `VulkanViewport`: a `WaterfallGrid` rings at *row*
+granularity rather than `SampleRing`'s scalar one, because a waterfall's producer emits a whole row
+at a time, and `waterfallCellRect()`/`waterfallCellColor()` compute where a cell lands and what it
+paints — pure functions `validate()` calls to prove a frame *could* be recorded before
+`recordWaterfall()` turns that into one `addSolidRect()` per cell, all-or-nothing, exactly as
+`recordTrace()` expands a proven `SampleRing`. `VulkanViewport` has never carried a governed colour
+token — `fieldColorToken()` has no case for it, and the compiler's own golden-reference pass already
+lists it beside `Image` and `Clock` as declaring none — so this module keeps that exclusion rather
+than reversing it: the two-colour ramp `WaterfallStyle` carries is caller-supplied and unverified,
+exactly as `TraceStyle`'s numeric range already is, and an *unbound* `VulkanViewport` therefore draws
+nothing at all rather than an opaque field — there is no token to reserve one in. `ViewportBinding`
+is `SignalBinding`'s counterpart in `mdux.medui.screen`, proving the same two things for the same
+reasons (every slot names a real stream, no two slots collide) and leaving what `validate()` cannot
+prove until a node's actual rectangle is known - a grid's live shape, a style's range against that
+rectangle - to `render()`'s own call into `recordWaterfall()` each frame.
 
 `mdux.medui.reading` (#258) does the same for a `NumericDisplay`'s digits and a `Clock`'s time, and
 it needed an **amendment to ADR-010** to exist at all. That ADR's decision 4 forbade "on-device code

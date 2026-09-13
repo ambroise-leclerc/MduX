@@ -18,10 +18,11 @@
  * too, when the caller supplies the packages a locale-free screen has to be joined to. Since #255 it
  * also draws the **field** a `NumericDisplay` or a `SignalTrace` reserves - the node's whole resolved
  * rectangle, in the single colour token that node carries - and since #261 the **face** a `Button`
- * or a `CriticalButton` carries, on the same rule. What is left visited, counted and undrawn is a
- * `VulkanViewport`, whose stream this module has no part in, and any component whose live content
- * the caller has not bound. That is a stated limit rather than an omission, so it is worth saying
- * exactly why for each.
+ * or a `CriticalButton` carries, on the same rule. Since #323 it draws a `VulkanViewport`'s
+ * **waterfall** too, when the caller supplies one - the one live component with no field to fall
+ * back on, because it has no colour token to reserve one in. What is left visited, counted and
+ * undrawn is any component whose live content the caller has not bound. That is a stated limit
+ * rather than an omission, so it is worth saying exactly why for each.
  *
  * - `Label` draws **text**, and does so through `TextBinding` (#242). A compiled screen carries a
  *   `textKey`, not glyphs (ADR-011), so drawing one is a join with a baked text package for the
@@ -37,6 +38,16 @@
  *   what it was after #255: the opaque field it reserves. The expansion itself is
  *   `mdux.medui.trace`'s, split out for the reason `mdux.text.draw` is - geometry that can be tested
  *   against numbers rather than only against a rendered frame.
+ * - `VulkanViewport` draws nothing until #323, and since then the **waterfall inside it** - one
+ *   solid-coloured cell per row/bin of a caller-owned `WaterfallGrid` - when the caller supplies a
+ *   `ViewportBinding` naming that node's stream. Unlike every component above it has no field to
+ *   fall back on when unbound: `fieldColorToken()` has no case for it, deliberately (ADR-022
+ *   decision 2 - a continuous numeric stream has no single tint `ColorHash` could check), so an
+ *   unbound node draws nothing at all rather than an opaque rectangle. The expansion itself is
+ *   `mdux.medui.viewport`'s `recordWaterfall()`, over the pure composition math
+ *   (`waterfallCellRect()`/`waterfallCellColor()`) ADR-022 fixed - split out for `mdux.medui.trace`'s
+ *   reason, and reusing its ring-validated-fresh-every-frame discipline generalised from a scalar to
+ *   a row.
  * - `Button` and `CriticalButton` draw since #261: the face their single token names, and their
  *   label's word over it when a locale is bound - `StatusIndicator`'s composition, for
  *   `StatusIndicator`'s reason, since a button's label and its face are the same token and a word in
@@ -217,6 +228,7 @@ import mdux.medui.field;
 import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.trace;
+import mdux.medui.viewport;
 import mdux.text.draw;
 import mdux.text.schema;
 
@@ -326,6 +338,15 @@ enum class ScreenError : std::uint8_t {
     NonFiniteSample,               ///< a live sample is a NaN or an infinity
     TraceTooLong,                  ///< a bound ring holds more than `maxSamplesPerTrace` samples
     TraceBandTooSmall,             ///< a bound trace's node is too small to hold its stroke
+    UnknownViewportSource,         ///< a viewport slot names a stream no `VulkanViewport` on this screen carries
+    DuplicateViewportSource,       ///< two viewport slots name the same stream
+    MissingWaterfallGrid,          ///< a viewport slot carries no grid, so its waterfall could never draw a cell
+    MalformedWaterfallGrid,        ///< a bound grid's shape does not describe a position in its own storage
+    WaterfallTooManyRows,          ///< a bound grid holds more live rows than `maxWaterfallRows` admits
+    WaterfallTooManyBins,          ///< a bound grid declares more bins per row than `maxWaterfallBins` admits
+    NonFiniteWaterfallSample,      ///< a live waterfall sample is a NaN or an infinity
+    MalformedWaterfallStyle,       ///< a viewport slot's numeric range is empty, inverted or not finite
+    WaterfallBandTooSmall,         ///< a bound waterfall's node has fewer pixels than its grid has rows or bins
     ScreenNotApproved,             ///< a signal binding built for one screen was offered to another
     UnimplementedEvent,            ///< a pressed `CriticalButton` names no member of the closed `SystemEvent` set
     UntracedCriticalControl,       ///< a pressed `CriticalButton` declares no requirement to trace it to
@@ -638,6 +659,81 @@ private:
 // `TextBinding`'s static_assert, for its reason. A class with private data members is not an
 // aggregate, so `SignalBinding{...}` cannot brace-elide its way past the checks.
 static_assert(!std::is_aggregate_v<SignalBinding>, "a SignalBinding must only be obtainable through create()");
+
+/**
+ * @brief One live waterfall this screen's caller offers: which stream, whose grid, at what scale.
+ *
+ * `SignalSlot`'s shape, one level up: `streamSource` is matched against a `VulkanViewport` node's
+ * `streamSource` exactly as a `SignalTrace`'s is, `grid` is a pointer because the producer writes a
+ * new row into it between frames, and `style` is the numeric domain and ramp
+ * `mdux::medui::validate()`/`recordWaterfall()` read the grid against - see `mdux.medui.viewport`
+ * for why neither is compiled into the screen.
+ */
+struct ViewportSlot {
+    std::string_view     streamSource{};  ///< the stream name the compiled node carries
+    const WaterfallGrid* grid{nullptr};   ///< the caller's grid, read afresh each frame
+    WaterfallStyle       style{};         ///< the numeric domain those samples are read against, and the ramp
+};
+
+/**
+ * @brief The live waterfalls a screen's `VulkanViewport` nodes are joined to, once the join is proved.
+ *
+ * `SignalBinding`'s counterpart for streaming viewports, proving the same two things and for the
+ * same reasons: every slot names a `VulkanViewport` this screen actually carries (a typo would
+ * otherwise leave that node undrawn forever, indistinguishable from a stream that has not started),
+ * and no two slots name the same stream. What it does *not* prove - because it cannot, for
+ * `SignalBinding`'s reason - is that the grid or the style is well-formed for any particular node's
+ * rectangle: a grid's shape and a style's range are proved fresh every frame by
+ * `mdux::medui::validate()`/`recordWaterfall()` inside `render()`, because the producer may move
+ * `rowCount` between two calls this binding was not reconstructed between.
+ *
+ * A default-constructed binding is *unbound*: every `VulkanViewport` node is then left exactly as it
+ * is today - visited, counted and undrawn, because unlike every other live component it has no
+ * governed colour token to reserve a field in (see the module comment on `fieldColorToken()`).
+ */
+class ViewportBinding {
+public:
+    /// An unbound binding: no live waterfalls, every `VulkanViewport` node left undrawn.
+    constexpr ViewportBinding() noexcept = default;
+
+    /// Proves every slot names a distinct `VulkanViewport` on `screen` and carries a grid.
+    [[nodiscard]] static mdux::core::Result<ViewportBinding, ScreenError> create(const ScreenPackage& screen, std::span<const ViewportSlot> slots) noexcept;
+
+    /// Whether this binding carries slots. False for a default-constructed one.
+    [[nodiscard]] constexpr bool bound() const noexcept {
+        return !slots_.empty();
+    }
+
+    [[nodiscard]] constexpr std::span<const ViewportSlot> slots() const noexcept {
+        return slots_;
+    }
+
+    /// The slot for `streamSource`, or nullptr when this caller offers none. Linear, for
+    /// `SignalBinding::find()`'s reason: a screen holds a handful of viewports, if any.
+    [[nodiscard]] constexpr const ViewportSlot* find(std::string_view streamSource) const noexcept {
+        for (const ViewportSlot& slot : slots_) {
+            if (slot.streamSource == streamSource) {
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Whether this binding was built for `screen`. `SignalBinding::approvedBy()`'s rule, verbatim.
+    [[nodiscard]] constexpr bool approvedBy(const ScreenPackage& screen) const noexcept {
+        return !bound() || screen.id == screenId_;
+    }
+
+private:
+    constexpr ViewportBinding(std::string_view screenId, std::span<const ViewportSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+
+    std::span<const ViewportSlot> slots_{};
+    std::string_view              screenId_{};
+};
+
+// The guarantee `create()` is documented to give, held by the language rather than by discipline -
+// `TextBinding`'s static_assert, for its reason.
+static_assert(!std::is_aggregate_v<ViewportBinding>, "a ViewportBinding must only be obtainable through create()");
 
 /**
  * @brief One live reading the caller offers a `NumericDisplay`: which node, what shape, what value.
@@ -1010,7 +1106,7 @@ static_assert(!std::is_aggregate_v<TextInputBinding>, "a TextInputBinding must o
  *
  * `deferred` is the honest half: it counts nodes this runtime visited and could not paint at all,
  * for the reasons the module comment gives one by one. A caller that expects a screen to be fully
- * drawn can assert it is zero; today, on a screen carrying a `VulkanViewport` or an unbound
+ * drawn can assert it is zero; today, on a screen carrying an unbound `VulkanViewport` or an unbound
  * `TextInput`, it will not be - and on one carrying text, an unbound `Clock`, an unbound `Image` or
  * an unbound `StatusIndicator` it will not be either unless the matching binding was supplied.
  *
@@ -1018,21 +1114,24 @@ static_assert(!std::is_aggregate_v<TextInputBinding>, "a TextInputBinding must o
  * `CriticalButton` since #261: their field is drawn even with nothing bound. That distinction is the
  * point of the counter - a node whose rectangle is painted is a node a golden reference can check,
  * whatever it will later show in it. A `Clock` has no such rectangle, so an unbound one is a
- * deferral in the ordinary sense.
+ * deferral in the ordinary sense - and a `VulkanViewport`, since #323, is the same case as `Clock`
+ * rather than as `SignalTrace`: it has no colour token either, so an unbound one draws nothing and
+ * stays deferred, while a bound one draws its waterfall and is not.
  *
- * `readings`, `traces`, `states` and `fields` count the nodes whose *live* content was drawn, which
- * is the fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both undeferred,
- * and only one of them is showing a number.
+ * `readings`, `traces`, `waterfalls`, `states` and `fields` count the nodes whose *live* content was
+ * drawn, which is the fact `deferred` cannot carry: a bound and an unbound `NumericDisplay` are both
+ * undeferred, and only one of them is showing a number.
  */
 struct FrameStats {
-    std::uint32_t nodes{0};     ///< nodes visited
-    std::uint32_t rects{0};     ///< rectangles recorded
-    std::uint32_t deferred{0};  ///< nodes visited and left undrawn
-    std::uint32_t steps{0};     ///< units of per-node work, for the bounded-work tests
-    std::uint32_t traces{0};    ///< `SignalTrace` nodes whose samples were expanded
-    std::uint32_t readings{0};  ///< `NumericDisplay` and `Clock` nodes whose value was drawn
-    std::uint32_t states{0};    ///< `StatusIndicator` nodes whose bound state was drawn
-    std::uint32_t fields{0};    ///< `TextInput` nodes whose bound value was drawn
+    std::uint32_t nodes{0};       ///< nodes visited
+    std::uint32_t rects{0};       ///< rectangles recorded
+    std::uint32_t deferred{0};    ///< nodes visited and left undrawn
+    std::uint32_t steps{0};       ///< units of per-node work, for the bounded-work tests
+    std::uint32_t traces{0};      ///< `SignalTrace` nodes whose samples were expanded
+    std::uint32_t waterfalls{0};  ///< `VulkanViewport` nodes whose grid was expanded
+    std::uint32_t readings{0};    ///< `NumericDisplay` and `Clock` nodes whose value was drawn
+    std::uint32_t states{0};      ///< `StatusIndicator` nodes whose bound state was drawn
+    std::uint32_t fields{0};      ///< `TextInput` nodes whose bound value was drawn
 
     [[nodiscard]] constexpr bool operator==(const FrameStats&) const noexcept = default;
 };
@@ -1054,6 +1153,9 @@ struct FrameStats {
  *                states", and every such node is then deferred as it was before #259
  * @param inputs  the live values this screen's `TextInput` nodes display; default means "no
  *                values", and every such node is then deferred as it was before #260
+ * @param viewports the live grids this screen's `VulkanViewport` stream sources resolve against;
+ *                default means "no viewports", and every such node is then deferred exactly as it
+ *                was before #323 - there is no reserved field to fall back on, unlike a trace
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
@@ -1066,12 +1168,13 @@ struct FrameStats {
  */
 [[nodiscard]] mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    screen,
                                                                  mdux::draw::DrawList&   list,
-                                                                 const TextBinding&      text     = {},
-                                                                 const ImageBinding&     image    = {},
-                                                                 const SignalBinding&    signals  = {},
-                                                                 const ReadingBinding&   readings = {},
-                                                                 const StatusBinding&    status   = {},
-                                                                 const TextInputBinding& inputs   = {}) noexcept;
+                                                                 const TextBinding&      text      = {},
+                                                                 const ImageBinding&     image     = {},
+                                                                 const SignalBinding&    signals   = {},
+                                                                 const ReadingBinding&   readings  = {},
+                                                                 const StatusBinding&    status    = {},
+                                                                 const TextInputBinding& inputs    = {},
+                                                                 const ViewportBinding&  viewports = {}) noexcept;
 
 /**
  * @brief What a press on a control resolves to: which node, what it is traced to, and what to do.

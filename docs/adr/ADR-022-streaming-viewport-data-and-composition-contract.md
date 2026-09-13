@@ -3,15 +3,18 @@
 ## Status
 
 **Proposed**, 2026-09-12, for [#322](https://github.com/ambroise-leclerc/MduX/issues/322), the
-epic-[#310](https://github.com/ambroise-leclerc/MduX/issues/310) design track. It records the data
-shape and composition rules a `VulkanViewport`'s live content will draw under, and resolves the one
-open question its acceptance criteria pose explicitly: whether the existing compiled schema suffices,
-or a shared MedUI decision is needed first.
+epic-[#310](https://github.com/ambroise-leclerc/MduX/issues/310) design track, and extended
+2026-09-13 for [#323](https://github.com/ambroise-leclerc/MduX/issues/323), which binds this
+contract to a live screen. It records the data shape and composition rules a `VulkanViewport`'s
+live content draws under, and resolves the one open question its acceptance criteria pose
+explicitly: whether the existing compiled schema suffices, or a shared MedUI decision is needed
+first.
 
 It changes no compiled screen, no shader, no shared pin, and adds no code to `Schema.cppm` or
-`Screen.cppm`. It defines one new header-only governed module, `mdux.medui.viewport`
-(`include/mdux/medui/Viewport.cppm`), that #323 will bind to a live screen exactly as
-`mdux.medui.trace` (#257) is bound by `SignalBinding` and `render()` today. It builds on
+`medui-conformance.toml`. `#322` defined one new governed module, `mdux.medui.viewport`
+(`include/mdux/medui/Viewport.cppm`); `#323` added `recordWaterfall()` to it (no longer header-only —
+`src/medui/Viewport.cpp` now exists) and bound it to `mdux.medui.screen` with `ViewportBinding`,
+exactly as `mdux.medui.trace` (#257) is bound by `SignalBinding` and `render()`. It builds on
 [ADR-014](ADR-014-rendered-truth-verification.md) (what a rendered check may and may not claim),
 [ADR-015](ADR-015-versioned-sibling-observations.md) decision D5 ("#322 must finalize viewport
 numeric/composition rules"), and [ADR-021](ADR-021-dynamic-scenario-capture-evidence.md) (the
@@ -124,8 +127,8 @@ axes, with `rows` the caller's *live* `rowCount` and `cols` the ring's fixed `bi
 tiles the whole reserved rectangle, growing new rows into it exactly as a trace grows new segments
 into its width. Division is remainder-absorbing (every cell but the last on each axis gets the plain
 `band.dimension / count`, and the last keeps what integer division left over), so the union of every
-cell is `band` exactly - no gap, no overflow, and therefore no clip rectangle is needed for a
-composition #323 will build entirely from `addSolidRect()`. Row 0 (oldest) sits at the band's top
+cell is `band` exactly - no gap, no overflow, and therefore no clip rectangle is needed for the
+composition `#323`'s `recordWaterfall()` builds entirely from `addSolidRect()`. Row 0 (oldest) sits at the band's top
 edge, the newest live row at its bottom; column 0 sits at the band's left edge - the same "oldest
 first, ascending" convention `mdux.medui.trace`'s own module comment states for its one axis,
 generalised to two.
@@ -146,7 +149,7 @@ interpret" doctrine.
 Every quantity this contract produces - a cell's rectangle, a cell's colour - is ordinary
 `mdux::draw::DrawList` geometry: the same untextured `addSolidRect()` every other component already
 calls. There is no separate GPU-owned texture and no foreign handle anywhere in this module or in
-what #323 will need to add, so:
+what `#323` added, so:
 
 - **CPU/GPU ownership** is unchanged from every other live component: the ring is CPU-owned caller
   storage, and the GPU only ever sees the same per-frame vertex/index buffers.
@@ -165,8 +168,8 @@ what #323 will need to add, so:
 
 The static per-screen gate (`mdux-verify-ui`, `verify.screen.<id>`) continues to check only
 `endoscope-view`'s compiled bounds; it gains no `ColorHash` obligation, because the node still
-declares none (Decision 2). Once #323/#324 bind live content, a scenario that drives that content
-inherits the disposition ADR-021 already established for a scene-driven node: a rendered check
+declares none (Decision 2). Once #324 binds live content on the committed screen, a scenario that
+drives that content inherits the disposition ADR-021 already established for a scene-driven node: a rendered check
 asserts *presence* (`mdux::verify::regionPainted()`), never an exact tint, and PAR-REQ-009's "no
 exact-pixel claim without a declared backend profile" stays intact. This record adds no new
 verification predicate and proposes no PAR-REQ-009 amendment; it inherits the existing one.
@@ -252,25 +255,68 @@ rest of that screen already carries.
 
 ## Implementation Notes
 
-- `include/mdux/medui/Viewport.cppm` (`mdux.medui.viewport`, header-only, added to `MduXCore`'s
-  `FILE_SET CXX_MODULES` beside `mdux.medui.trace`): `maxWaterfallRows`, `maxWaterfallBins`,
-  `WaterfallGrid`, `WaterfallStyle`, `WaterfallError` + `describe()`, `quadsForWaterfall()`,
-  `waterfallCellRect()`, `lerpByte()`, `waterfallCellColor()`, `validate()`. No `.cpp` - every
-  function is `constexpr noexcept`, so there is nothing a translation unit would add, matching
-  `mdux.medui.input`'s and `mdux.medui.scenario`'s header-only shape.
+**#322** (2026-09-12):
+
+- `include/mdux/medui/Viewport.cppm` (`mdux.medui.viewport`, added to `MduXCore`'s `FILE_SET
+  CXX_MODULES` beside `mdux.medui.trace`): `maxWaterfallRows`, `maxWaterfallBins`, `WaterfallGrid`,
+  `WaterfallStyle`, `WaterfallError` + `describe()`, `quadsForWaterfall()`, `waterfallCellRect()`,
+  `lerpByte()`, `waterfallCellColor()`, `validate()`. Header-only at this point - every function is
+  `constexpr noexcept`, matching `mdux.medui.input`'s and `mdux.medui.scenario`'s shape.
 - `tests/medui/ViewportContractTests.cpp` (`medui_spec`): cell tiling (exact and remainder-absorbing),
   degenerate-index rectangles, ramp endpoints/clamping/degenerate-style fallback, wrapped-ring read
   order, the well-formed and every malformed-input validation path, `describe()` coverage, and the
-  cost-model-versus-budget arithmetic Decision 8 states. 15 scenarios, GPU-free, run in the existing
-  `medui_spec` binary.
+  cost-model-versus-budget arithmetic Decision 8 states. 15 scenarios, GPU-free.
 - No change to `Schema.cppm`, `Screen.cppm`, `medui-conformance.toml`, any recipe, or any committed
-  `generated/` artifact. `#323` is expected to add a `ViewportBinding` to `mdux.medui.screen` (the
-  `SignalBinding` analogue) and a `recordWaterfall()`-shaped call into `DrawList`, neither of which
-  this record specifies further than Decisions 4-6 already constrain.
+  `generated/` artifact.
 - `docs/architecture.md` (module table + governed-runtime narrative), `docs/roadmap.md` (#310/#322),
   `docs/parity/requirements.md` (the #322 decision-map row; PAR-REQ-008's "viewport row/bin semantics"
   amendment is resolved by Decisions 3-4), `docs/parity/behavior-matrix.md` (the `VulkanViewport` row),
   `docs/adr/README.md` (index ADR-022; next free is ADR-023).
+
+**#323** (2026-09-13), extending the same module and no new ADR - see the Status section:
+
+- `include/mdux/medui/Viewport.cppm` gains `WaterfallError::ListRejected` (+ `describe()` case) and
+  `recordWaterfall(DrawList&, Rect, WaterfallGrid, WaterfallStyle)`: calls `validate()` first, then
+  one `addSolidRect(waterfallCellRect(...), waterfallCellColor(...))` per live cell in row-major,
+  oldest-row-first order, all-or-nothing via `DrawList::Marker`/`rollback()` on any refusal. Exactly
+  what Decision 4/6's own text anticipated, with no new decision needed. The module is no longer
+  header-only: `src/medui/Viewport.cpp` implements `recordWaterfall()` (registered in root
+  `CMakeLists.txt`'s `PRIVATE` source list, beside `src/medui/Trace.cpp`).
+- `include/mdux/medui/Screen.cppm` / `src/medui/Screen.cpp`: `ViewportSlot` (`streamSource`, `grid`,
+  `style` - `SignalSlot`'s shape one level up) and `ViewportBinding` (`create()`/`bound()`/`slots()`/
+  `find()`/`approvedBy()` - `SignalBinding`'s shape, unchanged). `create()` checks only what does not
+  need a node's live rectangle (a present grid, a well-formed style, no duplicate/unknown stream),
+  exactly as `SignalBinding::create()` defers ring-shape checks to render time; a grid's live shape
+  and a style's range against the actual node are proved fresh every frame inside `render()`'s own
+  call into `recordWaterfall()`. Nine new `ScreenError` enumerators (`UnknownViewportSource`,
+  `DuplicateViewportSource`, `MissingWaterfallGrid`, `MalformedWaterfallGrid`,
+  `WaterfallTooManyRows`, `WaterfallTooManyBins`, `NonFiniteWaterfallSample`,
+  `MalformedWaterfallStyle`, `WaterfallBandTooSmall`) plus `describe()` cases and an
+  `asScreenError(WaterfallError)` mapper mirroring `asScreenError(TraceError)`'s per-party
+  granularity. `render()` gains a trailing `const ViewportBinding& viewports = {}` parameter
+  (backward-compatible - every existing call site keeps compiling) and one new per-node branch: a
+  bound `VulkanViewport` calls `recordWaterfall()` and counts `++stats.waterfalls`; an *unbound* one
+  falls through to the existing generic `fieldColorToken()` path exactly as an unbound `SignalTrace`
+  does, and - because `fieldColorToken()` still has no case for `VulkanViewportSpec` (Decision 2,
+  unchanged) - lands in the `deferred` counter exactly as before #323. `FrameStats` gains
+  `waterfalls`, and its own doc comment is corrected: a `VulkanViewport` is no longer *always*
+  deferred, only an unbound one.
+- `tests/medui/ViewportContractTests.cpp`: nine more scenarios (24 total) - `recordWaterfall()`'s
+  cell-by-cell output matching `waterfallCellRect()`/`waterfallCellColor()`, its refusal propagation,
+  an empty grid recording nothing, an all-or-nothing budget rollback; and the binding half - unbound
+  viewports staying deferred with nothing drawn (unlike a trace's reserved field), a bound one
+  drawing its waterfall and leaving a sibling unbound node deferred, every `ViewportBinding::create()`
+  refusal, cross-screen substitution refused, and a grid `create()` could not check (an oversized
+  history) refusing the whole frame at render time. All GPU-free, in the existing `medui_spec` binary.
+  `ctest` - 936/936 passed on GCC, including `governed.noThrow.symbolScan`, the `noheap` label and
+  `InstallTreeConsumer`; `mdux-governed-lint` and `mdux-docs-lint` both clean.
+- No change to `Schema.cppm`, `medui-conformance.toml`, any recipe, or any committed `generated/`
+  artifact - the committed `endoscope-monitor` screen's `endoscope-view` node is not bound to a live
+  grid anywhere yet. That integration, and the pixel/evidence gate it needs, is #324's.
+- `docs/architecture.md`, `docs/roadmap.md` (#310/#323), `docs/parity/requirements.md` (the
+  `#322/#323 viewport contract and binding` decision-map row, the PAR-REQ-008 row, the ADR reference
+  table), `docs/parity/behavior-matrix.md` (the `VulkanViewport` row) all updated; no ADR index change
+  (no new ADR number).
 
 ## References
 
@@ -286,23 +332,27 @@ rest of that screen already carries.
   scene-driven node already has, inherited rather than reargued (Decision 7)
 - [Prospective requirements](../parity/requirements.md) - PAR-REQ-008, PAR-REQ-009
 - Issues [#310](https://github.com/ambroise-leclerc/MduX/issues/310),
-  [#322](https://github.com/ambroise-leclerc/MduX/issues/322)
+  [#322](https://github.com/ambroise-leclerc/MduX/issues/322),
+  [#323](https://github.com/ambroise-leclerc/MduX/issues/323)
 - `include/mdux/medui/Trace.cppm`, `src/medui/Trace.cpp` - the one-dimensional precedent this record
-  generalises
+  generalises, including `recordTrace()` for `recordWaterfall()` and `SignalBinding` for
+  `ViewportBinding`
 - `include/mdux/medui/Schema.cppm` (`VulkanViewportSpec`), `include/mdux/medui/Screen.cppm`
   (`fieldColorToken()`), `tools/medui/Goldens.cpp` - the evidence that `VulkanViewport` already
   declares no golden colour state
 
 ## Approval
 
-- **Proposal date**: 2026-09-12
+- **Proposal date**: 2026-09-12; extended (unchanged status) 2026-09-13 for #323
 - **Decision date**: pending
 - **Approved by**: pending - maintainer engineering acceptance, and a domain review of the
   demonstrator waterfall's numeric bounds and colour ramp (no clinical grounding is claimed for
   either).
 - **Scope**: `mdux.medui.viewport`'s data types and pure composition functions - `WaterfallGrid`,
   `WaterfallStyle`, `WaterfallError`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()` -
-  and the "no schema extension" and "no governed colour token" dispositions (Decisions 1-2). Binding
-  this contract to a live `ScreenPackage` and a `DrawList` is #323's scope, not this record's.
+  and the "no schema extension" and "no governed colour token" dispositions (Decisions 1-2), **plus**
+  `recordWaterfall()` and `mdux.medui.screen`'s `ViewportBinding`/`ViewportSlot`/`render()` wiring
+  (#323, Decisions 4-6). Binding this contract to the *committed* `endoscope-monitor` screen and its
+  pixel/evidence gate is #324's scope, not this record's.
 - **Review date**: with the verifier-area domain review already tracked for
-  ADR-016/ADR-017/ADR-021, once #323/#324 give it live content to assess.
+  ADR-016/ADR-017/ADR-021, once #324 gives it live content on a committed screen to assess.

@@ -291,6 +291,7 @@ target_sources(MduXCore
         src/medui/Reading.cpp
         src/medui/Screen.cpp
         src/medui/Trace.cpp
+        src/medui/Viewport.cpp
         src/verify/Verify.cpp
         src/governance/Governance.cpp
         src/governance/Justification.cpp
