@@ -83,6 +83,14 @@
 > schema or `medui-conformance.toml` changed. Epic #310's three children (#322, #323, #324) are all
 > delivered under the one ADR-022, carrying the residual it has carried since #322: maintainer
 > engineering acceptance and the verifier-area domain review.
+>
+> **Update, 13 September 2026 (later still) — epic #310 closed.** All three children merged to
+> `develop` ([PR #348](https://github.com/ambroise-leclerc/MduX/pull/348),
+> [#349](https://github.com/ambroise-leclerc/MduX/pull/349),
+> [#350](https://github.com/ambroise-leclerc/MduX/pull/350)), all required CI green on each. As with
+> #307/#308/#309, the residual is carried on the ADR rather than the issue: ADR-022's Status stays
+> **Proposed**; ratification is a maintainer/domain-expert action outside agent scope. One Phase-2
+> epic remains open: **#311**.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -99,8 +107,8 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 |---|---|
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
-| Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310 (all three children delivered, pending ratification), #311 |
-| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322/#323/#324 delivered (ADR-022, PR pending ratification), #325–#327 open |
+| Phase 2 epics | 4 of 5 closed (#307, #308, #309, #310); 1 open: #311 |
+| Phase 2 child issues | 16 total (#312–#327): 13 closed (#312–#324), 3 open — #325–#327 |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
 | Unblocked child issues | [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
 
@@ -172,11 +180,10 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312–#321 are all closed, and with them **epics #307, #308 and #309**. The next executable work is
-the two still-unblocked design/spec issues — the viewport contract (**#322**) and the editor API
-(**#325**) — under the two remaining epics **#310** and **#311**. Canonical interfaces land before
-their consumers, and each design issue produces the ADR and canonical types its epic's implementation
-children then consume. The
+#312–#324 are all closed, and with them **epics #307, #308, #309 and #310**. The next executable
+work is the editor API design issue (**#325**), under the one remaining epic **#311**. Canonical
+interfaces land before their consumers, and each design issue produces the ADR and canonical types
+its epic's implementation children then consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
 unblocks. No new version number or release date is assigned until a deliverable and its evidence are
 agreed.
@@ -184,20 +191,20 @@ agreed.
 ### Next to implement
 
 Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
-epics #307, #308 and #309 are closed. #322, #323 and #324 are all delivered** (ADR-022, Proposed) —
-epic #310 is substantively complete, pending the same ratification its ADR has carried since #322.
-One design/spec child issue remains: epic #311's.
+epics #307, #308 and #309 are closed. #322, #323 and #324 are all merged and epic #310 is closed**
+(ADR-022, Proposed, ratification carried on the ADR). One design/spec child issue remains: epic
+#311's.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
 | 1 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | The sole remaining unblocked issue; epic #311 is the furthest-out epic, so it is also the lowest urgency. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
-The three closed epics leave documented residuals rather than open implementation: the #307 TrustSC
+The four closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
-host policy, and the #309 / ADR-021 verifier-area domain review — one shared domain review covers
-the last two together with the ADR-016/017 items. **#322/#323/#324** carry the same residual until
-ADR-022 is ratified: maintainer engineering acceptance, and a domain review of the demonstrator
-waterfall's numeric bounds and colour ramp.
+host policy, the #309 / ADR-021 verifier-area domain review — one shared domain review covers the
+last two together with the ADR-016/017 items — and the #310 / ADR-022 residual: maintainer
+engineering acceptance, and a domain review of the demonstrator waterfall's numeric bounds and
+colour ramp.
 
 Recommended sequencing: **#325** is what remains - epic #311's own three children run in their
 existing order (#325 → #326 → #327) once it lands.
@@ -439,7 +446,7 @@ capture, substituted package, altered-scenario replay).
 | [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **closed** ([PR #345](https://github.com/ambroise-leclerc/MduX/pull/345), merged 2026-09-09: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
 | [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **closed** ([PR #346](https://github.com/ambroise-leclerc/MduX/pull/346), merged 2026-09-10: ADR-021, Proposed; `mdux-verify-scenario`/`-bake` reading every artifact from `generated/`, `evaluateFrame()` + `mdux.verify::regionPainted()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
 
-### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · delivered, pending ratification
+### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · closed
 
 Add an optional Vulkan adapter path that consumes a caller-owned bounded stream and composes a concrete waterfall visualization inside the compiled viewport rectangle.
 
@@ -1049,7 +1056,7 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Original programme: 13 closed epics and six shipped waves. Phase 2: 3 of 5 epics closed
-(#307, #308, #309); 2 open (#310, #311) - #310's three children (#322, #323, #324) are all
-delivered under ADR-022, Proposed, pending ratification. 3 open child issues remain (#325–#327).
-Status assessed 13 September 2026._
+_Original programme: 13 closed epics and six shipped waves. Phase 2: 4 of 5 epics closed
+(#307, #308, #309, #310); 1 open (#311) - #310's three children (#322, #323, #324) all merged
+under ADR-022, Proposed, ratification residual carried on the ADR. 3 open child issues remain
+(#325–#327). Status assessed 13 September 2026._
