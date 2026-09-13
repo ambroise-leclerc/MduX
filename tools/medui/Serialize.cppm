@@ -40,6 +40,12 @@ export namespace mdux::tools::medui {
  * The one thing this function does not reproduce is a `//` comment from the original source: the
  * AST that reaches this function never carried one (ADR-023 decision 3). Every other syntactic
  * construct `Parser.cpp` accepts round-trips through this function unchanged.
+ *
+ * @throws std::logic_error if `screen` carries a null `ast::Value` anywhere `Parser.cpp` never
+ *         leaves one null - a field's value, an annotation argument's value, or a list element.
+ *         Nothing reaching this function through `parse()` can trigger it; it exists for a screen an
+ *         editor built or mutated by hand, which this module cannot assume is well-formed the way a
+ *         freshly parsed one is.
  */
 [[nodiscard]] std::string serializeScreen(const ast::Screen& screen);
 

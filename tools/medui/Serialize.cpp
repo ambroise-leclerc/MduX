@@ -51,13 +51,25 @@ void appendEscaped(std::string& out, std::string_view text) {
 
 void appendValue(std::string& out, const ast::Value& value);
 
+/// `ast::Field::value`, an `ast::Annotation` argument's value, and each `ast::Value::list` element
+/// are all `std::shared_ptr<ast::Value>` a caller could leave null while building or editing an AST
+/// by hand - `Parser.cpp` never produces one, but nothing before this stage checks. There is no
+/// `.medui` syntax a null value could stand for, so this fails loudly (`Layout.cpp`'s own "a gate
+/// was bypassed" precedent) rather than dereferencing it.
+const ast::Value& require(const std::shared_ptr<ast::Value>& value, std::string_view what) {
+    if (value == nullptr) {
+        throw std::logic_error(std::format("serializeScreen() received a null value for {}", what));
+    }
+    return *value;
+}
+
 void appendList(std::string& out, const std::vector<std::shared_ptr<ast::Value>>& elements) {
     out += '[';
     for (std::size_t i = 0; i < elements.size(); ++i) {
         if (i != 0) {
             out += ", ";
         }
-        appendValue(out, *elements[i]);
+        appendValue(out, require(elements[i], "a list element"));
     }
     out += ']';
 }
@@ -108,9 +120,7 @@ void appendField(std::string& out, const ast::Field& field, int depth) {
     appendIndent(out, depth);
     out += field.name;
     out += ": ";
-    if (field.value != nullptr) {
-        appendValue(out, *field.value);
-    }
+    appendValue(out, require(field.value, std::format("field '{}'", field.name)));
     out += ";\n";
 }
 
@@ -129,9 +139,7 @@ void appendAnnotation(std::string& out, const ast::Annotation& annotation, int d
             const ast::Field& argument = annotation.arguments[i];
             out                       += argument.name;
             out                       += ": ";
-            if (argument.value != nullptr) {
-                appendValue(out, *argument.value);
-            }
+            appendValue(out, require(argument.value, std::format("annotation '{}' argument '{}'", annotation.name, argument.name)));
         }
         out += ')';
     }
@@ -175,9 +183,7 @@ std::string serializeScreen(const ast::Screen& screen) {
             for (const ast::Field& field : screen.layout) {
                 out += field.name;
                 out += ": ";
-                if (field.value != nullptr) {
-                    appendValue(out, *field.value);
-                }
+                appendValue(out, require(field.value, std::format("layout field '{}'", field.name)));
                 out += "; ";
             }
             out += '}';

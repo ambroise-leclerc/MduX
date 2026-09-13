@@ -269,16 +269,23 @@ scenarios, not as an implementation detail nobody exercises.
 - `tools/medui/Serialize.cppm`/`Serialize.cpp` (new, `mdux.tools.medui.serialize`, added to
   `MduXMeduiLib`'s `FILE_SET CXX_MODULES`/`PRIVATE` source lists beside `Grammar.cppm`/`Ir.cppm`):
   `serializeScreen(const ast::Screen&) -> std::string`. Pure, deterministic, `noexcept`-free (host
-  tools zone) - no file, no clock, no environment.
+  tools zone) - no file, no clock, no environment. Throws `std::logic_error` (`Layout.cpp`'s own "a
+  gate was bypassed" precedent) for a null `ast::Field`/annotation-argument/list-element value
+  reached via a hand-built or edited `ast::Screen` - `Parser.cpp` never leaves one null, but every
+  member `require()` guards is public, so an editing tool could. Added during review (Copilot and
+  CodeRabbit both flagged the unguarded `appendList()` dereference); the same guard was then applied
+  to the two other value sites this module already had a silent-skip for, so all three fail the same
+  way instead of two of them merely omitting output.
 - `tests/medui/SerializeTests.cpp` (new, added to `medui_tools_spec`): parses every
   `tests/medui/fixtures/accepted-*.medui` fixture, serializes, reparses and compares the second
   serialization against the first (a fixed point, since the serializer's canonical form need not
   match an arbitrary hand-authored file byte for byte); asserts a reparsed, re-serialized screen
   compiles with the same semantic-analysis outcome; asserts `@safety_critical` annotations and
   `requirement:` fields survive exactly; asserts a field name added to the AST outside the current
-  component dictionary still round-trips (Decision 4's "unknown fields" claim); and asserts the one
+  component dictionary still round-trips (Decision 4's "unknown fields" claim); asserts the one
   accepted loss is real by confirming a fixture's header comments do not appear in its serialized
-  form (Decision 3).
+  form (Decision 3); and asserts a null field, annotation-argument or list-element value throws
+  rather than being dereferenced.
 - No change to `Schema.cppm`, `Screen.cppm`, `medui-conformance.toml`, any recipe, or any committed
   `generated/` artifact.
 - `docs/architecture.md` (`MduXMeduiLib` row), `docs/roadmap.md` (#311/#325), `docs/parity/requirements.md`

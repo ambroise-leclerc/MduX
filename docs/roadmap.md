@@ -1,4 +1,4 @@
-# MduX ↔ TrustSC parity roadmap
+#MduX ↔ TrustSC parity roadmap
 
 > Assessed 6 September 2026 against MduX `develop` at
 > [`e68e04b`](https://github.com/ambroise-leclerc/MduX/commit/e68e04b9f41277775dd4a13b692790aa8c13ad86)
@@ -197,7 +197,7 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312–#325 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The next
+\#312–#325 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The next
 executable work is the real-preview issue (**#326**), under the one remaining epic **#311**.
 Canonical interfaces land before their consumers, and each design issue produces the ADR and
 canonical types its epic's implementation children then consume. The
@@ -248,8 +248,8 @@ tracked as an open child; it is carried as an explicit residual on
 `mdux.local/` observation profiles recorded per outcome in `verification.json`, plus the fixture-only
 `rawImageDigest()` predicate — and the **shared** half is #314 Stage B. The **#313 amendment**
 (2026-09-09) completed the ADR-017 §3 committed-artifact migration: a `Bounds` or `ColorHash` outcome
-now also records a candidate `candidateProfile` naming the shared `MEDUI-PROFILE-RENDERED` `{profile,
-check}` identity (`extent-equality/1`, `tint-composition/1`) beside the retained local one, via one
+now also records a candidate `candidateProfile` naming the shared `MEDUI-PROFILE-RENDERED` `{
+    profile, check}` identity (`extent-equality/1`, `tint-composition/1`) beside the retained local one, via one
 pure `canonicalRenderedCheckFor()` in `mdux.verify`, because `goldenBounds()` and `colorHash()`
 compute exactly R01 and R03. `InkContainment` (a compound predicate stronger than shared R02) and
 `LocalizedTextPresence` (no shared equivalent) stay local and carry no `candidateProfile`.
@@ -390,7 +390,8 @@ PAR-REQ-004–008 dispositions are ratified in ADR-018. **#317 landed the platfo
 translation, GLFW never in `MduXCore`/`MduX`), and `MedicalScreenMonitorExample` presenting the
 committed `endoscope-monitor` screen with pointer→`PressLatch`/`resolvePress`→`ActionTrace` and
 keyboard→`FieldEditor` wired. Covered by the `SurfaceMapping` scenarios in `InputContractTests` /
-`input_noheap_spec`, `glfw_translation_spec`, and `example.monitor.{smoke,headless}`. **#318 assembled
+`input_noheap_spec`, `glfw_translation_spec`, and `example.monitor.{
+    smoke, headless}`. **#318 assembled
 the loop**: `examples/support/MonitorApp.hpp` — `updateMonitor()` (ADR-018 clause 6 steps 1-2: drain
 one accepted batch, apply its presses and edits to caller-owned state), `MonitorClock` (a
 deterministic civil clock) and `DemoState` — driven identically by `MedicalScreenMonitorExample`'s
@@ -480,7 +481,7 @@ already sets, applied to colour), `waterfallCellRect()` (remainder-absorbing til
 `validate()`. `maxWaterfallRows = 16` / `maxWaterfallBins = 32` cost exactly half the committed
 `endoscope-monitor` screen's 4096/6144 `DrawBudget` at full history. Data and composition math only:
 no `Schema.cppm` or `Screen.cppm` change, and no binding to a live screen or `DrawList` — that is
-#323's. Covered by 15 GPU-free scenarios in `tests/medui/ViewportContractTests.cpp` (`medui_spec`).
+# 323's. Covered by 15 GPU - free scenarios in `tests / medui / ViewportContractTests.cpp` (`medui_spec`).
 Residual: maintainer engineering acceptance and a domain review of the demonstrator ramp/bounds'
 lack of clinical grounding.
 
@@ -509,7 +510,7 @@ unaffected. Residual: the same ADR-022 ratification #322 carries.
 row-granularity generalisation, `MonitorSampleRing`'s shape one level up) and a deterministic,
 integer-only synthetic generator - a drifting intensity band, wrapping at the row's edges - pushed
 one row per tick at the type-level cap (`maxWaterfallRows`x`maxWaterfallBins`, the same worst case
-#322's budget arithmetic was checked against). `MonitorFrame.hpp`'s `recordMonitorFrame()` now binds
+# 322's budget arithmetic was checked against). `MonitorFrame.hpp`'s `recordMonitorFrame()` now binds
 `endoscope-view` to it unconditionally, exactly as the ECG trace already is, reaching every caller of
 that one shared function: the interactive window, `--headless-smoke`, the scenario replay and
 `mdux-verify-scenario`. `tools/verify-scenario/ScenarioDriver.cpp`'s `contentIsSceneDriven()` gained
@@ -597,7 +598,7 @@ Wave 6 · shipped v0.7.0/v0.8.0  #16 (done, v0.7.0)  #17 (done, v0.8.0)
 #### When v0.6.0 gets cut
 
 **Cut, on 23 August 2026.** The convention above is one version per wave, Wave 5 was #15 alone, and
-#201 closed it at 12/12: an authored `.medui` file reaches compared pixels through every stage. What
+# 201 closed it at 12 / 12 : an authored `.medui` file reaches compared pixels through every stage.What
 follows is the reasoning as it stood before the tag, kept because the next release faces the same
 question.
 
@@ -1002,7 +1003,7 @@ JSON diagnostic envelope is landed across the tools, the `.medui` contract is pu
 machine-readable JSON the compiler emits from its own tables, every recipe kind has a committed JSON
 Schema checked against its own reports, and the compiler's resolved IR is dumpable alongside a
 generated host-tool manifest. PR #306 delivered the S7 guidance follow-up and closed #304;
-#19 itself is now closed. The post-merge build and lint workflows passed at `e68e04b`.
+# 19 itself is now closed.The post - merge build and lint workflows passed at `e68e04b`.
 
 - #65 Land and align `AGENTS.md` · _closed_
 - #66 Repository skills · _closed_

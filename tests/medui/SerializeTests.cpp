@@ -100,6 +100,17 @@ namespace cli = mdux::tools::cli;
     return nullptr;
 }
 
+/// Mutable counterpart, for the tests that corrupt an AST on purpose to prove `serializeScreen()`
+/// refuses it rather than dereferencing a null value it never should have received.
+[[nodiscard]] md::ast::Field* mutableFieldNamed(md::ast::Node& node, std::string_view name) {
+    for (md::ast::Field& field : node.fields) {
+        if (field.name == name) {
+            return &field;
+        }
+    }
+    return nullptr;
+}
+
 constexpr std::array<std::string_view, 6> acceptedFixtures{
     "accepted-every-component.medui",
     "accepted-goldens.medui",
@@ -309,6 +320,84 @@ const mdux::spec::Register malformedInputGatesOnDiagnostics{
                           checks.expect(serialized.find("width") == std::string::npos,
                                         "serializeScreen() reproduces that absence silently - it never sees the rejection");
                       }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// A null value anywhere the parser never leaves one fails loudly, not with UB.
+// ---------------------------------------------------------------------------
+
+const mdux::spec::Register nullValueFailsLoudly{
+    "A hand-built AST carrying a null field, argument or list-element value is refused, not dereferenced",
+    "evidence-unit",
+    [] {
+        // `Parser.cpp` never leaves `ast::Field::value`, an annotation argument's value, or a list
+        // element null - but `ast::Value::list` and every `Field`/`Annotation` member are public, so
+        // an editor building or mutating an `ast::Screen` by hand (this record's whole reason to
+        // exist) could. There is no `.medui` syntax a null value could stand for, so `require()`
+        // throws rather than letting `appendValue()` dereference a null `shared_ptr`.
+        return speclab::Test("medui-serialize-null-value")
+            .Given("three otherwise-valid screens, each with one value replaced by a null shared_ptr", [] {})
+            .When("each is serialized", [] {})
+            .Then("serializeScreen() throws std::logic_error instead of dereferencing the null value",
+                  [] {
+                      mdux::spec::Checks checks;
+
+                      md::ast::Screen nullField = parseOrFail(fixture("accepted-layout.medui"), "layout");
+                      checks.expect(!nullField.nodes.empty() && !nullField.nodes.front().fields.empty(), "the fixture has a node with at least one field");
+                      if (!nullField.nodes.empty() && !nullField.nodes.front().fields.empty()) {
+                          nullField.nodes.front().fields.front().value = nullptr;
+                          bool threw                                   = false;
+                          try {
+                              static_cast<void>(md::serializeScreen(nullField));
+                          } catch (const std::logic_error&) {
+                              threw = true;
+                          }
+                          checks.expect(threw, "a null field value throws rather than crashing");
+                      }
+
+                      md::ast::Screen nullAnnotationArgument = parseOrFail(fixture("accepted-goldens.medui"), "goldens");
+                      md::ast::Node*  action                 = nullptr;
+                      for (md::ast::Node& node : nullAnnotationArgument.nodes) {
+                          if (fieldNamed(node, "id") != nullptr && fieldNamed(node, "id")->value->text == "action") {
+                              action = &node;
+                          }
+                      }
+                      checks.expect(action != nullptr && !action->annotations.empty() && !action->annotations.front().arguments.empty(),
+                                    "the fixture has an annotated node with at least one argument");
+                      if (action != nullptr && !action->annotations.empty() && !action->annotations.front().arguments.empty()) {
+                          action->annotations.front().arguments.front().value = nullptr;
+                          bool threw                                          = false;
+                          try {
+                              static_cast<void>(md::serializeScreen(nullAnnotationArgument));
+                          } catch (const std::logic_error&) {
+                              threw = true;
+                          }
+                          checks.expect(threw, "a null annotation-argument value throws rather than crashing");
+                      }
+
+                      md::ast::Screen nullListElement = parseOrFail(fixture("accepted-goldens.medui"), "goldens");
+                      md::ast::Field* states          = nullptr;
+                      for (md::ast::Node& node : nullListElement.nodes) {
+                          if (md::ast::Field* candidate = mutableFieldNamed(node, "states")) {
+                              states = candidate;
+                          }
+                      }
+                      checks.expect(states != nullptr && states->value != nullptr && !states->value->list.empty(),
+                                    "the fixture has a StatusIndicator with a non-empty states list");
+                      if (states != nullptr && states->value != nullptr && !states->value->list.empty()) {
+                          states->value->list.front() = nullptr;
+                          bool threw                  = false;
+                          try {
+                              static_cast<void>(md::serializeScreen(nullListElement));
+                          } catch (const std::logic_error&) {
+                              threw = true;
+                          }
+                          checks.expect(threw, "a null list element throws rather than crashing");
+                      }
+
                       checks.raise();
                   })
             .Execute();
