@@ -272,6 +272,7 @@ target_sources(MduXCore
             include/mdux/medui/Reading.cppm
             include/mdux/medui/Screen.cppm
             include/mdux/medui/Trace.cppm
+            include/mdux/medui/Viewport.cppm
             include/mdux/medui/Scenario.cppm
             include/mdux/verify/Verify.cppm
     PRIVATE

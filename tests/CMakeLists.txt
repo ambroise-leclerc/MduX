@@ -811,6 +811,7 @@ add_executable(medui_spec
     medui/ScreenRuntimeTests.cpp
     medui/StatusTests.cpp
     medui/TraceTests.cpp
+    medui/ViewportContractTests.cpp
     medui/InputContractTests.cpp
     medui/GeneratedScreenTests.cpp
     medui/GeneratedScreenModuleConsumer.cpp

@@ -47,6 +47,14 @@
 > Proposed; verifier-area domain review open). Two Phase-2 epics remain: **#310** (streaming
 > `VulkanViewport`) and **#311** (authoring tools / Studio), both untouched. The next executable
 > work is the two unblocked design/spec issues, **#322** and **#325**.
+>
+> **Update, 12 September 2026:** **#322** delivered ([ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md),
+> Proposed): no schema extension and no governed colour token, a row-granularity `WaterfallGrid`, and
+> the pure composition math (`waterfallCellRect()`, `waterfallCellColor()`, `validate()`) in the new
+> header-only `mdux.medui.viewport` module — data and composition math only, no `Screen.cppm`
+> binding, which stays #323's. Epic #310's next child, **#323**, is conditionally unblocked pending
+> ADR-022's ratification; **#325** (epic #311) remains the sole unconditionally unblocked design/spec
+> issue outside #310.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -64,9 +72,9 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310, #311 |
-| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open (#322–#327) |
+| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322 delivered (ADR-022, PR pending), #323–#327 open |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#322](https://github.com/ambroise-leclerc/MduX/issues/322), [#325](https://github.com/ambroise-leclerc/MduX/issues/325) — the two remaining design/spec issues; see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) (once #322/ADR-022 is ratified), [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -147,22 +155,25 @@ agreed.
 
 ### Next to implement
 
-Assessed 10 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
-epics #307, #308 and #309 are closed.** Two design/spec child issues are the remaining unblocked
-work.
+Assessed 12 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
+epics #307, #308 and #309 are closed. #322 is delivered** (ADR-022, Proposed). One design/spec child
+issue is fully unblocked; #322's implementation successor is conditionally unblocked, pending
+ADR-022's ratification.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#322**](https://github.com/ambroise-leclerc/MduX/issues/322) — streaming viewport data + composition contract | The `VulkanViewport` rectangle already exists with no stream binding. Design/spec only; parallelizable now. | #323 → #324 (epic #310) | ADR + prospective requirements + canonical types. May need a MedUI decision *if* the schema extends — resolve that first (acceptance bullet 3). |
+| 1 | [**#323**](https://github.com/ambroise-leclerc/MduX/issues/323) — render a bounded waterfall inside the compiled VulkanViewport | #322/ADR-022 fixed the data shape and composition math; nothing left to design before wiring it to a live screen. | #324 (epic #310) | `ViewportBinding` (the `SignalBinding` analogue) in `mdux.medui.screen`, plus a `DrawList`-emitting call built from `mdux.medui.viewport`'s `waterfallCellRect()`/`waterfallCellColor()`. |
 | 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
 The three closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
 host policy, and the #309 / ADR-021 verifier-area domain review — one shared domain review covers
-the last two together with the ADR-016/017 items.
+the last two together with the ADR-016/017 items. **#322** carries its own residual until ADR-022 is
+ratified: maintainer engineering acceptance, and a domain review of the demonstrator waterfall's
+numeric bounds and colour ramp.
 
-Recommended sequencing: **#322** is the epic-#310 design track and comes first; **#325** (epic #311)
-last, since epic #311 is the furthest out.
+Recommended sequencing: **#323** is the epic-#310 implementation track and comes first; **#325**
+(epic #311) last, since epic #311 is the furthest out.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
@@ -405,11 +416,28 @@ capture, substituted package, altered-scenario replay).
 
 Add an optional Vulkan adapter path that consumes a caller-owned bounded stream and composes a concrete waterfall visualization inside the compiled viewport rectangle.
 
+**#322 delivered** ([ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md),
+Proposed 2026-09-12): the acceptance criteria's bullet 3 ("determine whether existing compiled
+fields suffice") is answered — `VulkanViewportSpec.streamSource` already suffices, and no
+`colorToken` is added, because `VulkanViewport` has never carried a governed golden colour (it is
+already excluded in `fieldColorToken()` and `tools/medui/Goldens.cpp`, beside `Image` and `Clock`).
+The new header-only `mdux.medui.viewport` module defines `WaterfallGrid` (a row-granularity ring,
+`SampleRing` generalised from one scalar per tick to one row per tick), `WaterfallStyle` (a
+caller-supplied, clamped two-colour ramp — the unverified-numeric-range precedent `TraceStyle`
+already sets, applied to colour), `waterfallCellRect()` (remainder-absorbing tiling that fills the
+*live* extent exactly as `mdux.medui.trace`'s x-axis does, so no clip rectangle is needed), and
+`validate()`. `maxWaterfallRows = 16` / `maxWaterfallBins = 32` cost exactly half the committed
+`endoscope-monitor` screen's 4096/6144 `DrawBudget` at full history. Data and composition math only:
+no `Schema.cppm` or `Screen.cppm` change, and no binding to a live screen or `DrawList` — that is
+#323's. Covered by 15 GPU-free scenarios in `tests/medui/ViewportContractTests.cpp` (`medui_spec`).
+Residual: maintainer engineering acceptance and a domain review of the demonstrator ramp/bounds'
+lack of clinical grounding.
+
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **unblocked** (spec/ADR; may need a MedUI decision if the schema extends) |
-| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) · **blocked on #322** |
-| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) · **blocked** |
+| [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-022, Proposed; `mdux.medui.viewport`: `WaterfallGrid`, `WaterfallStyle`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()`) |
+| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) delivered (ADR-022) · **conditionally unblocked** — pending ADR-022's ratification |
+| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **blocked on #323** |
 
 ### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
 
@@ -954,5 +982,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 ---
 
 _Original programme: 13 closed epics and six shipped waves. Phase 2: 3 of 5 epics closed
-(#307, #308, #309); 2 open (#310, #311) with 6 open child issues (#322–#327). Status assessed
-10 September 2026._
+(#307, #308, #309); 2 open (#310, #311). #322 is delivered (ADR-022, Proposed); 5 open child issues
+remain (#323–#327). Status assessed 12 September 2026._
