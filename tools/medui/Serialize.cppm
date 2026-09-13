@@ -19,6 +19,15 @@
  * dictionary does not even recognise - round-trips exactly, because this module walks the AST's own
  * generic shape rather than a fixed per-component field list. There is nothing here to consult that
  * could reject or drop an unfamiliar name.
+ *
+ * ## A list or argument separator is not always a comma
+ *
+ * `Parser.cpp`'s `parseValue()` commits a bare `Npx` to a `Point` the instant a comma follows it,
+ * with no lookahead - so a comma placed right after one *value*'s `Npx` reads as that same value's
+ * second coordinate, not as the separator introducing the *next* value. Two sizes joined by `", "`
+ * would silently reparse as one point. `Serialize.cpp`'s `separatorAfter()` uses a plain space
+ * instead exactly there, which `Parser.cpp`'s list and annotation-argument loops already accept -
+ * the comma between entries is optional in both, never required.
  */
 module;
 

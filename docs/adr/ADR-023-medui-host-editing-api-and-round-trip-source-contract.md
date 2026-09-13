@@ -200,9 +200,20 @@ rest of this decision hold without new code:
   states between parsing and semantic analysis (#192 versus #193). A serializer that instead walked a
   fixed per-component field list would silently drop such a field; this one cannot, because it never
   has one to consult.
+- **A list or annotation-argument separator is a comma only when a comma cannot be misread.**
+  `Parser.cpp`'s `parseValue()` commits a bare `Npx` to a `Point` the instant the following token is a
+  comma, with no lookahead - so `[1px, 2px]` does not mean two sizes; it means one `Point(1, 2)`, the
+  same text a `Point` itself serializes to. Placed between list elements or annotation arguments where
+  a plain (non-`Fill`) `Size` value is the one on the left, `", "` is therefore not a separator, it is
+  a mutation. `serializeScreen()` uses a plain space there instead - `Parser.cpp`'s list and
+  annotation-argument loops both treat the comma as optional, so this is a different legal spelling of
+  the same separator, not a grammar change.
 
 `SerializeTests.cpp` pins all of this as `serialize(parse(source)) -> reparse -> compare`
-scenarios, not as an implementation detail nobody exercises.
+scenarios, not as an implementation detail nobody exercises - including, for the separator rule
+above, a structural comparison of the reparsed AST rather than only a second round of text, because a
+`Point` and two collapsed `Size`s re-serialize to identical text and a text-only fixed point cannot
+tell them apart.
 
 ## Alternatives Considered
 
@@ -276,16 +287,27 @@ scenarios, not as an implementation detail nobody exercises.
   CodeRabbit both flagged the unguarded `appendList()` dereference); the same guard was then applied
   to the two other value sites this module already had a silent-skip for, so all three fail the same
   way instead of two of them merely omitting output.
+- `separatorAfter()`/`endsInBarePixels()` (Decision 4's separator rule, above): a second review
+  finding on the same PR, this one a correctness bug rather than a robustness gap - the module's first
+  version joined every list element and annotation argument with a plain `", "`, which silently
+  reparsed two plain-pixel `Size`s as one `Point` (and, worse, made a following non-pixel argument
+  unparsable, since `parsePixels()` then fails looking for a second coordinate that was never meant to
+  exist). Fixed by choosing the separator from the *previous* value's kind instead of a fixed string.
 - `tests/medui/SerializeTests.cpp` (new, added to `medui_tools_spec`): parses every
   `tests/medui/fixtures/accepted-*.medui` fixture, serializes, reparses and compares the second
   serialization against the first (a fixed point, since the serializer's canonical form need not
-  match an arbitrary hand-authored file byte for byte); asserts a reparsed, re-serialized screen
-  compiles with the same semantic-analysis outcome; asserts `@safety_critical` annotations and
-  `requirement:` fields survive exactly; asserts a field name added to the AST outside the current
-  component dictionary still round-trips (Decision 4's "unknown fields" claim); asserts the one
-  accepted loss is real by confirming a fixture's header comments do not appear in its serialized
-  form (Decision 3); and asserts a null field, annotation-argument or list-element value throws
-  rather than being dereferenced.
+  match an arbitrary hand-authored file byte for byte) *and* compares the reparsed AST to the original
+  structurally (`screensEqual()`/`valuesEqual()`/...), because a fixed point alone cannot distinguish
+  two collapsed sizes from an unaffected point - both re-serialize to the same text; asserts a
+  reparsed, re-serialized screen compiles with the same semantic-analysis outcome; asserts
+  `@safety_critical` annotations and `requirement:` fields survive exactly; asserts a field name added
+  to the AST outside the current component dictionary still round-trips (Decision 4's "unknown
+  fields" claim); asserts the one accepted loss is real by confirming a fixture's header comments do
+  not appear in its serialized form (Decision 3); asserts a null field, annotation-argument or
+  list-element value throws rather than being dereferenced; and asserts, with a hand-built list and a
+  hand-built annotation each carrying a plain pixel size followed by another value, that both survive
+  a round trip as separate entries rather than merging into one point (Decision 4's separator rule) -
+  verified to actually fail without the fix, not merely to pass with it.
 - No change to `Schema.cppm`, `Screen.cppm`, `medui-conformance.toml`, any recipe, or any committed
   `generated/` artifact.
 - `docs/architecture.md` (`MduXMeduiLib` row), `docs/roadmap.md` (#311/#325), `docs/parity/requirements.md`

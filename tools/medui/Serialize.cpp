@@ -63,13 +63,36 @@ const ast::Value& require(const std::shared_ptr<ast::Value>& value, std::string_
     return *value;
 }
 
+/// True when serializing `value` ends in a bare `Npx` token with nothing closing it. That is the one
+/// shape `Parser.cpp`'s `parseValue()` extends across a following token: once `parsePixels()`
+/// succeeds, it commits to a `Point` the instant the *next* token is a comma, with no lookahead and
+/// no backtracking. Every other value kind ends in something that stops it there - `]`, `)`, a bare
+/// word, `Fill` - so only this one makes a following comma ambiguous between "the next coordinate of
+/// this value" and "the next element of an enclosing list or argument list".
+bool endsInBarePixels(const ast::Value& value) {
+    return value.kind == ast::ValueKind::Size && !value.size.fill;
+}
+
+/// The separator to place after `previous` and before the next list element or annotation argument.
+/// `Parser.cpp`'s list loop and its annotation-argument loop both treat the comma between entries as
+/// optional (`if (at(Comma)) advance();`), so a plain space is a complete substitute exactly when a
+/// comma would instead be swallowed into `previous` as a `Point`'s second coordinate
+/// (`endsInBarePixels()`) - not a special case bolted onto the grammar, a different but already-legal
+/// spelling of the same separator.
+std::string_view separatorAfter(const ast::Value& previous) {
+    return endsInBarePixels(previous) ? " " : ", ";
+}
+
 void appendList(std::string& out, const std::vector<std::shared_ptr<ast::Value>>& elements) {
-    out += '[';
-    for (std::size_t i = 0; i < elements.size(); ++i) {
-        if (i != 0) {
-            out += ", ";
+    out                       += '[';
+    const ast::Value* previous = nullptr;
+    for (const std::shared_ptr<ast::Value>& element : elements) {
+        const ast::Value& value = require(element, "a list element");
+        if (previous != nullptr) {
+            out += separatorAfter(*previous);
         }
-        appendValue(out, require(elements[i], "a list element"));
+        appendValue(out, value);
+        previous = &value;
     }
     out += ']';
 }
@@ -131,15 +154,17 @@ void appendAnnotation(std::string& out, const ast::Annotation& annotation, int d
     out += '@';
     out += annotation.name;
     if (!annotation.arguments.empty()) {
-        out += '(';
-        for (std::size_t i = 0; i < annotation.arguments.size(); ++i) {
-            if (i != 0) {
-                out += ", ";
+        out                       += '(';
+        const ast::Value* previous = nullptr;
+        for (const ast::Field& argument : annotation.arguments) {
+            const ast::Value& value = require(argument.value, std::format("annotation '{}' argument '{}'", annotation.name, argument.name));
+            if (previous != nullptr) {
+                out += separatorAfter(*previous);
             }
-            const ast::Field& argument = annotation.arguments[i];
-            out                       += argument.name;
-            out                       += ": ";
-            appendValue(out, require(argument.value, std::format("annotation '{}' argument '{}'", annotation.name, argument.name)));
+            out += argument.name;
+            out += ": ";
+            appendValue(out, value);
+            previous = &value;
         }
         out += ')';
     }

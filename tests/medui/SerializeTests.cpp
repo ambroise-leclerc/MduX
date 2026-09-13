@@ -111,6 +111,129 @@ namespace cli = mdux::tools::cli;
     return nullptr;
 }
 
+// Structural AST equality, deliberately independent of `serializeScreen()`'s own text output: the
+// fixed-point test below (`serialize(parse(serialize(x))) == serialize(x)`) cannot by itself catch a
+// mutation that a second serialization reproduces identically - two sizes reparsed as one point, for
+// instance, re-serialize right back to the same two-coordinate text. Comparing the parsed *shapes* on
+// either side of the round trip is the only way to see that kind of corruption.
+
+[[nodiscard]] bool valuesEqual(const md::ast::Value& a, const md::ast::Value& b) {
+    if (a.kind != b.kind) {
+        return false;
+    }
+    switch (a.kind) {
+        case md::ast::ValueKind::Size:
+            return a.size.fill == b.size.fill && (a.size.fill || a.size.pixels == b.size.pixels);
+        case md::ast::ValueKind::Point:
+            return a.point.x == b.point.x && a.point.y == b.point.y;
+        case md::ast::ValueKind::String:
+        case md::ast::ValueKind::TextKey:
+        case md::ast::ValueKind::ImageRef:
+        case md::ast::ValueKind::ColorToken:
+        case md::ast::ValueKind::Identifier:
+            return a.text == b.text;
+        case md::ast::ValueKind::Number:
+            return a.number == b.number;
+        case md::ast::ValueKind::List:
+            if (a.list.size() != b.list.size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < a.list.size(); ++i) {
+                if ((a.list[i] == nullptr) != (b.list[i] == nullptr)) {
+                    return false;
+                }
+                if (a.list[i] != nullptr && !valuesEqual(*a.list[i], *b.list[i])) {
+                    return false;
+                }
+            }
+            return true;
+    }
+    return false;
+}
+
+[[nodiscard]] bool fieldsEqual(const std::vector<md::ast::Field>& a, const std::vector<md::ast::Field>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].name != b[i].name) {
+            return false;
+        }
+        if ((a[i].value == nullptr) != (b[i].value == nullptr)) {
+            return false;
+        }
+        if (a[i].value != nullptr && !valuesEqual(*a[i].value, *b[i].value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool annotationsEqual(const std::vector<md::ast::Annotation>& a, const std::vector<md::ast::Annotation>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].name != b[i].name || !fieldsEqual(a[i].arguments, b[i].arguments)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool nodesEqual(const md::ast::Node& a, const md::ast::Node& b) {
+    if (a.component != b.component) {
+        return false;
+    }
+    if (!annotationsEqual(a.annotations, b.annotations) || !fieldsEqual(a.fields, b.fields)) {
+        return false;
+    }
+    if (a.children.size() != b.children.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.children.size(); ++i) {
+        if (!nodesEqual(a.children[i], b.children[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool screensEqual(const md::ast::Screen& a, const md::ast::Screen& b) {
+    if (a.name != b.name || a.layoutKind != b.layoutKind || !fieldsEqual(a.layout, b.layout)) {
+        return false;
+    }
+    if (a.surface.has_value() != b.surface.has_value()) {
+        return false;
+    }
+    if (a.surface.has_value() && (a.surface->x != b.surface->x || a.surface->y != b.surface->y)) {
+        return false;
+    }
+    if (a.nodes.size() != b.nodes.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.nodes.size(); ++i) {
+        if (!nodesEqual(a.nodes[i], b.nodes[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] std::shared_ptr<md::ast::Value> pixelSize(std::int64_t pixels) {
+    auto value  = std::make_shared<md::ast::Value>();
+    value->kind = md::ast::ValueKind::Size;
+    value->size = md::ast::Size{.fill = false, .pixels = pixels, .position = {}};
+    return value;
+}
+
+[[nodiscard]] std::shared_ptr<md::ast::Value> numberValue(std::int64_t number) {
+    auto value    = std::make_shared<md::ast::Value>();
+    value->kind   = md::ast::ValueKind::Number;
+    value->number = number;
+    return value;
+}
+
 constexpr std::array<std::string_view, 6> acceptedFixtures{
     "accepted-every-component.medui",
     "accepted-goldens.medui",
@@ -148,6 +271,10 @@ const mdux::spec::Register wholeCorpusReachesAFixedPoint{
                           }
                           const std::string second = md::serializeScreen(*reparsed.screen);
                           checks.expect(first == second, std::format("{}: serialize(parse(serialize(x))) == serialize(x)", name));
+                          checks.expect(screensEqual(original, *reparsed.screen),
+                                        std::format("{}: the reparsed AST is structurally identical to the original, "
+                                                    "not merely re-serializable to the same text",
+                                                    name));
 
                           const md::SemanticResult before = analyzeStandalone(original, std::string{name});
                           const md::SemanticResult after  = analyzeStandalone(*reparsed.screen, std::string{name});
@@ -398,6 +525,123 @@ const mdux::spec::Register nullValueFailsLoudly{
                           checks.expect(threw, "a null list element throws rather than crashing");
                       }
 
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+// ---------------------------------------------------------------------------
+// A comma separator does not silently fold two sizes into one point.
+// ---------------------------------------------------------------------------
+
+const mdux::spec::Register listSeparatorDoesNotCollapseSizes{
+    "A list of two plain pixel sizes stays two sizes across a round trip, not one point",
+    "evidence-unit",
+    [] {
+        // `Parser.cpp`'s `parseValue()` commits a bare `Npx` to a `Point` the instant a comma
+        // follows it, with no lookahead. A naive `", "` list separator placed right after a plain
+        // size would therefore reparse `[1px, 2px]` as a list holding one `Point(1, 2)` instead of
+        // two `Size` elements - and the corpus-wide fixed-point test above cannot see that on its
+        // own, because a `Point` re-serializes back to the same "1px, 2px" text. This scenario
+        // builds the two-sizes shape directly and checks it survives structurally, not just as text.
+        return speclab::Test("medui-serialize-list-separator")
+            .Given("a hand-built list value holding two plain pixel sizes", [] {})
+            .When("it is attached to a field, serialized and reparsed", [] {})
+            .Then("the reparsed list still holds two Size elements, not one Point",
+                  [] {
+                      mdux::spec::Checks checks;
+                      md::ast::Screen    screen = parseOrFail(fixture("accepted-layout.medui"), "layout");
+                      checks.expect(!screen.nodes.empty(), "the fixture has at least one node");
+                      if (screen.nodes.empty()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      auto list  = std::make_shared<md::ast::Value>();
+                      list->kind = md::ast::ValueKind::List;
+                      list->list = {pixelSize(1), pixelSize(2)};
+                      screen.nodes.front().fields.push_back(md::ast::Field{.name = "x-size-pair", .namePosition = {}, .value = list});
+
+                      const std::string serialized = md::serializeScreen(screen);
+                      checks.expect(serialized.find("1px, 2px") == std::string::npos, "the two sizes are not joined by the point-forming ', ' separator");
+
+                      md::ParseResult reparsed = md::parse(serialized, "layout-with-size-pair");
+                      checks.expect(reparsed.diagnostics.empty() && reparsed.screen.has_value(), "the serialized text reparses cleanly");
+                      if (!reparsed.screen || reparsed.screen->nodes.empty()) {
+                          checks.raise();
+                          return;
+                      }
+                      const md::ast::Field* roundTripped = fieldNamed(reparsed.screen->nodes.front(), "x-size-pair");
+                      checks.expect(roundTripped != nullptr && roundTripped->value != nullptr, "the field survived");
+                      if (roundTripped != nullptr && roundTripped->value != nullptr) {
+                          checks.expect(roundTripped->value->kind == md::ast::ValueKind::List, "the value is still a list, not a point");
+                          checks.expect(roundTripped->value->list.size() == 2,
+                                        std::format("the list still holds two elements, got {}", roundTripped->value->list.size()));
+                          if (roundTripped->value->list.size() == 2) {
+                              checks.expect(roundTripped->value->list[0] != nullptr && valuesEqual(*roundTripped->value->list[0], *pixelSize(1)),
+                                            "the first size is unchanged");
+                              checks.expect(roundTripped->value->list[1] != nullptr && valuesEqual(*roundTripped->value->list[1], *pixelSize(2)),
+                                            "the second size is unchanged");
+                          }
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register annotationSeparatorDoesNotCollapseSizes{
+    "An annotation whose first argument is a plain pixel size keeps its arguments separate",
+    "evidence-unit",
+    [] {
+        // The same ambiguity as the list scenario above, on `Parser.cpp`'s annotation-argument
+        // loop: `@x-custom(a: 1px, b: 2)` would reparse `a`'s value as a `Point` swallowing `b`'s
+        // name entirely, rather than as two arguments.
+        return speclab::Test("medui-serialize-annotation-separator")
+            .Given("a hand-built annotation whose first argument is a plain pixel size", [] {})
+            .When("it is attached to a node, serialized and reparsed", [] {})
+            .Then("both arguments survive as separate entries, not one merged point",
+                  [] {
+                      mdux::spec::Checks checks;
+                      md::ast::Screen    screen = parseOrFail(fixture("accepted-layout.medui"), "layout");
+                      checks.expect(!screen.nodes.empty(), "the fixture has at least one node");
+                      if (screen.nodes.empty()) {
+                          checks.raise();
+                          return;
+                      }
+
+                      md::ast::Annotation annotation;
+                      annotation.name      = "x-custom";
+                      annotation.arguments = {
+                          md::ast::Field{.name = "a", .namePosition = {},   .value = pixelSize(1)},
+                          md::ast::Field{.name = "b", .namePosition = {}, .value = numberValue(2)},
+                      };
+                      screen.nodes.front().annotations.push_back(annotation);
+
+                      const std::string serialized = md::serializeScreen(screen);
+                      checks.expect(serialized.find("1px, b") == std::string::npos, "the two arguments are not joined by the point-forming ', ' separator");
+
+                      md::ParseResult reparsed = md::parse(serialized, "layout-with-annotation");
+                      checks.expect(reparsed.diagnostics.empty() && reparsed.screen.has_value(), "the serialized text reparses cleanly");
+                      if (!reparsed.screen || reparsed.screen->nodes.empty()) {
+                          checks.raise();
+                          return;
+                      }
+                      const std::vector<md::ast::Annotation>& survived = reparsed.screen->nodes.front().annotations;
+                      const auto                              it       = std::ranges::find_if(survived, [](const md::ast::Annotation& a) {
+                          return a.name == "x-custom";
+                      });
+                      checks.expect(it != survived.end(), "the annotation survived");
+                      if (it != survived.end()) {
+                          checks.expect(it->arguments.size() == 2, std::format("both arguments survived separately, got {}", it->arguments.size()));
+                          if (it->arguments.size() == 2) {
+                              checks.expect(it->arguments[0].name == "a" && it->arguments[0].value != nullptr
+                                                && valuesEqual(*it->arguments[0].value, *pixelSize(1)),
+                                            "the first argument is unchanged");
+                              checks.expect(it->arguments[1].name == "b" && it->arguments[1].value != nullptr
+                                                && valuesEqual(*it->arguments[1].value, *numberValue(2)),
+                                            "the second argument is unchanged");
+                          }
+                      }
                       checks.raise();
                   })
             .Execute();
