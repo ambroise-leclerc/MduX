@@ -53,6 +53,7 @@ import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.medui.trace;
+import mdux.medui.viewport;
 import mdux.medui.scenario;
 import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.medui.generated.scenario_endoscope_monitor_basics;
@@ -414,13 +415,13 @@ int runHeadlessSmoke(Locale locale) {
     };
 
     if (!painted("topbar-background") || !painted(mx::kHaltNode) || !painted(mx::kFreezeNode) ||
-        !painted("wall-clock") || !painted(mx::kPressureNode) || !painted(mx::kStatusNode)) {
+        !painted("wall-clock") || !painted(mx::kPressureNode) || !painted(mx::kStatusNode) || !painted(mx::kViewportNode)) {
         return 1;
     }
 
     std::println("headless smoke ({}): field=\"A7\" after 2 refused edits, freeze->'FREEZE', "
                  "emergency-halt->TriggerHalt/REQ-EM-003, clock 08:00:03; the topbar, both controls, "
-                 "the clock, the pressure reading and the classifier all drew.",
+                 "the clock, the pressure reading, the classifier and the viewport all drew.",
                  localeTag(locale));
     return 0;
 }

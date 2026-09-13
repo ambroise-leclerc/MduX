@@ -23,6 +23,7 @@ import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.medui.trace;
+import mdux.medui.viewport;
 import mdux.medui.generated.screen_endoscope_monitor;
 
 #include "../framework/SpecLabBridge.hpp"

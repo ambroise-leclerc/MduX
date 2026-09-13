@@ -235,7 +235,7 @@ composition an additive draw list and a `ColorHash` golden both admit; an *unbou
 unchanged, which is why the committed screen's pixel and `verify` legs are unchanged too — both
 render it without signals.
 
-`mdux.medui.viewport` (#322/#323, [ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md))
+`mdux.medui.viewport` (#322/#323/#324, [ADR-022](adr/ADR-022-streaming-viewport-data-and-composition-contract.md))
 is the same idea generalised to two dimensions for `VulkanViewport`: a `WaterfallGrid` rings at *row*
 granularity rather than `SampleRing`'s scalar one, because a waterfall's producer emits a whole row
 at a time, and `waterfallCellRect()`/`waterfallCellColor()` compute where a cell lands and what it
@@ -250,7 +250,16 @@ nothing at all rather than an opaque field — there is no token to reserve one 
 is `SignalBinding`'s counterpart in `mdux.medui.screen`, proving the same two things for the same
 reasons (every slot names a real stream, no two slots collide) and leaving what `validate()` cannot
 prove until a node's actual rectangle is known - a grid's live shape, a style's range against that
-rectangle - to `render()`'s own call into `recordWaterfall()` each frame.
+rectangle - to `render()`'s own call into `recordWaterfall()` each frame. `#324` is the demonstrator
+side of the same join: `examples/support/MonitorApp.hpp`'s `DemoState` gains a deterministic
+synthetic waterfall grid, and `MonitorFrame.hpp` binds the committed `endoscope-monitor` screen's
+`endoscope-view` node to it every frame, unconditionally, exactly as the ECG trace already is - which
+is what reaches the window, `--headless-smoke` and the scenario replay through the one function all
+four already shared. `tools/verify-scenario/ScenarioDriver.cpp`'s scene-driven-node list gained the
+viewport too, so the dynamic evidence gate discharges a `RegionPainted` obligation for it - needing
+no golden, since that check reads a node's own compiled bounds directly - and a
+`tests/render/ScreenPixelTests.cpp` scenario predicts every cell from this module's own composition
+functions and checks the real rendered bytes against that prediction across two different grids.
 
 `mdux.medui.reading` (#258) does the same for a `NumericDisplay`'s digits and a `Clock`'s time, and
 it needed an **amendment to ADR-010** to exist at all. That ADR's decision 4 forbade "on-device code

@@ -22,9 +22,9 @@
  *
  * Include this header **after** `import std;`, `import mdux.core.result;`, `import mdux.core.units;`,
  * `import mdux.draw;`, `import mdux.font.schema;`, `import mdux.medui.input;`,
- * `import mdux.medui.reading;`, `import mdux.medui.schema;`, `import mdux.medui.screen;` and
- * `import mdux.medui.trace;` - it names those without importing them, the way
- * `GlfwPresentationAdapter.hpp` does.
+ * `import mdux.medui.reading;`, `import mdux.medui.schema;`, `import mdux.medui.screen;`,
+ * `import mdux.medui.trace;` and `import mdux.medui.viewport;` - it names those without importing
+ * them, the way `GlfwPresentationAdapter.hpp` does.
  */
 #pragma once
 
@@ -78,7 +78,9 @@ public:
         }
     }
 
-    [[nodiscard]] constexpr bool full() const noexcept { return filled_ == Capacity; }
+    [[nodiscard]] constexpr bool full() const noexcept {
+        return filled_ == Capacity;
+    }
 
     /// A description of the ring's storage the trace expansion reads afresh each frame - not a copy.
     [[nodiscard]] mdux::medui::SampleRing view() const noexcept {
@@ -108,25 +110,103 @@ private:
 /// contract, here standing in for an amplifier the host would own.
 inline constexpr mdux::medui::TraceStyle monitorTraceStyle{.minimum = -1.0F, .maximum = 1.5F, .strokeWidth = 2};
 
+/// A fixed-capacity ring of waterfall rows for the `ENDOSCOPE_PRIMARY` viewport (#324). `SampleRing`
+/// generalised to `WaterfallGrid`'s row granularity, exactly `MonitorSampleRing`'s shape one level
+/// up: `pushRow()` writes a whole row where `push()` writes one scalar, and `view()` describes the
+/// same storage afresh rather than copying it, for `MonitorSampleRing::view()`'s reason.
+template <std::size_t RowCapacity, std::size_t Bins>
+class MonitorWaterfallRing {
+public:
+    /// Writes one new row from `generator(bin)`, evaluated for `bin` in `[0, Bins)`.
+    template <typename Generator>
+    constexpr void pushRow(Generator&& generator) noexcept {
+        for (std::size_t bin = 0; bin < Bins; ++bin) {
+            storage_[(head_ * Bins) + bin] = generator(bin);
+        }
+        head_ = (head_ + 1) % RowCapacity;
+        if (filled_ < RowCapacity) {
+            ++filled_;
+        }
+    }
+
+    /// A description of the ring's storage the waterfall expansion reads afresh each frame - not a
+    /// copy, `MonitorSampleRing::view()`'s reason.
+    [[nodiscard]] mdux::medui::WaterfallGrid view() const noexcept {
+        return mdux::medui::WaterfallGrid{.storage = storage_, .bins = Bins, .oldestRow = filled_ == RowCapacity ? head_ : 0, .rowCount = filled_};
+    }
+
+private:
+    std::array<float, RowCapacity * Bins> storage_{};
+    std::size_t                           head_{0};
+    std::size_t                           filled_{0};
+};
+
+/// A crude synthetic intensity sweep: one bright band, `waterfallBandHalfWidth` bins wide, drifting
+/// sideways one bin per row and wrapping the short way round the row's edges. Not an endoscopic
+/// image and not pretending to be - it gives the waterfall something time-varying and spatially
+/// bounded to draw. Integer arithmetic only, `syntheticSample()`'s reason: two toolchains computing
+/// this must quantise every cell to the same byte, and a transcendental function is not guaranteed
+/// to round the same way on all of them.
+inline constexpr std::int64_t waterfallBandHalfWidth = 4;
+
+[[nodiscard]] constexpr float syntheticWaterfallCell(std::size_t row, std::size_t bin, std::size_t bins) noexcept {
+    const auto peak     = static_cast<std::int64_t>(row % bins);
+    const auto position = static_cast<std::int64_t>(bin);
+    auto       distance = peak - position;
+    if (distance < 0) {
+        distance = -distance;
+    }
+    const auto half = static_cast<std::int64_t>(bins / 2);
+    if (distance > half) {
+        // The short way round: a band drifting past bin 0 re-enters at the far edge rather than
+        // vanishing, exactly as it would on a display with no seam.
+        distance = static_cast<std::int64_t>(bins) - distance;
+    }
+    if (distance > waterfallBandHalfWidth) {
+        return 0.05F;  // a low, non-zero floor - "no signal here" reads as dim, not as invisible
+    }
+    return 1.0F - (static_cast<float>(distance) / static_cast<float>(waterfallBandHalfWidth)) * 0.8F;
+}
+
+/// The domain the synthetic cells are read against, and the ramp they paint with - the device's
+/// numbers and a caller-chosen palette, per `WaterfallStyle`'s own contract (ADR-022 decision 2: no
+/// governed colour token exists for this component, so this is caller-supplied and unverified, same
+/// as `monitorTraceStyle` above). Demonstration colours, not a clinical palette.
+inline constexpr mdux::medui::WaterfallStyle monitorWaterfallStyle{
+    .minimum   = 0.0F,
+    .maximum   = 1.0F,
+    .lowColor  = mdux::core::ColorRgba8{ .r = 10,  .g = 8, .b = 14, .a = 255},
+    .highColor = mdux::core::ColorRgba8{.r = 214, .g = 96, .b = 64, .a = 255}
+};
+
+/// The waterfall's row/bin shape. Both at their type-level cap (`maxWaterfallRows`/`maxWaterfallBins`)
+/// so the demonstrator exercises the worst case #322/ADR-022 sized the budget arithmetic against,
+/// rather than a smaller one nothing would catch a regression against.
+inline constexpr std::size_t kViewportRows = mdux::medui::maxWaterfallRows;
+inline constexpr std::size_t kViewportBins = mdux::medui::maxWaterfallBins;
+
 /// The node ids the monitor's controls and readings bind to.
-inline constexpr std::string_view kHaltNode     = "emergency-halt";
-inline constexpr std::string_view kFreezeNode   = "freeze";
-inline constexpr std::string_view kPatientNode  = "patient-id";
-inline constexpr std::string_view kPressureNode = "insufflation-pressure";
-inline constexpr std::string_view kStatusNode   = "classifier-state";
-inline constexpr std::string_view kTraceStream  = "ECG_LEAD_II";
+inline constexpr std::string_view kHaltNode          = "emergency-halt";
+inline constexpr std::string_view kFreezeNode        = "freeze";
+inline constexpr std::string_view kPatientNode       = "patient-id";
+inline constexpr std::string_view kPressureNode      = "insufflation-pressure";
+inline constexpr std::string_view kStatusNode        = "classifier-state";
+inline constexpr std::string_view kViewportNode      = "endoscope-view";
+inline constexpr std::string_view kTraceStream       = "ECG_LEAD_II";
+inline constexpr std::string_view kViewportStream    = "ENDOSCOPE_PRIMARY";
 inline constexpr std::string_view kPressureRendering = "##.# mmHg";
 /// The clock's tint - `ReadingBinding::create()` validates it against the governed colour table.
 inline constexpr std::string_view kClockColorToken = "Theme.Colors.Title";
 
 /// The caller-owned application state one `updateMonitor()` mutates (ADR-018 clause 6, step 2).
 struct DemoState {
-    MonitorSampleRing<180>                 ecg{};
-    std::int64_t                           pressureTenths{143};  ///< `INSUFFLATION_PRESSURE`, tenths of mmHg
-    std::uint32_t                          classifierState{0};   ///< `ECG_CLASS`, a position in the node's states
-    std::uint64_t                          tick{0};
-    std::array<char32_t, 64>               fieldBuffer{};
-    std::optional<mdux::medui::FieldEditor> field{};
+    MonitorSampleRing<180>                             ecg{};
+    MonitorWaterfallRing<kViewportRows, kViewportBins> waterfall{};
+    std::int64_t                                       pressureTenths{143};  ///< `INSUFFLATION_PRESSURE`, tenths of mmHg
+    std::uint32_t                                      classifierState{0};   ///< `ECG_CLASS`, a position in the node's states
+    std::uint64_t                                      tick{0};
+    std::array<char32_t, 64>                           fieldBuffer{};
+    std::optional<mdux::medui::FieldEditor>            field{};
 
     /// Binds the `patient-id` `FieldEditor` over `fieldBuffer`, bounded by the font charset and the
     /// node's `charset:`. Leaves `field` empty if the node is absent or of the wrong kind.
@@ -140,18 +220,20 @@ struct DemoState {
             return;
         }
         const std::size_t maxLength = spec->maxLength < 0 ? 0 : static_cast<std::size_t>(spec->maxLength);
-        auto made = mdux::medui::FieldEditor::create(kPatientNode, fieldBuffer, {}, font.restrictedCharset,
-                                                     spec->charsetRanges, maxLength);
+        auto              made      = mdux::medui::FieldEditor::create(kPatientNode, fieldBuffer, {}, font.restrictedCharset, spec->charsetRanges, maxLength);
         if (made) {
             field = *made;
         }
     }
 
     /// Advances the demonstration generators one tick, deterministically: a fresh ECG sample, a
-    /// pressure that breathes between 12.0 and 16.0 mmHg, and a classifier state that steps once a
-    /// second through its four positions.
+    /// pressure that breathes between 12.0 and 16.0 mmHg, a classifier state that steps once a
+    /// second through its four positions, and one new waterfall row (#324).
     constexpr void step() noexcept {
         ecg.push(syntheticSample(static_cast<std::size_t>(tick), 60));
+        waterfall.pushRow([this](std::size_t bin) {
+            return syntheticWaterfallCell(static_cast<std::size_t>(tick), bin, kViewportBins);
+        });
         pressureTenths  = 140 + static_cast<std::int64_t>(tick % 40u) - 20;  // 12.0 .. 16.0
         classifierState = static_cast<std::uint32_t>((tick / 30u) % 4u);
         ++tick;
@@ -165,25 +247,25 @@ struct DemoState {
 /// What one update resolved for the caller to render and log. Both actions carry only a record;
 /// the host executes neither (ADR-018 clause 7).
 struct MonitorUpdateOutcome {
-    std::optional<mdux::medui::ActionTrace> criticalAction{};  ///< a resolved `emergency-halt` press
-    std::optional<std::string>              buttonSource{};     ///< a resolved `freeze` press, its open `source`
-    std::string_view                        buttonNode{};       ///< the node `buttonSource` resolved to (empty = none)
-    std::uint32_t                           refusedEdits{0};    ///< edits the `FieldEditor` refused this batch
-    bool                                    droppedBatch{false};///< the batch overflowed and was discarded whole
+    std::optional<mdux::medui::ActionTrace> criticalAction{};     ///< a resolved `emergency-halt` press
+    std::optional<std::string>              buttonSource{};       ///< a resolved `freeze` press, its open `source`
+    std::string_view                        buttonNode{};         ///< the node `buttonSource` resolved to (empty = none)
+    std::uint32_t                           refusedEdits{0};      ///< edits the `FieldEditor` refused this batch
+    bool                                    droppedBatch{false};  ///< the batch overflowed and was discarded whole
 };
 
 /// Drains one accepted batch and applies it to `state` (ADR-018 clause 6, steps 1-2), then
 /// advances the clock and the demonstration generators. On overflow (ADR-019 clause 3) the batch
 /// is discarded whole and the latch cancelled - acting on a partial batch could let a queued Down
 /// re-arm a control the cancel was meant to disarm.
-[[nodiscard]] inline MonitorUpdateOutcome updateMonitor(mdux::medui::EventQueue&           queue,
-                                                        bool                               overflowed,
-                                                        const mdux::medui::ScreenPackage&  screen,
-                                                        DemoState&                         state,
-                                                        mdux::medui::PressLatch&           latch,
-                                                        MonitorClock&                      clock,
-                                                        std::uint64_t&                     sequence,
-                                                        std::uint32_t                      clockStepSeconds = 1) {
+[[nodiscard]] inline MonitorUpdateOutcome updateMonitor(mdux::medui::EventQueue&          queue,
+                                                        bool                              overflowed,
+                                                        const mdux::medui::ScreenPackage& screen,
+                                                        DemoState&                        state,
+                                                        mdux::medui::PressLatch&          latch,
+                                                        MonitorClock&                     clock,
+                                                        std::uint64_t&                    sequence,
+                                                        std::uint32_t                     clockStepSeconds = 1) {
     namespace ms = mdux::medui;
     MonitorUpdateOutcome outcome;
 
@@ -203,8 +285,7 @@ struct MonitorUpdateOutcome {
                             return;
                         }
                         const auto             press = ms::resolvePress(screen, value.x, value.y);
-                        const std::string_view node =
-                            (press && press->has_value()) ? (*press)->nodeId : std::string_view{};
+                        const std::string_view node  = (press && press->has_value()) ? (*press)->nodeId : std::string_view{};
                         if (value.kind == ms::PointerKind::Down) {
                             latch.arm(node);
                         } else if (value.kind == ms::PointerKind::Up) {
@@ -229,8 +310,7 @@ struct MonitorUpdateOutcome {
                         if (!state.field) {
                             return;
                         }
-                        if (value.kind == ms::KeyKind::Down &&
-                            (value.key == ms::KeyCode::FocusNext || value.key == ms::KeyCode::Commit)) {
+                        if (value.kind == ms::KeyKind::Down && (value.key == ms::KeyCode::FocusNext || value.key == ms::KeyCode::Commit)) {
                             state.field->focus(ms::FocusEvent{.kind = ms::FocusKind::Enter, .nodeId = kPatientNode});
                             return;
                         }
