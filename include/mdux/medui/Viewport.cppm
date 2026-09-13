@@ -1,7 +1,7 @@
 /**
  * @file Viewport.cppm
- * @brief Governed-zone streaming-viewport data and composition contract: what a `VulkanViewport`'s
- *        live content is shaped like, before a device draws a single cell of it.
+ * @brief Governed-zone streaming-viewport data, composition and expansion: what a `VulkanViewport`'s
+ *        live content is shaped like, and how it becomes `DrawList` geometry.
  *
  * @compliance ADR-004 Trust zones in C++ (governed zone: std only, no Vulkan, no windowing)
  * @compliance ADR-005 Error handling and exceptions policy (Result-returning, noexcept)
@@ -9,10 +9,12 @@
  * @compliance ADR-012 What a compiled screen emits, and which parts are committed
  * @compliance ADR-022 Streaming viewport data and composition contract
  *
- * Issue #322's acceptance criteria in full: this module. `#323` wires it to a live
- * `mdux::medui::ScreenPackage` and a `DrawList`, exactly as `mdux.medui.trace` (#257) is wired by
- * `SignalBinding` and `render()` - this file changes neither, and neither `Schema.cppm` nor
- * `Screen.cppm` gains a line from this issue.
+ * #322's contract and #323's expansion, in one module - exactly as `mdux.medui.trace` carries both
+ * `SampleRing`'s pure geometry and `recordTrace()`'s `DrawList` expansion for `SignalTrace`. Binding
+ * this to a live `ScreenPackage` (`ViewportBinding`, and the `VulkanViewportSpec` case in
+ * `render()`) is `mdux.medui.screen`'s, exactly as `SignalBinding` is - this file gains no knowledge
+ * of any particular screen, and neither `Schema.cppm` nor the `.medui` compiler gains a line from
+ * either issue.
  *
  * ## No schema extension, and why that is the whole answer to bullet 3
  *
@@ -53,8 +55,9 @@
  * follows the same rule on both axes: a caller passes the *live* `rowCount` and the ring's fixed
  * `bins`, and the grid always tiles the whole band, growing new rows into it exactly as a trace
  * grows new segments into its width. Nothing here reserves a taller band for a ring that has not
- * filled yet, and nothing needs to: `#323`'s binding decides what an empty grid draws, exactly as
- * `SignalBinding` decides what an unbound trace draws, and it is not this module's business.
+ * filled yet, and nothing needs to: an empty grid (`rowCount == 0`) simply expands to nothing, and
+ * `mdux.medui.screen`'s `ViewportBinding` decides what an *unbound* node draws - not this module's
+ * business, exactly as `SignalBinding` decides what an unbound trace draws.
  *
  * Division is remainder-absorbing: a band whose width is not a multiple of `bins` gives every cell
  * but the last the same size and lets the last one keep whatever is left over, so cells tile the
@@ -77,17 +80,18 @@
  *
  * ## Nothing here owns a GPU resource, and nothing needs an adapter lifecycle
  *
- * Every quantity `#323`'s eventual `recordWaterfall()` will need - the cell rectangles, the cell
- * colours - is ordinary `mdux::draw::DrawList` geometry: solid, untextured rectangles the same
- * `addSolidRect()` every other component already calls. There is no separate GPU-owned texture, no
- * foreign handle, and therefore nothing to synchronise between frames beyond what `DrawList` already
- * guarantees, and nothing to tear down beyond the caller's own ring storage - which outlives the
- * frame exactly as a `SampleRing`'s does. Resizing is `mdux::medui::SurfaceMapping`'s concern
- * (ADR-019): the compiled node's rectangle never changes shape, only the surface's presentation
- * scale, and that is already solved. `mdux-verify-scenario` (#321, ADR-021) fixed the verification
- * story a live stream needs: a static screen gate cannot golden-check a value it does not have, and
- * a dynamic one asserts presence (`mdux::verify::regionPainted()`) rather than an exact tint - the
- * same disposition this contract inherits rather than reargues (PAR-REQ-009).
+ * `recordWaterfall()` needs no Vulkan handle of its own. Every quantity it writes - the cell
+ * rectangles, the cell colours - is ordinary `mdux::draw::DrawList` geometry: solid, untextured
+ * rectangles the same `addSolidRect()` every other component already calls, through the one pipeline
+ * `mdux::render::UiRenderer` already owns. There is no separate GPU-owned texture, no foreign handle,
+ * and therefore nothing to synchronise between frames beyond what `DrawList` already guarantees, and
+ * nothing to tear down beyond the caller's own ring storage - which outlives the frame exactly as a
+ * `SampleRing`'s does. Resizing is `mdux::medui::SurfaceMapping`'s concern (ADR-019): the compiled
+ * node's rectangle never changes shape, only the surface's presentation scale, and that is already
+ * solved. `mdux-verify-scenario` (#321, ADR-021) fixed the verification story a live stream needs: a
+ * static screen gate cannot golden-check a value it does not have, and a dynamic one asserts
+ * presence (`mdux::verify::regionPainted()`) rather than an exact tint - the same disposition this
+ * contract inherits rather than reargues (PAR-REQ-009).
  *
  * ## Bounds, and the endoscope-monitor arithmetic they were chosen against
  *
@@ -107,6 +111,7 @@ export module mdux.medui.viewport;
 import std;
 import mdux.core.result;
 import mdux.core.units;
+import mdux.draw;
 
 export namespace mdux::medui {
 
@@ -179,8 +184,9 @@ struct WaterfallStyle {
     [[nodiscard]] constexpr bool operator==(const WaterfallStyle&) const noexcept = default;
 };
 
-/// Why a waterfall was refused. Every one leaves the caller's own state exactly as it found it -
-/// this module records nothing itself, so there is nothing to roll back.
+/// Why a waterfall was refused. Every one but `ListRejected` leaves the caller's own state exactly
+/// as it found it, because everything up to that point is read-only; `recordWaterfall()` rolls its
+/// own writes back on `ListRejected` so the same is true of it.
 enum class WaterfallError : std::uint8_t {
     MalformedGrid,    ///< `bins` is 0, does not divide `storage`, or `oldestRow`/`rowCount` is out of range
     TooManyRows,      ///< `rowCount` exceeds `maxWaterfallRows`
@@ -188,6 +194,7 @@ enum class WaterfallError : std::uint8_t {
     NonFiniteSample,  ///< a live sample is a NaN or an infinity
     MalformedStyle,   ///< the range is empty, inverted or not finite
     BandTooSmall,     ///< the node's rectangle cannot hold one pixel per row, or per bin
+    ListRejected,     ///< `DrawList` refused a cell - budget, or a degenerate quad
 };
 
 [[nodiscard]] constexpr std::string_view describe(WaterfallError error) noexcept {
@@ -204,6 +211,8 @@ enum class WaterfallError : std::uint8_t {
             return "the numeric range is empty, inverted, or not finite";
         case WaterfallError::BandTooSmall:
             return "the node's rectangle has fewer pixels than the grid has rows or bins";
+        case WaterfallError::ListRejected:
+            return "the draw list refused a cell - budget, or a degenerate quad";
     }
     // Named rather than defaulted so that a new enumerator is a warning at this switch instead of a
     // silent empty description later.
@@ -334,10 +343,11 @@ waterfallCellRect(const mdux::core::Rect& nodeBand, std::size_t rows, std::size_
  * undefined), the grid's shape, the two type-level caps, whether `nodeBand` has room for one pixel
  * per row and per bin at the grid's *live* extent, and finally every live sample's finiteness.
  *
- * This is the whole of what #322 delivers toward drawing a waterfall: it proves a frame *could* be
- * recorded. Turning that into `DrawList` primitives - one `addSolidRect()` per
- * `waterfallCellRect()`, tinted by `waterfallCellColor()` - is #323's, exactly as turning a proven
- * `SampleRing` into stroke quads is `recordTrace()`'s and not this module's analogue's.
+ * This proves a frame *could* be recorded, without recording anything - `recordWaterfall()` below
+ * calls this first and turns a pass into `DrawList` primitives only once it holds, exactly as
+ * `recordTrace()` validates before it expands a `SampleRing` into stroke quads. Exported on its own
+ * regardless, because a caller that only wants to know whether a grid/style/band triple is drawable
+ * - a scenario runner checking an `Expect` step, a test - should not need a `DrawList` to ask.
  *
  * The parameter is `nodeBand` rather than `band` for the same MSVC-module reason
  * `waterfallCellRect()`'s is - see its doc comment.
@@ -378,5 +388,32 @@ validate(const mdux::core::Rect& nodeBand, const WaterfallGrid& grid, const Wate
 
     return {};
 }
+
+/**
+ * @brief Records one waterfall of `grid` into `list`, inside `nodeBand`, under `style`'s ramp.
+ *
+ * @param list     the destination; each live cell is appended as one `Solid` quad
+ * @param nodeBand the node's resolved rectangle, in surface pixels
+ * @param grid     the caller's rows, read oldest-first, top to bottom
+ * @param style    the numeric domain the samples are read against, and the colour ramp
+ *
+ * Calls `validate()` first, so every refusal it can make - a malformed grid, an oversized one, a
+ * non-finite sample, a degenerate style, a band with no room - is made here too, unchanged, before a
+ * single cell is written. Past that point the only way left to fail is `list` itself declining a
+ * write, which is `ListRejected`.
+ *
+ * Recorded row-major, oldest row first and left bin first within each row - the ascending order the
+ * module comment fixes for both axes - so a `DrawList` that merges consecutive same-clip primitives
+ * into one command (see `DrawList::addRect()`) does so over the whole grid rather than restarting a
+ * command at every row.
+ *
+ * All-or-nothing, as `recordTrace()` and `mdux::text::draw::recordRun()` are: on any refusal the
+ * list is rolled back to where it stood on entry, so a frame never carries part of a waterfall. A
+ * partial grid on a medical display reads as a smaller, complete one rather than as the failure it
+ * is - exactly the failure mode `mdux.medui.trace`'s own "refused, never truncated" rule exists to
+ * prevent, generalised from a cap on sample count to a cap on draw-list room.
+ */
+[[nodiscard]] mdux::core::ResultVoid<WaterfallError>
+recordWaterfall(mdux::draw::DrawList& list, const mdux::core::Rect& nodeBand, const WaterfallGrid& grid, const WaterfallStyle& style) noexcept;
 
 }  // namespace mdux::medui

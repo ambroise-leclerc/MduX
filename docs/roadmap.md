@@ -55,6 +55,16 @@
 > binding, which stays #323's. Epic #310's next child, **#323**, is conditionally unblocked pending
 > ADR-022's ratification; **#325** (epic #311) remains the sole unconditionally unblocked design/spec
 > issue outside #310.
+>
+> **Update, 13 September 2026:** **#323** delivered: `mdux.medui.viewport` gains `recordWaterfall()`
+> (the `recordTrace()` analogue — `validate()` then one `addSolidRect()` per cell, all-or-nothing) and
+> `src/medui/Viewport.cpp`, and `mdux.medui.screen` gains `ViewportBinding`/`ViewportSlot` (the
+> `SignalBinding` analogue) and a `VulkanViewport` case in `render()`'s per-node loop, plus a new
+> trailing `viewports` parameter. Nine new `ScreenError` enumerators name each way a viewport binding
+> or a bound grid can be refused. An *unbound* `VulkanViewport` is unchanged (deferred, as before
+> #323); a *bound* one draws its waterfall and is not. No `Schema.cppm`, `medui-conformance.toml` or
+> committed `generated/` artifact changed — the committed `endoscope-monitor` screen is not yet bound
+> to a live grid, which stays #324's integration work. Epic #310's next child is **#324**.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -72,9 +82,9 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310, #311 |
-| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322 delivered (ADR-022, PR pending), #323–#327 open |
+| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322/#323 delivered (ADR-022, PR pending ratification), #324–#327 open |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) (once #322/ADR-022 is ratified), [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#324](https://github.com/ambroise-leclerc/MduX/issues/324) (once #322/#323/ADR-022 is ratified), [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -155,24 +165,24 @@ agreed.
 
 ### Next to implement
 
-Assessed 12 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
-epics #307, #308 and #309 are closed. #322 is delivered** (ADR-022, Proposed). One design/spec child
-issue is fully unblocked; #322's implementation successor is conditionally unblocked, pending
-ADR-022's ratification.
+Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
+epics #307, #308 and #309 are closed. #322 and #323 are both delivered** (ADR-022, Proposed). One
+design/spec child issue is fully unblocked; #323's integration successor is conditionally unblocked,
+pending ADR-022's ratification.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#323**](https://github.com/ambroise-leclerc/MduX/issues/323) — render a bounded waterfall inside the compiled VulkanViewport | #322/ADR-022 fixed the data shape and composition math; nothing left to design before wiring it to a live screen. | #324 (epic #310) | `ViewportBinding` (the `SignalBinding` analogue) in `mdux.medui.screen`, plus a `DrawList`-emitting call built from `mdux.medui.viewport`'s `waterfallCellRect()`/`waterfallCellColor()`. |
-| 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+| 1 | [**#324**](https://github.com/ambroise-leclerc/MduX/issues/324) — exercise streaming viewport updates in the monitor and pixel tests | #323 delivered `ViewportBinding`/`recordWaterfall()`; nothing left to build before binding the committed `endoscope-monitor` screen's `endoscope-view` node to a live demonstrator grid. | epic #310 complete | Wire a synthetic grid into `MonitorApp.hpp`/`MedicalScreenMonitorExample`, extend `ScreenPixelTests`/the verify gate to cover it. |
+| 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323 ✓). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
 The three closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
 host policy, and the #309 / ADR-021 verifier-area domain review — one shared domain review covers
-the last two together with the ADR-016/017 items. **#322** carries its own residual until ADR-022 is
-ratified: maintainer engineering acceptance, and a domain review of the demonstrator waterfall's
-numeric bounds and colour ramp.
+the last two together with the ADR-016/017 items. **#322/#323** carry the same residual until
+ADR-022 is ratified: maintainer engineering acceptance, and a domain review of the demonstrator
+waterfall's numeric bounds and colour ramp.
 
-Recommended sequencing: **#323** is the epic-#310 implementation track and comes first; **#325**
+Recommended sequencing: **#324** is the epic-#310 integration track and comes first; **#325**
 (epic #311) last, since epic #311 is the furthest out.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
@@ -433,11 +443,31 @@ no `Schema.cppm` or `Screen.cppm` change, and no binding to a live screen or `Dr
 Residual: maintainer engineering acceptance and a domain review of the demonstrator ramp/bounds'
 lack of clinical grounding.
 
+**#323 delivered** (same ADR-022, extended rather than superseded): `mdux.medui.viewport` gains
+`recordWaterfall()` — `validate()` first, then one `addSolidRect()` per cell in row-major,
+oldest-row-first, left-bin-first order, all-or-nothing on any refusal, exactly as `recordTrace()`
+expands a proven `SampleRing` — and a new `src/medui/Viewport.cpp` (the module is no longer
+header-only). `mdux.medui.screen` gains `ViewportBinding`/`ViewportSlot` (the `SignalBinding`
+analogue: proves every slot names a real `VulkanViewport` stream and no two collide, leaving a
+grid's live shape and a style's range against the actual node rectangle to `render()`'s own call
+into `recordWaterfall()` each frame) and a `VulkanViewport` case in `render()`'s per-node loop, with
+a new trailing `viewports` parameter (fully backward-compatible — every existing call keeps
+compiling unchanged). Nine new `ScreenError` enumerators name each way a viewport binding or a
+bound grid can be refused, mirroring `SignalTrace`'s own five-enumerator granularity for the reason
+its own code comment gives: "trace's failures name different parties." An *unbound* `VulkanViewport`
+stays exactly as before #323 (deferred, since it has no field to fall back on unlike a trace); a
+*bound* one draws its waterfall and is not. No `Schema.cppm`, `medui-conformance.toml` or committed
+`generated/` artifact changed — the committed `endoscope-monitor` screen's own `endoscope-view` node
+is not yet bound to a live grid anywhere, which is #324's integration work. Covered by 9 more
+GPU-free scenarios in the same `tests/medui/ViewportContractTests.cpp` (24 total), plus the full
+`medui_spec`/`medui_noheap_spec`/`governed.noThrow.symbolScan`/`InstallTreeConsumer` suites
+unaffected. Residual: the same ADR-022 ratification #322 carries.
+
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-022, Proposed; `mdux.medui.viewport`: `WaterfallGrid`, `WaterfallStyle`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()`) |
-| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) delivered (ADR-022) · **conditionally unblocked** — pending ADR-022's ratification |
-| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323), [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **blocked on #323** |
+| [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) ✓ · **delivered** (same ADR-022; `recordWaterfall()`, `ViewportBinding`/`ViewportSlot`, the `VulkanViewport` `render()` case, nine new `ScreenError` cases) |
+| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓, [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **conditionally unblocked** — pending ADR-022's ratification |
 
 ### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
 
@@ -446,7 +476,7 @@ Expose a stable host-only editing/preview interface and reuse the TrustSC Studio
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **unblocked** (host-only API + reuse decision) |
-| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) · **blocked on #325, #323** |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **blocked on #325** |
 | [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) · **blocked** |
 
 ### Delivery and evidence rules
@@ -982,5 +1012,5 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 ---
 
 _Original programme: 13 closed epics and six shipped waves. Phase 2: 3 of 5 epics closed
-(#307, #308, #309); 2 open (#310, #311). #322 is delivered (ADR-022, Proposed); 5 open child issues
-remain (#323–#327). Status assessed 12 September 2026._
+(#307, #308, #309); 2 open (#310, #311). #322 and #323 are delivered (ADR-022, Proposed); 4 open
+child issues remain (#324–#327). Status assessed 13 September 2026._

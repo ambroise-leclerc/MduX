@@ -290,6 +290,43 @@ mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const Scree
     return SignalBinding{screen.id, slots};
 }
 
+mdux::core::Result<ViewportBinding, ScreenError> ViewportBinding::create(const ScreenPackage& screen, std::span<const ViewportSlot> slots) noexcept {
+    for (std::size_t index = 0; index < slots.size(); ++index) {
+        const ViewportSlot& slot = slots[index];
+
+        if (slot.grid == nullptr) {
+            // A slot with no grid is a viewport that would draw nothing at all - indistinguishable
+            // from an unbound one - so it is refused here as a defect in how the caller assembled
+            // its slots, exactly as `SignalBinding::create()` refuses a ringless slot.
+            return mdux::core::err(ScreenError::MissingWaterfallGrid);
+        }
+        if (!std::isfinite(slot.style.minimum) || !std::isfinite(slot.style.maximum) || !(slot.style.maximum > slot.style.minimum)) {
+            return mdux::core::err(ScreenError::MalformedWaterfallStyle);
+        }
+
+        // Quadratic in the slot count, which is a handful - `ScreenPackage::find()` makes the same
+        // trade, and a set would allocate.
+        for (std::size_t earlier = 0; earlier < index; ++earlier) {
+            if (slots[earlier].streamSource == slot.streamSource) {
+                return mdux::core::err(ScreenError::DuplicateViewportSource);
+            }
+        }
+
+        const bool named = std::ranges::any_of(screen.nodes, [&](const CompiledNode& node) {
+            const NodePayload payload  = node.payload;
+            const auto*       viewport = std::get_if<VulkanViewportSpec>(&payload);
+            return viewport != nullptr && viewport->streamSource == slot.streamSource;
+        });
+        if (!named) {
+            // The check that earns this type. A mistyped stream name would otherwise leave the node
+            // undrawn forever, with nothing to tell that from a stream that has simply not started.
+            return mdux::core::err(ScreenError::UnknownViewportSource);
+        }
+    }
+
+    return ViewportBinding{screen.id, slots};
+}
+
 mdux::core::Result<ReadingBinding, ScreenError>
 ReadingBinding::create(const ScreenPackage& screen, std::span<const ReadingSlot> readings, const CivilTime* now, std::string_view clockColorToken) noexcept {
     for (std::size_t index = 0; index < readings.size(); ++index) {
@@ -471,6 +508,24 @@ std::string_view describe(ScreenError error) noexcept {
             return "a bound ring holds more samples than this runtime will expand in one trace";
         case ScreenError::TraceBandTooSmall:
             return "a bound trace's node is too small to hold its stroke";
+        case ScreenError::UnknownViewportSource:
+            return "a viewport slot names a stream no VulkanViewport on this screen carries";
+        case ScreenError::DuplicateViewportSource:
+            return "two viewport slots name the same stream";
+        case ScreenError::MissingWaterfallGrid:
+            return "a viewport slot names a stream but carries no grid to read rows from";
+        case ScreenError::MalformedWaterfallGrid:
+            return "a bound grid's shape does not describe a position in its own storage";
+        case ScreenError::WaterfallTooManyRows:
+            return "a bound grid holds more live rows than this runtime will expand in one waterfall";
+        case ScreenError::WaterfallTooManyBins:
+            return "a bound grid declares more bins per row than this runtime will expand in one waterfall";
+        case ScreenError::NonFiniteWaterfallSample:
+            return "a live waterfall sample is not a finite number";
+        case ScreenError::MalformedWaterfallStyle:
+            return "a viewport slot's numeric range is empty, inverted, or not finite";
+        case ScreenError::WaterfallBandTooSmall:
+            return "a bound waterfall's node is too small to hold one pixel per row or bin";
         case ScreenError::ScreenNotApproved:
             return "the binding was built for a different screen";
         case ScreenError::UnknownReadingNode:
@@ -553,6 +608,30 @@ namespace {
     }
     // Named rather than defaulted, so a new TraceError is a warning here rather than a frame refused
     // with a reason that names the wrong thing.
+    return ScreenError::BudgetExhausted;
+}
+
+/// `asScreenError(TraceError)`'s reasoning, unchanged for the waterfall's own five parties: the
+/// producer's grid, the integrator's two caps, a driver's NaN, and a malformed style.
+[[nodiscard]] ScreenError asScreenError(mdux::medui::WaterfallError error) noexcept {
+    switch (error) {
+        case WaterfallError::MalformedGrid:
+            return ScreenError::MalformedWaterfallGrid;
+        case WaterfallError::TooManyRows:
+            return ScreenError::WaterfallTooManyRows;
+        case WaterfallError::TooManyBins:
+            return ScreenError::WaterfallTooManyBins;
+        case WaterfallError::NonFiniteSample:
+            return ScreenError::NonFiniteWaterfallSample;
+        case WaterfallError::MalformedStyle:
+            return ScreenError::MalformedWaterfallStyle;
+        case WaterfallError::BandTooSmall:
+            return ScreenError::WaterfallBandTooSmall;
+        case WaterfallError::ListRejected:
+            return ScreenError::BudgetExhausted;
+    }
+    // Named rather than defaulted, so a new WaterfallError is a warning here rather than a frame
+    // refused with a reason that names the wrong thing.
     return ScreenError::BudgetExhausted;
 }
 
@@ -650,7 +729,8 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
                                                    const SignalBinding&    signals,
                                                    const ReadingBinding&   readings,
                                                    const StatusBinding&    status,
-                                                   const TextInputBinding& inputs) noexcept {
+                                                   const TextInputBinding& inputs,
+                                                   const ViewportBinding&  viewports) noexcept {
     // Taken before anything is recorded: every refusal below rolls back to here, so a frame is
     // whole or absent. A half-drawn frame on a medical display is the worst outcome available,
     // because it looks like a reading.
@@ -686,6 +766,9 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
         return refuse(ScreenError::ScreenNotApproved);
     }
     if (!inputs.approvedBy(screen)) {
+        return refuse(ScreenError::ScreenNotApproved);
+    }
+    if (!viewports.approvedBy(screen)) {
         return refuse(ScreenError::ScreenNotApproved);
     }
 
@@ -1043,6 +1126,35 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
                 stats.steps += static_cast<std::uint32_t>(slot->ring->count);
                 stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
                 ++stats.traces;
+                ++stats.steps;
+                continue;
+            }
+        }
+
+        // A `VulkanViewport` the caller has a grid for. Unlike every branch above and below, an
+        // unbound one falls through to nothing rather than to the generic field-painting path just
+        // beyond this loop: `fieldColorToken()` has no case for `VulkanViewportSpec` (deliberately -
+        // see the module comment), so an unmatched node reaches the `deferred` counter below exactly
+        // as it did before #323.
+        if (const auto* viewport = std::get_if<VulkanViewportSpec>(&node.payload); viewport != nullptr) {
+            if (const ViewportSlot* slot = viewports.find(viewport->streamSource); slot != nullptr) {
+                const std::size_t verticesBefore = list.vertices().size();
+                if (const auto recorded = mdux::medui::recordWaterfall(list, toRect(node.bounds), *slot->grid, slot->style); !recorded.has_value()) {
+                    // `recordWaterfall()` rolls its own writes back and this rolls the whole frame
+                    // back, exactly as the trace path above. Its error is forwarded for the same
+                    // reason: every way it fails is a distinct, actionable thing, and none of them
+                    // was already refused here.
+                    return refuse(asScreenError(recorded.error()));
+                }
+                if (!withinScreenBudget()) {
+                    return refuse(ScreenError::BudgetExhausted);
+                }
+
+                // Payload-proportional work, bounded by `maxWaterfallRows * maxWaterfallBins` exactly
+                // as a trace's is by `maxSamplesPerTrace`.
+                stats.steps += static_cast<std::uint32_t>(slot->grid->rowCount * slot->grid->bins);
+                stats.rects += static_cast<std::uint32_t>((list.vertices().size() - verticesBefore) / 4);
+                ++stats.waterfalls;
                 ++stats.steps;
                 continue;
             }
