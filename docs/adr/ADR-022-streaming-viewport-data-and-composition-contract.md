@@ -3,18 +3,22 @@
 ## Status
 
 **Proposed**, 2026-09-12, for [#322](https://github.com/ambroise-leclerc/MduX/issues/322), the
-epic-[#310](https://github.com/ambroise-leclerc/MduX/issues/310) design track, and extended
-2026-09-13 for [#323](https://github.com/ambroise-leclerc/MduX/issues/323), which binds this
-contract to a live screen. It records the data shape and composition rules a `VulkanViewport`'s
-live content draws under, and resolves the one open question its acceptance criteria pose
-explicitly: whether the existing compiled schema suffices, or a shared MedUI decision is needed
-first.
+epic-[#310](https://github.com/ambroise-leclerc/MduX/issues/310) design track; extended 2026-09-13
+for [#323](https://github.com/ambroise-leclerc/MduX/issues/323), which binds this contract to a live
+screen, and again the same day for [#324](https://github.com/ambroise-leclerc/MduX/issues/324),
+which binds the *committed* `endoscope-monitor` screen to a live demonstrator grid and gates it in
+CI - closing epic #310's three children under this one record. It records the data shape and
+composition rules a `VulkanViewport`'s live content draws under, and resolves the one open question
+its acceptance criteria pose explicitly: whether the existing compiled schema suffices, or a shared
+MedUI decision is needed first.
 
 It changes no compiled screen, no shader, no shared pin, and adds no code to `Schema.cppm` or
 `medui-conformance.toml`. `#322` defined one new governed module, `mdux.medui.viewport`
 (`include/mdux/medui/Viewport.cppm`); `#323` added `recordWaterfall()` to it (no longer header-only —
 `src/medui/Viewport.cpp` now exists) and bound it to `mdux.medui.screen` with `ViewportBinding`,
-exactly as `mdux.medui.trace` (#257) is bound by `SignalBinding` and `render()`. It builds on
+exactly as `mdux.medui.trace` (#257) is bound by `SignalBinding` and `render()`; `#324` bound the
+committed `endoscope-monitor` screen's `endoscope-view` node to a deterministic synthetic grid in the
+example application and added its dynamic and pixel evidence. It builds on
 [ADR-014](ADR-014-rendered-truth-verification.md) (what a rendered check may and may not claim),
 [ADR-015](ADR-015-versioned-sibling-observations.md) decision D5 ("#322 must finalize viewport
 numeric/composition rules"), and [ADR-021](ADR-021-dynamic-scenario-capture-evidence.md) (the
@@ -168,11 +172,16 @@ what `#323` added, so:
 
 The static per-screen gate (`mdux-verify-ui`, `verify.screen.<id>`) continues to check only
 `endoscope-view`'s compiled bounds; it gains no `ColorHash` obligation, because the node still
-declares none (Decision 2). Once #324 binds live content on the committed screen, a scenario that
-drives that content inherits the disposition ADR-021 already established for a scene-driven node: a rendered check
-asserts *presence* (`mdux::verify::regionPainted()`), never an exact tint, and PAR-REQ-009's "no
-exact-pixel claim without a declared backend profile" stays intact. This record adds no new
-verification predicate and proposes no PAR-REQ-009 amendment; it inherits the existing one.
+declares none (Decision 2), and #324 does not change it. `#324` bound the committed screen's content
+in the scenario replay instead, and the disposition that content inherits is exactly the one ADR-021
+already established for a scene-driven node: a rendered check asserts *presence*
+(`mdux::verify::regionPainted()`), never an exact tint, and PAR-REQ-009's "no exact-pixel claim
+without a declared backend profile" stays intact. Concretely, `#324` added `VulkanViewportSpec` to
+`contentIsSceneDriven()` (`tools/verify-scenario/ScenarioDriver.cpp`), which needs no golden at all
+for `endoscope-view` - `regionPainted()` is computed straight from the node's own compiled bounds -
+so the dynamic gate now discharges one `RegionPainted` obligation for it per capture per locale. This
+record adds no new verification predicate and proposes no PAR-REQ-009 amendment; it inherits the
+existing one.
 
 ### 8. Bounds, chosen against real budget arithmetic
 
@@ -311,12 +320,56 @@ rest of that screen already carries.
   `ctest` - 936/936 passed on GCC, including `governed.noThrow.symbolScan`, the `noheap` label and
   `InstallTreeConsumer`; `mdux-governed-lint` and `mdux-docs-lint` both clean.
 - No change to `Schema.cppm`, `medui-conformance.toml`, any recipe, or any committed `generated/`
-  artifact - the committed `endoscope-monitor` screen's `endoscope-view` node is not bound to a live
-  grid anywhere yet. That integration, and the pixel/evidence gate it needs, is #324's.
-- `docs/architecture.md`, `docs/roadmap.md` (#310/#323), `docs/parity/requirements.md` (the
-  `#322/#323 viewport contract and binding` decision-map row, the PAR-REQ-008 row, the ADR reference
-  table), `docs/parity/behavior-matrix.md` (the `VulkanViewport` row) all updated; no ADR index change
-  (no new ADR number).
+  artifact for #323 - the committed `endoscope-monitor` screen's `endoscope-view` node was not bound
+  to a live grid anywhere yet. `#324` did that integration, closing this residual.
+
+**#324** (2026-09-13, same day, same ADR), closing epic #310's three children:
+
+- `examples/support/MonitorApp.hpp`: `MonitorWaterfallRing<RowCapacity, Bins>` (`MonitorSampleRing`'s
+  shape one level up - `pushRow()` writes a whole row where `push()` writes one scalar), a
+  deterministic `syntheticWaterfallCell()` (a drifting intensity band `waterfallBandHalfWidth` bins
+  wide, wrapping the short way round the row's edges, integer arithmetic only - `syntheticSample()`'s
+  reason: no transcendental function is guaranteed to round the same way on every toolchain),
+  `monitorWaterfallStyle` (a caller-chosen two-colour ramp, unverified per Decision 2),
+  `kViewportStream`/`kViewportNode` and `kViewportRows`/`kViewportBins` fixed at the type-level caps
+  (`maxWaterfallRows`/`maxWaterfallBins` - the same worst case Decision 8's arithmetic was checked
+  against). `DemoState` gains a `waterfall` field and pushes one new row per `step()`, alongside the
+  ECG sample.
+- `examples/support/MonitorFrame.hpp`: `recordMonitorFrame()` builds a `ViewportSlot` for
+  `kViewportStream` and a `ViewportBinding` every frame, unconditionally - there is no "the stream has
+  not started" state a demonstrator with its own generator can be in, unlike a real amplifier - and
+  passes it to `render()`'s new trailing parameter. Reaches every caller of that one function: the
+  interactive window, `--headless-smoke`, the scenario replay and `mdux-verify-scenario` (#321) alike.
+- `tools/verify-scenario/ScenarioDriver.cpp`: `contentIsSceneDriven()` gains
+  `std::holds_alternative<ms::VulkanViewportSpec>`. Its `RegionPainted` obligation is computed
+  straight from the node's own compiled bounds (`compiled->bounds`), not from a golden, so this needed
+  no golden entry for `endoscope-view` (it has none - Decision 2) to start gating it: one
+  `RegionPainted` obligation per capture per locale, 4 more. The committed
+  `generated/scenario/endoscope-monitor-basics/scenario-verification.json` was re-baked (88 → 92
+  obligations, via `cmake --build --target bake-scenario-endoscope-monitor-basics-update`) and its
+  diff reviewed for exactly that addition; `report.json`'s recorded digest of it is the only other
+  line that changed. `evidence.scenario.endoscope-monitor-basics` and
+  `verify.scenario.endoscope-monitor-basics` both pass against the re-baked bundle.
+  Also fixed in passing: `ScenarioDriver.cpp`'s own `#include` order had `HeadlessDevice.hpp` before
+  `<vulkan/vulkan.h>`, contradicting its own doc comment ("both including translation units put
+  `#include <vulkan/vulkan.h>` ... before this header") - latent since #321, and exposed only once
+  reordering the `import` list (adding `import mdux.medui.viewport;`) changed enough of GCC's
+  experimental-modules internal state that the previously-accidental transitive visibility of the
+  Vulkan types stopped holding. Reordered to match the documented contract; no behaviour change.
+- `tests/render/ScreenPixelTests.cpp`: one new scenario binding text, image and the viewport (not
+  status, not the ECG trace) to two different hand-built grids - a ramp and its reverse, so the two
+  frames' pixels cannot coincide by construction. Predicts every cell from `waterfallCellRect()`/
+  `waterfallCellColor()` and compares the real GPU-rendered bytes against that prediction for both
+  grids; checks the corner cell changed between them (successive updates/ring wrap actually reach the
+  pixels); checks the pixel one row below the viewport's bottom edge - inside `insufflation-pressure`,
+  the next full-width node down, unbound and hence unchanging here - is identical in both frames (no
+  spill past the node's own rectangle). `offscreen_tests` - 40/40 passed, including this scenario.
+- No change to `Schema.cppm`, `medui-conformance.toml`, or any `.medui` recipe. The only committed
+  `generated/` change is the scenario evidence re-bake above.
+- `docs/architecture.md`, `docs/roadmap.md` (#310/#324, epic #310 marked delivered pending
+  ratification), `docs/parity/requirements.md` (the `#322/#323/#324` decision-map rows, PAR-REQ-008,
+  the ADR reference table), `docs/parity/behavior-matrix.md` (the `VulkanViewport` row) all updated;
+  no ADR index change (no new ADR number, for either #323 or #324).
 
 ## References
 
@@ -333,7 +386,8 @@ rest of that screen already carries.
 - [Prospective requirements](../parity/requirements.md) - PAR-REQ-008, PAR-REQ-009
 - Issues [#310](https://github.com/ambroise-leclerc/MduX/issues/310),
   [#322](https://github.com/ambroise-leclerc/MduX/issues/322),
-  [#323](https://github.com/ambroise-leclerc/MduX/issues/323)
+  [#323](https://github.com/ambroise-leclerc/MduX/issues/323),
+  [#324](https://github.com/ambroise-leclerc/MduX/issues/324)
 - `include/mdux/medui/Trace.cppm`, `src/medui/Trace.cpp` - the one-dimensional precedent this record
   generalises, including `recordTrace()` for `recordWaterfall()` and `SignalBinding` for
   `ViewportBinding`
@@ -343,7 +397,7 @@ rest of that screen already carries.
 
 ## Approval
 
-- **Proposal date**: 2026-09-12; extended (unchanged status) 2026-09-13 for #323
+- **Proposal date**: 2026-09-12; extended (unchanged status) 2026-09-13 for #323 and again for #324
 - **Decision date**: pending
 - **Approved by**: pending - maintainer engineering acceptance, and a domain review of the
   demonstrator waterfall's numeric bounds and colour ramp (no clinical grounding is claimed for
@@ -352,7 +406,10 @@ rest of that screen already carries.
   `WaterfallStyle`, `WaterfallError`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()` -
   and the "no schema extension" and "no governed colour token" dispositions (Decisions 1-2), **plus**
   `recordWaterfall()` and `mdux.medui.screen`'s `ViewportBinding`/`ViewportSlot`/`render()` wiring
-  (#323, Decisions 4-6). Binding this contract to the *committed* `endoscope-monitor` screen and its
-  pixel/evidence gate is #324's scope, not this record's.
+  (#323, Decisions 4-6), **plus** binding the committed `endoscope-monitor` screen to a live
+  demonstrator grid, the scenario evidence gate's `RegionPainted` obligation for it, and the GPU
+  pixel-prediction test (#324, Decision 7). Epic #310's three children are all within this ADR's
+  scope now.
 - **Review date**: with the verifier-area domain review already tracked for
-  ADR-016/ADR-017/ADR-021, once #324 gives it live content on a committed screen to assess.
+  ADR-016/ADR-017/ADR-021, now that #324 gives it live content on a committed, CI-gated screen to
+  assess.

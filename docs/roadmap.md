@@ -65,6 +65,24 @@
 > #323); a *bound* one draws its waterfall and is not. No `Schema.cppm`, `medui-conformance.toml` or
 > committed `generated/` artifact changed — the committed `endoscope-monitor` screen is not yet bound
 > to a live grid, which stays #324's integration work. Epic #310's next child is **#324**.
+>
+> **Update, 13 September 2026 (later the same day) — epic #310 substantively complete.** **#324**
+> delivered: `examples/support/MonitorApp.hpp`'s `DemoState` gains a synthetic, integer-arithmetic
+> waterfall generator (`MonitorWaterfallRing`, a drifting-band sweep at the type-level cap,
+> `maxWaterfallRows`x`maxWaterfallBins`), and `MonitorFrame.hpp`'s `recordMonitorFrame()` now binds
+> `endoscope-view` to it every frame, exactly as the ECG trace already is — reaching the interactive
+> window, `--headless-smoke`, the scenario replay and `mdux-verify-scenario` through the one shared
+> function all four already went through. `endoscope-view` joined
+> `contentIsSceneDriven()`, so the dynamic evidence gate now discharges a `RegionPainted` obligation
+> for it per capture per locale (4 more, needing no golden — `RegionPainted` reads the node's own
+> compiled bounds) — the committed `scenario-verification.json` was re-baked (88 → 92 obligations)
+> and reviewed as a diff of exactly that. A new pixel test predicts every cell from
+> `mdux.medui.viewport`'s own exported `waterfallCellRect()`/`waterfallCellColor()` and checks the
+> real GPU-rendered bytes against that prediction across two different grids, proving successive
+> updates reach the pixels and neither bleed past the node's own rectangle. No `.medui` recipe,
+> schema or `medui-conformance.toml` changed. Epic #310's three children (#322, #323, #324) are all
+> delivered under the one ADR-022, carrying the residual it has carried since #322: maintainer
+> engineering acceptance and the verifier-area domain review.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -81,10 +99,10 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 |---|---|
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
-| Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310, #311 |
-| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322/#323 delivered (ADR-022, PR pending ratification), #324–#327 open |
+| Phase 2 epics | 3 of 5 closed (#307, #308, #309); 2 open: #310 (all three children delivered, pending ratification), #311 |
+| Phase 2 child issues | 16 total (#312–#327): 10 closed (#312–#321), 6 open — #322/#323/#324 delivered (ADR-022, PR pending ratification), #325–#327 open |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#324](https://github.com/ambroise-leclerc/MduX/issues/324) (once #322/#323/ADR-022 is ratified), [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -166,24 +184,23 @@ agreed.
 ### Next to implement
 
 Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
-epics #307, #308 and #309 are closed. #322 and #323 are both delivered** (ADR-022, Proposed). One
-design/spec child issue is fully unblocked; #323's integration successor is conditionally unblocked,
-pending ADR-022's ratification.
+epics #307, #308 and #309 are closed. #322, #323 and #324 are all delivered** (ADR-022, Proposed) —
+epic #310 is substantively complete, pending the same ratification its ADR has carried since #322.
+One design/spec child issue remains: epic #311's.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#324**](https://github.com/ambroise-leclerc/MduX/issues/324) — exercise streaming viewport updates in the monitor and pixel tests | #323 delivered `ViewportBinding`/`recordWaterfall()`; nothing left to build before binding the committed `endoscope-monitor` screen's `endoscope-view` node to a live demonstrator grid. | epic #310 complete | Wire a synthetic grid into `MonitorApp.hpp`/`MedicalScreenMonitorExample`, extend `ScreenPixelTests`/the verify gate to cover it. |
-| 2 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | Unblocked, but epic #311 is the furthest out (#326 also needs #323 ✓). Lowest urgency of the two. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+| 1 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | The sole remaining unblocked issue; epic #311 is the furthest-out epic, so it is also the lowest urgency. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
 
 The three closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
 host policy, and the #309 / ADR-021 verifier-area domain review — one shared domain review covers
-the last two together with the ADR-016/017 items. **#322/#323** carry the same residual until
+the last two together with the ADR-016/017 items. **#322/#323/#324** carry the same residual until
 ADR-022 is ratified: maintainer engineering acceptance, and a domain review of the demonstrator
 waterfall's numeric bounds and colour ramp.
 
-Recommended sequencing: **#324** is the epic-#310 integration track and comes first; **#325**
-(epic #311) last, since epic #311 is the furthest out.
+Recommended sequencing: **#325** is what remains - epic #311's own three children run in their
+existing order (#325 → #326 → #327) once it lands.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
@@ -422,7 +439,7 @@ capture, substituted package, altered-scenario replay).
 | [#320](https://github.com/ambroise-leclerc/MduX/issues/320) | Replay scenarios through the application's real input and update path | [#319](https://github.com/ambroise-leclerc/MduX/issues/319) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓ · **closed** ([PR #345](https://github.com/ambroise-leclerc/MduX/pull/345), merged 2026-09-09: `ScenarioRunner` — the bounded no-alloc replay over `updateMonitor()` — `ScenarioReplay.hpp`, the host trace, `example.monitor.replay`, and GPU-free `scenario_spec` replay tests) |
 | [#321](https://github.com/ambroise-leclerc/MduX/issues/321) | Verify dynamic scenario captures and gate complete evidence in CI | [#320](https://github.com/ambroise-leclerc/MduX/issues/320), [#318](https://github.com/ambroise-leclerc/MduX/issues/318), [#313](https://github.com/ambroise-leclerc/MduX/issues/313) · **closed** ([PR #346](https://github.com/ambroise-leclerc/MduX/pull/346), merged 2026-09-10: ADR-021, Proposed; `mdux-verify-scenario`/`-bake` reading every artifact from `generated/`, `evaluateFrame()` + `mdux.verify::regionPainted()`, `scenario-verification.json`, `verify.scenario.<id>`, `verify_scenario_spec`) |
 
-### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · planned
+### [#310](https://github.com/ambroise-leclerc/MduX/issues/310) — Bounded streaming VulkanViewport rendering · delivered, pending ratification
 
 Add an optional Vulkan adapter path that consumes a caller-owned bounded stream and composes a concrete waterfall visualization inside the compiled viewport rectangle.
 
@@ -463,11 +480,32 @@ GPU-free scenarios in the same `tests/medui/ViewportContractTests.cpp` (24 total
 `medui_spec`/`medui_noheap_spec`/`governed.noThrow.symbolScan`/`InstallTreeConsumer` suites
 unaffected. Residual: the same ADR-022 ratification #322 carries.
 
+**#324 delivered**, closing out epic #310's three children under the one ADR-022:
+`examples/support/MonitorApp.hpp`'s `DemoState` gains `MonitorWaterfallRing` (`SampleRing`'s
+row-granularity generalisation, `MonitorSampleRing`'s shape one level up) and a deterministic,
+integer-only synthetic generator - a drifting intensity band, wrapping at the row's edges - pushed
+one row per tick at the type-level cap (`maxWaterfallRows`x`maxWaterfallBins`, the same worst case
+#322's budget arithmetic was checked against). `MonitorFrame.hpp`'s `recordMonitorFrame()` now binds
+`endoscope-view` to it unconditionally, exactly as the ECG trace already is, reaching every caller of
+that one shared function: the interactive window, `--headless-smoke`, the scenario replay and
+`mdux-verify-scenario`. `tools/verify-scenario/ScenarioDriver.cpp`'s `contentIsSceneDriven()` gained
+`VulkanViewportSpec`, so the dynamic evidence gate now discharges one `RegionPainted` obligation for
+`endoscope-view` per capture per locale - needing no golden, since `RegionPainted` reads the node's
+own compiled bounds directly - and the committed `scenario-verification.json` was re-baked (88 → 92
+obligations) and reviewed as a diff of exactly that one addition. A new
+`tests/render/ScreenPixelTests.cpp` scenario predicts every cell of two different grids from
+`mdux.medui.viewport`'s own exported `waterfallCellRect()`/`waterfallCellColor()` and checks the real
+GPU-rendered bytes against that prediction - proving ring wrap and successive updates actually reach
+the pixels, and that neither grid paints past the node's own rectangle into
+`insufflation-pressure`'s field directly below it. No `.medui` recipe, `Schema.cppm` or
+`medui-conformance.toml` changed. Residual: the same ADR-022 ratification #322/#323/#324 all carry -
+epic #310 is otherwise complete.
+
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) | Specify the streaming viewport data and composition contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-022, Proposed; `mdux.medui.viewport`: `WaterfallGrid`, `WaterfallStyle`, `waterfallCellRect()`, `waterfallCellColor()`, `validate()`) |
 | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) ✓ · **delivered** (same ADR-022; `recordWaterfall()`, `ViewportBinding`/`ViewportSlot`, the `VulkanViewport` `render()` case, nine new `ScreenError` cases) |
-| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓, [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **conditionally unblocked** — pending ADR-022's ratification |
+| [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓, [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **delivered** (same ADR-022; the monitor's synthetic waterfall, the `RegionPainted` scenario obligation, the GPU pixel-prediction test) |
 
 ### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
 
@@ -1012,5 +1050,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 ---
 
 _Original programme: 13 closed epics and six shipped waves. Phase 2: 3 of 5 epics closed
-(#307, #308, #309); 2 open (#310, #311). #322 and #323 are delivered (ADR-022, Proposed); 4 open
-child issues remain (#324–#327). Status assessed 13 September 2026._
+(#307, #308, #309); 2 open (#310, #311) - #310's three children (#322, #323, #324) are all
+delivered under ADR-022, Proposed, pending ratification. 3 open child issues remain (#325–#327).
+Status assessed 13 September 2026._

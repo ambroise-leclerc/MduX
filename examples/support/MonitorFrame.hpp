@@ -6,9 +6,9 @@
  * @compliance ADR-018 Bounded input, application update order and action policy (clause 6)
  *
  * The frame path `updateMonitor()` feeds: every live binding - the ECG trace, the insufflation
- * pressure, the deterministic clock, the classifier state and the `patient-id` field - is assembled
- * here from one snapshot of caller-owned state, *after* the batch was resolved, so a capture never
- * shows input the operator has not seen resolved.
+ * pressure, the deterministic clock, the classifier state, the `patient-id` field and, since #324,
+ * the `endoscope-view` waterfall - is assembled here from one snapshot of caller-owned state,
+ * *after* the batch was resolved, so a capture never shows input the operator has not seen resolved.
  *
  * Split out of `MedicalScreenMonitorExample.cpp` (#321, ADR-021) so the interactive window, the
  * headless smoke, the scenario replay and the `mdux-verify-scenario` capture verifier all record a
@@ -22,8 +22,9 @@
  *
  * Include this header **after** `import std;`, `import mdux.core.result;`, `import mdux.core.units;`,
  * `import mdux.draw;`, `import mdux.medui.input;`, `import mdux.medui.reading;`,
- * `import mdux.medui.schema;`, `import mdux.medui.screen;`, `import mdux.medui.trace;` and
- * `#include "MonitorApp.hpp"` - it names those without importing them.
+ * `import mdux.medui.schema;`, `import mdux.medui.screen;`, `import mdux.medui.trace;`,
+ * `import mdux.medui.viewport;` and `#include "MonitorApp.hpp"` - it names those without importing
+ * them.
  */
 #pragma once
 
@@ -47,8 +48,7 @@ struct FrameStorage {
     std::vector<mdux::draw::Index>       indices;
     std::vector<mdux::draw::DrawCommand> commands;
 
-    explicit FrameStorage(const mdux::draw::DrawBudget& budget)
-        : vertices(budget.maxVertices), indices(budget.maxIndices), commands(budget.maxCommands) {}
+    explicit FrameStorage(const mdux::draw::DrawBudget& budget) : vertices(budget.maxVertices), indices(budget.maxIndices), commands(budget.maxCommands) {}
 };
 
 /**
@@ -65,13 +65,12 @@ struct FrameStorage {
  * Allocation-free past `storage`. Returns the screen runtime's own `ScreenError` on a refused
  * binding or a budget overrun; the caller reports it.
  */
-[[nodiscard]] inline mdux::core::Result<mdux::draw::DrawList, mdux::medui::ScreenError>
-recordMonitorFrame(const mdux::medui::ScreenPackage& screen,
-                   const mdux::medui::TextBinding&   textBinding,
-                   const mdux::medui::ImageBinding&  imageBinding,
-                   FrameStorage&                     storage,
-                   const DemoState&                  state,
-                   const MonitorClock&               clock) {
+[[nodiscard]] inline mdux::core::Result<mdux::draw::DrawList, mdux::medui::ScreenError> recordMonitorFrame(const mdux::medui::ScreenPackage& screen,
+                                                                                                           const mdux::medui::TextBinding&   textBinding,
+                                                                                                           const mdux::medui::ImageBinding&  imageBinding,
+                                                                                                           FrameStorage&                     storage,
+                                                                                                           const DemoState&                  state,
+                                                                                                           const MonitorClock&               clock) {
     namespace ms = mdux::medui;
 
     auto list = mdux::draw::DrawList::create(storage.vertices, storage.indices, storage.commands, screen.budget);
@@ -113,10 +112,8 @@ recordMonitorFrame(const mdux::medui::ScreenPackage& screen,
     std::array<ms::TextInputSlot, 1> inputSlots{};
     ms::TextInputBinding             inputs{};
     if (state.field) {
-        inputSlots[0] = ms::TextInputSlot{.nodeId = state.field->nodeId(),
-                                          .text   = state.field->value(),
-                                          .caret  = state.field->caret()};
-        auto made = ms::TextInputBinding::create(screen, inputSlots);
+        inputSlots[0] = ms::TextInputSlot{.nodeId = state.field->nodeId(), .text = state.field->value(), .caret = state.field->caret()};
+        auto made     = ms::TextInputBinding::create(screen, inputSlots);
         if (!made) {
             // Fail closed rather than render a deferred field: a monitor that silently drops the
             // patient id it was asked to show is the wrong failure.
@@ -125,7 +122,20 @@ recordMonitorFrame(const mdux::medui::ScreenPackage& screen,
         inputs = *made;
     }
 
-    const auto recorded = ms::render(screen, *list, textBinding, imageBinding, signals, readings, status, inputs);
+    // The waterfall (#324): bound every frame, exactly as the ECG trace is - there is no "the
+    // stream has not started yet" state a demonstrator with its own generator can be in.
+    const ms::WaterfallGrid               viewportView = state.waterfall.view();
+    const std::array<ms::ViewportSlot, 1> viewportSlots{
+        ms::ViewportSlot{.streamSource = kViewportStream, .grid = &viewportView, .style = monitorWaterfallStyle}
+    };
+    ms::ViewportBinding viewports{};
+    if (auto made = ms::ViewportBinding::create(screen, viewportSlots); made) {
+        viewports = *made;
+    } else {
+        return mdux::core::err(made.error());
+    }
+
+    const auto recorded = ms::render(screen, *list, textBinding, imageBinding, signals, readings, status, inputs, viewports);
     if (!recorded) {
         return mdux::core::err(recorded.error());
     }

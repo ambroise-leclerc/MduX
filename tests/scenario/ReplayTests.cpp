@@ -26,6 +26,7 @@ import mdux.medui.reading;
 import mdux.medui.schema;
 import mdux.medui.screen;
 import mdux.medui.trace;
+import mdux.medui.viewport;
 import mdux.medui.scenario;
 import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.medui.generated.scenario_endoscope_monitor_basics;

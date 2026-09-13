@@ -19,17 +19,23 @@
  * bar in `Theme.Colors.TopbarBackground`, with the screen's title drawn over it from the committed
  * text package (#242) and its halt control beside them. Below it the `NumericDisplay` and the
  * `SignalTrace` paint the rectangles they
- * reserve, in the tokens their author gave them. Its video surface is still visited, counted as
- * deferred, and left undrawn because no test supplies a stream. Its status indicator and its text
- * input are drawn only by the scenarios that bind one, which is what keeps the unbound path a tested
- * contract rather than a code path nothing exercises.
+ * reserve, in the tokens their author gave them. Its video surface is visited and, when no test
+ * supplies a stream, counted as deferred and left undrawn - unlike every other live component, it
+ * has no field to fall back on, because it carries no colour token at all (ADR-022 decision 2). Its
+ * status indicator and its text input are drawn only by the scenarios that bind one, which is what
+ * keeps the unbound path a tested contract rather than a code path nothing exercises.
  *
- * Two authored-screen scenarios below, deliberately not one. The first renders without bindings and is the older
+ * Several authored-screen scenarios below, deliberately not one. The first renders without bindings and is the older
  * claim unchanged - the panel and the fields land where the compiler put them, every text node
  * deferred. The second binds the committed font and text packages and checks the glyphs. Keeping
  * them apart is what makes the unbound path a tested contract rather than a code path nobody
  * exercises once bindings exist. The bound scenario also compares every rendered image pixel to
  * its committed RGBA sidecar, so a colour-space mismatch cannot be accepted as a new expectation.
+ * A later scenario (#324) does the same for the video surface: since it has no golden to lean on,
+ * it predicts every cell from `mdux.medui.viewport`'s own exported composition functions and checks
+ * the actual rendered bytes against that prediction, across two different grids, so a ring update
+ * that silently stopped reaching the pixels - or one that painted past its own rectangle - would be
+ * caught here rather than by nothing at all.
  *
  * What this test proves is not that MduX can draw a clinical screen; it is that a bar, a title and
  * two reserved fields on this display came from files an author wrote, through every stage, with
@@ -72,6 +78,7 @@ import mdux.medui.field;
 import mdux.medui.generated.screen_endoscope_monitor;
 import mdux.medui.schema;
 import mdux.medui.screen;
+import mdux.medui.viewport;
 import mdux.render.offscreen;
 import mdux.render.vulkan;
 import mdux.font.schema;
@@ -1107,4 +1114,189 @@ TEST_CASE("An authored screen's critical control reaches the pixels as a face an
     // that the widest approved translation fits this face, observable.
     CHECK(painted.right <= control->bounds.x + control->bounds.width);
     CHECK(painted.bottom <= control->bounds.y + control->bounds.height);
+}
+
+TEST_CASE("An authored screen's bound viewport waterfall reaches the pixels", "pixel") {
+    // `VulkanViewport` has no golden and no colour token (ADR-022 decision 2), so none of the
+    // golden-driven scenarios above say anything about it - "the golden sidecar names this screen's
+    // safety-critical content" does not name it, and "every golden region is painted" does not check
+    // it. This scenario is its only rendered-truth coverage: predict every cell from
+    // `mdux.medui.viewport`'s own exported `waterfallCellRect()`/`waterfallCellColor()` and compare
+    // the real GPU-rendered bytes against that prediction - twice, over two different grids, so a
+    // ring update that silently stopped reaching the pixels would fail here.
+    const medui::ScreenPackage package = screen();
+    const core::Extent2D       surface = surfaceOf(package);
+    const BoundText            bound   = loadCommittedText();
+    const BoundImage           image   = loadCommittedImage();
+
+    const medui::CompiledNode* viewportNode = package.find("endoscope-view");
+    REQUIRE(viewportNode != nullptr);
+    const auto* spec = std::get_if<medui::VulkanViewportSpec>(&viewportNode->payload);
+    REQUIRE(spec != nullptr);
+    const core::Rect band{.x = viewportNode->bounds.x, .y = viewportNode->bounds.y, .width = viewportNode->bounds.width, .height = viewportNode->bounds.height};
+
+    const auto& gpu    = sharedDevice();
+    auto        target = OffscreenTarget::create(gpu.device(), gpu.physicalDevice(), surface, gpu.queueFamilyIndex());
+    REQUIRE(target.has_value());
+
+    VulkanRenderContext context;
+    context.device           = gpu.device();
+    context.physicalDevice   = gpu.physicalDevice();
+    context.renderPass       = target->renderPass();
+    context.queue            = gpu.queue();
+    context.queueFamilyIndex = gpu.queueFamilyIndex();
+    context.viewport         = surface;
+
+    auto renderer = UiRenderer::createWithAtlases(context,
+                                                  mdux::shader::generated::mdux_ui::package(),
+                                                  package.budget,
+                                                  bound.atlas,
+                                                  bound.font.atlas.width,
+                                                  bound.font.atlas.height,
+                                                  image.pixels,
+                                                  image.image.width,
+                                                  image.image.height);
+    REQUIRE(renderer.has_value());
+
+    constexpr std::size_t           rows     = 4;
+    constexpr std::size_t           bins     = 8;
+    constexpr std::size_t           capacity = rows + 2;  // headroom, so a ring can wrap without growing
+    constexpr core::ColorRgba8      low{.r = 12, .g = 10, .b = 20, .a = 255};
+    constexpr core::ColorRgba8      high{.r = 220, .g = 140, .b = 40, .a = 255};
+    constexpr medui::WaterfallStyle style{.minimum = 0.0F, .maximum = 1.0F, .lowColor = low, .highColor = high};
+
+    /// One frame of the committed screen with the viewport bound to `grid`, read back as pixels. A
+    /// lambda rather than two copies, `frameFor()`'s reason in the status scenario above: the point
+    /// is the *difference* between two grids, and a difference needs both halves produced the same
+    /// way.
+    const auto frameFor = [&](const medui::WaterfallGrid& grid) {
+        const std::array<medui::ViewportSlot, 1> slots{
+            medui::ViewportSlot{.streamSource = spec->streamSource, .grid = &grid, .style = style}
+        };
+        auto viewports = medui::ViewportBinding::create(package, slots);
+        REQUIRE(viewports.has_value());
+
+        Frame frame;
+        auto  list = draw::DrawList::create(frame.vertices, frame.indices, frame.commands, package.budget);
+        REQUIRE(list.has_value());
+
+        const auto recorded = medui::render(package, *list, bound.binding(package), image.binding(package), {}, {}, {}, {}, *viewports);
+        REQUIRE(recorded.has_value());
+        CHECK_MESSAGE(recorded->waterfalls == 1, std::format("one waterfall expanded, got {}", recorded->waterfalls));
+        // One fewer than the label/image scenario: the viewport now draws too. The clock, the
+        // status indicator and the text input are the three left - this scenario binds neither.
+        CHECK_MESSAGE(recorded->deferred == 3, std::format("3 deferred, got {}", recorded->deferred));
+        CHECK_MESSAGE(recorded->rects == 32 + (rows * bins), std::format("32 plus one rect per cell, got {}", recorded->rects));
+
+        RecordContext recording{.renderer = &*renderer, .list = &*list};
+        auto          pixels = target->renderAndRead(gpu.queue(), background, recordFrame, &recording);
+        REQUIRE(pixels.has_value());
+        // Copied out, `frameFor()`'s reason above: the span is the target's own staging buffer,
+        // valid only until the next call.
+        return std::vector<core::ColorRgba8>{pixels->begin(), pixels->end()};
+    };
+
+    /// Every predicted cell of `grid` against the render `frameFor(grid)` produced. Reads the
+    /// expected sample through `grid.at(row, col)` - the ring's own logical-to-physical mapping -
+    /// rather than the storage array directly, so a renderer that read the wrong physical row (one
+    /// that ignored `oldestRow`, say) would be caught here, not just one that read the wrong value.
+    const auto checkAgainstPrediction = [&](const medui::WaterfallGrid& grid, const std::vector<core::ColorRgba8>& pixels, std::string_view when) {
+        std::size_t wrongCells = 0;
+        for (std::size_t row = 0; row < rows; ++row) {
+            for (std::size_t col = 0; col < bins; ++col) {
+                const std::optional<float> sample = grid.at(row, col);
+                REQUIRE(sample.has_value());
+                const core::Rect       cell        = medui::waterfallCellRect(band, rows, bins, row, col);
+                const core::ColorRgba8 expected    = medui::waterfallCellColor(*sample, style);
+                std::size_t            wrongInside = 0;
+                for (core::Px y = cell.y; y < cell.bottom(); ++y) {
+                    for (core::Px x = cell.x; x < cell.right(); ++x) {
+                        const auto index = static_cast<std::size_t>(y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+                        REQUIRE(index < pixels.size());
+                        wrongInside += static_cast<std::size_t>(pixels[index] != expected);
+                    }
+                }
+                wrongCells += static_cast<std::size_t>(wrongInside != 0);
+            }
+        }
+        CHECK_MESSAGE(wrongCells == 0, std::format("{}: {} of {} cells do not match waterfallCellColor()'s prediction", when, wrongCells, rows * bins));
+    };
+
+    /// Writes `rows`x`bins` logical values into `storage` (sized for `capacity` physical rows) so
+    /// that a `WaterfallGrid{storage, bins, oldestRow, rows}` reads logical row `r`, bin `c` back as
+    /// `value(r, c)` - wrapping physical rows past `capacity` exactly as a real ring would.
+    const auto layOutRing = [&](std::array<float, capacity * bins>& storage, std::size_t oldestRow, auto value) {
+        for (std::size_t row = 0; row < rows; ++row) {
+            const std::size_t physicalRow = (oldestRow + row) % capacity;
+            for (std::size_t col = 0; col < bins; ++col) {
+                storage[(physicalRow * bins) + col] = value(row, col);
+            }
+        }
+    };
+
+    // "Before": a ramp across the row, repeated for every row - every cell distinct, so a transposed
+    // or reversed rendering would be caught, not only a uniformly wrong one. `oldestRow = 0`, so
+    // logical and physical rows coincide here.
+    std::array<float, capacity * bins> beforeStorage{};
+    const auto                         rampValue = [](std::size_t /*row*/, std::size_t col) {
+        return static_cast<float>(col) / static_cast<float>(bins - 1);
+    };
+    layOutRing(beforeStorage, 0, rampValue);
+    const medui::WaterfallGrid beforeGrid{.storage = beforeStorage, .bins = bins, .oldestRow = 0, .rowCount = rows};
+
+    // "After": the reverse ramp - as different from "before" as this style's domain allows, so the
+    // two frames' pixels inside the viewport cannot coincide by accident, the way a ring wrap or a
+    // fresh row would actually change what is on screen - laid out at a non-zero `oldestRow` that
+    // wraps past the end of `storage` (`oldestRow + rows > capacity`), so this scenario also exercises
+    // the ring's own wraparound, not only the identity case `oldestRow == 0` leaves untested.
+    std::array<float, capacity * bins> afterStorage{};
+    constexpr std::size_t              afterOldestRow = 4;
+    static_assert(afterOldestRow != 0 && afterOldestRow + rows > capacity, "this scenario must exercise a wrap, not just a non-zero offset");
+    layOutRing(afterStorage, afterOldestRow, [&](std::size_t row, std::size_t col) {
+        return 1.0F - rampValue(row, col);
+    });
+    const medui::WaterfallGrid afterGrid{.storage = afterStorage, .bins = bins, .oldestRow = afterOldestRow, .rowCount = rows};
+
+    const std::vector<core::ColorRgba8> before = frameFor(beforeGrid);
+    const std::vector<core::ColorRgba8> after  = frameFor(afterGrid);
+
+    checkAgainstPrediction(beforeGrid, before, "before");
+    checkAgainstPrediction(afterGrid, after, "after");
+
+    // Successive updates actually reach the pixels: the corner cell is `low` before and `high`
+    // after (or the reverse), never the same colour twice - the one claim a golden `ColorHash`
+    // would make if this component had one to declare.
+    const auto cornerIndex = static_cast<std::size_t>(band.y) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(band.x);
+    CHECK_MESSAGE(before[cornerIndex] != after[cornerIndex], "the corner cell changed between the two grids");
+
+    // Clipping and neighbouring controls. Every node on this screen is full width and the layout
+    // stacks them vertically, edge to edge, in the recipe's own declaration order - `topbar` first,
+    // then `endoscope-view`, then `insufflation-pressure` - and `render()` paints nodes in exactly
+    // that order. That cuts the check in half: `insufflation-pressure` draws its own opaque
+    // reserved field *after* the viewport (it is unbound in this scenario, so that field is drawn
+    // unconditionally, covering its whole rectangle every time), so a downward spill would be
+    // painted over before this frame is ever read back - a pixel check there would pass whether or
+    // not the viewport spilled, which is not a check worth writing. That direction is instead the
+    // unit-level guarantee `waterfallCellRect()`'s own tests already establish (#322,
+    // `viewport-cells-tile-the-band`): the cells cannot exceed `band` on either axis, full stop,
+    // independent of paint order.
+    //
+    // The topbar row, in contrast, draws *before* the viewport and nothing repaints it afterward -
+    // so it is a real, uncovered witness, and an upward spill would leave a mark there that survives
+    // to the readback. Compared for *equality between the two frames* rather than against a
+    // predicted tint: the topbar's seven child controls (`brand-mark`, `screen-title`, `wall-clock`,
+    // `freeze`, `emergency-halt`, `classifier-state`, `patient-id`) between them span the full
+    // 1280px width with no gap, so `topbar-background`'s own token is not actually visible anywhere
+    // along this row and predicting it here would be duplicating those controls' own pixel tests for
+    // no reason. Neither frame binds any of them differently, so the row is identical between
+    // "before" and "after" unless the viewport painted into it - which is the one fact this check
+    // needs, and the only one it claims.
+    REQUIRE(band.y > 0);
+    std::size_t disturbedAboveViewport = 0;
+    for (core::Px x = band.x; x < band.right(); ++x) {
+        const auto index        = static_cast<std::size_t>(band.y - 1) * static_cast<std::size_t>(surface.width) + static_cast<std::size_t>(x);
+        disturbedAboveViewport += static_cast<std::size_t>(before[index] != after[index]);
+    }
+    CHECK_MESSAGE(disturbedAboveViewport == 0,
+                  std::format("{} pixels in the topbar row just above the viewport differ between the two grids", disturbedAboveViewport));
 }

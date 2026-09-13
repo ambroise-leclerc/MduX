@@ -258,6 +258,18 @@
       "check": "RegionPainted",
       "finding": "Held",
       "kind": "rendered",
+      "nodeId": "endoscope-view",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
       "nodeId": "insufflation-pressure",
       "observationProfile": {
         "id": "mdux.local/region-painted",
@@ -467,6 +479,18 @@
       "finding": "Held",
       "kind": "rendered",
       "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "en-US"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "endoscope-view",
       "observationProfile": {
         "id": "mdux.local/region-painted",
         "version": 1
@@ -794,6 +818,18 @@
       "check": "RegionPainted",
       "finding": "Held",
       "kind": "rendered",
+      "nodeId": "endoscope-view",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "freeze-pressed",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
       "nodeId": "insufflation-pressure",
       "observationProfile": {
         "id": "mdux.local/region-painted",
@@ -1003,6 +1039,18 @@
       "finding": "Held",
       "kind": "rendered",
       "nodeId": "patient-id",
+      "observationProfile": {
+        "id": "mdux.local/region-painted",
+        "version": 1
+      },
+      "scope": "fr-FR"
+    },
+    {
+      "capture": "halt-activated",
+      "check": "RegionPainted",
+      "finding": "Held",
+      "kind": "rendered",
+      "nodeId": "endoscope-view",
       "observationProfile": {
         "id": "mdux.local/region-painted",
         "version": 1

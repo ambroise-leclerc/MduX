@@ -31,7 +31,7 @@
     },
     {
       "path": "scenario-verification.json",
-      "sha256": "5d04d02da391773dec385e8a100b3b2d79d367b5c4a0e9d912685b427dd1a5c8"
+      "sha256": "060c87efe6c75025021ed1b844f39a38029e21c73f33ad354dc9a8d156769981"
     }
   ],
   "recipe": {

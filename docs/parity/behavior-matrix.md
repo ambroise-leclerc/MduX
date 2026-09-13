@@ -83,13 +83,16 @@ Panel is an additional synthesized Row-background node, not authored component s
 | StatusIndicator | requirement, source, ordered states, optional source colors | TrustSC fills omitted colors with Neutral. MduX compiled color list may remain empty; its live StatusBinding refuses that list. Both need closed, valid state selection; absent-color behavior is a concrete unresolved default. |
 | TextInput | source, maximum length, color, optional charset and requirement | MduX stores resolved scalar ranges with the charset name and draws caller-supplied value/caret on a fixed-pitch grid. TrustSC stores a glyph-set ID and u16 length, adds focused/unfocused field chrome and a character-indexed editing model. Compare accepted repertoire and length units, not native integer widths. |
 | SignalTrace | stream source, color | MduX expands a caller-owned sample ring within a declared vertex budget; TrustSC streams samples through FrameInputs. Sample order, range and snapshot identity need normalization. |
-| VulkanViewport | stream source | MduX can now draw a bound `VulkanViewport`'s waterfall (#322/#323, ADR-022 Proposed: `mdux.medui.viewport`'s `recordWaterfall()` plus `mdux.medui.screen`'s `ViewportBinding`) — a caller-supplied, row-granularity grid and two-colour ramp, no schema extension; an unbound node stays deferred, unlike a `SignalTrace`'s reserved field. TrustSC paints a bounded waterfall via its own native path. The committed `endoscope-monitor` screen's `endoscope-view` node is not yet bound to a live grid anywhere; that integration stays #324. |
+| VulkanViewport | stream source | MduX draws a bound `VulkanViewport`'s waterfall (#322/#323/#324, ADR-022 Proposed: `mdux.medui.viewport`'s `recordWaterfall()` plus `mdux.medui.screen`'s `ViewportBinding`) — a caller-supplied, row-granularity grid and two-colour ramp, no schema extension; an unbound node stays deferred, unlike a `SignalTrace`'s reserved field. The committed `endoscope-monitor` screen's `endoscope-view` node is now bound to a deterministic synthetic grid in the monitor demonstrator (#324), reaching the window, `--headless-smoke` and the scenario replay/verifier alike, with a `RegionPainted` scenario obligation and a GPU pixel-prediction test as its evidence. TrustSC paints a bounded waterfall via its own native path. |
 | Image | approved image reference | Both consume baked image data. Preserve approval/digest and resolved rectangle; a matching image ID alone does not establish matching pixels. |
 
 Sources: [MduX payloads][m-schema], [screen renderer/bindings][m-screen],
 [TrustSC payloads][t-schema], [compiler defaults][t-compiler], [renderer][t-renderer] and
-[input model][t-input]. Dynamic draw bindings existing in MduX do not mean the current static
-verification driver supplies those values; dynamic driver/capture work remains #319–#321.
+[input model][t-input]. Dynamic draw bindings existing in MduX do not mean the *static* screen
+verification driver (`mdux-verify-ui`, `verify.screen.<id>`) supplies those values - it still does
+not, by design (ADR-022 decision 7). The dynamic replay and capture work that does, #319-#321, is
+delivered; PAR-REQ-009's exact-pixel disposition for it is still pending the verifier-area domain
+review.
 
 ## Interaction boundary
 
