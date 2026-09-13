@@ -91,6 +91,23 @@
 > #307/#308/#309, the residual is carried on the ADR rather than the issue: ADR-022's Status stays
 > **Proposed**; ratification is a maintainer/domain-expert action outside agent scope. One Phase-2
 > epic remains open: **#311**.
+>
+> **Update, 13 September 2026 (still later) — epic #311's first child, #325, delivered.**
+> [ADR-023](adr/ADR-023-medui-host-editing-api-and-round-trip-source-contract.md) (Proposed): the
+> reuse decision names the already-existing, already-versioned `grammar()` (catalog),
+> `cli::Diagnostic` (diagnostics) and `screenIr()` (compile) surfaces as the host editing API rather
+> than forking TrustSC Studio's Rust DTO/API layer, states the fail-closed schema-negotiation rule
+> across them, and resolves PAR-REQ-010's round-trip question as canonical rather than lossless. The
+> one missing piece - turning an `ast::Screen` back into source text - is now the new
+> `mdux.tools.medui.serialize` module (`serializeScreen()`), which round-trips every field, value and
+> annotation exactly, including `@safety_critical` and `requirement:` strings and a field name
+> outside the current dictionary, and drops only `//` comments (never carried by the AST to begin
+> with) - a loss this record names explicitly rather than silently accepting, per the issue's own
+> "never silently discard authored safety metadata" instruction. No schema, `Screen.cppm` or
+> `medui-conformance.toml` change. `SerializeTests.cpp` (`medui_tools_spec`) covers the fixed-point
+> round trip across the whole accepted fixture corpus, the two safety-metadata cases, the
+> unknown-field case and the documented comment loss; 326/326 `medui`-labelled tests pass. Epic
+> #311's next child, **#326**, is now unblocked.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -108,9 +125,9 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 4 of 5 closed (#307, #308, #309, #310); 1 open: #311 |
-| Phase 2 child issues | 16 total (#312–#327): 13 closed (#312–#324), 3 open — #325–#327 |
+| Phase 2 child issues | 16 total (#312–#327): 13 closed (#312–#324), 3 open — #325–#327; #325 delivered pending ratification |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#325](https://github.com/ambroise-leclerc/MduX/issues/325); see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#326](https://github.com/ambroise-leclerc/MduX/issues/326); see [Next to implement](#next-to-implement) |
 
 ## Current comparison
 
@@ -180,10 +197,10 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-#312–#324 are all closed, and with them **epics #307, #308, #309 and #310**. The next executable
-work is the editor API design issue (**#325**), under the one remaining epic **#311**. Canonical
-interfaces land before their consumers, and each design issue produces the ADR and canonical types
-its epic's implementation children then consume. The
+#312–#325 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The next
+executable work is the real-preview issue (**#326**), under the one remaining epic **#311**.
+Canonical interfaces land before their consumers, and each design issue produces the ADR and
+canonical types its epic's implementation children then consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
 unblocks. No new version number or release date is assigned until a deliverable and its evidence are
 agreed.
@@ -192,22 +209,22 @@ agreed.
 
 Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
 epics #307, #308 and #309 are closed. #322, #323 and #324 are all merged and epic #310 is closed**
-(ADR-022, Proposed, ratification carried on the ADR). One design/spec child issue remains: epic
-#311's.
+(ADR-022, Proposed, ratification carried on the ADR). **#325 is delivered** (ADR-023, Proposed;
+`mdux.tools.medui.serialize`). Two child issues remain under epic #311.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#325**](https://github.com/ambroise-leclerc/MduX/issues/325) — host editing API + round-trip contract | The sole remaining unblocked issue; epic #311 is the furthest-out epic, so it is also the lowest urgency. | #326 → #327 (epic #311) | Versioned host-only compile/diagnostic/catalog API + source round-tripping + a TrustSC-Studio reuse decision. |
+| 1 | [**#326**](https://github.com/ambroise-leclerc/MduX/issues/326) — serve real MduX previews | Unblocked now that #325 (ADR-023), #316 and #323 are all delivered. | #327 (epic #311) | Real, locale-aware `/frame`-equivalent previews over the compile/IR contract ADR-023 names, plus dynamic fixture data. |
 
 The four closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
 host policy, the #309 / ADR-021 verifier-area domain review — one shared domain review covers the
 last two together with the ADR-016/017 items — and the #310 / ADR-022 residual: maintainer
 engineering acceptance, and a domain review of the demonstrator waterfall's numeric bounds and
-colour ramp.
+colour ramp. #325 carries the same kind of residual on ADR-023: maintainer engineering acceptance.
 
-Recommended sequencing: **#325** is what remains - epic #311's own three children run in their
-existing order (#325 → #326 → #327) once it lands.
+Recommended sequencing: **#326** is what remains unblocked - epic #311's own children run in their
+existing order (#325 ✓ → #326 → #327).
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
@@ -514,14 +531,21 @@ epic #310 is otherwise complete.
 | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) ✓ · **delivered** (same ADR-022; `recordWaterfall()`, `ViewportBinding`/`ViewportSlot`, the `VulkanViewport` `render()` case, nine new `ScreenError` cases) |
 | [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓, [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **delivered** (same ADR-022; the monitor's synthetic waterfall, the `RegionPainted` scenario obligation, the GPU pixel-prediction test) |
 
-### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · planned
+### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · in progress
 
 Expose a stable host-only editing/preview interface and reuse the TrustSC Studio frontend where practical through a MduX backend, ending in a tested proposal workflow.
 
+**#325 delivered** 13 September 2026: [ADR-023](adr/ADR-023-medui-host-editing-api-and-round-trip-source-contract.md)
+(Proposed) names the existing `grammar()`/`cli::Diagnostic`/`screenIr()` surfaces as the host
+editing API, states their fail-closed schema-negotiation rule, and adds `mdux.tools.medui.serialize`
+for the one missing direction - canonical (not lossless) source round-tripping, exact except for
+`//` comments the AST never carried. Residual: the same maintainer-acceptance carry every Proposed
+ADR in this programme has.
+
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **unblocked** (host-only API + reuse decision) |
-| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325), [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **blocked on #325** |
+| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-023, Proposed; `mdux.tools.medui.serialize`'s `serializeScreen()`, the catalog/diagnostic/compile reuse decision, the schema-negotiation rule) |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **unblocked** |
 | [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) · **blocked** |
 
 ### Delivery and evidence rules
@@ -1058,5 +1082,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 _Original programme: 13 closed epics and six shipped waves. Phase 2: 4 of 5 epics closed
 (#307, #308, #309, #310); 1 open (#311) - #310's three children (#322, #323, #324) all merged
-under ADR-022, Proposed, ratification residual carried on the ADR. 3 open child issues remain
-(#325–#327). Status assessed 13 September 2026._
+under ADR-022, Proposed, ratification residual carried on the ADR; #311's first child (#325)
+delivered under ADR-023, Proposed, same kind of residual. 2 open child issues remain (#326–#327).
+Status assessed 13 September 2026._
