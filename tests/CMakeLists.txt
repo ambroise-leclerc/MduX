@@ -1030,6 +1030,7 @@ add_executable(medui_tools_spec
     medui/GrammarTests.cpp
     medui/SchemaSubsetTests.cpp
     medui/SharedConformanceTests.cpp
+    medui/SerializeTests.cpp
 )
 
 target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)

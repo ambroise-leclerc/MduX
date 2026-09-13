@@ -380,6 +380,7 @@ target_sources(MduXMeduiLib
             medui/Check.cppm
             medui/Grammar.cppm
             medui/Ir.cppm
+            medui/Serialize.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
@@ -394,6 +395,7 @@ target_sources(MduXMeduiLib
         medui/Check.cpp
         medui/Grammar.cpp
         medui/Ir.cpp
+        medui/Serialize.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
