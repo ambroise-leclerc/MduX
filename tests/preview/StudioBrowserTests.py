@@ -42,6 +42,14 @@ with tempfile.TemporaryDirectory(prefix="mdux-studio-test-") as work:
     root = work / "repo"
     shutil.copytree(Path(repo) / "recipes/screen", root / "recipes/screen")
     shutil.copytree(Path(repo) / "generated", root / "generated")
+    # A second screen whose document is distinguishable from the first: its ECG trace is 120px tall.
+    variant_recipe = "recipes/screen/endoscope-variant.toml"
+    variant_source = "recipes/screen/endoscope-variant/EndoscopeMonitor.medui"
+    (root / variant_source).parent.mkdir()
+    base_source = (root / source_path).read_text()
+    assert base_source.count("height: 128px;") == 1
+    (root / variant_source).write_text(base_source.replace("height: 128px;", "height: 120px;"))
+    (root / variant_recipe).write_text((root / recipe).read_text().replace(source_path, variant_source))
     git("init", "--quiet", "--initial-branch=develop", cwd=root)
     git("-c", "user.name=Studio Test", "-c", "user.email=studio@localhost", "add", "--all", cwd=root)
     git("-c", "user.name=Studio Test", "-c", "user.email=studio@localhost", "commit", "--quiet", "-m", "base", cwd=root)
@@ -75,6 +83,31 @@ with tempfile.TemporaryDirectory(prefix="mdux-studio-test-") as work:
         def field_value(name):
             return page.evaluate(f"document.getElementById('field-{name}')?.value ?? null")
 
+        def delay_responses(route, milliseconds, recipe_filter=None):
+            """Holds matching API responses in the page before the Studio sees them, to force an ordering."""
+            page.evaluate("""(() => {
+                if (window.__delayInstalled) return;
+                window.__delayInstalled = true;
+                window.__delayed = 0;
+                const original = window.fetch.bind(window);
+                window.fetch = async (url, options) => {
+                    const response = await original(url, options);
+                    const rule = window.__delay;
+                    if (rule && String(url).endsWith('/api/' + rule.route)
+                        && (!rule.recipe || String(options?.body ?? '').includes('"recipe":' + JSON.stringify(rule.recipe)))) {
+                        window.__delayed += 1;
+                        await new Promise((resolve) => setTimeout(resolve, rule.ms));
+                        window.__delayed -= 1;
+                    }
+                    return response;
+                };
+            })()""")
+            page.evaluate(f"window.__delay = {json.dumps({'route': route, 'ms': milliseconds, 'recipe': recipe_filter})}")
+
+        def choose_screen(value):
+            page.evaluate(f"(() => {{ const s = document.getElementById('screen'); s.value = {json.dumps(value)}; "
+                          "s.dispatchEvent(new Event('change')); })()")
+
         # Connect: the token leaves the address bar, the screen loads, and the compile is valid.
         page.wait("document.getElementById('workspace').hidden === false", "the workspace")
         assert page.evaluate("location.hash") == "", "the token fragment must be removed from the address bar"
@@ -86,6 +119,23 @@ with tempfile.TemporaryDirectory(prefix="mdux-studio-test-") as work:
         skeleton = json.loads(page.evaluate("document.getElementById('fixture').value"))
         assert skeleton["readings"] == {"insufflation-pressure": None} and skeleton["clock"] is None, skeleton
         assert "PRV002" in page.evaluate("document.getElementById('frame-note').textContent")
+
+        # A superseded screen load must not install its document: select the variant, then the original
+        # (whose document response is held back), then the variant again before the original arrives.
+        choose_screen(variant_recipe)
+        settled("document.body.dataset.compile === 'valid' && document.getElementById('source').textContent.includes('height: 120px;')", "the variant screen")
+        delay_responses("document", 1500, recipe)
+        choose_screen(recipe)
+        page.wait("window.__delayed === 1", "the held original document response")
+        choose_screen(variant_recipe)
+        page.wait("window.__delayed === 0", "the held response to be released")
+        settled("document.body.dataset.compile === 'valid'", "the variant screen after the race")
+        page.evaluate("window.__delay = null")
+        assert page.evaluate("document.getElementById('screen').value") == variant_recipe
+        shown = page.evaluate("document.getElementById('source').textContent")
+        assert "height: 120px;" in shown and "height: 128px;" not in shown, "the late original document replaced the selected variant"
+        choose_screen(recipe)
+        settled("document.body.dataset.compile === 'valid' && document.getElementById('source').textContent.includes('height: 128px;')", "the original screen again")
 
         fixture = {
             "readings": {"insufflation-pressure": 123},
@@ -164,6 +214,24 @@ with tempfile.TemporaryDirectory(prefix="mdux-studio-test-") as work:
         page.type_into("#proposal-issue", "327", enter=False)
         page.type_into("#proposal-title", "Shorten the ECG trace", enter=False)
         assert page.evaluate("document.getElementById('proposal-slug').value") == "shorten-the-ecg-trace"
+
+        # A review that returns after the form changed must not enable submission for the changed form.
+        # The comment-loss acknowledgement is given up front so that only review validity keeps Submit off.
+        set_ack = "(v) => { const c = document.getElementById('ack-comments'); c.checked = v; c.dispatchEvent(new Event('change')); }"
+        page.evaluate(f"({set_ack})(true)")
+        delay_responses("proposals", 1500)
+        page.click("#proposal-review-button")
+        page.wait("window.__delayed === 1", "the held review response")
+        page.type_into("#proposal-base", "12-another-base", enter=False)
+        page.wait("window.__delayed === 0", "the held review to be released")
+        page.evaluate("new Promise((resolve) => setTimeout(resolve, 200))")
+        assert page.evaluate("document.getElementById('proposal-submit').disabled"), "a stale review enabled Submit"
+        assert page.evaluate("document.getElementById('proposal-review').childElementCount") == 0, "a stale review is still displayed"
+        assert not page.evaluate("document.getElementById('proposal-result').textContent.startsWith('Review complete')")
+        page.evaluate("window.__delay = null")
+        page.evaluate(f"({set_ack})(false)")
+        page.type_into("#proposal-base", "develop", enter=False)
+
         page.click("#proposal-review-button")
         page.wait("document.getElementById('proposal-result').textContent.startsWith('Review complete')", "the proposal review")
         assert page.evaluate("!document.getElementById('ack-comments-row').hidden && document.getElementById('proposal-submit').disabled")

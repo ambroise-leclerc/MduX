@@ -34,7 +34,9 @@ const state = {
     frame: null,     // the latest frame attempt: { ok, message }
     image: null,     // PNG of the last rendered frame
     revision: 0,
-    reviewed: null,
+    reviewed: null,  // { key, writes, commentLoss, safety } for the exact request that was reviewed
+    reviewTicket: 0, // bumped by every review and form change; a response for an older ticket is dropped
+    loadGeneration: 0, // bumped by every screen load; a document response for an older load is dropped
     inflight: false,
     queued: false,
     timer: null,
@@ -185,8 +187,12 @@ async function loadScreen(recipe, force = false) {
         validIr: null, frame: null, image: null, reviewed: null, required: [],
     });
     state.revision += 1;
+    const generation = ++state.loadGeneration;
     setStatus(`Loading ${recipe}…`);
     const result = await api("document", { schemaVersion: 1, recipe });
+    // Another screen was selected while this one loaded: installing this response would pair its
+    // document and digest with the newer recipe.
+    if (generation !== state.loadGeneration) return;
     if (result.status !== 200) {
         state.compile = { ok: false, ir: null, source: null, diagnostics: findings(result.body) };
         // An edit pending from the previous screen will not run without a history, so settle here.
@@ -761,10 +767,33 @@ function proposalRequest(dryRun) {
     };
 }
 
+/// Everything a review depends on: the recipe, document, digest and every form field. The
+/// acknowledgements gate submission of a review rather than changing what was reviewed.
+function snapshotKey(request) {
+    return JSON.stringify({ ...request, acknowledgeCommentLoss: undefined, acknowledgeSafetyChanges: undefined, dryRun: undefined });
+}
+
+function reviewMatchesForm() {
+    return state.reviewed !== null && state.history !== null && state.reviewed.key === snapshotKey(proposalRequest(false));
+}
+
 function updateSubmit() {
     const review = state.reviewed;
-    $("proposal-submit").disabled = !review || review.revision !== state.revision || !review.writes
+    $("proposal-submit").disabled = !reviewMatchesForm() || !review.writes
         || (review.commentLoss && !$("ack-comments").checked) || (review.safety && !$("ack-safety").checked);
+}
+
+/// Any change to the proposal form invalidates the displayed review and any review still in flight.
+function invalidateReview() {
+    const hadReview = state.reviewed !== null || $("proposal-review").childElementCount > 0
+        || $("proposal-result").textContent === "Reviewing…";
+    state.reviewTicket += 1;
+    state.reviewed = null;
+    $("proposal-review").replaceChildren();
+    $("ack-comments-row").hidden = true;
+    $("ack-safety-row").hidden = true;
+    if (hadReview) resultMessage("The proposal changed; review it again before submitting.", false);
+    updateSubmit();
 }
 
 function resultMessage(text, error) {
@@ -781,6 +810,7 @@ function openProposal() {
         : writes.pullRequests
             ? "Submitting pushes a new branch and opens a draft pull request. Nothing is merged."
             : "Submitting pushes a new branch; open the pull request from it. Nothing is merged.";
+    state.reviewTicket += 1;
     state.reviewed = null;
     $("proposal-review").replaceChildren();
     $("ack-comments-row").hidden = true;
@@ -793,18 +823,21 @@ function openProposal() {
 }
 
 async function reviewProposal() {
+    invalidateReview();
+    const request = proposalRequest(true);
+    const key = snapshotKey(request);
+    const ticket = state.reviewTicket;
     resultMessage("Reviewing…", false);
-    const result = await api("proposals", proposalRequest(true));
+    const result = await api("proposals", request);
+    // A form change or a newer review superseded this one; its result must not enable Submit.
+    if (ticket !== state.reviewTicket || state.history === null || key !== snapshotKey(proposalRequest(true))) return;
     if (result.status !== 200) {
-        state.reviewed = null;
         updateSubmit();
         resultMessage(failureText(result), true);
         return;
     }
     const body = result.body;
-    state.reviewed = {
-        revision: state.revision, writes: body.writesEnabled, commentLoss: body.commentLoss, safety: body.safetyChanges.length > 0,
-    };
+    state.reviewed = { key, writes: body.writesEnabled, commentLoss: body.commentLoss, safety: body.safetyChanges.length > 0 };
     const review = $("proposal-review");
     review.replaceChildren(
         el("p", {}, ["Branch ", el("code", { text: `${body.branchPrefix}-<commit>` }), " from ", el("code", { text: body.base }), "."]),
@@ -823,9 +856,15 @@ async function reviewProposal() {
 }
 
 async function submitProposal() {
+    // Submit exactly what was reviewed: re-check at click time rather than trusting the button state.
+    const request = proposalRequest(false);
+    if (!state.reviewed || state.reviewed.key !== snapshotKey(request)) {
+        invalidateReview();
+        return;
+    }
     $("proposal-submit").disabled = true;
     resultMessage("Submitting…", false);
-    const result = await api("proposals", proposalRequest(false));
+    const result = await api("proposals", request);
     if (result.status === 201) {
         const body = result.body;
         const message = resultMessage("", false);
@@ -884,7 +923,7 @@ function bind() {
         if (!slugEdited) $("proposal-slug").value = slugify($("proposal-title").value);
     });
     for (const id of ["proposal-issue", "proposal-base", "proposal-title", "proposal-slug", "proposal-description"]) {
-        $(id).addEventListener("input", () => { state.reviewed = null; updateSubmit(); });
+        $(id).addEventListener("input", invalidateReview);
     }
     $("ack-comments").addEventListener("change", updateSubmit);
     $("ack-safety").addEventListener("change", updateSubmit);
