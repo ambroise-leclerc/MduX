@@ -243,8 +243,8 @@ last two together with the ADR-016/017 items — and the #310 / ADR-022 residual
 engineering acceptance, and a domain review of the demonstrator waterfall's numeric bounds and
 colour ramp. #325 carries the same kind of residual on ADR-023: maintainer engineering acceptance.
 
-Recommended sequencing: **#326** is what remains unblocked - epic #311's own children run in their
-existing order (#325 ✓ → #326 → #327).
+Recommended sequencing: **#327** is what remains - epic #311's own children run in their existing
+order (#325 ✓ → #326 ✓ → #327, implemented pending review).
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
@@ -566,8 +566,8 @@ ADR in this programme has.
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
 | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-023, Proposed; `mdux.tools.medui.serialize`'s `serializeScreen()`, the catalog/diagnostic/compile reuse decision, the schema-negotiation rule) |
-| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **unblocked** |
-| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) · **blocked** |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **merged** ([ADR-024](adr/ADR-024-local-native-preview-service.md)) |
+| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) ✓ · **implemented, pending review** ([ADR-025](adr/ADR-025-medui-studio-editing-and-reviewable-change-proposals.md)) |
 
 ### Delivery and evidence rules
 
@@ -1104,5 +1104,6 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 _Original programme: 13 closed epics and six shipped waves. Phase 2: 4 of 5 epics closed
 (#307, #308, #309, #310); 1 open (#311) - #310's three children (#322, #323, #324) all merged
 under ADR-022, Proposed, ratification residual carried on the ADR; #311's first child (#325)
-delivered under ADR-023, Proposed, same kind of residual. 2 open child issues remain (#326–#327).
-Status assessed 13 September 2026._
+delivered under ADR-023, Proposed, same kind of residual; #326 merged under ADR-024, Proposed.
+1 open child issue remains (#327, implemented under ADR-025, pending review).
+Status assessed 14 September 2026._

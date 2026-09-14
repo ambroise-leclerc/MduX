@@ -27,7 +27,8 @@ input.invalid { border-color: var(--invalid); }
 #status { color: var(--muted); }
 #fatal, #login { margin: 32px auto; max-width: 560px; padding: 16px; background: var(--panel); border: 1px solid var(--line); }
 #fatal { color: var(--invalid); }
-#login-token { width: 100%; margin: 8px 0; }
+#login-form label { display: block; margin-top: 8px; font-weight: 600; }
+#login-token { width: 100%; margin: 4px 0 8px; }
 #login-error { color: var(--invalid); }
 
 #workspace { display: grid; grid-template-columns: 180px minmax(0, 1fr) 360px; gap: 12px; padding: 12px 16px; align-items: start; }

@@ -466,13 +466,14 @@ bool isOneLine(std::string_view s) {
         return c < 32 || c == 127;
     });
 }
-Response propose(const Service&     service,
-                 V&                 out,
-                 const V&           request,
-                 const std::string& recipePath,
-                 const std::string& sourcePath,
-                 const std::string& disk,
-                 const std::string& proposed) {
+Response propose(const Service&                      service,
+                 V&                                  out,
+                 const V&                            request,
+                 const std::string&                  recipePath,
+                 const std::string&                  sourcePath,
+                 const std::string&                  disk,
+                 const std::string&                  proposed,
+                 const std::vector<cli::Diagnostic>& ds) {
     const auto issue = number(request, "issue", 99999999);
     if (issue == 0)
         fail("issue must be a positive issue number");
@@ -524,7 +525,7 @@ Response propose(const Service&     service,
     put(out, "branchPrefix", V::string(stem));
     put(out, "base", V::string(base));
     put(out, "writesEnabled", V::boolean(service.proposals.has_value()));
-    put(out, "diagnostics", diagnostics({}));
+    put(out, "diagnostics", diagnostics(ds));
     if (dryRun)
         return {200, encode(out)};
     if (!service.proposals)
@@ -555,13 +556,13 @@ Response propose(const Service&     service,
     plan.source     = proposed;
     plan.title      = title;
     plan.message    = std::format(
-        "{}\n\n{}{}Proposed from MedUI Studio (mdux-preview) for {}.\nRecipe: {}\nSafety metadata changes acknowledged: {}\nComment loss acknowledged: {}\n",
+        "{}\n\n{}{}Proposed from MedUI Studio (mdux-preview) for {}.\nRecipe: {}\nSafety metadata changes: {}\nComment loss acknowledged: {}\n",
         title,
         description,
         description.empty() || description.ends_with('\n') ? "" : "\n\n",
         reference,
         recipePath,
-        changes.size(),
+        changes.empty() ? std::string{"none"} : std::format("{} (acknowledged)", changes.size()),
         commentLoss ? "yes" : "not applicable");
     plan.body = std::format(
         "## Summary\n\n{}\n\nProposed from MedUI Studio (`mdux-preview`) for {}. The service opened this as a draft and never merges it.\n\n"
@@ -813,7 +814,7 @@ Response handle(const Service& service, std::string_view route, std::string_view
             return {422, encode(out)};
         }
         if (proposing)
-            return propose(service, out, request, relative.generic_string(), sourcePath.lexically_relative(inputs.root).generic_string(), disk, canonical);
+            return propose(service, out, request, relative.generic_string(), sourcePath.lexically_relative(inputs.root).generic_string(), disk, canonical, ds);
         auto document = md::readPackage(compiled->packageJson, "preview/package.json");
         if (!document.ok())
             fail("compiled package refused");

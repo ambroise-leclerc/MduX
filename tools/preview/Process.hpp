@@ -23,7 +23,9 @@ struct ProcessResult {
         return started && !timedOut && exitCode == 0;
     }
 };
-/// Runs a program to completion or its deadline. Children get no terminal and no inherited descriptors
-/// other than the three standard streams; a timeout kills the whole process tree.
+/// Runs a program to completion or its deadline; a timeout kills the whole process tree. Children get
+/// no terminal. Only the three standard streams are inherited on Windows (an explicit handle list),
+/// Apple platforms (POSIX_SPAWN_CLOEXEC_DEFAULT) and glibc 2.34+ (closefrom); on other POSIX systems a
+/// descriptor the service opened without close-on-exec can also reach the child.
 [[nodiscard]] ProcessResult runProcess(const ProcessRequest& request);
 }  // namespace mdux::tools::preview

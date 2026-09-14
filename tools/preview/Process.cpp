@@ -295,6 +295,13 @@ ProcessResult runProcess(const ProcessRequest& request) {
     posix_spawn_file_actions_adddup2(&actions, in[0], 0);
     posix_spawn_file_actions_adddup2(&actions, out[1], 1);
     posix_spawn_file_actions_adddup2(&actions, err[1], 2);
+    // Close everything else the service holds, including accepted client sockets, which the pinned
+    // transport creates without close-on-exec where accept4() is unavailable (macOS).
+    #ifdef __GLIBC__
+        #if __GLIBC_PREREQ(2, 34)
+    posix_spawn_file_actions_addclosefrom_np(&actions, 3);
+        #endif
+    #endif
     // The service ignores SIGPIPE; a child must not inherit that, and gets its own process group so a
     // timeout can kill anything it started.
     sigset_t defaults;
@@ -302,7 +309,11 @@ ProcessResult runProcess(const ProcessRequest& request) {
     sigaddset(&defaults, SIGPIPE);
     posix_spawnattr_setsigdefault(&attributes, &defaults);
     posix_spawnattr_setpgroup(&attributes, 0);
-    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP);
+    int flags = POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP;
+    #ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;  // Apple: only the three dup2'd streams survive exec
+    #endif
+    posix_spawnattr_setflags(&attributes, static_cast<short>(flags));
     pid_t      pid     = 0;
     const bool spawned = posix_spawnp(&pid, argv[0], &actions, &attributes, argv.data(), envp.data()) == 0;
     posix_spawn_file_actions_destroy(&actions);
@@ -358,17 +369,22 @@ ProcessResult runProcess(const ProcessRequest& request) {
                 closeFd(isOut ? out[0] : err[0]);
         }
     }
-    int status = 0;
+    // A status is only meaningful once the child was reaped: an ECHILD from an ignored SIGCHLD, or
+    // any other wait error, must not read as exit code 0.
+    int  status = 0;
+    bool reaped = false;
     for (;;) {
         const auto done = waitpid(pid, &status, WNOHANG);
-        if (done == pid)
+        if (done == pid) {
+            reaped = true;
             break;
+        }
         if (done < 0 && errno != EINTR)
             break;
         if (result.timedOut || Clock::now() >= deadline) {
             result.timedOut = true;
             kill(-pid, SIGKILL);
-            waitpid(pid, &status, 0);
+            reaped = waitpid(pid, &status, 0) == pid;
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -376,7 +392,7 @@ ProcessResult runProcess(const ProcessRequest& request) {
     if (result.timedOut)
         kill(-pid, SIGKILL);
     closeAll();
-    result.exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    result.exitCode = reaped && WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return result;
 }
 #endif

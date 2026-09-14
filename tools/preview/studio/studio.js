@@ -189,6 +189,9 @@ async function loadScreen(recipe, force = false) {
     const result = await api("document", { schemaVersion: 1, recipe });
     if (result.status !== 200) {
         state.compile = { ok: false, ir: null, source: null, diagnostics: findings(result.body) };
+        // An edit pending from the previous screen will not run without a history, so settle here.
+        document.body.dataset.busy = "false";
+        document.body.dataset.settled = String(state.revision);
         setStatus("The committed source cannot be edited until it parses cleanly.");
         render();
         return;

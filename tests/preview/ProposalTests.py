@@ -221,12 +221,15 @@ with tempfile.TemporaryDirectory(prefix="mdux-proposal-test-") as work:
         committed = subprocess.run(["git", "--git-dir", str(remote), "show", f"{created['commit']}:{source_path}"],
                                    env=git_env, capture_output=True, timeout=60).stdout.decode()
         assert committed == review["source"] or committed == call(writer, "proposals", proposal)[1]["source"], committed
-        assert "Theme.Colors.Alert" in committed and "#327" in git("--git-dir", str(remote), "log", "-1", "--format=%B", created["commit"])
+        message = git("--git-dir", str(remote), "log", "-1", "--format=%B", created["commit"])
+        assert "Theme.Colors.Alert" in committed and "#327" in message and "Safety metadata changes: none" in message, message
         assert git("--git-dir", str(remote), "rev-parse", "develop") == base_commit, "the service must never merge"
 
         # Safety metadata changes go through once acknowledged.
         status, body = call(writer, "proposals", {**acknowledged, "document": traced, "acknowledgeSafetyChanges": True})
         assert status == 201, body
+        message = git("--git-dir", str(remote), "log", "-1", "--format=%B", body["commit"])
+        assert "Safety metadata changes: 1 (acknowledged)" in message, message
 
         # Pull requests are optional: a non-GitHub remote is a warning, not a failure.
         tinted = copy.deepcopy(document)
