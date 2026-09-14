@@ -83,6 +83,20 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
         assert call("compile", {**request, "source": "x" * 4194304})[0] == 413
         assert call("compile", {**request, "source": "Screen S { Label { x: " + "[" * 100 + "0" + "]" * 100 + "; } }"})[0] == 413
         if mode == "contract":
+            for rejected_headers, expected_status in (({"Authorization": "Bearer stale"}, 401),
+                                                        ({"Host": "example.invalid"}, 403),
+                                                        ({"Origin": "https://example.invalid"}, 403)):
+                for _ in range(3):
+                    assert call("compile", {**request, "source": "x" * 262144}, rejected_headers)[0] == expected_status
+            source_path = root / "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui"
+            saved_source = source_path.read_bytes()
+            try:
+                source_path.write_bytes(b"// Latin-1: caf\xe9\n")
+                for route, body in (("screens/detail?recipe=" + recipe, None), ("compile", request)):
+                    status, failure = call(route, body)
+                    assert status == 422 and "MEDUI-E004" in json.dumps(failure) and "EndoscopeMonitor.medui" in json.dumps(failure), failure
+            finally:
+                source_path.write_bytes(saved_source)
             # Keep both workers readable with trickled headers/body for longer than
             # the total read deadline. An inactivity timeout alone never frees them.
             header_peer = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -111,6 +125,12 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
                 header_peer.close()
                 body_peer.close()
             assert call("compile", {**request, "source": ""})[0] == 422
+            alias_recipe = root / "recipes/screen/alias.toml"
+            alias_recipe.write_text((root / recipe).read_text().replace(
+                "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui", "recipes/screen/alias.toml"))
+            for overlay in ({}, {"source": source}):
+                status, failure = call("compile", {**request, "recipe": "recipes/screen/alias.toml", **overlay})
+                assert status == 422 and "distinct files" in json.dumps(failure), failure
             empty_recipe = root / "recipes/screen/empty.toml"
             empty_recipe.write_bytes(b"")
             assert call("compile", {**request, "recipe": "recipes/screen/empty.toml"})[0] == 422
@@ -159,6 +179,17 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
         invalid_field["fixture"]["fields"][field_id]["text"] = "lowercase"
         assert call("frame", invalid_field)[0] == 422
         if mode == "contract":
+            for missing in ("generated/font/dejavu-ui/package.json", "generated/font/dejavu-ui/atlas.bin",
+                            "generated/text/endoscope-monitor-en-us/package.json", "generated/text/endoscope-monitor-en-us/runs.bin",
+                            "generated/image/brand-mark/package.json"):
+                absent = root / missing
+                saved = absent.read_bytes()
+                try:
+                    absent.unlink()
+                    status, failure = call("frame", request)
+                    assert status == 422 and missing in json.dumps(failure), (missing, status, failure)
+                finally:
+                    absent.write_bytes(saved)
             shader_package = root / "generated/shader/mdux-ui/package.json"
             saved = shader_package.read_bytes()
             try:
@@ -231,7 +262,7 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
             bundle = root / "generated/screen/endoscope-monitor"
             bundle.mkdir(exist_ok=True)
             for key in ("package", "goldens"):
-                (bundle / (key + ".json")).write_text(json.dumps(static_frame[key], sort_keys=True, indent=2, ensure_ascii=False) + "\n")
+                (bundle / (key + ".json")).write_bytes((json.dumps(static_frame[key], sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
             verifier = Path(binary).with_name("mdux-verify-ui" + (".exe" if os.name == "nt" else ""))
             result = subprocess.run([str(verifier), "--screen=" + str(bundle), "--locales=all", "--frame-image-dir=" + str(work / "oracle")], capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stdout + result.stderr

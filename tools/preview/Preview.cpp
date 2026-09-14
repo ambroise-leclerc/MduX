@@ -126,7 +126,7 @@ struct Inputs {
         std::ifstream file(checked, std::ios::binary | std::ios::ate);
         const auto    end = file.tellg();
         if (!file || end < std::streampos{0})
-            fail("input is unreadable");
+            throw std::filesystem::filesystem_error("input is unreadable", checked, std::make_error_code(std::errc::io_error));
         const auto            size  = static_cast<std::uintmax_t>(end);
         constexpr std::size_t limit = std::size_t{128} * 1024U * 1024U;
         if (size > limit - total)
@@ -135,7 +135,7 @@ struct Inputs {
         std::vector<std::byte> bytes(static_cast<std::size_t>(size));
         if (!file || (!bytes.empty() && !file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size)))
             || file.peek() != std::char_traits<char>::eof())
-            fail("input changed or became unreadable");
+            throw std::filesystem::filesystem_error("input changed or became unreadable", checked, std::make_error_code(std::errc::io_error));
         total += bytes.size();
         return cache.emplace(checked, std::move(bytes)).first->second;
     }
@@ -523,6 +523,8 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         }
         budget(*recipe);
         auto sourcePath = confined(inputs.root, recipe->source);
+        if (std::filesystem::equivalent(sourcePath, confined(inputs.root, relative)))
+            fail("recipe and source must be distinct files");
         if (auto source = request.find("source")) {
             auto                   s = string(*source);
             std::vector<std::byte> bytes(s.size());
@@ -537,11 +539,22 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
             inputs.cache[sourcePath] = std::move(bytes);
         }
         InputReader reader = [&](const std::filesystem::path& p) -> std::optional<std::vector<std::byte>> {
-            return inputs.read(p);
+            try {
+                return inputs.read(p);
+            } catch (const std::filesystem::filesystem_error&) {
+                return std::nullopt;
+            }
         };
         const auto& source = inputs.read(sourcePath);
         if (source.size() > 4194304)
             throw Failure(413, "PRV003", "source exceeds 4 MiB");
+        const auto lexed = md::lex(bytesText(source), recipe->source);
+        if (std::ranges::any_of(lexed.diagnostics, [](const auto& diagnostic) {
+                return diagnostic.code == "MEDUI-E004";
+            })) {
+            put(out, "diagnostics", diagnostics(lexed.diagnostics));
+            return {422, encode(out)};
+        }
         put(out, "sourceDigest", V::string(va::hexDigest(bytesText(source))));
         if (route == "detail") {
             put(out, "source", V::string(bytesText(source)));
@@ -551,7 +564,6 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         }
         // Bound parser recursion using the compiler's own tokenization, so comments and quoted
         // brackets cannot be mistaken for structure. This is a service limit, not a DSL change.
-        const auto lexed = md::lex(bytesText(source), recipe->source);
         if (lexed.tokens.size() > 65536)
             throw Failure(413, "PRV003", "source exceeds 65536 tokens");
         std::size_t depth = 0;
@@ -588,9 +600,12 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
     } catch (const Failure& e) {
         ds.push_back(cli::Diagnostic{.file = {}, .code = e.code, .message = e.what(), .fixHint = {}});
         return {e.status, cli::render(ds, cli::Format::Json, "mdux-preview")};
-    } catch (const std::filesystem::filesystem_error&) {
-        ds.push_back(cli::Diagnostic{.file = {}, .code = "PRV006", .message = "input path is unavailable", .fixHint = {}});
-        return {403, cli::render(ds, cli::Format::Json, "mdux-preview")};
+    } catch (const std::filesystem::filesystem_error& e) {
+        ds.push_back(cli::Diagnostic{.file    = e.path1().generic_string(),
+                                     .code    = "PRV002",
+                                     .message = "input file is unavailable or unreadable",
+                                     .fixHint = "check that the input exists and has been generated"});
+        return {422, cli::render(ds, cli::Format::Json, "mdux-preview")};
     } catch (const std::exception&) {
         ds.push_back(cli::Diagnostic{.file = {}, .code = "PRV005", .message = "preview could not complete", .fixHint = {}});
         return {500, cli::render(ds, cli::Format::Json, "mdux-preview")};

@@ -73,11 +73,13 @@ the authoritative input snapshot; compiler and loader working copies are additio
 | PRV003 | configured resource limit exceeded |
 | PRV004 | Vulkan device unavailable |
 | PRV005 | renderer or internal operation could not complete |
-| PRV006 | input path refused or unavailable |
+| PRV006 | input path refused |
 | PRV007 | backend busy |
 
 HTTP statuses distinguish malformed requests (400), authentication (401), path/origin refusal
 (403), size limits (413), source/state refusal (422), and unavailable/busy rendering (503).
+Missing or unreadable inputs return 422 with a file-specific diagnostic; invalid source UTF-8
+returns `MEDUI-E004`, including on the detail route. Recipe and source must be distinct files.
 No-device failures are not successful previews. Connection-queue overflow may close the connection.
 The local repository must not be modified by an adversarial process during a request; confinement
 is not an operating-system sandbox. A GPU driver hang is not bounded by HTTP network timeouts.

@@ -76,8 +76,7 @@ class PreviewServer final : public httplib::Server {
             // One request per connection: the header and body share a single deadline.
             return process_request(stream, "127.0.0.1", 0, "127.0.0.1", 0, true, closed, nullptr);
         });
-        httplib::detail::shutdown_socket(socket);
-        httplib::detail::close_socket(socket);
+        httplib::detail::drain_and_close_socket(socket);
         return result;
     }
 };
