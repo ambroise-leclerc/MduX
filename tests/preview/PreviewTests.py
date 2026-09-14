@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
+import time
 import shutil
 import struct
 import subprocess
@@ -81,6 +83,41 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
         assert call("compile", {**request, "source": "x" * 4194304})[0] == 413
         assert call("compile", {**request, "source": "Screen S { Label { x: " + "[" * 100 + "0" + "]" * 100 + "; } }"})[0] == 413
         if mode == "contract":
+            # Keep both workers readable with trickled headers/body for longer than
+            # the total read deadline. An inactivity timeout alone never frees them.
+            header_peer = socket.create_connection(("127.0.0.1", port), timeout=10)
+            body_peer = socket.create_connection(("127.0.0.1", port), timeout=10)
+            header_peer.sendall(b"GET /api/catalog HTTP/1.1\r\nX-Slow: ")
+            body_peer.sendall((f"POST /api/compile HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                               f"Authorization: Bearer {token}\r\nContent-Length: 100000\r\n\r\n").encode())
+            stop = threading.Event()
+            def trickle():
+                while not stop.wait(0.1):
+                    for peer in (header_peer, body_peer):
+                        try:
+                            peer.sendall(b" ")
+                        except OSError:
+                            pass
+            sender = threading.Thread(target=trickle)
+            sender.start()
+            try:
+                time.sleep(0.3)
+                start = time.monotonic()
+                assert call("catalog")[0] == 200
+                assert time.monotonic() - start < 9, "trickled requests retained both workers"
+            finally:
+                stop.set()
+                sender.join(timeout=2)
+                header_peer.close()
+                body_peer.close()
+            assert call("compile", {**request, "source": ""})[0] == 422
+            empty_recipe = root / "recipes/screen/empty.toml"
+            empty_recipe.write_bytes(b"")
+            assert call("compile", {**request, "recipe": "recipes/screen/empty.toml"})[0] == 422
+            oversized_recipe = root / "recipes/screen/oversized.toml"
+            with oversized_recipe.open("wb") as output:
+                output.truncate(128 * 1024 * 1024 + 1)
+            assert call("compile", {**request, "recipe": "recipes/screen/oversized.toml"})[0] == 413
             # Both HTTP workers enter together; parsing a large comment holds the backend gate.
             barrier = threading.Barrier(2)
             def overlapping(_):
@@ -121,6 +158,14 @@ with tempfile.TemporaryDirectory(prefix="mdux-preview-test-") as work:
         invalid_field = copy.deepcopy(request)
         invalid_field["fixture"]["fields"][field_id]["text"] = "lowercase"
         assert call("frame", invalid_field)[0] == 422
+        if mode == "contract":
+            shader_package = root / "generated/shader/mdux-ui/package.json"
+            saved = shader_package.read_bytes()
+            try:
+                shader_package.write_bytes(b"")
+                assert call("frame", request)[0] == 422
+            finally:
+                shader_package.write_bytes(saved)
         if mode == "no-device":
             status, failure = call("frame", request)
             assert status == 503 and "PRV004" in json.dumps(failure), failure

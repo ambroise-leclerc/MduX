@@ -5,6 +5,7 @@
 // clang-format off
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,72 @@
 #include <httplib.h>
 #include "Preview.hpp"
 // clang-format on
+namespace {
+// The pinned transport exposes a total read deadline through SocketStream. Reject
+// reads after that deadline even when the peer keeps the socket continuously ready.
+class RequestStream final : public httplib::Stream {
+public:
+    explicit RequestStream(socket_t descriptor)
+        : stream(descriptor, 5, 0, 5, 0, 5000, std::chrono::steady_clock::now()), deadline(std::chrono::steady_clock::now() + std::chrono::seconds(5)) {}
+    bool is_readable() const override {
+        return withinDeadline() && stream.is_readable();
+    }
+    bool wait_readable() const override {
+        return withinDeadline() && stream.wait_readable();
+    }
+    bool wait_writable() const override {
+        return stream.wait_writable();
+    }
+    bool is_peer_alive() const override {
+        return stream.is_peer_alive();
+    }
+    ssize_t read(char* data, size_t size) override {
+        if (!withinDeadline()) {
+            error_ = httplib::Error::Timeout;
+            return -1;
+        }
+        const auto result = stream.read(data, size);
+        error_            = stream.get_error();
+        return result;
+    }
+    ssize_t write(const char* data, size_t size) override {
+        return stream.write(data, size);
+    }
+    void get_remote_ip_and_port(std::string& ip, int& port) const override {
+        stream.get_remote_ip_and_port(ip, port);
+    }
+    void get_local_ip_and_port(std::string& ip, int& port) const override {
+        stream.get_local_ip_and_port(ip, port);
+    }
+    socket_t socket() const override {
+        return stream.socket();
+    }
+    time_t duration() const override {
+        return stream.duration();
+    }
+
+private:
+    bool withinDeadline() const {
+        return std::chrono::steady_clock::now() < deadline;
+    }
+    httplib::detail::SocketStream         stream;
+    std::chrono::steady_clock::time_point deadline;
+};
+class PreviewServer final : public httplib::Server {
+    bool process_and_close_socket(socket_t socket) override {
+        const auto result = serve_guarded([&] {
+            RequestStream stream(socket);
+            bool          closed = false;
+            // One request per connection: the header and body share a single deadline.
+            return process_request(stream, "127.0.0.1", 0, "127.0.0.1", 0, true, closed, nullptr);
+        });
+        httplib::detail::shutdown_socket(socket);
+        httplib::detail::close_socket(socket);
+        return result;
+    }
+};
+}  // namespace
+
 int main(int argc, char** argv) {
     try {
         std::filesystem::path root, tokenFile;
@@ -58,8 +125,8 @@ int main(int argc, char** argv) {
                 return c >= 33 && c <= 126;
             }))
             throw std::runtime_error("token must contain 32..256 printable non-space characters");
-        httplib::Server server;
-        std::mutex      work;
+        PreviewServer server;
+        std::mutex    work;
         server.new_task_queue = [] {
             return new httplib::ThreadPool(2, 0, 8);
         };

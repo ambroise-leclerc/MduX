@@ -61,8 +61,10 @@ not live device readings or evidence that application event handling was replaye
 Two HTTP workers accept at most eight queued connections. Only one request executes the backend
 at once; overlap receives 503. Request bodies and source text are limited to 4 MiB; source nesting is limited to 64 levels and
 65536 tokens before parsing. Request-owned file inputs are limited to
-128 MiB, draw buffers to 64 MiB, and each surface dimension to 4096 pixels. Read/write network
-timeouts are five seconds. No server frame cache survives a request.
+128 MiB, draw buffers to 64 MiB, and each surface dimension to 4096 pixels. Network
+writes time out after five seconds of inactivity. Each connection accepts one request,
+with a five-second total deadline shared by header and body reads. The 128 MiB limit covers
+the authoritative input snapshot; compiler and loader working copies are additional memory. No server frame cache survives a request.
 
 | Code | Meaning |
 |---|---|
@@ -82,3 +84,6 @@ is not an operating-system sandbox. A GPU driver hang is not bounded by HTTP net
 
 Run `ctest --test-dir build-macos-clang -L preview --no-tests=error --output-on-failure` after building
 with previews enabled. The pixel case requires a working Vulkan device and is not skipped in CI.
+
+The no-device test runs on Linux and macOS. Elevated Windows runners ignore ICD environment
+overrides, so Windows runs the contract and real-device pixel tests.

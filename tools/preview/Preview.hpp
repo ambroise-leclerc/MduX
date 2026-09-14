@@ -1,5 +1,7 @@
 /** @file Preview.hpp
- * @brief Host-only, stateless preview request boundary. Include after import std.
+ * @brief Host-only, stateless preview request boundary.
+ * Requires std::filesystem::path, std::string and std::string_view declarations from
+ * import std (backend) or their standard headers (C++17 transport).
  */
 #pragma once
 namespace mdux::tools::preview {

@@ -1654,7 +1654,12 @@ endif()
 
 if(MDUX_BUILD_PREVIEW)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    foreach(previewMode contract no-device pixel)
+    set(previewModes contract pixel)
+    # Elevated Windows loaders ignore ICD environment overrides and use the registered driver.
+    if(NOT WIN32)
+        list(APPEND previewModes no-device)
+    endif()
+    foreach(previewMode IN LISTS previewModes)
         add_test(NAME preview.${previewMode}
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/preview/PreviewTests.py
                 $<TARGET_FILE:mdux-preview> ${PROJECT_SOURCE_DIR} ${previewMode})

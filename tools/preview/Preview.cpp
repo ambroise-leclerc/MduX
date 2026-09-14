@@ -110,28 +110,34 @@ mdux::core::ColorRgba8 color(const V& v) {
             static_cast<std::uint8_t>(number(v, "a", 255))};
 }
 std::string bytesText(const std::vector<std::byte>& b) {
+    if (b.empty())
+        return {};
     return std::string(reinterpret_cast<const char*>(b.data()), b.size());
 }
 struct Inputs {
     std::filesystem::path                                   root;
     std::map<std::filesystem::path, std::vector<std::byte>> cache;
     std::size_t                                             total{0};
-    std::optional<std::vector<std::byte>>                   read(const std::filesystem::path& path) {
+    const std::vector<std::byte>&                           read(const std::filesystem::path& path) {
         auto relative = path.is_absolute() ? path.lexically_relative(root) : path;
         auto checked  = confined(root, relative);
         if (auto it = cache.find(checked); it != cache.end())
             return it->second;
-        auto                  size  = std::filesystem::file_size(checked);
+        std::ifstream file(checked, std::ios::binary | std::ios::ate);
+        const auto    end = file.tellg();
+        if (!file || end < std::streampos{0})
+            fail("input is unreadable");
+        const auto            size  = static_cast<std::uintmax_t>(end);
         constexpr std::size_t limit = std::size_t{128} * 1024U * 1024U;
         if (size > limit - total)
             throw Failure(413, "PRV003", "input snapshot exceeds 128 MiB");
-        std::ifstream                         file(checked, std::ios::binary);
-        std::optional<std::vector<std::byte>> bytes{std::in_place, static_cast<std::size_t>(size)};
-        if (!file.read(reinterpret_cast<char*>(bytes->data()), static_cast<std::streamsize>(size)) || file.peek() != std::char_traits<char>::eof())
+        file.seekg(0);
+        std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+        if (!file || (!bytes.empty() && !file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size)))
+            || file.peek() != std::char_traits<char>::eof())
             fail("input changed or became unreadable");
-        total += bytes->size();
-        cache.emplace(checked, *bytes);
-        return bytes;
+        total += bytes.size();
+        return cache.emplace(checked, std::move(bytes)).first->second;
     }
 };
 void budget(const md::Recipe& recipe) {
@@ -507,12 +513,10 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         std::filesystem::path relative{str(request, "recipe")};
         if (!relative.generic_string().starts_with("recipes/screen/") || relative.extension() != ".toml")
             throw Failure(403, "PRV006", "recipe is outside screen discovery");
-        const auto recipeBytes = inputs.read(inputs.root / relative);
-        if (!recipeBytes)
-            fail("recipe unreadable");
-        if (recipeBytes->size() > 4194304)
+        const auto& recipeBytes = inputs.read(inputs.root / relative);
+        if (recipeBytes.size() > 4194304)
             throw Failure(413, "PRV003", "recipe exceeds 4 MiB");
-        auto recipe = md::parseRecipe(bytesText(*recipeBytes), relative.generic_string(), ds);
+        auto recipe = md::parseRecipe(bytesText(recipeBytes), relative.generic_string(), ds);
         if (!recipe) {
             put(out, "diagnostics", diagnostics(ds));
             return {422, encode(out)};
@@ -522,7 +526,8 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         if (auto source = request.find("source")) {
             auto                   s = string(*source);
             std::vector<std::byte> bytes(s.size());
-            std::memcpy(bytes.data(), s.data(), s.size());
+            if (!s.empty())
+                std::memcpy(bytes.data(), s.data(), s.size());
             const auto old      = inputs.cache.find(sourcePath);
             const auto oldSize  = old == inputs.cache.end() ? 0 : old->second.size();
             const auto retained = inputs.total - oldSize;
@@ -531,24 +536,22 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
             inputs.total             = retained + bytes.size();
             inputs.cache[sourcePath] = std::move(bytes);
         }
-        InputReader reader = [&](const std::filesystem::path& p) {
+        InputReader reader = [&](const std::filesystem::path& p) -> std::optional<std::vector<std::byte>> {
             return inputs.read(p);
         };
-        auto source = inputs.read(sourcePath);
-        if (!source)
-            fail("source unreadable");
-        if (source->size() > 4194304)
+        const auto& source = inputs.read(sourcePath);
+        if (source.size() > 4194304)
             throw Failure(413, "PRV003", "source exceeds 4 MiB");
-        put(out, "sourceDigest", V::string(va::hexDigest(bytesText(*source))));
+        put(out, "sourceDigest", V::string(va::hexDigest(bytesText(source))));
         if (route == "detail") {
-            put(out, "source", V::string(bytesText(*source)));
+            put(out, "source", V::string(bytesText(source)));
             put(out, "recipe", recipe->toOptions());
             put(out, "diagnostics", diagnostics(ds));
             return {200, encode(out)};
         }
         // Bound parser recursion using the compiler's own tokenization, so comments and quoted
         // brackets cannot be mistaken for structure. This is a service limit, not a DSL change.
-        const auto lexed = md::lex(bytesText(*source), recipe->source);
+        const auto lexed = md::lex(bytesText(source), recipe->source);
         if (lexed.tokens.size() > 65536)
             throw Failure(413, "PRV003", "source exceeds 65536 tokens");
         std::size_t depth = 0;
@@ -561,7 +564,7 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
             }
         }
         std::string ir;
-        auto        compiled = md::run(*recipe, relative.generic_string(), *recipeBytes, inputs.root, ds, &ir, reader);
+        auto        compiled = md::run(*recipe, relative.generic_string(), recipeBytes, inputs.root, ds, &ir, reader);
         if (!ir.empty())
             put(out, "ir", parse(ir));
         if (!compiled) {

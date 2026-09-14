@@ -75,6 +75,8 @@ std::optional<std::string> inputText(const InputReader& reader, const std::files
     auto bytes = inputBytes(reader, path);
     if (!bytes)
         return std::nullopt;
+    if (bytes->empty())
+        return std::string{};
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 }  // namespace

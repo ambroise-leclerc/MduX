@@ -17,7 +17,11 @@ Provide an opt-in host-only `mdux-preview` HTTP service, using pinned cpp-httpli
 is a C++17 object target with no imports of governed modules. This isolates textual third-party
 headers from the C++23 module graph and avoids the LLVM 21/macOS SDK `<random>` header conflict.
 The preview library and all compiler/render code remain C++23; this does not change supported
-compiler versions. No HTTP dependency enters an installed device library.
+compiler versions. No HTTP dependency enters an installed device library. The transport uses
+cpp-httplib in header-only mode to wrap its pinned `SocketStream` read-deadline API. Each
+connection serves one request with a five-second total header/body deadline, including reads
+before authentication; the deadline does not limit backend execution or response writes.
+The contract test occupies both workers with trickled input and checks recovery.
 
 Each request owns an input snapshot. The compiler and authenticated artifact loaders accept an
 optional `InputReader`; existing callers retain their previous reads. The service confines every
