@@ -84,7 +84,7 @@ jobs:
         grep -Eiq 'MoltenVK|Apple M[0-9]' "$RUNNER_TEMP/vulkaninfo.log"
 
     - name: Configure
-      run: cmake --preset ninja-macos-clang
+      run: cmake --preset ninja-macos-clang -DMDUX_BUILD_PREVIEW=ON
 
     - name: Build
       run: cmake --build --preset ninja-macos-clang --parallel 4

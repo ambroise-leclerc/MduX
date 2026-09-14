@@ -162,7 +162,7 @@ jobs:
         arch: x64
 
     - name: Configure CMake (MSVC with Ninja)
-      run: cmake --preset ninja-msvc
+      run: cmake --preset ninja-msvc -DMDUX_BUILD_PREVIEW=ON
       shell: cmd
 
     - name: Build

@@ -24,6 +24,7 @@ target_sources(MduXToolsCommon
             common/Toml.cppm
             common/Cli.cppm
             common/Schema.cppm
+            common/Input.cppm
     PRIVATE
         common/Toml.cpp
         common/Cli.cpp
@@ -733,3 +734,34 @@ foreach(vsTarget mdux-verify-scenario mdux-verify-scenario-bake)
         target_compile_options(${vsTarget} PRIVATE /experimental:module /std:c++latest)
     endif()
 endforeach()
+
+# Optional authoring host service; transport never enters an installed device target.
+option(MDUX_BUILD_PREVIEW "Build the authenticated local preview service" OFF)
+if(MDUX_BUILD_PREVIEW)
+    CPMAddPackage(NAME cpp_httplib
+        GITHUB_REPOSITORY yhirose/cpp-httplib
+        GIT_TAG 278c2979e8c68468960c3073e28e1c51b098d6a4
+        OPTIONS "HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF" "HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF"
+                "HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF" "HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF"
+                "HTTPLIB_COMPILE ON" "HTTPLIB_INSTALL OFF")
+    add_library(MduXPreviewLib STATIC preview/Preview.cpp)
+    add_library(MduX::PreviewLib ALIAS MduXPreviewLib)
+    target_link_libraries(MduXPreviewLib PUBLIC MduX::MeduiLib MduX::VerifyUiLib)
+    target_link_libraries(MduXPreviewLib PRIVATE MduX::MduX Vulkan::Vulkan MduX_warnings)
+    # Keep the third-party textual-header transport separate from the C++23 module graph.
+    # LLVM 21 + current macOS SDK's math/float headers cannot include <random> in
+    # named-module mode; the HTTP boundary itself needs only C++17 standard types.
+    set_target_properties(httplib PROPERTIES CXX_STANDARD 17 CXX_MODULE_STD OFF)
+    add_library(MduXPreviewTransport OBJECT preview/Main.cpp)
+    set_target_properties(MduXPreviewTransport PROPERTIES CXX_STANDARD 17 CXX_MODULE_STD OFF)
+    target_link_libraries(MduXPreviewTransport PRIVATE httplib::httplib MduX_warnings)
+    add_executable(mdux-preview $<TARGET_OBJECTS:MduXPreviewTransport>)
+    target_link_libraries(mdux-preview PRIVATE MduX::PreviewLib httplib::httplib MduX_warnings)
+    foreach(previewTarget MduXPreviewLib mdux-preview)
+        target_compile_features(${previewTarget} PRIVATE cxx_std_23)
+        set_target_properties(${previewTarget} PROPERTIES CXX_MODULE_STD ON)
+        if(MSVC)
+            target_compile_options(${previewTarget} PRIVATE /experimental:module /std:c++latest)
+        endif()
+    endforeach()
+endif()

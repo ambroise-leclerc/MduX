@@ -1651,3 +1651,14 @@ if(MDUX_BUILD_EXAMPLES AND TARGET MedicalScreenMonitorExample)
              COMMAND MedicalScreenMonitorExample --replay=endoscope-monitor-basics)
     set_tests_properties(example.monitor.replay PROPERTIES LABELS "pixel" TIMEOUT 120)
 endif()
+
+if(MDUX_BUILD_PREVIEW)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    foreach(previewMode contract no-device pixel)
+        add_test(NAME preview.${previewMode}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/preview/PreviewTests.py
+                $<TARGET_FILE:mdux-preview> ${PROJECT_SOURCE_DIR} ${previewMode})
+        set_tests_properties(preview.${previewMode} PROPERTIES LABELS "preview" TIMEOUT 180)
+    endforeach()
+    set_tests_properties(preview.pixel PROPERTIES LABELS "preview;pixel")
+endif()

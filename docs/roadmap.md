@@ -129,6 +129,15 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
 | Unblocked child issues | [#326](https://github.com/ambroise-leclerc/MduX/issues/326); see [Next to implement](#next-to-implement) |
 
+## Preview backend implementation (#326)
+
+The optional native `mdux-preview` service is implemented on the #326 work branch: recipe discovery,
+unsaved-source compilation, explicit locale and dynamic fixtures, and production offscreen PNGs.
+[ADR-024](adr/ADR-024-local-native-preview-service.md) records the scope and outstanding maintainer
+review; [the protocol](tools/preview.md) records deployment and refusal behavior. #327 consumes this
+backend after #326 merges and its post-merge checks pass. The roadmap's issue-status tables above
+remain the merged-delivery record until then.
+
 ## Current comparison
 
 The table is re-assessed at the two commits above. The older August comparison and its test totals

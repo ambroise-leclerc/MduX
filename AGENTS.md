@@ -276,6 +276,11 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `evidence` contract cases, and negative failure-mode fixtures — validated with
   `mdux.tools.schema` (a JSON-Schema-subset engine in `MduX::ToolsCommon`); asserted as a named step
   on all five CI legs since `#314`).
+- Optional host service: `mdux-preview`, enabled by `MDUX_BUILD_PREVIEW=ON`; native loopback HTTP,
+  explicit locale/fixture data, and production offscreen rendering. `MduXPreviewLib` owns the
+  backend; `MduXPreviewTransport` isolates cpp-httplib's C++17 textual headers from the C++23
+  module graph. Neither is installed into device libraries. See `docs/tools/preview.md` and ADR-024.
+  Its `preview` CTest label includes HTTP contract, unavailable-device and required GPU pixel tests.
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

@@ -258,6 +258,31 @@
       "sourceDirectory": "tools/ml"
     },
     {
+      "bakes": [],
+      "diagnosticCodes": [
+        "PRV001",
+        "PRV002",
+        "PRV003",
+        "PRV004",
+        "PRV005",
+        "PRV006",
+        "PRV007"
+      ],
+      "entryPoint": "tools/preview/Main.cpp",
+      "grammar": "tool-specific",
+      "libraries": [
+        "MduX::PreviewLib"
+      ],
+      "name": "mdux-preview",
+      "options": [
+        "--help",
+        "--port",
+        "--root",
+        "--token-file"
+      ],
+      "sourceDirectory": "tools/preview"
+    },
+    {
       "bakes": [
         {
           "id": "endoscope-monitor-basics",

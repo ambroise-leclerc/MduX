@@ -127,6 +127,7 @@ jobs:
       run: |
         cmake -S . -B build-asan -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
+          -DMDUX_BUILD_PREVIEW=ON \
           -DMDUX_BUILD_TESTS=ON \
           -DMDUX_BUILD_EXAMPLES=OFF \
           -DENABLE_SANITIZER_ADDRESS=ON \
