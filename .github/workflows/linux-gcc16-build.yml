@@ -118,7 +118,7 @@ jobs:
     # ninja-gcc as mirroring what this job runs, and the only way that statement stays true is
     # for the job to actually use it - otherwise the preset is unexercised by CI and free to rot.
     - name: Configure CMake
-      run: cmake --preset ninja-gcc
+      run: cmake --preset ninja-gcc -DMDUX_BUILD_PREVIEW=ON
 
     - name: Build
       run: cmake --build --preset ninja-gcc

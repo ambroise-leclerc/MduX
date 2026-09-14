@@ -7,6 +7,7 @@ module;
 module mdux.tools.verify.artifacts;
 
 import std;
+import mdux.tools.input;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
@@ -66,9 +67,23 @@ std::string hexDigest(std::string_view text) {
     return std::string{digest.data(), digest.size()};
 }
 
-std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
+namespace {
+std::optional<std::vector<std::byte>> inputBytes(const InputReader& reader, const std::filesystem::path& path) {
+    return reader ? reader(path) : readBytes(path);
+}
+std::optional<std::string> inputText(const InputReader& reader, const std::filesystem::path& path) {
+    auto bytes = inputBytes(reader, path);
+    if (!bytes)
+        return std::nullopt;
+    if (bytes->empty())
+        return std::string{};
+    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+}
+}  // namespace
+
+std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics, const InputReader& reader) {
     const auto packagePath = artifactRoot / "shader" / "mdux-ui" / "package.json";
-    auto       text        = readText(packagePath);
+    auto       text        = inputText(reader, packagePath);
     if (!text) {
         report(diagnostics, packagePath, "VUI005", "cannot read the committed mdux-ui shader package");
         return std::nullopt;
@@ -84,7 +99,7 @@ std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot
         return std::nullopt;
     }
     const auto sidecarPath = packagePath.parent_path() / package->sidecarPath;
-    auto       sidecar     = readBytes(sidecarPath);
+    auto       sidecar     = inputBytes(reader, sidecarPath);
     if (!sidecar || sidecar->size() != package->sidecarByteLength || mdux::evidence::sha256(*sidecar) != package->sidecarSha256) {
         report(diagnostics, sidecarPath, "VUI005", "the mdux-ui shader sidecar does not match package.json");
         return std::nullopt;
@@ -105,10 +120,12 @@ std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot
     return assets;
 }
 
-std::optional<ImageAssets>
-loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
+std::optional<ImageAssets> loadImage(const mdux::medui::ImagePackageApproval& approval,
+                                     const std::filesystem::path&             artifactRoot,
+                                     std::vector<cli::Diagnostic>&            diagnostics,
+                                     const InputReader&                       reader) {
     const auto packagePath = artifactRoot / "image" / approval.packageId / "package.json";
-    auto       imageJson   = readText(packagePath);
+    auto       imageJson   = inputText(reader, packagePath);
     if (!imageJson) {
         report(diagnostics, packagePath, "VUI006", "cannot read approved image package");
         return std::nullopt;
@@ -125,7 +142,7 @@ loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesyst
         return std::nullopt;
     }
     const auto pixelsPath = packagePath.parent_path() / image->sidecarPath;
-    auto       pixels     = readBytes(pixelsPath);
+    auto       pixels     = inputBytes(reader, pixelsPath);
     if (!pixels || pixels->size() != image->sidecarByteLength || mdux::evidence::sha256(*pixels) != image->sidecarSha256) {
         report(diagnostics, pixelsPath, "VUI006", "image sidecar does not match its package");
         return std::nullopt;
@@ -133,10 +150,12 @@ loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesyst
     return ImageAssets{.imageJson = std::move(*imageJson), .image = std::move(*image), .pixels = std::move(*pixels)};
 }
 
-std::optional<LocaleAssets>
-loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<cli::Diagnostic>& diagnostics) {
+std::optional<LocaleAssets> loadLocale(const mdux::medui::TextPackageApproval& approval,
+                                       const std::filesystem::path&            artifactRoot,
+                                       std::vector<cli::Diagnostic>&           diagnostics,
+                                       const InputReader&                      reader) {
     const auto textPath = artifactRoot / "text" / approval.packageId / "package.json";
-    auto       textJson = readText(textPath);
+    auto       textJson = inputText(reader, textPath);
     if (!textJson) {
         report(diagnostics, textPath, "VUI006", "cannot read approved text package for locale '" + std::string{approval.locale} + "'");
         return std::nullopt;
@@ -153,14 +172,14 @@ loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesyst
         return std::nullopt;
     }
     const auto runsPath = textPath.parent_path() / text->sidecarPath;
-    auto       runs     = readBytes(runsPath);
+    auto       runs     = inputBytes(reader, runsPath);
     if (!runs || runs->size() != text->sidecarByteLength || mdux::evidence::sha256(*runs) != text->sidecarSha256) {
         report(diagnostics, runsPath, "VUI006", "text sidecar does not match its package");
         return std::nullopt;
     }
 
     const auto fontPath = artifactRoot / "font" / text->atlasId / "package.json";
-    auto       fontJson = readText(fontPath);
+    auto       fontJson = inputText(reader, fontPath);
     if (!fontJson) {
         report(diagnostics, fontPath, "VUI006", "cannot read the font package named by the text package");
         return std::nullopt;
@@ -177,7 +196,7 @@ loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesyst
         return std::nullopt;
     }
     const auto atlasPath = fontPath.parent_path() / font->atlas.path;
-    auto       atlas     = readBytes(atlasPath);
+    auto       atlas     = inputBytes(reader, atlasPath);
     if (!atlas || atlas->size() != font->atlas.byteLength) {
         report(diagnostics, atlasPath, "VUI006", "font atlas length does not match its package");
         return std::nullopt;

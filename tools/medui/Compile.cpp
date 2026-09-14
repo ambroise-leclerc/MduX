@@ -8,6 +8,7 @@ module;
 module mdux.tools.medui.compile;
 
 import std;
+import mdux.tools.input;
 import mdux.draw;
 import mdux.evidence.digest;
 import mdux.evidence.json;
@@ -101,8 +102,8 @@ void report(std::vector<cli::Diagnostic>& diagnostics, Code code, std::string fi
 
 /// Reads a committed package beside the recipe, as text, reporting the path that failed.
 [[nodiscard]] std::optional<std::vector<std::byte>>
-readInput(const std::filesystem::path& root, const std::string& relative, std::vector<cli::Diagnostic>& diagnostics) {
-    std::optional<std::vector<std::byte>> bytes = readFile(root / relative);
+readInput(const std::filesystem::path& root, const std::string& relative, std::vector<cli::Diagnostic>& diagnostics, const InputReader& reader) {
+    std::optional<std::vector<std::byte>> bytes = reader ? reader(root / relative) : readFile(root / relative);
     if (!bytes.has_value()) {
         report(diagnostics, Code::SourceUnreadable, relative, 0, "the file named by the recipe could not be read");
     }
@@ -553,12 +554,15 @@ struct LoadedImage {
     evidence::Digest          packageSha256{};
 };
 
-[[nodiscard]] std::optional<std::vector<LoadedImage>>
-loadImages(const Recipe& recipe, const std::filesystem::path& root, std::vector<evidence::FileRecord>& inputs, std::vector<cli::Diagnostic>& diagnostics) {
+[[nodiscard]] std::optional<std::vector<LoadedImage>> loadImages(const Recipe&                      recipe,
+                                                                 const std::filesystem::path&       root,
+                                                                 std::vector<evidence::FileRecord>& inputs,
+                                                                 std::vector<cli::Diagnostic>&      diagnostics,
+                                                                 const InputReader&                 reader) {
     std::vector<LoadedImage> images;
     images.reserve(recipe.imagePackages.size());
     for (const std::string& relative : recipe.imagePackages) {
-        const auto bytes = readInput(root, relative, diagnostics);
+        const auto bytes = readInput(root, relative, diagnostics, reader);
         if (!bytes.has_value()) {
             return std::nullopt;
         }
@@ -584,7 +588,7 @@ loadImages(const Recipe& recipe, const std::filesystem::path& root, std::vector<
             return std::nullopt;
         }
         const std::filesystem::path sidecarRelative = std::filesystem::path{relative}.parent_path() / package->sidecarPath;
-        const auto                  sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics);
+        const auto                  sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics, reader);
         if (!sidecar.has_value()) {
             return std::nullopt;
         }
@@ -603,9 +607,12 @@ loadImages(const Recipe& recipe, const std::filesystem::path& root, std::vector<
 }
 
 /// Reads the font package the recipe names, or reports why it could not.
-[[nodiscard]] std::optional<mdux::font::FontPackage>
-loadFont(const Recipe& recipe, const std::filesystem::path& root, std::vector<evidence::FileRecord>& inputs, std::vector<cli::Diagnostic>& diagnostics) {
-    const std::optional<std::vector<std::byte>> bytes = readInput(root, recipe.fontPackage, diagnostics);
+[[nodiscard]] std::optional<mdux::font::FontPackage> loadFont(const Recipe&                      recipe,
+                                                              const std::filesystem::path&       root,
+                                                              std::vector<evidence::FileRecord>& inputs,
+                                                              std::vector<cli::Diagnostic>&      diagnostics,
+                                                              const InputReader&                 reader) {
+    const std::optional<std::vector<std::byte>> bytes = readInput(root, recipe.fontPackage, diagnostics, reader);
     if (!bytes.has_value()) {
         return std::nullopt;
     }
@@ -624,13 +631,16 @@ loadFont(const Recipe& recipe, const std::filesystem::path& root, std::vector<ev
 }
 
 /// Reads every text package the recipe names, with the sidecar each one records.
-[[nodiscard]] std::optional<std::vector<LoadedLocale>>
-loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector<evidence::FileRecord>& inputs, std::vector<cli::Diagnostic>& diagnostics) {
+[[nodiscard]] std::optional<std::vector<LoadedLocale>> loadLocales(const Recipe&                      recipe,
+                                                                   const std::filesystem::path&       root,
+                                                                   std::vector<evidence::FileRecord>& inputs,
+                                                                   std::vector<cli::Diagnostic>&      diagnostics,
+                                                                   const InputReader&                 reader) {
     std::vector<LoadedLocale> locales;
     locales.reserve(recipe.textPackages.size());
 
     for (const std::string& relative : recipe.textPackages) {
-        const std::optional<std::vector<std::byte>> bytes = readInput(root, relative, diagnostics);
+        const std::optional<std::vector<std::byte>> bytes = readInput(root, relative, diagnostics, reader);
         if (!bytes.has_value()) {
             return std::nullopt;
         }
@@ -665,7 +675,7 @@ loadLocales(const Recipe& recipe, const std::filesystem::path& root, std::vector
         // The sidecar sits beside the package, under the name the package itself records - the same
         // arrangement every other artifact kind uses, so a caller never guesses a filename.
         const std::filesystem::path                 sidecarRelative = std::filesystem::path{relative}.parent_path() / package->sidecarPath;
-        const std::optional<std::vector<std::byte>> sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics);
+        const std::optional<std::vector<std::byte>> sidecar         = readInput(root, sidecarRelative.generic_string(), diagnostics, reader);
         if (!sidecar.has_value()) {
             return std::nullopt;
         }
@@ -755,10 +765,11 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
                                   std::span<const std::byte>    recipeBytes,
                                   const std::filesystem::path&  root,
                                   std::vector<cli::Diagnostic>& diagnostics,
-                                  std::string*                  diagnosticIr) {
+                                  std::string*                  diagnosticIr,
+                                  const InputReader&            reader) {
     std::vector<evidence::FileRecord> inputs;
 
-    const std::optional<std::vector<std::byte>> sourceBytes = readFile(root / recipe.source);
+    const std::optional<std::vector<std::byte>> sourceBytes = reader ? reader(root / recipe.source) : readFile(root / recipe.source);
     if (!sourceBytes.has_value()) {
         report(diagnostics, Code::SourceUnreadable, recipe.source, 0, "the .medui source could not be read");
         return std::nullopt;
@@ -820,11 +831,11 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
     std::optional<mdux::font::FontPackage> font;
     std::vector<LoadedLocale>              locales;
     if (measurable) {
-        font = loadFont(recipe, root, inputs, diagnostics);
+        font = loadFont(recipe, root, inputs, diagnostics, reader);
         if (!font.has_value()) {
             return std::nullopt;
         }
-        std::optional<std::vector<LoadedLocale>> loaded = loadLocales(recipe, root, inputs, diagnostics);
+        std::optional<std::vector<LoadedLocale>> loaded = loadLocales(recipe, root, inputs, diagnostics, reader);
         if (!loaded.has_value()) {
             return std::nullopt;
         }
@@ -852,7 +863,7 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
             ms::TextPackageApproval{.locale = locale.package.locale, .packageId = locale.package.header.id, .packageSha256 = locale.packageSha256});
     }
 
-    const auto loadedImages = loadImages(recipe, root, inputs, diagnostics);
+    const auto loadedImages = loadImages(recipe, root, inputs, diagnostics, reader);
     if (!loadedImages.has_value()) {
         return std::nullopt;
     }
@@ -908,12 +919,8 @@ std::optional<CompileOutputs> run(const Recipe&                 recipe,
         templateNames.push_back(rule.name);
     }
 
-    const SemanticResult semantic = analyze(screen,
-                                            recipe.source,
-                                            {.themeTokens          = themeTokens,
-                                             .textPackages         = textPackages,
-                                             .numericTemplateNames = templateNames,
-                                             .imageIds             = imageIds});
+    const SemanticResult semantic =
+        analyze(screen, recipe.source, {.themeTokens = themeTokens, .textPackages = textPackages, .numericTemplateNames = templateNames, .imageIds = imageIds});
     if (!semantic.ok()) {
         diagnostics.insert(diagnostics.end(), semantic.diagnostics.begin(), semantic.diagnostics.end());
         return std::nullopt;

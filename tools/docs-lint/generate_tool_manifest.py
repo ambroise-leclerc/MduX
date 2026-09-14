@@ -64,7 +64,7 @@ MANIFEST = Path("docs/tools/manifest.json")
 SCHEMA_VERSION = 1
 
 # `add_executable(mdux-shaderbake shader/ShaderBakeMain.cpp)`
-EXECUTABLE_RE = re.compile(r"^add_executable\((?P<name>mdux-[\w-]+)\s+(?P<source>[^\s)]+)\s*\)", re.MULTILINE)
+EXECUTABLE_RE = re.compile(r"^\s*add_executable\((?P<name>mdux-[\w-]+)\s+(?P<source>\$<TARGET_OBJECTS:[^>]+>|[^\s)]+)\s*\)", re.MULTILINE)
 
 # One `mdux_bake_artifact(...)` call, captured whole so its keyword arguments can be read in order.
 BAKE_RE = re.compile(r"^mdux_bake_artifact\((?P<body>.*?)^\)", re.DOTALL | re.MULTILINE)
@@ -78,7 +78,7 @@ SCREEN_RE = re.compile(r"^mdux_compile_screen\((?P<body>.*?)^\)", re.DOTALL | re
 SCREEN_CMAKE = Path("cmake/MduXCompileScreen.cmake")
 
 # `target_link_libraries(mdux-meduic PRIVATE MduX::MeduiLib MduX_warnings)`
-LINK_RE = re.compile(r"^target_link_libraries\((?P<tool>mdux-[\w-]+)\s+PRIVATE\s+(?P<libs>[^)]*)\)", re.MULTILINE)
+LINK_RE = re.compile(r"^\s*target_link_libraries\((?P<tool>mdux-[\w-]+)\s+PRIVATE\s+(?P<libs>[^)]*)\)", re.MULTILINE)
 
 # A published diagnostic code: an uppercase family, then three digits. `MEDUI-E030`, `TXT005`,
 # `VUI101`, `MDC001`. Anchored to a whole string literal so a sentence mentioning one is not a
@@ -315,6 +315,12 @@ def build_manifest(root: Path) -> dict:
     for match in EXECUTABLE_RE.finditer(tools_text):
         name = match.group("name")
         source = match.group("source")
+        if source.startswith("$<TARGET_OBJECTS:"):
+            target = source[len("$<TARGET_OBJECTS:"):-1]
+            object_target = re.search(r"add_library\(" + re.escape(target) + r"\s+OBJECT\s+([^\s)]+)\s*\)", tools_text)
+            if object_target is None:
+                raise ValueError(f"cannot resolve object entry point {source}")
+            source = object_target.group(1)
         entry_point = root / "tools" / source
         directory = entry_point.parent
 

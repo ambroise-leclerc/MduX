@@ -127,6 +127,7 @@ jobs:
       run: |
         cmake -S . -B build-asan -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
+          -DMDUX_BUILD_PREVIEW=ON \
           -DMDUX_BUILD_TESTS=ON \
           -DMDUX_BUILD_EXAMPLES=OFF \
           -DENABLE_SANITIZER_ADDRESS=ON \
@@ -158,7 +159,7 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
-        ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' --output-on-failure --no-tests=error
+        ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|^preview\.pixel$' --output-on-failure --no-tests=error
 
     # Shared MedUI observation-profile conformance (#314), broken out with -V so the vector count and
     # pinned SHA are visible, and run under the sanitizers because the R04 ROI slicing and the JSON
@@ -200,7 +201,7 @@ jobs:
         # rather than assumed - `false | tee /dev/null` exits 0 under `bash -e` and 1 with pipefail.
         set -o pipefail
         LOG="$RUNNER_TEMP/asan-pixel.log"
-        ctest --test-dir build-asan -R 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+        ctest --test-dir build-asan -R 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|^preview\.pixel$' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
         if grep -q "Skipped" "$LOG"; then
           echo "::error::a rendered-truth test was skipped - no Vulkan device, so part of the render path was not sanitized"
           exit 1

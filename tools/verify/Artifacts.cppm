@@ -22,6 +22,7 @@ module;
 export module mdux.tools.verify.artifacts;
 
 import std;
+import mdux.tools.input;
 import mdux.evidence.digest;
 import mdux.font.schema;
 import mdux.image.schema;
@@ -80,7 +81,8 @@ struct ImageAssets {
  * Refuses an unreadable or non-canonical package, a sidecar whose length or digest disagrees with
  * the package, and a module byte range that does not fit this host. Diagnostics carry `VUI005`.
  */
-[[nodiscard]] std::optional<ShaderAssets> loadShader(const std::filesystem::path& artifactRoot, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
+[[nodiscard]] std::optional<ShaderAssets>
+loadShader(const std::filesystem::path& artifactRoot, std::vector<mdux::tools::cli::Diagnostic>& diagnostics, const mdux::tools::InputReader& reader = {});
 
 /**
  * @brief Loads and authenticates the text package `approval` names, plus its runs, font package and
@@ -90,8 +92,10 @@ struct ImageAssets {
  * approval, a sidecar (runs, atlas) whose length or digest disagrees, and a font that does not
  * approve this locale. Diagnostics carry `VUI006`.
  */
-[[nodiscard]] std::optional<LocaleAssets>
-loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
+[[nodiscard]] std::optional<LocaleAssets> loadLocale(const mdux::medui::TextPackageApproval&    approval,
+                                                     const std::filesystem::path&               artifactRoot,
+                                                     std::vector<mdux::tools::cli::Diagnostic>& diagnostics,
+                                                     const mdux::tools::InputReader&            reader = {});
 
 /**
  * @brief Loads and authenticates the image package `approval` names and its pixels.
@@ -99,7 +103,9 @@ loadLocale(const mdux::medui::TextPackageApproval& approval, const std::filesyst
  * Refuses an unreadable or non-canonical package, an identity / extent / digest that disagrees with
  * the approval, and a pixel sidecar whose length or digest disagrees. Diagnostics carry `VUI006`.
  */
-[[nodiscard]] std::optional<ImageAssets>
-loadImage(const mdux::medui::ImagePackageApproval& approval, const std::filesystem::path& artifactRoot, std::vector<mdux::tools::cli::Diagnostic>& diagnostics);
+[[nodiscard]] std::optional<ImageAssets> loadImage(const mdux::medui::ImagePackageApproval&   approval,
+                                                   const std::filesystem::path&               artifactRoot,
+                                                   std::vector<mdux::tools::cli::Diagnostic>& diagnostics,
+                                                   const mdux::tools::InputReader&            reader = {});
 
 }  // namespace mdux::tools::verify

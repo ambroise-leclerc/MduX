@@ -24,6 +24,8 @@ set(_MDUX_FORBIDDEN_TARGET_PATTERNS
     "^Vulkan::"
     "^glfw$"
     "^glfw3$"
+    "^httplib(::|$)"
+    "^cpp-httplib$"
 )
 
 # NOTE: none of the functions below name a parameter `TARGET` - CMake's if()

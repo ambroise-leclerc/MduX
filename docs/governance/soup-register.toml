@@ -151,3 +151,21 @@ not engaged; a future change that subsets or edits the .ttf before committing wo
 would need the file renamed. License text: recipes/font/dejavu-ui/LICENSE-DejaVu.txt, which
 is the upstream file byte for byte; provenance is in recipes/font/dejavu-ui/README.md.
 """
+
+[[entries]]
+component_id = "cpp-httplib-0.56.0"
+name = "cpp-httplib"
+version = "0.56.0 (278c2979e8c68468960c3073e28e1c51b098d6a4)"
+classification = "SOUP"
+supplier = "Yuji Hirose and contributors"
+repository = "https://github.com/yhirose/cpp-httplib"
+license = "MIT"
+usage = "Authenticated loopback HTTP transport for optional mdux-preview; TLS and compression disabled."
+trust_zone = "host-tools"
+integration_path = "tools/CMakeLists.txt; MduXPreviewTransport and mdux-preview only"
+pinned_by = ["tools/CMakeLists.txt"]
+runtime_deployment = false
+support_model = "Community maintained; no medical-device qualification or support agreement."
+boundary_rationale = "Transport is linked only into an optional host executable, never device targets."
+risk_controls = ["Pinned release commit", "Loopback-only bearer authentication and Host/Origin checks", "Bounded body size, worker count and connection queue"]
+known_anomaly_tracking = "Track dependency findings against cpp-httplib-0.56.0; no qualification claim."

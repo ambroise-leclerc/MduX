@@ -177,7 +177,7 @@ jobs:
     # description exists precisely to keep preset and CI from drifting apart, which a
     # hand-written duplicate of its cache variables would defeat.
     - name: Configure CMake
-      run: cmake --preset ninja-clang
+      run: cmake --preset ninja-clang -DMDUX_BUILD_PREVIEW=ON
 
     - name: Build
       run: cmake --build --preset ninja-clang

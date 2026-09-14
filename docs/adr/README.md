@@ -30,8 +30,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-021](ADR-021-dynamic-scenario-capture-evidence.md) | Dynamic scenario-capture evidence and its CI gate | **Proposed** (verifier-area domain review) | 2026-09-10 |
 | [ADR-022](ADR-022-streaming-viewport-data-and-composition-contract.md) | Streaming viewport data and composition contract | **Proposed** (maintainer acceptance, domain review) | 2026-09-12 |
 | [ADR-023](ADR-023-medui-host-editing-api-and-round-trip-source-contract.md) | MedUI host editing API and round-trip source contract | **Proposed** (maintainer acceptance) | 2026-09-13 |
+| [ADR-024](ADR-024-local-native-preview-service.md) | Local native preview service | **Proposed** (preview-fidelity review) | 2026-09-13 |
 
-Every number from 001 to 023 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 024 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
@@ -65,7 +66,7 @@ decision record that lists only benefits documents an advertisement rather than 
 ## Writing a new ADR
 
 1. Copy [`template.md`](template.md).
-2. Take the next free number from the index above — currently **ADR-024**.
+2. Take the next free number from the index above — currently **ADR-025**.
 3. Name the file `ADR-NNN-short-description.md`, lowercase and hyphenated.
 4. Add a row to the index in this file. An ADR that is not indexed does not exist.
 5. If it supersedes an earlier decision, set that ADR's status to `Superseded by ADR-NNN`, link

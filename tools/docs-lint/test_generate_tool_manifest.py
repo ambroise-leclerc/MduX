@@ -70,6 +70,13 @@ class RealRepositoryTests(unittest.TestCase):
         self.assertEqual(built, listed)
         self.assertGreater(len(built), 1, "the tool list must not be empty or a single accident")
 
+    def test_preview_object_transport_is_discoverable(self):
+        preview = next(tool for tool in self.manifest["tools"] if tool["name"] == "mdux-preview")
+        self.assertEqual("tools/preview/Main.cpp", preview["entryPoint"])
+        self.assertIn("--token-file", preview["options"])
+        self.assertIn("PRV004", preview["diagnosticCodes"])
+        self.assertIn("MduX::PreviewLib", preview["libraries"])
+
     def test_every_entry_point_exists(self):
         for tool in self.manifest["tools"]:
             with self.subTest(tool=tool["name"]):
