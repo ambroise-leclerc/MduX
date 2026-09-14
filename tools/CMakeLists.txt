@@ -382,6 +382,7 @@ target_sources(MduXMeduiLib
             medui/Grammar.cppm
             medui/Ir.cppm
             medui/Serialize.cppm
+            medui/Document.cppm
     PRIVATE
         medui/Diagnostics.cpp
         medui/Lexer.cpp
@@ -397,6 +398,7 @@ target_sources(MduXMeduiLib
         medui/Grammar.cpp
         medui/Ir.cpp
         medui/Serialize.cpp
+        medui/Document.cpp
 )
 
 target_compile_features(MduXMeduiLib PUBLIC cxx_std_23)
@@ -744,16 +746,34 @@ if(MDUX_BUILD_PREVIEW)
         OPTIONS "HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF" "HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF"
                 "HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF" "HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF"
                 "HTTPLIB_COMPILE OFF" "HTTPLIB_INSTALL OFF")
-    add_library(MduXPreviewLib STATIC preview/Preview.cpp)
+    # Child processes (git, gh) use operating-system headers, kept out of the module graph like the
+    # transport's (ADR-025).
+    add_library(MduXPreviewProcess OBJECT preview/Process.cpp)
+    set_target_properties(MduXPreviewProcess PROPERTIES CXX_STANDARD 17 CXX_MODULE_STD OFF)
+    target_link_libraries(MduXPreviewProcess PRIVATE MduX_warnings)
+    add_library(MduXPreviewLib STATIC preview/Preview.cpp preview/Proposal.cpp $<TARGET_OBJECTS:MduXPreviewProcess>)
     add_library(MduX::PreviewLib ALIAS MduXPreviewLib)
     target_link_libraries(MduXPreviewLib PUBLIC MduX::MeduiLib MduX::VerifyUiLib)
     target_link_libraries(MduXPreviewLib PRIVATE MduX::MduX Vulkan::Vulkan MduX_warnings)
+    # The Studio frontend is plain files compiled into the executable: nothing on disk is served.
+    set(studioSources index.html studio.css studio.js model.js)
+    list(TRANSFORM studioSources PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/preview/studio/)
+    string(JOIN "|" studioSourceList ${studioSources})
+    set(studioAssets ${CMAKE_CURRENT_BINARY_DIR}/preview/StudioAssets.cpp)
+    add_custom_command(OUTPUT ${studioAssets}
+        COMMAND ${CMAKE_COMMAND} -DMDUX_STUDIO_FILES=${studioSourceList} -DMDUX_STUDIO_OUTPUT=${studioAssets}
+                -P ${PROJECT_SOURCE_DIR}/cmake/MduXEmbedStudio.cmake
+        DEPENDS ${studioSources} ${PROJECT_SOURCE_DIR}/cmake/MduXEmbedStudio.cmake
+        COMMENT "Embedding the MedUI Studio frontend"
+        VERBATIM)
     # Keep the third-party textual-header transport separate from the C++23 module graph.
     # LLVM 21 + current macOS SDK's math/float headers cannot include <random> in
     # named-module mode; the HTTP boundary itself needs only C++17 standard types.
     # Header-only mode exposes the pinned SocketStream deadline API to this one TU.
     add_library(MduXPreviewTransport OBJECT preview/Main.cpp)
+    target_sources(MduXPreviewTransport PRIVATE ${studioAssets})
     set_target_properties(MduXPreviewTransport PROPERTIES CXX_STANDARD 17 CXX_MODULE_STD OFF)
+    target_include_directories(MduXPreviewTransport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/preview)
     target_link_libraries(MduXPreviewTransport PRIVATE httplib::httplib MduX_warnings)
     add_executable(mdux-preview $<TARGET_OBJECTS:MduXPreviewTransport>)
     target_link_libraries(mdux-preview PRIVATE MduX::PreviewLib httplib::httplib MduX_warnings)

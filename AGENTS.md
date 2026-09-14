@@ -280,7 +280,11 @@ look-alike command line; they are not needed to build by hand, and each uses its
   explicit locale/fixture data, and production offscreen rendering. `MduXPreviewLib` owns the
   backend; `MduXPreviewTransport` isolates cpp-httplib's C++17 textual headers from the C++23
   module graph. Neither is installed into device libraries. See `docs/tools/preview.md` and ADR-024.
-  Its `preview` CTest label includes HTTP contract, unavailable-device and required GPU pixel tests.
+  It also serves the embedded MedUI Studio editor and, with `--proposal-git-dir`, pushes reviewed
+  change-proposal branches built with git plumbing outside the served checkout; it never merges
+  (ADR-025). Its `preview` CTest label includes HTTP contract, unavailable-device, required GPU pixel
+  and git-backed proposal tests; `studio` is the headless-browser workflow test, registered where
+  Chrome or Chromium is found.
 - Documentation: `doxygen-docs` (only available when `MDUX_BUILD_DOCS=ON`)
 
 **Testing**:

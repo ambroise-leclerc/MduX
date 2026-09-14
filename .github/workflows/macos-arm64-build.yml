@@ -132,6 +132,12 @@ jobs:
       shell: bash
       run: ctest --preset ninja-macos-clang -L conformance -V --no-tests=error
 
+    # MedUI Studio (#327, ADR-025): the embedded frontend in headless Chrome against a real mdux-preview,
+    # rendering through MoltenVK and pushing a proposal to a local bare repository. --no-tests=error: a
+    # runner that lost its browser would otherwise pass this step over nothing.
+    - name: Verify the MedUI Studio browser workflow
+      shell: bash
+      run: ctest --preset ninja-macos-clang -L studio -V --no-tests=error
 
     - name: Smoke-test Vulkan presentation
       run: ./build-macos-clang/examples/VulkanSCTriangleExample --smoke-test

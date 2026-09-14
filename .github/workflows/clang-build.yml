@@ -239,6 +239,13 @@ jobs:
     - name: Verify MedUI profile conformance
       run: ctest --preset ninja-clang -L conformance -V --no-tests=error
 
+    # MedUI Studio (#327, ADR-025): the embedded frontend in headless Chrome against a real mdux-preview,
+    # rendering through lavapipe and pushing a proposal to a local bare repository. --no-tests=error: a
+    # runner that lost its browser would otherwise pass this step over nothing.
+    - name: Verify the MedUI Studio browser workflow
+      shell: bash
+      run: ctest --preset ninja-clang -L studio -V --no-tests=error
+
     # Only on failure, and only then. The image is a measurement of the frame rather than a property
     # of the screen, so ADR-014 decision 4 keeps it out of `generated/` and #255 makes it an
     # attachment instead - which is worth nothing unless it is actually attached. `if-no-files-found`

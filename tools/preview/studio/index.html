@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MedUI Studio</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/studio.css">
+<script type="module" src="/studio.js"></script>
+</head>
+<body data-busy="false">
+<header class="bar">
+  <strong class="brand">MedUI Studio</strong>
+  <label>Screen <select id="screen" disabled></select></label>
+  <label>Locale <select id="locale" disabled></select></label>
+  <button type="button" id="undo" disabled title="Undo (Ctrl/Cmd+Z)">Undo</button>
+  <button type="button" id="redo" disabled title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>
+  <button type="button" id="reload" disabled>Reload screen</button>
+  <button type="button" id="propose" disabled>Propose change…</button>
+  <span id="status" role="status"></span>
+</header>
+
+<section id="login" hidden>
+  <form id="login-form">
+    <h2>Connect to mdux-preview</h2>
+    <p>Paste the bearer token from the file passed to <code>--token-file</code>. It is kept for this browser tab only.</p>
+    <input id="login-token" type="password" autocomplete="off" spellcheck="false" required>
+    <button type="submit">Connect</button>
+    <p id="login-error" role="alert"></p>
+  </form>
+</section>
+
+<p id="fatal" role="alert" hidden></p>
+
+<main id="workspace" hidden>
+  <aside class="panel" id="palette-panel">
+    <h2>Palette</h2>
+    <p class="muted">Adds a component with an id and geometry only. Required content fields stay empty until you set them, so the compiler reports them.</p>
+    <ul id="palette"></ul>
+  </aside>
+
+  <section class="panel" id="canvas-panel">
+    <div id="banner" role="alert" hidden></div>
+    <div id="stage">
+      <img id="frame" alt="Production renderer preview">
+      <div id="overlay"></div>
+    </div>
+    <p id="frame-note" class="muted"></p>
+  </section>
+
+  <aside class="panel" id="side">
+    <section>
+      <h2>Inspector</h2>
+      <div id="inspector"></div>
+    </section>
+    <section>
+      <h2>Diagnostics</h2>
+      <ol id="diagnostics"></ol>
+    </section>
+    <section>
+      <h2>Fixture</h2>
+      <p class="muted">Explicit synthetic values for every dynamic binding. Nothing is invented: a missing or null value is refused and no frame is rendered. Floats are <code>{"bits": UINT32}</code>.</p>
+      <ul id="bindings"></ul>
+      <textarea id="fixture" spellcheck="false" rows="10"></textarea>
+      <button type="button" id="apply-fixture">Apply fixture</button>
+    </section>
+    <details>
+      <summary>Canonical source</summary>
+      <pre id="source"></pre>
+    </details>
+  </aside>
+</main>
+
+<dialog id="proposal">
+  <form method="dialog" id="proposal-form">
+    <h2>Propose change</h2>
+    <p id="proposal-writes"></p>
+    <div class="grid">
+      <label>Issue <input id="proposal-issue" type="number" min="1" required></label>
+      <label>Base <input id="proposal-base" value="develop" required></label>
+      <label class="wide">Title <input id="proposal-title" maxlength="200" required></label>
+      <label class="wide">Branch slug <input id="proposal-slug" required></label>
+      <label class="wide">Description <textarea id="proposal-description" rows="4"></textarea></label>
+    </div>
+    <div id="proposal-review"></div>
+    <label id="ack-comments-row" class="ack" hidden><input type="checkbox" id="ack-comments"> The committed file's <code>//</code> comments are removed by canonical serialization. I accept that loss.</label>
+    <label id="ack-safety-row" class="ack" hidden><input type="checkbox" id="ack-safety"> I have reviewed every safety annotation and requirement change listed above.</label>
+    <p id="proposal-result" role="status"></p>
+    <menu>
+      <button value="cancel" id="proposal-close">Close</button>
+      <button type="button" id="proposal-review-button">Review</button>
+      <button type="button" id="proposal-submit" disabled>Submit proposal</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="ok" id="confirm-ok">Confirm</button>
+    </menu>
+  </form>
+</dialog>
+</body>
+</html>

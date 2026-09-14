@@ -125,18 +125,28 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
 | Phase 2 epics | 4 of 5 closed (#307, #308, #309, #310); 1 open: #311 |
-| Phase 2 child issues | 16 total (#312–#327): 13 closed (#312–#324), 3 open — #325–#327; #325 delivered pending ratification |
+| Phase 2 child issues | 16 total (#312–#327): 14 closed (#312–#324, #326), 2 open — #325 delivered pending ratification, #327 implemented on its work branch |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#326](https://github.com/ambroise-leclerc/MduX/issues/326); see [Next to implement](#next-to-implement) |
+| Unblocked child issues | [#327](https://github.com/ambroise-leclerc/MduX/issues/327), implemented pending review; see [Next to implement](#next-to-implement) |
 
 ## Preview backend implementation (#326)
 
-The optional native `mdux-preview` service is implemented on the #326 work branch: recipe discovery,
-unsaved-source compilation, explicit locale and dynamic fixtures, and production offscreen PNGs.
+The optional native `mdux-preview` service merged with #326: recipe discovery, unsaved-source
+compilation, explicit locale and dynamic fixtures, and production offscreen PNGs.
 [ADR-024](adr/ADR-024-local-native-preview-service.md) records the scope and outstanding maintainer
-review; [the protocol](tools/preview.md) records deployment and refusal behavior. #327 consumes this
-backend after #326 merges and its post-merge checks pass. The roadmap's issue-status tables above
-remain the merged-delivery record until then.
+review; [the protocol](tools/preview.md) records deployment and refusal behavior.
+
+## Studio editing and change proposals (#327)
+
+The embedded MedUI Studio is implemented on the #327 work branch and recorded by
+[ADR-025](adr/ADR-025-medui-studio-editing-and-reviewable-change-proposals.md) (Proposed): screen and
+locale selection, palette, inspector, selection/move/resize, undo/redo and diagnostics over the
+versioned AST document `mdux.tools.medui.document`; invalid edits shown against the last valid
+production frame; and explicit, reviewed proposals with digest checks, comment-loss and safety-metadata
+acknowledgements, git plumbing in a service-owned repository and no automatic merge. `preview.proposals`
+covers the server paths with real git, and `ctest -L studio` drives the Studio in headless Chrome
+against the real renderer on the macOS, Windows and Linux Clang legs. The issue-status tables above
+remain the merged-delivery record until it merges.
 
 ## Current comparison
 
@@ -206,8 +216,8 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-\#312–#325 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The next
-executable work is the real-preview issue (**#326**), under the one remaining epic **#311**.
+\#312–#326 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The last
+executable work is the Studio integration issue (**#327**), under the one remaining epic **#311**.
 Canonical interfaces land before their consumers, and each design issue produces the ADR and
 canonical types its epic's implementation children then consume. The
 [Next to implement](#next-to-implement) subsection records the recommended order and what each
@@ -219,11 +229,12 @@ agreed.
 Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
 epics #307, #308 and #309 are closed. #322, #323 and #324 are all merged and epic #310 is closed**
 (ADR-022, Proposed, ratification carried on the ADR). **#325 is delivered** (ADR-023, Proposed;
-`mdux.tools.medui.serialize`). Two child issues remain under epic #311.
+`mdux.tools.medui.serialize`) and **#326 has merged** (ADR-024, Proposed). One child issue remains
+under epic #311. Re-assessed 14 September 2026.
 
 | Rank | Issue | Why now | Unblocks | Shape |
 |---|---|---|---|---|
-| 1 | [**#326**](https://github.com/ambroise-leclerc/MduX/issues/326) — serve real MduX previews | Unblocked now that #325 (ADR-023), #316 and #323 are all delivered. | #327 (epic #311) | Real, locale-aware `/frame`-equivalent previews over the compile/IR contract ADR-023 names, plus dynamic fixture data. |
+| 1 | [**#327**](https://github.com/ambroise-leclerc/MduX/issues/327) — Studio editing and change proposals | Unblocked by #326's merge; implemented on its work branch (ADR-025, Proposed). | Closing epic #311 | The embedded Studio over the preview service, the AST document view, and reviewed proposals that push a branch and never merge. |
 
 The four closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action

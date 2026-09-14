@@ -14,7 +14,9 @@ import mdux.medui.viewport;
 import mdux.tools.input;
 import mdux.tools.cli;
 import mdux.tools.medui.compile;
+import mdux.tools.medui.document;
 import mdux.tools.medui.package;
+import mdux.tools.medui.parser;
 import mdux.tools.medui.grammar;
 import mdux.tools.medui.ir;
 import mdux.tools.medui.lexer;
@@ -24,6 +26,7 @@ import mdux.render.offscreen;
 import mdux.render.vulkan;
 #include "../verify/HeadlessDevice.hpp"
 #include "Preview.hpp"
+#include "Proposal.hpp"
 
 namespace mdux::tools::preview {
 namespace j   = mdux::evidence::json;
@@ -440,6 +443,178 @@ void render(V&                            out,
     put(out, "locale", localeValue);
     put(out, "synthetic", V::boolean(true));
 }
+/// Lowercase ASCII words joined by single dashes: the part of an issue branch after its number.
+bool isSlug(std::string_view s, std::size_t max) {
+    return !s.empty() && s.size() <= max && s.front() != '-' && s.back() != '-' && s.find("--") == std::string_view::npos
+           && std::ranges::all_of(s, [](unsigned char c) {
+                  return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+              });
+}
+/// `develop`, or an issue branch `<number>-<slug>` that a stacked proposal may target (AGENTS.md § 6).
+bool isBaseBranch(std::string_view s) {
+    const auto dash = s.find('-');
+    return s == "develop"
+           || (dash != std::string_view::npos && dash > 0 && dash <= 8
+               && std::ranges::all_of(s.substr(0, dash),
+                                      [](unsigned char c) {
+                                          return c >= '0' && c <= '9';
+                                      })
+               && isSlug(s.substr(dash + 1), 100));
+}
+bool isOneLine(std::string_view s) {
+    return std::ranges::none_of(s, [](unsigned char c) {
+        return c < 32 || c == 127;
+    });
+}
+Response propose(const Service&     service,
+                 V&                 out,
+                 const V&           request,
+                 const std::string& recipePath,
+                 const std::string& sourcePath,
+                 const std::string& disk,
+                 const std::string& proposed) {
+    const auto issue = number(request, "issue", 99999999);
+    if (issue == 0)
+        fail("issue must be a positive issue number");
+    const std::string slug{str(request, "slug")};
+    if (!isSlug(slug, 60))
+        fail("slug must be lowercase words joined by single dashes, at most 60 characters");
+    const std::string base{str(request, "base")};
+    if (!isBaseBranch(base))
+        fail("base must be develop or an issue branch named <number>-<slug>");
+    std::string title{str(request, "title")};
+    if (title.empty() || title.size() > 200 || !isOneLine(title))
+        fail("title must be one line of 1 to 200 bytes");
+    const std::string description{str(request, "description")};
+    if (description.size() > 16000)
+        fail("description exceeds 16000 bytes");
+    const auto flag = [&](std::string_view key) {
+        auto b = member(request, key).asBool();
+        if (!b)
+            fail("expected boolean: " + std::string(key));
+        return *b;
+    };
+    const bool        dryRun      = flag("dryRun");
+    const bool        commentsAck = flag("acknowledgeCommentLoss");
+    const bool        safetyAck   = flag("acknowledgeSafetyChanges");
+    const std::string loaded{str(request, "baseSourceDigest")};
+    if (va::hexDigest(disk) != loaded)
+        throw Failure(409, "PRV009", "the source changed on disk after it was loaded; reload the screen and reapply the edit");
+    auto before = md::parse(disk, sourcePath);
+    auto after  = md::parse(proposed, sourcePath);
+    if (!before.ok() || !after.ok())
+        fail("the loaded and proposed sources must both parse cleanly");
+    if (md::sameScreen(*before.screen, *after.screen))
+        fail("the document makes no change to the screen");
+
+    const auto     changes     = md::safetyChanges(*before.screen, *after.screen);
+    const bool     commentLoss = md::containsComments(disk);
+    std::vector<V> rows;
+    for (const auto& change : changes) {
+        V row = V::emptyObject();
+        put(row, "nodeId", V::string(change.nodeId));
+        put(row, "change", V::string(change.change));
+        put(row, "before", change.before.empty() ? V::null() : parse(change.before));
+        put(row, "after", change.after.empty() ? V::null() : parse(change.after));
+        rows.push_back(std::move(row));
+    }
+    const auto stem = std::format("{}-{}", issue, slug);
+    put(out, "commentLoss", V::boolean(commentLoss));
+    put(out, "safetyChanges", V::array(std::move(rows)));
+    put(out, "branchPrefix", V::string(stem));
+    put(out, "base", V::string(base));
+    put(out, "writesEnabled", V::boolean(service.proposals.has_value()));
+    put(out, "diagnostics", diagnostics({}));
+    if (dryRun)
+        return {200, encode(out)};
+    if (!service.proposals)
+        throw Failure(403, "PRV008", "this service was started without proposal writes");
+    if (commentLoss && !commentsAck)
+        throw Failure(409, "PRV010", "the committed source has // comments that the canonical source drops; acknowledge the loss to propose");
+    if (!changes.empty() && !safetyAck)
+        throw Failure(409, "PRV011", "the edit adds, removes or changes safety annotations or requirement fields; acknowledge them to propose");
+
+    auto fetched = fetchProposalBase(*service.proposals, base, sourcePath);
+    if (!fetched.ok())
+        throw Failure(fetched.status, fetched.code, fetched.message);
+    if (va::hexDigest(fetched.baseSource) != loaded)
+        throw Failure(409,
+                      "PRV009",
+                      std::format("{} on {} differs from the loaded source; update the served checkout, reload and reapply the edit", sourcePath, base));
+
+    const auto reference = std::format("#{}", issue);
+    if (title.find(reference) == std::string::npos)
+        title += std::format(" ({})", reference);
+    std::string safety;
+    for (const auto& change : changes)
+        safety += std::format("- `{}`: {}\n", change.nodeId, change.change);
+    ProposalPlan plan;
+    plan.path       = sourcePath;
+    plan.base       = base;
+    plan.branchStem = stem;
+    plan.source     = proposed;
+    plan.title      = title;
+    plan.message    = std::format(
+        "{}\n\n{}{}Proposed from MedUI Studio (mdux-preview) for {}.\nRecipe: {}\nSafety metadata changes acknowledged: {}\nComment loss acknowledged: {}\n",
+        title,
+        description,
+        description.empty() || description.ends_with('\n') ? "" : "\n\n",
+        reference,
+        recipePath,
+        changes.size(),
+        commentLoss ? "yes" : "not applicable");
+    plan.body = std::format(
+        "## Summary\n\n{}\n\nProposed from MedUI Studio (`mdux-preview`) for {}. The service opened this as a draft and never merges it.\n\n"
+        "## Dependency\n\n- **Base branch:** `{}`\n- **Predecessor PR:** {}\n- **Merge order:** requires maintainer review\n\n"
+        "## Source change\n\n- File: `{}` (canonical serialization, ADR-023)\n- Base commit: `{}`\n- `//` comments dropped: {}\n\n"
+        "## Verification\n\n- [x] `mdux-preview` compiled the proposed source against `{}` before committing.\n"
+        "- [ ] Committed artifacts under `generated/` re-baked with `mdux-bake-update` (the Studio does not bake).\n- [ ] CI green.\n\n"
+        "## Regulatory impact\n\nSafety metadata changes acknowledged by the author:\n\n{}\nRequires maintainer review; this proposal establishes no "
+        "verification or certification claim.\n",
+        description.empty() ? title : description,
+        reference,
+        base,
+        base == "develop" ? "not stacked" : "stacked on `" + base + "`",
+        sourcePath,
+        fetched.baseCommit,
+        commentLoss ? "yes, acknowledged" : "none present",
+        recipePath,
+        safety.empty() ? "none\n" : safety);
+
+    auto outcome = submitProposal(*service.proposals, plan, fetched.baseCommit);
+    if (!outcome.ok())
+        throw Failure(outcome.status, outcome.code, outcome.message);
+    put(out, "branch", V::string(outcome.branch));
+    put(out, "commit", V::string(outcome.commit));
+    put(out, "baseCommit", V::string(outcome.baseCommit));
+    put(out, "pullRequestUrl", outcome.pullRequestUrl.empty() ? V::null() : V::string(outcome.pullRequestUrl));
+    put(out, "warning", outcome.warning.empty() ? V::null() : V::string(outcome.warning));
+    return {201, encode(out)};
+}
+/// Lexes a source against the service's structural limits, returning an encoding refusal if any.
+std::optional<std::vector<cli::Diagnostic>> bounded(std::string_view text, const std::string& file) {
+    if (text.size() > 4194304)
+        throw Failure(413, "PRV003", "source exceeds 4 MiB");
+    const auto lexed = md::lex(text, file);
+    if (std::ranges::any_of(lexed.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.code == "MEDUI-E004";
+        }))
+        return lexed.diagnostics;
+    // Bound parser recursion using the compiler's own tokenization, so comments and quoted
+    // brackets cannot be mistaken for structure. This is a service limit, not a DSL change.
+    if (lexed.tokens.size() > 65536)
+        throw Failure(413, "PRV003", "source exceeds 65536 tokens");
+    std::size_t depth = 0;
+    for (const auto& token : lexed.tokens) {
+        if (token.kind == md::TokenKind::LBracket || token.kind == md::TokenKind::LBrace || token.kind == md::TokenKind::LParen) {
+            if (++depth > 64)
+                throw Failure(413, "PRV003", "source nesting exceeds 64 levels");
+        } else if ((token.kind == md::TokenKind::RBracket || token.kind == md::TokenKind::RBrace || token.kind == md::TokenKind::RParen) && depth != 0) {
+            --depth;
+        }
+    }
+    return std::nullopt;
+}
 }  // namespace
 
 std::filesystem::path confined(const std::filesystem::path& root, const std::filesystem::path& relative) {
@@ -468,10 +643,10 @@ std::filesystem::path confined(const std::filesystem::path& root, const std::fil
     return resolved;
 }
 
-Response handle(const std::filesystem::path& root, std::string_view route, std::string_view body) {
+Response handle(const Service& service, std::string_view route, std::string_view body) {
     std::vector<cli::Diagnostic> ds;
     try {
-        Inputs inputs{std::filesystem::canonical(root), {}, 0};
+        Inputs inputs{std::filesystem::canonical(service.root), {}, 0};
         V      out = V::emptyObject();
         put(out, "schemaVersion", V::integer(1));
         if (route == "catalog") {
@@ -481,11 +656,16 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
             put(out,
                 "previewDiagnostics",
                 parse(
-                    R"([{"code":"PRV001","meaning":"malformed request or unsupported schema"},{"code":"PRV002","meaning":"invalid or unsupported input or binding"},{"code":"PRV003","meaning":"resource limit exceeded"},{"code":"PRV004","meaning":"no render device"},{"code":"PRV005","meaning":"render or internal operation failed"},{"code":"PRV006","meaning":"path refused or unavailable"},{"code":"PRV007","meaning":"backend busy"}])"));
+                    R"([{"code":"PRV001","meaning":"malformed request or unsupported schema"},{"code":"PRV002","meaning":"invalid or unsupported input or binding"},{"code":"PRV003","meaning":"resource limit exceeded"},{"code":"PRV004","meaning":"no render device"},{"code":"PRV005","meaning":"render or internal operation failed"},{"code":"PRV006","meaning":"path refused or unavailable"},{"code":"PRV007","meaning":"backend busy"},{"code":"PRV008","meaning":"proposal writes disabled"},{"code":"PRV009","meaning":"proposal base is stale"},{"code":"PRV010","meaning":"comment loss not acknowledged"},{"code":"PRV011","meaning":"safety metadata change not acknowledged"},{"code":"PRV012","meaning":"git operation failed"}])"));
             put(out, "maxInputBytes", V::integer(134217728));
             put(out, "maxDrawBytes", V::integer(67108864));
             put(out, "maxDimension", V::integer(4096));
             put(out, "maxRequestBytes", V::integer(4194304));
+            put(out, "documentSchemaVersion", V::unsignedInteger(md::documentSchemaVersion));
+            V proposals = V::emptyObject();
+            put(proposals, "enabled", V::boolean(service.proposals.has_value()));
+            put(proposals, "pullRequests", V::boolean(service.proposals && service.proposals->pullRequests));
+            put(out, "proposals", std::move(proposals));
             return {200, encode(out)};
         }
         if (route == "screens") {
@@ -507,7 +687,28 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         if (body.size() > 4194304)
             throw Failure(413, "PRV003", "request exceeds 4 MiB");
         auto request = parse(body);
-        keys(request, {"schemaVersion", "recipe", "source", "locale", "fixture", "clearColor"});
+        if (route == "detail" || route == "document")
+            keys(request, {"schemaVersion", "recipe", "source"});
+        else if (route == "compile")
+            keys(request, {"schemaVersion", "recipe", "source", "document"});
+        else if (route == "frame")
+            keys(request, {"schemaVersion", "recipe", "source", "document", "locale", "fixture", "clearColor"});
+        else if (route == "proposals")
+            keys(request,
+                 {"schemaVersion",
+                  "recipe",
+                  "document",
+                  "baseSourceDigest",
+                  "issue",
+                  "slug",
+                  "base",
+                  "title",
+                  "description",
+                  "acknowledgeCommentLoss",
+                  "acknowledgeSafetyChanges",
+                  "dryRun"});
+        else
+            throw Failure(404, "PRV001", "unknown route");
         if (number(request, "schemaVersion") != 1)
             throw Failure(400, "PRV001", "unsupported schemaVersion");
         std::filesystem::path relative{str(request, "recipe")};
@@ -525,8 +726,29 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
         auto sourcePath = confined(inputs.root, recipe->source);
         if (std::filesystem::equivalent(sourcePath, confined(inputs.root, relative)))
             fail("recipe and source must be distinct files");
-        if (auto source = request.find("source")) {
-            auto                   s = string(*source);
+        if (request.find("source") && request.find("document"))
+            throw Failure(400, "PRV001", "source and document are mutually exclusive");
+        const bool  proposing = route == "proposals";
+        std::string canonical;
+        if (proposing)
+            static_cast<void>(member(request, "document"));
+        if (auto document = request.find("document")) {
+            auto text = md::sourceFromDocument(*document);
+            if (!text)
+                fail(text.error());
+            canonical = std::move(*text);
+        }
+        // A proposal changes the file on disk that the author loaded, never an earlier overlay.
+        std::string disk;
+        if (proposing) {
+            disk = bytesText(inputs.read(sourcePath));
+            if (auto refused = bounded(disk, recipe->source)) {
+                put(out, "diagnostics", diagnostics(*refused));
+                return {422, encode(out)};
+            }
+        }
+        if (auto source = request.find("source"); source || !canonical.empty()) {
+            auto                   s = source ? string(*source) : std::string_view{canonical};
             std::vector<std::byte> bytes(s.size());
             if (!s.empty())
                 std::memcpy(bytes.data(), s.data(), s.size());
@@ -545,36 +767,43 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
                 return std::nullopt;
             }
         };
-        const auto& source = inputs.read(sourcePath);
-        if (source.size() > 4194304)
+        const auto text = bytesText(inputs.read(sourcePath));
+        if (text.size() > 4194304)
             throw Failure(413, "PRV003", "source exceeds 4 MiB");
-        const auto lexed = md::lex(bytesText(source), recipe->source);
-        if (std::ranges::any_of(lexed.diagnostics, [](const auto& diagnostic) {
-                return diagnostic.code == "MEDUI-E004";
-            })) {
-            put(out, "diagnostics", diagnostics(lexed.diagnostics));
-            return {422, encode(out)};
-        }
-        put(out, "sourceDigest", V::string(va::hexDigest(bytesText(source))));
         if (route == "detail") {
-            put(out, "source", V::string(bytesText(source)));
+            const auto lexed = md::lex(text, recipe->source);
+            if (std::ranges::any_of(lexed.diagnostics, [](const auto& diagnostic) {
+                    return diagnostic.code == "MEDUI-E004";
+                })) {
+                put(out, "diagnostics", diagnostics(lexed.diagnostics));
+                return {422, encode(out)};
+            }
+            put(out, "sourceDigest", V::string(va::hexDigest(text)));
+            put(out, "source", V::string(text));
             put(out, "recipe", recipe->toOptions());
             put(out, "diagnostics", diagnostics(ds));
             return {200, encode(out)};
         }
-        // Bound parser recursion using the compiler's own tokenization, so comments and quoted
-        // brackets cannot be mistaken for structure. This is a service limit, not a DSL change.
-        if (lexed.tokens.size() > 65536)
-            throw Failure(413, "PRV003", "source exceeds 65536 tokens");
-        std::size_t depth = 0;
-        for (const auto& token : lexed.tokens) {
-            if (token.kind == md::TokenKind::LBracket || token.kind == md::TokenKind::LBrace || token.kind == md::TokenKind::LParen) {
-                if (++depth > 64)
-                    throw Failure(413, "PRV003", "source nesting exceeds 64 levels");
-            } else if ((token.kind == md::TokenKind::RBracket || token.kind == md::TokenKind::RBrace || token.kind == md::TokenKind::RParen) && depth != 0) {
-                --depth;
-            }
+        if (auto refused = bounded(text, recipe->source)) {
+            put(out, "diagnostics", diagnostics(*refused));
+            return {422, encode(out)};
         }
+        put(out, "sourceDigest", V::string(va::hexDigest(text)));
+        if (route == "document") {
+            // ADR-023 decision 2: a recovered partial screen is never offered for editing.
+            auto parsed = md::parse(text, recipe->source);
+            if (!parsed.ok()) {
+                put(out, "diagnostics", diagnostics(parsed.diagnostics));
+                return {422, encode(out)};
+            }
+            put(out, "documentSchemaVersion", V::unsignedInteger(md::documentSchemaVersion));
+            put(out, "document", md::screenDocument(*parsed.screen));
+            put(out, "commentLines", V::boolean(md::containsComments(text)));
+            put(out, "diagnostics", diagnostics(ds));
+            return {200, encode(out)};
+        }
+        if (!canonical.empty())
+            put(out, "source", V::string(canonical));
         std::string ir;
         auto        compiled = md::run(*recipe, relative.generic_string(), recipeBytes, inputs.root, ds, &ir, reader);
         if (!ir.empty())
@@ -583,6 +812,8 @@ Response handle(const std::filesystem::path& root, std::string_view route, std::
             put(out, "diagnostics", diagnostics(ds));
             return {422, encode(out)};
         }
+        if (proposing)
+            return propose(service, out, request, relative.generic_string(), sourcePath.lexically_relative(inputs.root).generic_string(), disk, canonical);
         auto document = md::readPackage(compiled->packageJson, "preview/package.json");
         if (!document.ok())
             fail("compiled package refused");
