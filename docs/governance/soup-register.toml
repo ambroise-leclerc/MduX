@@ -169,3 +169,57 @@ support_model = "Community maintained; no medical-device qualification or suppor
 boundary_rationale = "Transport is linked only into an optional host executable, never device targets."
 risk_controls = ["Pinned release commit", "Loopback-only bearer authentication and Host/Origin checks", "Bounded body size, worker count and connection queue"]
 known_anomaly_tracking = "Track dependency findings against cpp-httplib-0.56.0; no qualification claim."
+
+[[entries]]
+component_id = "git-cli"
+name = "Git command-line client"
+version = "Any git on the host PATH; not pinned"
+classification = "SOUP"
+supplier = "Git project"
+repository = "https://github.com/git/git"
+license = "GPL-2.0-only"
+usage = "Optional mdux-preview change proposals (ADR-025): fetches the base branch, builds one commit with plumbing commands in a service-owned repository, and pushes a new branch. Also used by the preview.proposals and preview.studio tests."
+trust_zone = "host-tools"
+integration_path = "tools/preview/Proposal.cpp through tools/preview/Process.cpp; started as an external executable with an argument vector, never linked"
+pinned_by = ["tools/preview/Proposal.cpp"]
+runtime_deployment = false
+support_model = "Community maintained; no medical-device qualification or support agreement."
+boundary_rationale = "Invoked only by an optional host service when started with --proposal-git-dir; never linked into, or run by, any device target. Its output is a pull request branch that CI and maintainer review gate like any other."
+risk_controls = ["No shell, terminal prompts disabled, bounded run time and output per command", "Service-owned --git-dir outside the served root; no working tree, temporary index only", "Push can only create a branch (empty force-with-lease expectation); nothing is merged", "Compile, digest and acknowledgement checks run before any git command"]
+known_anomaly_tracking = "Track dependency findings against git-cli; no qualification claim."
+
+[[entries]]
+component_id = "github-cli"
+name = "GitHub CLI (gh)"
+version = "Any gh on the host PATH; not pinned"
+classification = "SOUP"
+supplier = "GitHub"
+repository = "https://github.com/cli/cli"
+license = "MIT"
+usage = "Opens a draft pull request for a pushed mdux-preview proposal branch, only when the service is started with --proposal-pull-requests."
+trust_zone = "host-tools"
+integration_path = "tools/preview/Proposal.cpp through tools/preview/Process.cpp; started as an external executable, never linked"
+pinned_by = ["tools/preview/Proposal.cpp"]
+runtime_deployment = false
+support_model = "Vendor maintained; no medical-device qualification or support agreement."
+boundary_rationale = "Optional host-side convenience after a branch already exists; failure is reported as a warning and changes nothing else."
+risk_controls = ["Opt-in flag", "Draft pull requests only; the service has no merge path", "Prompts disabled, bounded run time, credentials redacted from reported messages"]
+known_anomaly_tracking = "Track dependency findings against github-cli; no qualification claim."
+
+[[entries]]
+component_id = "chromium-test-browser"
+name = "Google Chrome or Chromium (headless)"
+version = "The CI runner image's installed browser; not pinned"
+classification = "build-tool"
+supplier = "Google / The Chromium Authors"
+repository = "https://chromium.googlesource.com/chromium/src"
+license = "BSD-3-Clause (Chromium); Google Chrome under Google terms"
+usage = "Runs the preview.studio browser workflow test through the DevTools protocol (tests/preview/DevTools.py). Test-only."
+trust_zone = "tests"
+integration_path = "tests/CMakeLists.txt find_program(MDUX_STUDIO_BROWSER); asserted by the studio steps of macos-arm64-build.yml, windows-build.yml and clang-build.yml"
+pinned_by = ["tests/CMakeLists.txt"]
+runtime_deployment = false
+support_model = "Vendor maintained; no qualification claim."
+boundary_rationale = "Test-only: it loads the Studio's compiled-in files from a loopback service. A defect could hide or invent a frontend failure, so the risk is to verification integrity, not device behaviour."
+risk_controls = ["Assertions read the service's own outputs (rendered PNG digests, git branch contents), not only DOM state", "Uncaught exceptions, console errors and CSP violations fail the test", "--no-tests=error on each CI step so a missing browser fails instead of passing over nothing"]
+known_anomaly_tracking = "Track findings against chromium-test-browser; no qualification claim."

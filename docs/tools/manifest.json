@@ -267,7 +267,12 @@
         "PRV004",
         "PRV005",
         "PRV006",
-        "PRV007"
+        "PRV007",
+        "PRV008",
+        "PRV009",
+        "PRV010",
+        "PRV011",
+        "PRV012"
       ],
       "entryPoint": "tools/preview/Main.cpp",
       "grammar": "tool-specific",
@@ -278,6 +283,9 @@
       "options": [
         "--help",
         "--port",
+        "--proposal-git-dir",
+        "--proposal-pull-requests",
+        "--proposal-remote",
         "--root",
         "--token-file"
       ],

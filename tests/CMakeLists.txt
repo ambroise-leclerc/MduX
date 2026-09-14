@@ -1031,6 +1031,7 @@ add_executable(medui_tools_spec
     medui/SchemaSubsetTests.cpp
     medui/SharedConformanceTests.cpp
     medui/SerializeTests.cpp
+    medui/DocumentTests.cpp
 )
 
 target_link_libraries(medui_tools_spec PRIVATE MduX::MeduiLib speclab::speclab)
@@ -1666,4 +1667,25 @@ if(MDUX_BUILD_PREVIEW)
         set_tests_properties(preview.${previewMode} PROPERTIES LABELS "preview" TIMEOUT 180)
     endforeach()
     set_tests_properties(preview.pixel PROPERTIES LABELS "preview;pixel")
+    # Studio documents and change proposals against real git (#327, ADR-025). Compiles, never renders.
+    add_test(NAME preview.proposals
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/preview/ProposalTests.py
+            $<TARGET_FILE:mdux-preview> ${PROJECT_SOURCE_DIR})
+    set_tests_properties(preview.proposals PROPERTIES LABELS "preview" TIMEOUT 300)
+    # The browser workflow test drives the embedded Studio in headless Chrome or Chromium, and renders
+    # through the production GPU path. CI legs that have a browser assert it with `ctest -L studio`.
+    find_program(MDUX_STUDIO_BROWSER
+        NAMES google-chrome google-chrome-stable chromium chromium-browser chrome "Google Chrome"
+        PATHS "/Applications/Google Chrome.app/Contents/MacOS"
+              "$ENV{PROGRAMFILES}/Google/Chrome/Application"
+              "$ENV{LOCALAPPDATA}/Google/Chrome/Application"
+        DOC "Chrome or Chromium for the preview.studio browser workflow test")
+    if(MDUX_STUDIO_BROWSER)
+        add_test(NAME preview.studio
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/preview/StudioBrowserTests.py
+                $<TARGET_FILE:mdux-preview> ${PROJECT_SOURCE_DIR} ${MDUX_STUDIO_BROWSER})
+        set_tests_properties(preview.studio PROPERTIES LABELS "preview;studio" TIMEOUT 300)
+    else()
+        message(STATUS "preview.studio not registered: no Chrome or Chromium found (set MDUX_STUDIO_BROWSER)")
+    endif()
 endif()

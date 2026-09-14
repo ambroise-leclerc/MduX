@@ -1,12 +1,15 @@
 /** @file Main.cpp
- * @brief Authenticated loopback HTTP transport for mdux-preview.
+ * @brief Authenticated loopback HTTP transport for mdux-preview and its embedded Studio.
  */
 
 // clang-format off
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <csignal>
+#include <cstddef>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -15,7 +18,9 @@
 #include <iostream>
 
 #include <httplib.h>
+#include "Proposal.hpp"
 #include "Preview.hpp"
+#include "StudioAssets.hpp"
 // clang-format on
 namespace {
 // The pinned transport exposes a total read deadline through SocketStream. Reject
@@ -80,17 +85,34 @@ class PreviewServer final : public httplib::Server {
         return result;
     }
 };
+/// True when `inner` names `outer` or something beneath it.
+bool within(const std::filesystem::path& inner, const std::filesystem::path& outer) {
+    const auto relative = inner.lexically_relative(outer);
+    return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
+}
 }  // namespace
 
 int main(int argc, char** argv) {
     try {
-        std::filesystem::path root, tokenFile;
-        int                   port = 0;
+#ifndef _WIN32
+        // A child that exits before reading its input must not terminate the service (ADR-025).
+        std::signal(SIGPIPE, SIG_IGN);
+#endif
+        std::filesystem::path                                 root, tokenFile;
+        std::optional<mdux::tools::preview::ProposalSettings> proposals;
+        std::string                                           remote       = "origin";
+        bool                                                  pullRequests = false;
+        int                                                   port         = 0;
         for (int i = 1; i < argc; ++i) {
             std::string_view arg = argv[i];
             if (arg == "--help") {
-                (std::cout << "mdux-preview --root REPOSITORY --token-file FILE [--port PORT]\n");
+                (std::cout << "mdux-preview --root REPOSITORY --token-file FILE [--port PORT]\n"
+                              "             [--proposal-git-dir GIT_DIR [--proposal-remote NAME] [--proposal-pull-requests]]\n");
                 return 0;
+            }
+            if (arg == "--proposal-pull-requests") {
+                pullRequests = true;
+                continue;
             }
             if (i + 1 == argc)
                 throw std::runtime_error("missing option value");
@@ -99,6 +121,10 @@ int main(int argc, char** argv) {
                 root = value;
             else if (arg == "--token-file")
                 tokenFile = value;
+            else if (arg == "--proposal-git-dir")
+                proposals.emplace().gitDirectory = value;
+            else if (arg == "--proposal-remote")
+                remote = value;
             else if (arg == "--port") {
                 auto [p, ec] = std::from_chars(value.data(), value.data() + value.size(), port);
                 if (ec != std::errc{} || p != value.data() + value.size() || port < 0 || port > 65535)
@@ -108,11 +134,25 @@ int main(int argc, char** argv) {
         }
         if (root.empty() || tokenFile.empty())
             throw std::runtime_error("--root and --token-file are required");
-        root                     = std::filesystem::canonical(root);
-        tokenFile                = std::filesystem::canonical(tokenFile);
-        const auto tokenRelative = tokenFile.lexically_relative(root);
-        if (!tokenRelative.empty() && !tokenRelative.is_absolute() && *tokenRelative.begin() != "..")
+        root      = std::filesystem::canonical(root);
+        tokenFile = std::filesystem::canonical(tokenFile);
+        if (within(tokenFile, root) || tokenFile == root)
             throw std::runtime_error("token file must be outside the repository root");
+        if (proposals) {
+            auto& settings        = *proposals;
+            settings.gitDirectory = std::filesystem::canonical(settings.gitDirectory);
+            if (!std::filesystem::is_directory(settings.gitDirectory))
+                throw std::runtime_error("--proposal-git-dir must be a git directory");
+            // Git operations must never touch the checkout being served, its index or its refs.
+            if (within(settings.gitDirectory, root) || within(root, settings.gitDirectory) || settings.gitDirectory == root)
+                throw std::runtime_error("--proposal-git-dir must be outside the repository root");
+            if (remote.empty() || remote.front() == '-' || remote.find_first_of(" \t\r\n") != std::string::npos)
+                throw std::runtime_error("invalid --proposal-remote");
+            settings.remote       = remote;
+            settings.pullRequests = pullRequests;
+        } else if (pullRequests || remote != "origin") {
+            throw std::runtime_error("proposal options require --proposal-git-dir");
+        }
         if (std::filesystem::file_size(tokenFile) > 258)
             throw std::runtime_error("token file is too large");
         std::ifstream file(tokenFile, std::ios::binary);
@@ -124,8 +164,9 @@ int main(int argc, char** argv) {
                 return c >= 33 && c <= 126;
             }))
             throw std::runtime_error("token must contain 32..256 printable non-space characters");
-        PreviewServer server;
-        std::mutex    work;
+        const mdux::tools::preview::Service service{root, proposals};
+        PreviewServer                       server;
+        std::mutex                          work;
         server.new_task_queue = [] {
             return new httplib::ThreadPool(2, 0, 8);
         };
@@ -144,6 +185,10 @@ int main(int argc, char** argv) {
                 res.status = 403;
                 return httplib::Server::HandlerResponse::Handled;
             }
+            // The embedded Studio files are public build output and carry no repository data; a page
+            // cannot send a bearer header when a browser loads it. Every API route needs the token.
+            if (req.path.rfind("/api/", 0) != 0)
+                return httplib::Server::HandlerResponse::Unhandled;
             auto     supplied   = req.get_header_value("Authorization");
             auto     expected   = "Bearer " + token;
             unsigned difference = static_cast<unsigned>(supplied.size() != expected.size());
@@ -179,7 +224,7 @@ int main(int argc, char** argv) {
                 }
                 body = "{\"schemaVersion\":1,\"recipe\":\"" + escaped + "\"}";
             }
-            auto response = mdux::tools::preview::handle(root, route, body);
+            auto response = mdux::tools::preview::handle(service, route, body);
             res.status    = response.status;
             res.set_content(std::move(response.body), "application/json");
         };
@@ -192,12 +237,22 @@ int main(int argc, char** argv) {
         server.Get("/api/screens/detail", [&](const auto& req, auto& res) {
             dispatch("detail", req, res);
         });
-        server.Post("/api/compile", [&](const auto& req, auto& res) {
-            dispatch("compile", req, res);
-        });
-        server.Post("/api/frame", [&](const auto& req, auto& res) {
-            dispatch("frame", req, res);
-        });
+        for (const char* route : {"document", "compile", "frame", "proposals"}) {
+            server.Post(std::string("/api/") + route, [&, route](const auto& req, auto& res) {
+                dispatch(route, req, res);
+            });
+        }
+        for (std::size_t i = 0; i < mdux::tools::preview::studioAssetCount; ++i) {
+            const auto& asset = mdux::tools::preview::studioAssets[i];
+            server.Get(asset.route, [&asset](const httplib::Request&, httplib::Response& res) {
+                res.set_header("Content-Security-Policy",
+                               "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; "
+                               "base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+                res.set_header("Referrer-Policy", "no-referrer");
+                res.set_header("X-Frame-Options", "DENY");
+                res.set_content(reinterpret_cast<const char*>(asset.data), asset.size, asset.contentType);
+            });
+        }
         std::cout << "http://" << authority << std::endl;
         return server.listen_after_bind() ? 0 : 1;
     } catch (const std::exception& e) {

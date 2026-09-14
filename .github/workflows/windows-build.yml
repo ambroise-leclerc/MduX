@@ -223,6 +223,13 @@ jobs:
       run: ctest --preset ninja-msvc -L conformance -V --no-tests=error
       shell: cmd
 
+    # MedUI Studio (#327, ADR-025): the embedded frontend in headless Chrome against a real mdux-preview,
+    # rendering through lavapipe and pushing a proposal to a local bare repository. --no-tests=error: a
+    # runner that lost its browser would otherwise pass this step over nothing.
+    - name: Verify the MedUI Studio browser workflow
+      run: ctest --preset ninja-msvc -L studio -V --no-tests=error
+      shell: cmd
+
     # Floating-point determinism (ADR-008, issue #59). The frozen bit patterns in
     # tests/ml/DeterminismTests.cpp are the contract, and this step is one half of what makes it a
     # *cross-toolchain* contract - the Linux/GCC step is the other. Neither leg alone can falsify
