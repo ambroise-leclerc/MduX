@@ -260,6 +260,7 @@
     {
       "bakes": [],
       "diagnosticCodes": [
+        "MEDUI-E004",
         "PRV001",
         "PRV002",
         "PRV003",
