@@ -98,19 +98,46 @@ class Browser:
             # CI runners and containers commonly lack the user namespaces Chrome's sandbox needs. The
             # page under test is this repository's own loopback Studio.
             arguments.insert(1, "--no-sandbox")
-        self.process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        # A file rather than a pipe: nobody drains a pipe while the test runs, and a full one stalls Chrome.
+        self.log = Path(f"{self.profile}.log")
+        with self.log.open("wb") as log:
+            self.process = subprocess.Popen(arguments, stdout=subprocess.DEVNULL, stderr=log)
+        try:
+            port, path = self._active_port()
+            self.socket = WebSocket(int(port), path)
+        except BaseException:
+            # The caller never receives this object, so it cannot close the browser, whose open profile
+            # files would then also break the temporary directory's cleanup on Windows.
+            self._stop()
+            raise
+        self.next = 0
+        self.events = []
+
+    def _active_port(self):
         active = self.profile / "DevToolsActivePort"
         deadline = time.monotonic() + 60
-        while not (active.exists() and len(active.read_text().splitlines()) >= 2):
+        while True:
+            try:
+                lines = active.read_text().splitlines()
+            except OSError:
+                # Absent, or still held open by Chrome while it writes (Windows reports that as a
+                # permission error rather than a short read).
+                lines = []
+            if len(lines) >= 2 and lines[0].isdigit():
+                return lines[0], lines[1]
             if self.process.poll() is not None:
-                raise RuntimeError("browser exited: " + self.process.stderr.read().decode(errors="replace")[-2000:])
+                raise RuntimeError("browser exited: " + self.log.read_text(errors="replace")[-2000:])
             if time.monotonic() > deadline:
                 raise TimeoutError("browser did not publish a DevTools port")
             time.sleep(0.1)
-        port, path = active.read_text().splitlines()[:2]
-        self.socket = WebSocket(int(port), path)
-        self.next = 0
-        self.events = []
+
+    def _stop(self):
+        if self.process.poll() is None:
+            self.process.kill()
+        try:
+            self.process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            pass
 
     def send(self, method, params=None, session=None):
         self.next += 1

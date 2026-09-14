@@ -35,7 +35,9 @@ def bits(value):
     return {"bits": struct.unpack("<I", struct.pack("<f", value))[0]}
 
 
-with tempfile.TemporaryDirectory(prefix="mdux-studio-test-") as work:
+# Chrome helper processes can hold profile files for a moment after the browser exits on Windows; a
+# failed cleanup must never replace the test's own result.
+with tempfile.TemporaryDirectory(prefix="mdux-studio-test-", ignore_cleanup_errors=True) as work:
     work = Path(work)
     token = secrets.token_hex(32)
     (work / "token").write_text(token)
