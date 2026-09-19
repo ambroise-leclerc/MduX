@@ -494,7 +494,7 @@ mdux_discover_tests(vulkansc_object_tests)
 # reproducibility argument ADR-007 makes about baked artifacts. Bump this deliberately, in a
 # reviewable diff.
 #
-# The commit is SpecLab v0.1.1. Pinned by SHA and not by the tag name, and the reason is not
+# The commit is SpecLab v0.1.2. Pinned by SHA and not by the tag name, and the reason is not
 # theoretical: SpecLab's v0.1.0 tag was published on ea7f2e363 and moved within the hour to
 # 37b51fcec (ambroise-leclerc/SpecLab#18). A reference that can change under a frozen MduX commit
 # is a moving reference whatever it is called, and ADR-007's reproducibility argument does not
@@ -507,6 +507,13 @@ mdux_discover_tests(vulkansc_object_tests)
 # this one: it included its cmake/ helpers by name, so seven of MduX's own same-named helpers ran
 # in their place - which is how MduX's configure_medical_compliance() stamped
 # MDUX_VERSION_*=0.1.0 onto the spec targets - and it linked its warnings and definitions PUBLIC.
+#
+# v0.1.2 rather than v0.1.1: v0.1.1 stopped passing -fsanitize to importers of its modules, so in
+# the ASan+UBSan job the spec targets were compiled uninstrumented while importing instrumented
+# SpecLab modules, and GCC 16 hit an internal compiler error (expand_UBSAN_NULL).
+# v0.1.2 (ambroise-leclerc/SpecLab#23) makes -fsanitize PUBLIC on speclab, which restores the
+# instrumentation the spec targets had with v0.1.0. That instrumentation still comes from SpecLab
+# rather than from MduX; #360 tracks making MduX's own sanitizer coverage explicit.
 #
 # Read the tag name as documentation and the SHA as the pin. To bump, resolve the new tag to its
 # commit and change both, in a reviewable diff.
@@ -522,8 +529,8 @@ mdux_discover_tests(vulkansc_object_tests)
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
-    # SpecLab v0.1.1
-    GIT_TAG 4f58240a0910b4293e9d40debc620ee470a9b225
+    # SpecLab v0.1.2
+    GIT_TAG be930c35ce169fe6ed065c6412c5dfe5dfaa3518
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"
