@@ -3,6 +3,22 @@
 ## Status
 Accepted (2026-08-03). Supersedes ADR-002.
 
+*Update (19 September 2026, #361):* several facts below are dated. The text is kept as accepted,
+and this is the current state:
+- **SpecLab has tagged releases**: v0.1.0 through v0.2.0, with a `CHANGELOG.md` and, since
+  v0.1.1, an upstream rule that release tags are immutable. "It has no tagged release" (Decision 2)
+  and "no changelog to review" (Consequences) no longer hold.
+- **The pin stays a commit SHA**, with the tag recorded beside it as documentation. The Review Date
+  trigger "when SpecLab publishes a tagged release" has therefore fired, and it was reviewed here:
+  the reason for pinning a commit was never only the absence of a tag. SpecLab's v0.1.0 tag was
+  moved once, and an upstream immutability rule is a supplier statement this build cannot verify.
+  Decision 2 is unchanged.
+- **The counts changed**: 25 SpecLab executables (every target that links `speclab::speclab` in
+  `tests/CMakeLists.txt`) and nine MduXTest ones, not seven and nine. Decision 3 (two frameworks,
+  deliberately) is unchanged.
+- **Since v0.2.0, SpecLab supplies the registry, the discovery runner and `Checks`** that
+  `SpecLabBridge.hpp` implemented (see Implementation Notes).
+
 ## Context
 ADR-002 selected Catch2 v3 and was never implemented. It has sat at `Proposed` while the repository
 grew two testing surfaces that owe nothing to it, so the authoritative decision trail says the
