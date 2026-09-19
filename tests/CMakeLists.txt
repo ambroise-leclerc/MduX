@@ -494,13 +494,19 @@ mdux_discover_tests(vulkansc_object_tests)
 # reproducibility argument ADR-007 makes about baked artifacts. Bump this deliberately, in a
 # reviewable diff.
 #
-# The commit is SpecLab v0.1.0, its first release. Pinned by SHA and not by the tag name, and the
-# reason is not theoretical: this pin was written against `v0.1.0` while the tag pointed at
-# ea7f2e363, and within the hour the tag was moved to 37b51fcec to pick up a release-packaging fix
-# (ambroise-leclerc/SpecLab#18). Nothing in that commit affects this build - it makes SpecLab's project version a
-# cache variable and edits its own release workflow - but a reference that can change under a
-# frozen MduX commit is a moving reference whatever it is called, and ADR-007's reproducibility
-# argument does not distinguish between a branch and a retagged release.
+# The commit is SpecLab v0.1.1. Pinned by SHA and not by the tag name, and the reason is not
+# theoretical: SpecLab's v0.1.0 tag was published on ea7f2e363 and moved within the hour to
+# 37b51fcec (ambroise-leclerc/SpecLab#18). A reference that can change under a frozen MduX commit
+# is a moving reference whatever it is called, and ADR-007's reproducibility argument does not
+# distinguish between a branch and a retagged release. Upstream has since adopted an
+# immutable-tag rule (its CHANGELOG.md), but the pin does not rely on it.
+#
+# v0.1.1 is what removed this repository's SpecLab patch (#356). v0.1.0 only knew CMake 4.0-4.2's
+# `import std` gate, so cmake/patches/speclab-cmake-4.3.patch was applied on top of it; v0.1.1
+# selects the gate per CMake series (4.0-4.4). It also stopped SpecLab's build from reaching into
+# this one: it included its cmake/ helpers by name, so seven of MduX's own same-named helpers ran
+# in their place - which is how MduX's configure_medical_compliance() stamped
+# MDUX_VERSION_*=0.1.0 onto the spec targets - and it linked its warnings and definitions PUBLIC.
 #
 # Read the tag name as documentation and the SHA as the pin. To bump, resolve the new tag to its
 # commit and change both, in a reviewable diff.
@@ -516,13 +522,8 @@ mdux_discover_tests(vulkansc_object_tests)
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
-    # SpecLab v0.1.0
-    GIT_TAG 37b51fcec
-    PATCH_COMMAND
-        ${CMAKE_COMMAND}
-            -D "SOURCE_DIR=<SOURCE_DIR>"
-            -D "PATCH_FILE=${CMAKE_SOURCE_DIR}/cmake/patches/speclab-cmake-4.3.patch"
-            -P "${CMAKE_SOURCE_DIR}/cmake/patches/ApplySpecLabPatch.cmake"
+    # SpecLab v0.1.1
+    GIT_TAG 4f58240a0910b4293e9d40debc620ee470a9b225
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"

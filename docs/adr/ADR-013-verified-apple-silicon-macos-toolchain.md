@@ -62,9 +62,11 @@ The automatic macOS workflow must:
   scan cannot distinguish those from source throws, so it is informational on this leg, as it is on
   MSVC. The toolchain-independent governed-source lint remains the gate. The no-heap runtime and
   object scans continue to gate.
-- SpecLab v0.1.0 is still pinned to the recorded commit. A repository-owned, reviewed patch only
-  updates its CMake 4.3 import-std gate; the dependency source identity and runtime behavior do not
-  float.
+- SpecLab is pinned to the release commit recorded in `tests/CMakeLists.txt` and fetched
+  unmodified, so the dependency source identity and runtime behavior do not float. *Update
+  (19 September 2026, #356):* when this ADR was accepted, SpecLab v0.1.0 needed a
+  repository-owned, reviewed patch for its CMake 4.3 import-std gate. That patch was removed when
+  SpecLab began selecting the gate per CMake series itself.
 
 ## Alternatives considered
 
