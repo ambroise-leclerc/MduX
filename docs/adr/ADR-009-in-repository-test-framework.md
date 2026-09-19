@@ -122,6 +122,12 @@ apply with the same force.
 - `tests/framework/SpecLabBridge.hpp` adapts SpecLab scenarios to the discovery contract, including
   `mdux::spec::Checks`, which collects expectations so a converted `Then` reports every failure
   rather than only the first.
+  *Update (19 September 2026, #361):* since SpecLab v0.2.0 the registry, the runner and `Checks`
+  come from SpecLab itself (`speclab::Register`, `speclab::runMain`, `speclab::core::Checks`),
+  with the same contract and byte-identical output. `SpecLabBridge.hpp` now only forwards to
+  them, plus a one-line GCC 16 workaround documented there. The spec files did not change, and the
+  decision recorded here is unchanged: SpecLab still executes the scenario and decides whether it
+  passed.
 - Labels are assigned per scenario at registration. `evidence` means exactly "a committed artifact
   is byte-identical to a freshly baked one" and nothing else carries it; unit tests of the evidence
   modules use `evidence-unit` (ADR-007).
