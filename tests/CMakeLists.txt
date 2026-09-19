@@ -494,7 +494,7 @@ mdux_discover_tests(vulkansc_object_tests)
 # reproducibility argument ADR-007 makes about baked artifacts. Bump this deliberately, in a
 # reviewable diff.
 #
-# The commit is SpecLab v0.1.2. Pinned by SHA and not by the tag name, and the reason is not
+# The commit is SpecLab v0.2.0. Pinned by SHA and not by the tag name, and the reason is not
 # theoretical: SpecLab's v0.1.0 tag was published on ea7f2e363 and moved within the hour to
 # 37b51fcec (ambroise-leclerc/SpecLab#18). A reference that can change under a frozen MduX commit
 # is a moving reference whatever it is called, and ADR-007's reproducibility argument does not
@@ -515,6 +515,10 @@ mdux_discover_tests(vulkansc_object_tests)
 # instrumentation the spec targets had with v0.1.0. That instrumentation still comes from SpecLab
 # rather than from MduX; #360 tracks making MduX's own sanitizer coverage explicit.
 #
+# v0.2.0 (#361, ambroise-leclerc/SpecLab#28) provides the scenario registry, the --list-tests /
+# --run= runner and Checks that tests/framework/SpecLabBridge.hpp used to implement, with the same
+# contract and output; the bridge now forwards to them.
+#
 # Read the tag name as documentation and the SHA as the pin. To bump, resolve the new tag to its
 # commit and change both, in a reviewable diff.
 #
@@ -529,8 +533,8 @@ mdux_discover_tests(vulkansc_object_tests)
 CPMAddPackage(
     NAME SpecLab
     GITHUB_REPOSITORY ambroise-leclerc/SpecLab
-    # SpecLab v0.1.2
-    GIT_TAG be930c35ce169fe6ed065c6412c5dfe5dfaa3518
+    # SpecLab v0.2.0
+    GIT_TAG 5ca3dd89242a3f284a7490588fdf4a7249a1807d
     OPTIONS
         "SPECLAB_BUILD_TESTS OFF"
         "SPECLAB_BUILD_EXAMPLES OFF"
