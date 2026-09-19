@@ -151,7 +151,13 @@ Please run these tools on your code before submitting a pull request.
 
 ## Pull Requests
 
-- **One commit per pull request.**
+- **Pull requests into `develop` are squash-merged.** Each one lands on `develop` as a single
+  commit titled with the pull request title, which is why the title must reference the issue.
+  Commit on the branch as the review needs. Once review has started, add commits rather than
+  rewriting the branch with force-pushes, so reviewers can see what changed since their last pass
+  and a stacked successor can name the exact head SHA it incorporated (see "Stacked delivery"
+  below). The exception is a `release/vX.Y.Z` pull request into `master`, which is merged with
+  `--merge`; see [`docs/release-process.md`](docs/release-process.md), step 8.
 - The pull request (PR) title must reference the related issue or feature (e.g., `Add CameraManager class [#42]`).
 - Provide a clear description of the changes and the motivation.
 - Ensure your branch is up to date with `develop` before submitting.
