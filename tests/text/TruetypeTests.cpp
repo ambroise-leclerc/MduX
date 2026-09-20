@@ -36,6 +36,8 @@ import mdux.tools.truetype;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace tt = mdux::tools::truetype;
 using tt::ParseError;
 
@@ -1025,16 +1027,15 @@ void appendI16(std::vector<std::byte>& b, std::int16_t v) {
 // parse(): success cases
 // ---------------------------------------------------------------------------
 
-const mdux::spec::Register validFontParses{"A minimal well-formed TrueType font parses and reports its metrics", "evidence-unit", [] {
-                                               struct State {
-                                                   Builder::Serialized     serialized;
-                                                   std::optional<tt::Font> font;
-                                               };
-                                               auto state = std::make_shared<State>();
+struct ParsedFontState {
+    Builder::Serialized     serialized;
+    std::optional<tt::Font> font;
+};
 
-                                               return speclab::Test("text-truetype-parse-valid")
+const mdux::spec::Register validFontParses{"A minimal well-formed TrueType font parses and reports its metrics", "evidence-unit", [] {
+                                               return speclab::Test<ParsedFontState>("text-truetype-parse-valid")
                                                    .Given("a builder with empty + square + composite glyphs",
-                                                          [state] {
+                                                          [](ParsedFontState& state) {
                                                               auto serialized = Builder()
                                                                                     .unitsPerEm(2048)
                                                                                     .indexToLocFormat(0)
@@ -1042,23 +1043,21 @@ const mdux::spec::Register validFontParses{"A minimal well-formed TrueType font 
                                                                                     .rawGlyph(1, squareGlyph())
                                                                                     .rawGlyph(2, compositeGlyph())
                                                                                     .serialize();
-                                                              state->serialized = std::move(serialized);
+                                                              state.serialized = std::move(serialized);
                                                           })
                                                    .When("parse() is called",
-                                                         [state] {
-                                                             auto font = tt::parse(state->serialized.bytes);
+                                                         [](ParsedFontState& state) {
+                                                             auto font = tt::parse(state.serialized.bytes);
                                                              if (!font.has_value()) {
-                                                                 throw speclab::core::AssertionFailure(
-                                                                     std::format("valid font was rejected: {}", tt::describe(font.error())),
-                                                                     std::source_location::current());
+                                                                 Assertions::fail(std::format("valid font was rejected: {}", tt::describe(font.error())));
                                                              }
-                                                             state->font = std::move(*font);
+                                                             state.font = std::move(*font);
                                                          })
                                                    .Then("the font carries the directory's upe, numGlyphs, indexToLocFormat and 4 loca "
                                                          "entries",
-                                                         [state] {
+                                                         [](ParsedFontState& state) {
                                                              mdux::spec::Checks checks;
-                                                             const auto&        font = *state->font;
+                                                             const auto&        font = *state.font;
                                                              checks.expect(font.sfntVersion == kSfntTrue, "sfnt version");
                                                              checks.expect(font.unitsPerEm == 2048, "unitsPerEm");
                                                              checks.expect(font.numGlyphs == 3, "numGlyphs");
@@ -1071,43 +1070,39 @@ const mdux::spec::Register validFontParses{"A minimal well-formed TrueType font 
                                                    .Execute();
                                            }};
 
+struct TrueAndTyp1AcceptancesState {
+    Builder::Serialized     s1;
+    Builder::Serialized     s2;
+    std::optional<tt::Font> f1;
+    std::optional<tt::Font> f2;
+};
+
 const mdux::spec::Register trueAndTyp1Acceptances{"parse() accepts 'true' and 'typ1' TrueType container variants", "evidence-unit", [] {
                                                       // The directory walk can pass on either 'true' or 'typ1' if they actually describe a
                                                       // TrueType outline table set; the check at the version word is the first gate, not the
                                                       // only one, and these two are alternative container spellings for the same glyf-based
                                                       // format. 'OTTO' also passes this gate, but for the opposite reason - it is admitted so
                                                       // that its 'CFF ' table can produce CffOutlinesRejected, which the rejection corpus pins.
-                                                      struct State {
-                                                          Builder::Serialized     s1;
-                                                          Builder::Serialized     s2;
-                                                          std::optional<tt::Font> f1;
-                                                          std::optional<tt::Font> f2;
-                                                      };
-                                                      auto state = std::make_shared<State>();
-
-                                                      return speclab::Test("text-truetype-container-variants")
+                                                      return speclab::Test<TrueAndTyp1AcceptancesState>("text-truetype-container-variants")
                                                           .Given("a 'true' container and a 'typ1' container",
-                                                                 [state] {
-                                                                     state->s1 = Builder().sfnt(0x74727565u).serialize();
-                                                                     state->s2 = Builder().sfnt(0x74797031u).serialize();
+                                                                 [](TrueAndTyp1AcceptancesState& state) {
+                                                                     state.s1 = Builder().sfnt(0x74727565u).serialize();
+                                                                     state.s2 = Builder().sfnt(0x74797031u).serialize();
                                                                  })
                                                           .When("each is parsed",
-                                                                [state] {
-                                                                    auto v1 = tt::parse(state->s1.bytes);
-                                                                    auto v2 = tt::parse(state->s2.bytes);
-                                                                    if (!v1.has_value() || !v2.has_value()) {
-                                                                        throw speclab::core::AssertionFailure(
-                                                                            std::format("'true'={}, 'typ1'={}", v1.has_value(), v2.has_value()),
-                                                                            std::source_location::current());
-                                                                    }
-                                                                    state->f1 = std::move(*v1);
-                                                                    state->f2 = std::move(*v2);
+                                                                [](TrueAndTyp1AcceptancesState& state) {
+                                                                    auto v1 = tt::parse(state.s1.bytes);
+                                                                    auto v2 = tt::parse(state.s2.bytes);
+                                                                    Assertions::require(v1.has_value() && v2.has_value(), "'true'={}, 'typ1'={}",
+                                                                                        v1.has_value(), v2.has_value());
+                                                                    state.f1 = std::move(*v1);
+                                                                    state.f2 = std::move(*v2);
                                                                 })
                                                           .Then("both are accepted",
-                                                                [state] {
+                                                                [](TrueAndTyp1AcceptancesState& state) {
                                                                     mdux::spec::Checks checks;
-                                                                    checks.expect(state->f1.has_value(), "'true' accepted");
-                                                                    checks.expect(state->f2.has_value(), "'typ1' accepted");
+                                                                    checks.expect(state.f1.has_value(), "'true' accepted");
+                                                                    checks.expect(state.f2.has_value(), "'typ1' accepted");
                                                                     checks.raise();
                                                                 })
                                                           .Execute();
@@ -1122,16 +1117,10 @@ const mdux::spec::Register layoutTablesAreSkipped{
         // ships carries GPOS and GSUB (8 of 8 stock DejaVu faces do), so a presence rule would
         // accept no real input at all while adding no safety over simply not reading the bytes.
         // This scenario is the regression guard on that decision.
-        struct State {
-            Builder::Serialized     serialized;
-            std::optional<tt::Font> font;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-layout-tables-skipped")
+        return speclab::Test<ParsedFontState>("text-truetype-layout-tables-skipped")
             .Given("a font with GPOS, GSUB, GDEF and morx tables alongside its outlines",
-                   [state] {
-                       state->serialized = Builder()
+                   [](ParsedFontState& state) {
+                       state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
                                                .extraTable("GPOS", dummyExtra())
@@ -1141,19 +1130,18 @@ const mdux::spec::Register layoutTablesAreSkipped{
                                                .serialize();
                    })
             .When("parse() is called",
-                  [state] {
-                      auto font = tt::parse(state->serialized.bytes);
+                  [](ParsedFontState& state) {
+                      auto font = tt::parse(state.serialized.bytes);
                       if (!font.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("font with layout tables was rejected: {}", tt::describe(font.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("font with layout tables was rejected: {}", tt::describe(font.error())));
                       }
-                      state->font = std::move(*font);
+                      state.font = std::move(*font);
                   })
             .Then("it parses, and its glyphs still parse",
-                  [state] {
+                  [](ParsedFontState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->font->numGlyphs == 2, "numGlyphs");
-                      auto glyph = tt::parseGlyph(*state->font, 1);
+                      checks.expect(state.font->numGlyphs == 2, "numGlyphs");
+                      auto glyph = tt::parseGlyph(*state.font, 1);
                       checks.expect(glyph.has_value(), "the square glyph parses out of a font carrying layout tables");
                       if (glyph.has_value()) {
                           checks.expect(glyph->points.size() == 4, "4 points");
@@ -1163,6 +1151,12 @@ const mdux::spec::Register layoutTablesAreSkipped{
             .Execute();
     }};
 
+struct ZeroLengthGlyphParsesState {
+    Builder::Serialized            serialized;
+    std::optional<tt::Font>        font;
+    std::optional<tt::SimpleGlyph> glyph;
+};
+
 const mdux::spec::Register zeroLengthGlyphParses{
     "A zero-length glyf record (loca[i] == loca[i+1]) parses as a blank glyph",
     "evidence-unit",
@@ -1170,44 +1164,33 @@ const mdux::spec::Register zeroLengthGlyphParses{
         // This is the spec's encoding for a glyph with no outline, and it is how every real font
         // stores the space character: DejaVuSans has 63 such records, gid 3 (space) among them.
         // Treating it as a truncation would fail the space character of every stock font.
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-zero-length-glyph-parses")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-zero-length-glyph-parses")
             .Given("a font whose glyph 0 occupies no bytes at all, followed by a square glyph",
-                   [state] {
-                       state->serialized = Builder().rawGlyph(0, {}).rawGlyph(1, squareGlyph()).serialize();
-                       auto font         = tt::parse(state->serialized.bytes);
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder().rawGlyph(0, {}).rawGlyph(1, squareGlyph()).serialize();
+                       auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the zero-length glyph",
-                  [state] {
-                      if (state->font->loca.size() < 2 || state->font->loca[0] != state->font->loca[1]) {
-                          throw speclab::core::AssertionFailure("the fixture did not produce a zero-length loca span",
-                                                                std::source_location::current());
-                      }
-                      auto glyph = tt::parseGlyph(*state->font, 0);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      Assertions::require(state.font->loca.size() >= 2 && state.font->loca[0] == state.font->loca[1],
+                                          "the fixture did not produce a zero-length loca span");
+                      auto glyph = tt::parseGlyph(*state.font, 0);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("zero-length glyph was rejected: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("zero-length glyph was rejected: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("it is a blank glyph, and the glyph after it is unaffected",
-                  [state] {
+                  [](ZeroLengthGlyphParsesState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->glyph->glyphIndex == 0, "glyphIndex");
-                      checks.expect(state->glyph->endPtsOfContours.empty(), "no end points");
-                      checks.expect(state->glyph->points.empty(), "no contour points");
-                      auto next = tt::parseGlyph(*state->font, 1);
+                      checks.expect(state.glyph->glyphIndex == 0, "glyphIndex");
+                      checks.expect(state.glyph->endPtsOfContours.empty(), "no end points");
+                      checks.expect(state.glyph->points.empty(), "no contour points");
+                      auto next = tt::parseGlyph(*state.font, 1);
                       checks.expect(next.has_value() && next->points.size() == 4, "the following glyph still parses");
                       checks.raise();
                   })
@@ -1222,36 +1205,27 @@ const mdux::spec::Register hintedGlyphParses{
         // engine, so the bytes have no consumer, and roughly 16% of a stock font's glyphs carry
         // them. The fixture's instruction bytes are values that would read as legal flags, so a
         // parser that failed to skip them would produce a *different* outline rather than fail.
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-hinted-glyph-parses")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-hinted-glyph-parses")
             .Given("a font whose only glyph is the square glyph plus 4 bytes of bytecode",
-                   [state] {
-                       state->serialized = Builder().rawGlyph(0, hintedSquareGlyph()).serialize();
-                       auto font         = tt::parse(state->serialized.bytes);
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder().rawGlyph(0, hintedSquareGlyph()).serialize();
+                       auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called",
-                  [state] {
-                      auto glyph = tt::parseGlyph(*state->font, 0);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph = tt::parseGlyph(*state.font, 0);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("hinted glyph was rejected: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("hinted glyph was rejected: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("the outline matches squareGlyph()'s, and no instruction byte leaked into it",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
                       if (g.points.size() == 4) {
@@ -1274,36 +1248,27 @@ const mdux::spec::Register overlapSimpleFlagParses{
         // Bit 6 is OVERLAP_SIMPLE in the current OpenType spec - a rasteriser hint with no
         // shaping semantics that modern tooling sets. Masking it as reserved would refuse fonts
         // whose only unusual property is having been built recently.
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-overlap-simple-flag-parses")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-overlap-simple-flag-parses")
             .Given("a one-point glyph whose flag is on-curve + OVERLAP_SIMPLE",
-                   [state] {
-                       state->serialized = Builder().rawGlyph(0, overlapSimpleGlyph()).serialize();
-                       auto font         = tt::parse(state->serialized.bytes);
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder().rawGlyph(0, overlapSimpleGlyph()).serialize();
+                       auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called",
-                  [state] {
-                      auto glyph = tt::parseGlyph(*state->font, 0);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph = tt::parseGlyph(*state.font, 0);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("OVERLAP_SIMPLE glyph was rejected: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("OVERLAP_SIMPLE glyph was rejected: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("the point is read with its coordinates and on-curve bit intact",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 1, "1 point");
                       if (g.points.size() == 1) {
@@ -1315,6 +1280,11 @@ const mdux::spec::Register overlapSimpleFlagParses{
             .Execute();
     }};
 
+struct ParsedBytesState {
+    std::vector<std::byte>  bytes;
+    std::optional<tt::Font> font;
+};
+
 const mdux::spec::Register overLongLocaIsAccepted{
     "parse() accepts a 'loca' table longer than numGlyphs+1 entries",
     "evidence-unit",
@@ -1322,34 +1292,35 @@ const mdux::spec::Register overLongLocaIsAccepted{
         // The size check is `<`, not `!=`, and this pins why: sfnt pads every table to a 4-byte
         // boundary, so a short-format loca with an even entry count legitimately carries two
         // trailing bytes. `LocaSizeMismatch` means "too short", and only that.
-        struct State {
-            std::vector<std::byte>  bytes;
-            std::optional<tt::Font> font;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-over-long-loca-accepted")
+        return speclab::Test<ParsedBytesState>("text-truetype-over-long-loca-accepted")
             .Given("a one-glyph font whose loca record declares 6 bytes where 4 are needed",
-                   [state] {
-                       state->bytes = Builder().rawGlyph(0, squareGlyph()).locaDeclaredLength(6).serialize().bytes;
+                   [](ParsedBytesState& state) {
+                       state.bytes = Builder().rawGlyph(0, squareGlyph()).locaDeclaredLength(6).serialize().bytes;
                    })
             .When("parse() is called",
-                  [state] {
-                      auto font = tt::parse(state->bytes);
+                  [](ParsedBytesState& state) {
+                      auto font = tt::parse(state.bytes);
                       if (!font.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("padded loca was rejected: {}", tt::describe(font.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("padded loca was rejected: {}", tt::describe(font.error())));
                       }
-                      state->font = std::move(*font);
+                      state.font = std::move(*font);
                   })
             .Then("only the numGlyphs+1 entries it needs are read",
-                  [state] {
+                  [](ParsedBytesState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->font->loca.size() == 2, "loca holds exactly numGlyphs+1 entries");
+                      checks.expect(state.font->loca.size() == 2, "loca holds exactly numGlyphs+1 entries");
                       checks.raise();
                   })
             .Execute();
     }};
+
+struct LongLocaFormatParsesState {
+    std::vector<std::byte>         shortBytes;
+    std::vector<std::byte>         longBytes;
+    std::optional<tt::Font>        shortFont;
+    std::optional<tt::Font>        longFont;
+    std::optional<tt::SimpleGlyph> glyph;
+};
 
 const mdux::spec::Register longLocaFormatParses{
     "parse() decodes a long-format (indexToLocFormat == 1) loca table",
@@ -1361,52 +1332,39 @@ const mdux::spec::Register longLocaFormatParses{
         // never executed - and it is the branch a production font takes, because fonts switch to
         // long format as soon as `glyf` outgrows 128 KB. The assertion is that both encodings of
         // the *same* glyph layout produce the same offsets and the same outline.
-        struct State {
-            std::vector<std::byte>         shortBytes;
-            std::vector<std::byte>         longBytes;
-            std::optional<tt::Font>        shortFont;
-            std::optional<tt::Font>        longFont;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-long-loca-format")
+        return speclab::Test<LongLocaFormatParsesState>("text-truetype-long-loca-format")
             .Given("the same two-glyph layout serialized with indexToLocFormat 0 and 1",
-                   [state] {
-                       state->shortBytes =
+                   [](LongLocaFormatParsesState& state) {
+                       state.shortBytes =
                            Builder().indexToLocFormat(0).rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize().bytes;
-                       state->longBytes =
+                       state.longBytes =
                            Builder().indexToLocFormat(1).rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize().bytes;
                    })
             .When("both are parsed",
-                  [state] {
-                      auto s = tt::parse(state->shortBytes);
-                      auto l = tt::parse(state->longBytes);
+                  [](LongLocaFormatParsesState& state) {
+                      auto s = tt::parse(state.shortBytes);
+                      auto l = tt::parse(state.longBytes);
                       if (!s.has_value() || !l.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("short={}, long={}",
+                          Assertions::fail(std::format("short={}, long={}",
                                           s.has_value() ? "ok" : std::string{tt::describe(s.error())},
-                                          l.has_value() ? "ok" : std::string{tt::describe(l.error())}),
-                              std::source_location::current());
+                                          l.has_value() ? "ok" : std::string{tt::describe(l.error())}));
                       }
-                      state->shortFont = std::move(*s);
-                      state->longFont  = std::move(*l);
-                      auto g           = tt::parseGlyph(*state->longFont, 1);
+                      state.shortFont = std::move(*s);
+                      state.longFont  = std::move(*l);
+                      auto g           = tt::parseGlyph(*state.longFont, 1);
                       if (!g.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("square glyph failed out of a long-format font: {}", tt::describe(g.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("square glyph failed out of a long-format font: {}", tt::describe(g.error())));
                       }
-                      state->glyph = std::move(*g);
+                      state.glyph = std::move(*g);
                   })
             .Then("the long form reports format 1, resolves the same offsets, and yields the same outline",
-                  [state] {
+                  [](LongLocaFormatParsesState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->longFont->indexToLocFormat == 1, "indexToLocFormat is 1");
-                      checks.expect(state->shortFont->indexToLocFormat == 0, "the short-form control is 0");
-                      checks.expect(state->longFont->loca == state->shortFont->loca,
+                      checks.expect(state.longFont->indexToLocFormat == 1, "indexToLocFormat is 1");
+                      checks.expect(state.shortFont->indexToLocFormat == 0, "the short-form control is 0");
+                      checks.expect(state.longFont->loca == state.shortFont->loca,
                                     "both encodings resolve to identical byte offsets");
-                      const auto& g = *state->glyph;
+                      const auto& g = *state.glyph;
                       checks.expect(g.points.size() == 4, "4 points");
                       if (g.points.size() == 4) {
                           checks.expect(g.points[1].x == 100 && g.points[1].y == 0, "point 1 at (100,0)");
@@ -1416,6 +1374,12 @@ const mdux::spec::Register longLocaFormatParses{
                   })
             .Execute();
     }};
+
+struct LongLocaReachesPastShortFormLimitState {
+    std::vector<std::byte>         bytes;
+    std::optional<tt::Font>        font;
+    std::optional<tt::SimpleGlyph> glyph;
+};
 
 const mdux::spec::Register longLocaReachesPastShortFormLimit{
     "A long-format loca addresses a glyph past the 128 KB the short form can reach",
@@ -1430,19 +1394,12 @@ const mdux::spec::Register longLocaReachesPastShortFormLimit{
         // Glyph 0 is a blank record padded to exactly kShortFormLimit bytes, so glyph 1 starts at
         // the first offset the short form cannot express. If the trailing offsets wrap, `loca[1]`
         // reads back as 0 and glyph 1 resolves to glyph 0's record instead of the square.
-        struct State {
-            std::vector<std::byte>         bytes;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-long-loca-past-short-limit")
+        return speclab::Test<LongLocaReachesPastShortFormLimitState>("text-truetype-long-loca-past-short-limit")
             .Given("a long-format font whose second glyph starts at byte 131072",
-                   [state] {
+                   [](LongLocaReachesPastShortFormLimitState& state) {
                        std::vector<std::byte> padded = emptyGlyph();
                        padded.resize(kShortFormLimit, std::byte{0});  // blank record, then filler
-                       state->bytes = Builder()
+                       state.bytes = Builder()
                                           .indexToLocFormat(1)
                                           .rawGlyph(0, std::move(padded))
                                           .rawGlyph(1, squareGlyph())
@@ -1450,26 +1407,22 @@ const mdux::spec::Register longLocaReachesPastShortFormLimit{
                                           .bytes;
                    })
             .When("it is parsed and the second glyph is read",
-                  [state] {
-                      auto font = tt::parse(state->bytes);
+                  [](LongLocaReachesPastShortFormLimitState& state) {
+                      auto font = tt::parse(state.bytes);
                       if (!font.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("long-format font past 128 KB was rejected: {}", tt::describe(font.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("long-format font past 128 KB was rejected: {}", tt::describe(font.error())));
                       }
-                      state->font = std::move(*font);
-                      auto g      = tt::parseGlyph(*state->font, 1);
+                      state.font = std::move(*font);
+                      auto g      = tt::parseGlyph(*state.font, 1);
                       if (!g.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("glyph past the short-form limit failed: {}", tt::describe(g.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("glyph past the short-form limit failed: {}", tt::describe(g.error())));
                       }
-                      state->glyph = std::move(*g);
+                      state.glyph = std::move(*g);
                   })
             .Then("the offset is carried at full width and resolves to the square, not to glyph 0",
-                  [state] {
+                  [](LongLocaReachesPastShortFormLimitState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        loca = state->font->loca;
+                      const auto&        loca = state.font->loca;
                       checks.expect(loca.size() == 3, "loca has numGlyphs+1 entries");
                       if (loca.size() == 3) {
                           checks.expect(loca[0] == 0u, "glyph 0 starts at 0");
@@ -1480,7 +1433,7 @@ const mdux::spec::Register longLocaReachesPastShortFormLimit{
                       // Resolving to the square rather than to glyph 0's blank record is the
                       // observable consequence: a wrapped offset parses without error and returns
                       // the wrong glyph, which no bounds check would ever catch.
-                      const auto& g = *state->glyph;
+                      const auto& g = *state.glyph;
                       checks.expect(g.points.size() == 4, std::format("4 points, got {}", g.points.size()));
                       if (g.points.size() == 4) {
                           checks.expect(g.points[2].x == 100 && g.points[2].y == 100, "point 2 at (100,100)");
@@ -1490,6 +1443,13 @@ const mdux::spec::Register longLocaReachesPastShortFormLimit{
             .Execute();
     }};
 
+struct CharacterMapResolvesCodePointsState {
+    std::vector<std::byte>  format4Bytes;
+    std::vector<std::byte>  format12Bytes;
+    std::optional<tt::Font> format4;
+    std::optional<tt::Font> format12;
+};
+
 const mdux::spec::Register characterMapResolvesCodePoints{
     "Both cmap encodings resolve the same code points to the same glyphs",
     "evidence-unit",
@@ -1498,39 +1458,29 @@ const mdux::spec::Register characterMapResolvesCodePoints{
         // with a self-relative indirection versus a flat group list - so asserting they agree is
         // the whole point. A parser that got one of them wrong would otherwise pass whichever
         // half the corpus happened to build.
-        struct State {
-            std::vector<std::byte>  format4Bytes;
-            std::vector<std::byte>  format12Bytes;
-            std::optional<tt::Font> format4;
-            std::optional<tt::Font> format12;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-cmap-resolves")
+        return speclab::Test<CharacterMapResolvesCodePointsState>("text-truetype-cmap-resolves")
             .Given("the same mapping serialized as format 4 and as format 12",
-                   [state] {
-                       state->format4Bytes  = Builder().numGlyphs(30).rawGlyph(0, squareGlyph()).serialize().bytes;
-                       state->format12Bytes = Builder().numGlyphs(30).cmapFormat12().rawGlyph(0, squareGlyph()).serialize().bytes;
+                   [](CharacterMapResolvesCodePointsState& state) {
+                       state.format4Bytes  = Builder().numGlyphs(30).rawGlyph(0, squareGlyph()).serialize().bytes;
+                       state.format12Bytes = Builder().numGlyphs(30).cmapFormat12().rawGlyph(0, squareGlyph()).serialize().bytes;
                    })
             .When("both are parsed",
-                  [state] {
-                      auto a = tt::parse(state->format4Bytes);
-                      auto b = tt::parse(state->format12Bytes);
+                  [](CharacterMapResolvesCodePointsState& state) {
+                      auto a = tt::parse(state.format4Bytes);
+                      auto b = tt::parse(state.format12Bytes);
                       if (!a.has_value() || !b.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("format4={}, format12={}",
+                          Assertions::fail(std::format("format4={}, format12={}",
                                           a.has_value() ? "ok" : std::string{tt::describe(a.error())},
-                                          b.has_value() ? "ok" : std::string{tt::describe(b.error())}),
-                              std::source_location::current());
+                                          b.has_value() ? "ok" : std::string{tt::describe(b.error())}));
                       }
-                      state->format4  = std::move(*a);
-                      state->format12 = std::move(*b);
+                      state.format4  = std::move(*a);
+                      state.format12 = std::move(*b);
                   })
             .Then("both map the run identically, and neither invents a mapping outside it",
-                  [state] {
+                  [](CharacterMapResolvesCodePointsState& state) {
                       mdux::spec::Checks checks;
-                      for (const auto& [name, font] : {std::pair{"format 4", std::cref(*state->format4)},
-                                                       std::pair{"format 12", std::cref(*state->format12)}}) {
+                      for (const auto& [name, font] : {std::pair{"format 4", std::cref(*state.format4)},
+                                                       std::pair{"format 12", std::cref(*state.format12)}}) {
                           const auto& f = font.get();
                           for (std::uint32_t offset = 0; offset < 26; ++offset) {
                               const auto point = static_cast<char32_t>(firstMappedCodePoint + offset);
@@ -1564,41 +1514,38 @@ const mdux::spec::Register indirectCmapSegmentResolves{
         // arrays. Every other scenario here builds the *affine* form, so without this one the
         // indirect branch is never executed - and it is the branch that a real font with
         // non-consecutive glyph ids takes.
-        struct State {
-            std::vector<std::byte>  bytes;
-            std::optional<tt::Font> font;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-cmap-indirect")
+        return speclab::Test<ParsedBytesState>("text-truetype-cmap-indirect")
             .Given("a font whose cmap segment resolves through a glyph array",
-                   [state] { state->bytes = Builder().numGlyphs(30).cmapIndirect().rawGlyph(0, squareGlyph()).serialize().bytes; })
+                   [](ParsedBytesState& state) { state.bytes = Builder().numGlyphs(30).cmapIndirect().rawGlyph(0, squareGlyph()).serialize().bytes; })
             .When("it is parsed",
-                  [state] {
-                      auto f = tt::parse(state->bytes);
+                  [](ParsedBytesState& state) {
+                      auto f = tt::parse(state.bytes);
                       if (!f.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("indirect cmap rejected: {}", tt::describe(f.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("indirect cmap rejected: {}", tt::describe(f.error())));
                       }
-                      state->font = std::move(*f);
+                      state.font = std::move(*f);
                   })
             .Then("it maps exactly the run the affine form maps",
-                  [state] {
+                  [](ParsedBytesState& state) {
                       mdux::spec::Checks checks;
                       for (std::uint32_t offset = 0; offset < 26; ++offset) {
                           const auto point = static_cast<char32_t>(firstMappedCodePoint + offset);
-                          const auto glyph = tt::glyphForCodePoint(*state->font, point);
+                          const auto glyph = tt::glyphForCodePoint(*state.font, point);
                           checks.expect(glyph.has_value() && *glyph == firstMappedGlyph + offset,
                                         std::format("U+{:04X} -> glyph {}, got {}", static_cast<std::uint32_t>(point),
                                                     firstMappedGlyph + offset,
                                                     glyph.has_value() ? std::to_string(*glyph) : std::string{"nothing"}));
                       }
-                      checks.expect(!tt::glyphForCodePoint(*state->font, static_cast<char32_t>(firstMappedCodePoint + 26)).has_value(),
+                      checks.expect(!tt::glyphForCodePoint(*state.font, static_cast<char32_t>(firstMappedCodePoint + 26)).has_value(),
                                     "the point above the run is unmapped");
                       checks.raise();
                   })
             .Execute();
     }};
+
+struct SubtableIsClippedToDeclaredLengthState {
+    std::vector<std::byte> bytes;
+};
 
 const mdux::spec::Register subtableIsClippedToDeclaredLength{
     "A subtable whose glyph array runs past its declared length is refused, not read on into the next one",
@@ -1613,15 +1560,10 @@ const mdux::spec::Register subtableIsClippedToDeclaredLength{
         //
         // The fixture declares a subtable length covering four glyph-array entries, needs
         // twenty-six, and appends filler that would decode as plausible ids.
-        struct State {
-            std::vector<std::byte> bytes;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-cmap-subtable-clipped")
+        return speclab::Test<SubtableIsClippedToDeclaredLengthState>("text-truetype-cmap-subtable-clipped")
             .Given("a font whose cmap subtable declares a length shorter than its glyph array",
-                   [state] {
-                       state->bytes = Builder()
+                   [](SubtableIsClippedToDeclaredLengthState& state) {
+                       state.bytes = Builder()
                                           .numGlyphs(30)
                                           .cmapIndirect(/*truncateGlyphArray=*/true)
                                           .rawGlyph(0, squareGlyph())
@@ -1630,9 +1572,9 @@ const mdux::spec::Register subtableIsClippedToDeclaredLength{
                    })
             .When("nothing", [] {})
             .Then("parse() refuses with TruncatedCmap",
-                  [state] {
+                  [](SubtableIsClippedToDeclaredLengthState& state) {
                       mdux::spec::Checks checks;
-                      auto               result = tt::parse(state->bytes);
+                      auto               result = tt::parse(state.bytes);
                       checks.expect(!result.has_value(), "the font is refused");
                       if (!result.has_value()) {
                           checks.expect(result.error() == ParseError::TruncatedCmap,
@@ -1659,30 +1601,23 @@ const mdux::spec::Register metricsAreReadPerGlyph{
         // only a bearing for the rest, which inherit the final advance. That compression is how
         // a monospace or CJK font avoids repeating one advance thousands of times, and getting
         // it wrong yields plausible-looking metrics for every glyph past the boundary.
-        struct State {
-            std::vector<std::byte>  bytes;
-            std::optional<tt::Font> font;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-hmtx-metrics")
+        return speclab::Test<ParsedBytesState>("text-truetype-hmtx-metrics")
             .Given("a six-glyph font whose hmtx carries only four full metric pairs",
-                   [state] {
-                       state->bytes = Builder().numGlyphs(6).numberOfHMetrics(4).rawGlyph(0, squareGlyph()).serialize().bytes;
+                   [](ParsedBytesState& state) {
+                       state.bytes = Builder().numGlyphs(6).numberOfHMetrics(4).rawGlyph(0, squareGlyph()).serialize().bytes;
                    })
             .When("it is parsed",
-                  [state] {
-                      auto f = tt::parse(state->bytes);
+                  [](ParsedBytesState& state) {
+                      auto f = tt::parse(state.bytes);
                       if (!f.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("font rejected: {}", tt::describe(f.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("font rejected: {}", tt::describe(f.error())));
                       }
-                      state->font = std::move(*f);
+                      state.font = std::move(*f);
                   })
             .Then("the first four advances differ and the last two repeat the fourth",
-                  [state] {
+                  [](ParsedBytesState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        font = *state->font;
+                      const auto&        font = *state.font;
                       checks.expect(font.numberOfHMetrics == 4, "numberOfHMetrics");
                       for (std::uint16_t glyph = 0; glyph < 4; ++glyph) {
                           auto m = tt::metricsFor(font, glyph);
@@ -1891,36 +1826,27 @@ const mdux::spec::Register squareGlyphParses{
     "A simple square glyph parses into 4 on-curve points and one contour",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-square-glyph-parses")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-square-glyph-parses")
             .Given("a font with an empty and a square glyph",
-                   [state] {
-                       state->serialized = Builder().rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize();
-                       auto font         = tt::parse(state->serialized.bytes);
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder().rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize();
+                       auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the square glyph",
-                  [state] {
-                      auto glyph = tt::parseGlyph(*state->font, 1);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph = tt::parseGlyph(*state.font, 1);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("square glyph failed to parse: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("square glyph failed to parse: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("it has 4 on-curve points at the square's corners",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.glyphIndex == 1, "glyphIndex");
                       checks.expect(g.xMin == 0 && g.yMin == 0, "min bbox");
@@ -1948,40 +1874,31 @@ const mdux::spec::Register compositeGlyphFlattens{
     "A composite glyph flattens into its component's contours, translated into place",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-composite-translate")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-translate")
             .Given("a font whose glyph 2 is a composite translating the square glyph 1 by (10, 20)",
-                   [state] {
-                       state->serialized = Builder()
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
                                                .rawGlyph(2, compositeRef(1, 10, 20))
                                                .serialize();
-                       auto font = tt::parse(state->serialized.bytes);
+                       auto font = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [state] {
-                      auto glyph = tt::parseGlyph(*state->font, 2);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph = tt::parseGlyph(*state.font, 2);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("composite failed to parse: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("it carries the square's four points, each shifted by (10, 20), and a recomputed bbox",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.glyphIndex == 2, "glyphIndex is the composite's own");
                       checks.expect(g.endPtsOfContours.size() == 1 && g.endPtsOfContours[0] == 3, "one contour, 4 points");
@@ -2000,40 +1917,31 @@ const mdux::spec::Register compositeGlyphScales{
     "A composite glyph applies a WE_HAVE_A_SCALE transform before translating",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-composite-scale")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-scale")
             .Given("a composite scaling the square glyph by 0.5 (F2Dot14 0x2000) then translating by (0, 0)",
-                   [state] {
-                       state->serialized = Builder()
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
                                                .rawGlyph(2, compositeRef(1, 0, 0, static_cast<std::int16_t>(0x2000)))
                                                .serialize();
-                       auto font = tt::parse(state->serialized.bytes);
+                       auto font = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [state] {
-                      auto glyph   = tt::parseGlyph(*state->font, 2);
-                      state->glyph = glyph.has_value() ? std::optional{*glyph} : std::nullopt;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph   = tt::parseGlyph(*state.font, 2);
+                      state.glyph = glyph.has_value() ? std::optional{*glyph} : std::nullopt;
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("composite failed to parse: {}", tt::describe(glyph.error())));
                       }
                   })
             .Then("the square's 100-unit corners have halved to 50",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
                       if (g.points.size() == 4) {
@@ -2049,40 +1957,31 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
     "SCALED_COMPONENT_OFFSET puts the component offset through the same scale as the points",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized            serialized;
-            std::optional<tt::Font>        font;
-            std::optional<tt::SimpleGlyph> glyph;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-composite-scaled-offset")
+        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-scaled-offset")
             .Given("a composite scaling the square by 0.5 and translating by (100, 0) with SCALED_COMPONENT_OFFSET",
-                   [state] {
-                       state->serialized = Builder()
+                   [](ZeroLengthGlyphParsesState& state) {
+                       state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
                                                .rawGlyph(2, compositeRefScaledOffset(1, 100, 0, static_cast<std::int16_t>(0x2000)))
                                                .serialize();
-                       auto font = tt::parse(state->serialized.bytes);
+                       auto font = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [state] {
-                      auto glyph = tt::parseGlyph(*state->font, 2);
+                  [](ZeroLengthGlyphParsesState& state) {
+                      auto glyph = tt::parseGlyph(*state.font, 2);
                       if (!glyph.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("composite failed to parse: {}", tt::describe(glyph.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("composite failed to parse: {}", tt::describe(glyph.error())));
                       }
-                      state->glyph = std::move(*glyph);
+                      state.glyph = std::move(*glyph);
                   })
             .Then("the offset was halved with the points - the square lands at x 50..100, not 100..150",
-                  [state] {
-                      const auto&        g = *state->glyph;
+                  [](ZeroLengthGlyphParsesState& state) {
+                      const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
                       if (g.points.size() == 4) {
@@ -2097,49 +1996,47 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
             .Execute();
     }};
 
+struct CompositeResolutionBudgetEnforcedState {
+    Builder::Serialized     serialized;
+    std::optional<tt::Font> font;
+    tt::ParseError          code{tt::ParseError::Empty};
+    bool                    rejected{false};
+};
+
 const mdux::spec::Register compositeResolutionBudgetEnforced{
     "A composite fanning out to more components than the budget allows is refused, not walked forever",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized     serialized;
-            std::optional<tt::Font> font;
-            tt::ParseError          code{tt::ParseError::Empty};
-            bool                    rejected{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-composite-budget")
+        return speclab::Test<CompositeResolutionBudgetEnforcedState>("text-truetype-composite-budget")
             .Given("a single composite with 5000 components, each resolving the empty glyph 1",
-                   [state] {
+                   [](CompositeResolutionBudgetEnforcedState& state) {
                        // Empty components add no points and no contours, so neither the per-glyph
                        // point cap nor the nesting cap fires - only the resolution budget does.
-                       state->serialized = Builder()
+                       state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, emptyGlyph())
                                                .rawGlyph(2, compositeManyComponents(1, 5000))
                                                .serialize();
-                       auto font = tt::parse(state->serialized.bytes);
+                       auto font = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [state] {
-                      auto glyph      = tt::parseGlyph(*state->font, 2);
-                      state->rejected = !glyph.has_value();
+                  [](CompositeResolutionBudgetEnforcedState& state) {
+                      auto glyph      = tt::parseGlyph(*state.font, 2);
+                      state.rejected = !glyph.has_value();
                       if (!glyph.has_value()) {
-                          state->code = glyph.error();
+                          state.code = glyph.error();
                       }
                   })
             .Then("it is refused with CompositeBudgetExceeded",
-                  [state] {
+                  [](CompositeResolutionBudgetEnforcedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->rejected, "the fan-out was refused");
-                      checks.expect(state->code == tt::ParseError::CompositeBudgetExceeded,
-                                    std::format("code is CompositeBudgetExceeded, got {}", tt::describe(state->code)));
+                      checks.expect(state.rejected, "the fan-out was refused");
+                      checks.expect(state.code == tt::ParseError::CompositeBudgetExceeded,
+                                    std::format("code is CompositeBudgetExceeded, got {}", tt::describe(state.code)));
                       checks.raise();
                   })
             .Execute();
@@ -2149,17 +2046,9 @@ const mdux::spec::Register compositeNestingCapEnforced{
     "A composite chain deeper than the parser's cap is refused rather than overflowing the stack",
     "evidence-unit",
     [] {
-        struct State {
-            Builder::Serialized    serialized;
-            std::optional<tt::Font> font;
-            tt::ParseError          code{tt::ParseError::Empty};
-            bool                    rejected{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-truetype-composite-nesting-cap")
+        return speclab::Test<CompositeResolutionBudgetEnforcedState>("text-truetype-composite-nesting-cap")
             .Given("a chain of 10 composites, each referencing the next, ending at the square glyph",
-                   [state] {
+                   [](CompositeResolutionBudgetEnforcedState& state) {
                        Builder b;
                        b.rawGlyph(0, emptyGlyph());
                        b.rawGlyph(1, squareGlyph());
@@ -2168,66 +2057,54 @@ const mdux::spec::Register compositeNestingCapEnforced{
                            const std::uint16_t ref = (i == 11) ? 1 : static_cast<std::uint16_t>(i + 1);
                            b.rawGlyph(i, compositeRef(ref, 0, 0));
                        }
-                       state->serialized = b.serialize();
-                       auto font         = tt::parse(state->serialized.bytes);
+                       state.serialized = b.serialize();
+                       auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                        }
-                       state->font = std::move(*font);
+                       state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the top of the chain",
-                  [state] {
-                      auto glyph      = tt::parseGlyph(*state->font, 2);
-                      state->rejected = !glyph.has_value();
+                  [](CompositeResolutionBudgetEnforcedState& state) {
+                      auto glyph      = tt::parseGlyph(*state.font, 2);
+                      state.rejected = !glyph.has_value();
                       if (!glyph.has_value()) {
-                          state->code = glyph.error();
+                          state.code = glyph.error();
                       }
                   })
             .Then("it is refused with CompositeNestingTooDeep",
-                  [state] {
+                  [](CompositeResolutionBudgetEnforcedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->rejected, "the deep chain was refused");
-                      checks.expect(state->code == tt::ParseError::CompositeNestingTooDeep,
-                                    std::format("code is CompositeNestingTooDeep, got {}", tt::describe(state->code)));
+                      checks.expect(state.rejected, "the deep chain was refused");
+                      checks.expect(state.code == tt::ParseError::CompositeNestingTooDeep,
+                                    std::format("code is CompositeNestingTooDeep, got {}", tt::describe(state.code)));
                       checks.raise();
                   })
             .Execute();
     }};
 
 const mdux::spec::Register emptyGlyphParses{"An empty glyph (numberOfContours == 0) parses with no points", "evidence-unit", [] {
-                                                struct State {
-                                                    Builder::Serialized            serialized;
-                                                    std::optional<tt::Font>        font;
-                                                    std::optional<tt::SimpleGlyph> glyph;
-                                                };
-                                                auto state = std::make_shared<State>();
-
-                                                return speclab::Test("text-truetype-empty-glyph-parses")
+                                                return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-empty-glyph-parses")
                                                     .Given("a font with one empty glyph",
-                                                           [state] {
-                                                               state->serialized = Builder().rawGlyph(0, emptyGlyph()).serialize();
-                                                               auto font         = tt::parse(state->serialized.bytes);
+                                                           [](ZeroLengthGlyphParsesState& state) {
+                                                               state.serialized = Builder().rawGlyph(0, emptyGlyph()).serialize();
+                                                               auto font         = tt::parse(state.serialized.bytes);
                                                                if (!font.has_value()) {
-                                                                   throw speclab::core::AssertionFailure(
-                                                                       std::format("font failed to parse: {}", tt::describe(font.error())),
-                                                                       std::source_location::current());
+                                                                   Assertions::fail(std::format("font failed to parse: {}", tt::describe(font.error())));
                                                                }
-                                                               state->font = std::move(*font);
+                                                               state.font = std::move(*font);
                                                            })
                                                     .When("parseGlyph() is called for the empty glyph",
-                                                          [state] {
-                                                              auto glyph = tt::parseGlyph(*state->font, 0);
+                                                          [](ZeroLengthGlyphParsesState& state) {
+                                                              auto glyph = tt::parseGlyph(*state.font, 0);
                                                               if (!glyph.has_value()) {
-                                                                  throw speclab::core::AssertionFailure(
-                                                                      std::format("empty glyph failed to parse: {}", tt::describe(glyph.error())),
-                                                                      std::source_location::current());
+                                                                  Assertions::fail(std::format("empty glyph failed to parse: {}", tt::describe(glyph.error())));
                                                               }
-                                                              state->glyph = std::move(*glyph);
+                                                              state.glyph = std::move(*glyph);
                                                           })
                                                     .Then("it has no contours and no points",
-                                                          [state] {
-                                                              const auto&        g = *state->glyph;
+                                                          [](ZeroLengthGlyphParsesState& state) {
+                                                              const auto&        g = *state.glyph;
                                                               mdux::spec::Checks checks;
                                                               checks.expect(g.endPtsOfContours.empty(), "no end points");
                                                               checks.expect(g.points.empty(), "no contour points");
@@ -2406,9 +2283,7 @@ const mdux::spec::Register parseGlyphRejections{
                           state.font.reset();
                           auto fontResult = entry.buildFont(state);
                           if (!fontResult.has_value()) {
-                              throw speclab::core::AssertionFailure(
-                                  std::format("{}: the fixture's font did not parse: {}", entry.what, tt::describe(fontResult.error())),
-                                  std::source_location::current());
+                              Assertions::fail(std::format("{}: the fixture's font did not parse: {}", entry.what, tt::describe(fontResult.error())));
                           }
                           auto glyph = entry.parse(*state.font);
                           checks.expect(!glyph.has_value(), std::format("{}: parseGlyph succeeded unexpectedly", entry.what));
