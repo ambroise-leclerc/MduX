@@ -28,6 +28,12 @@ namespace {
 
 using namespace mdux::tools::shaderemit;
 using namespace mdux::test::spirv;
+// These scenarios keep the `std::make_shared<State>` idiom rather than `speclab::Test<State>`:
+// their state holds a `TempDir`, which deletes its copy constructor and so has no move
+// constructor, and `Test<State>` materialises and moves its initial value even when the state is
+// only default-constructed (ambroise-leclerc/SpecLab#32). The assertions are converted.
+using speclab::core::Assertions;
+
 namespace cli = mdux::tools::cli;
 namespace shader = mdux::shader;
 namespace evidence = mdux::evidence;
@@ -70,10 +76,7 @@ void writeText(const std::filesystem::path& path, std::string_view text) {
                                                  const shader::ShaderPackage& package,
                                                  std::span<const std::byte> sidecar) {
     auto text = package.write();
-    if (!text.has_value()) {
-        throw speclab::core::AssertionFailure(
-            "package.write() rejected the package", std::source_location::current());
-    }
+    Assertions::require(text.has_value(), "package.write() rejected the package");
     writeText(dir / "package.json", *text);
     writeBytes(dir / package.sidecarPath, sidecar);
     return dir / "package.json";
@@ -152,11 +155,7 @@ const mdux::spec::Register wellFormedRendersBoth{
                   })
             .Then("both outputs are produced and carry the same payload",
                   [state] {
-                      if (!state->outputs.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "render() produced no outputs",
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->outputs.has_value(), "render() produced no outputs");
                       const EmitOutputs& outputs = *state->outputs;
                       mdux::spec::Checks checks;
                       checks.expect(state->diagnostics.empty(), "no diagnostics");
@@ -221,11 +220,7 @@ const mdux::spec::Register noDescriptorsEmptySpan{
                   })
             .Then("the empty contract is spelled as a span, not an array",
                   [state] {
-                      if (!state->outputs.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "render() produced no outputs",
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->outputs.has_value(), "render() produced no outputs");
                       const EmitOutputs& outputs = *state->outputs;
                       mdux::spec::Checks checks;
                       checks.expect(outputs.moduleSource.find("descriptors[] = {") ==
@@ -266,12 +261,7 @@ const mdux::spec::Register unreadablePackageReported{
                   })
             .Then("a SHE001 diagnostic names the failure and its remedy",
                   [state] {
-                      if (state->diagnostics.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 diagnostic, got {}",
-                                          state->diagnostics.size()),
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
                       mdux::spec::Checks checks;
                       checks.expect(!state->hadOutputs, "no outputs are produced");
                       checks.expect(state->diagnostics[0].code == "SHE001",
@@ -307,12 +297,7 @@ const mdux::spec::Register notShaderPackageReported{
                   })
             .Then("a SHE002 diagnostic names the reason",
                   [state] {
-                      if (state->diagnostics.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 diagnostic, got {}",
-                                          state->diagnostics.size()),
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
                       mdux::spec::Checks checks;
                       checks.expect(!state->hadOutputs, "no outputs are produced");
                       checks.expect(state->diagnostics[0].code == "SHE002",
@@ -337,11 +322,7 @@ const mdux::spec::Register missingSidecarReported{
                        const std::vector<std::byte> sidecar = minimal().bytes();
                        const shader::ShaderPackage package = packageOver(sidecar);
                        auto text = package.write();
-                       if (!text.has_value()) {
-                           throw speclab::core::AssertionFailure(
-                               "package.write() rejected the package",
-                               std::source_location::current());
-                       }
+                       Assertions::require(text.has_value(), "package.write() rejected the package");
                        writeText(state->dir.path() / "package.json", *text);
                    })
             .When("it is rendered",
@@ -352,12 +333,7 @@ const mdux::spec::Register missingSidecarReported{
                   })
             .Then("a SHE003 diagnostic names the sidecar",
                   [state] {
-                      if (state->diagnostics.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 diagnostic, got {}",
-                                          state->diagnostics.size()),
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
                       mdux::spec::Checks checks;
                       checks.expect(!state->hadOutputs, "no outputs are produced");
                       checks.expect(state->diagnostics[0].code == "SHE003",
@@ -406,12 +382,7 @@ const mdux::spec::Register tamperedSidecarRefused{
                   })
             .Then("a SHE004 diagnostic says the sidecar was hand-edited",
                   [state] {
-                      if (state->diagnostics.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 diagnostic, got {}",
-                                          state->diagnostics.size()),
-                              std::source_location::current());
-                      }
+                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
                       mdux::spec::Checks checks;
                       checks.expect(!state->hadOutputs, "no outputs are produced");
                       checks.expect(state->diagnostics[0].code == "SHE004",
@@ -489,20 +460,11 @@ const mdux::spec::Register writeLeavesUnchangedUntouched{
                                         state->sidecar);
                        state->outputs =
                            render(state->packagePath, state->diagnostics);
-                       if (!state->outputs.has_value()) {
-                           throw speclab::core::AssertionFailure(
-                               "render() produced no outputs",
-                               std::source_location::current());
-                       }
-                       if (!write(*state->outputs, state->out.path(), state->diagnostics)) {
-                           throw speclab::core::AssertionFailure(
-                               "write() reported a failure", std::source_location::current());
-                       }
+                       Assertions::require(state->outputs.has_value(), "render() produced no outputs");
+                       Assertions::require(write(*state->outputs, state->out.path(), state->diagnostics), "write() reported a failure");
                        if (!std::filesystem::exists(state->out.path() / "test_ui.cppm") ||
                            !std::filesystem::exists(state->out.path() / "test_ui.hpp")) {
-                           throw speclab::core::AssertionFailure(
-                               "write() did not create both files",
-                               std::source_location::current());
+                           Assertions::fail("write() did not create both files");
                        }
                    })
             .When("the same outputs are written again over the existing files",
@@ -516,11 +478,7 @@ const mdux::spec::Register writeLeavesUnchangedUntouched{
                           std::filesystem::file_size(state->out.path() / "test_ui.cppm");
                       const bool rewrote =
                           write(*state->outputs, state->out.path(), state->diagnostics);
-                      if (!rewrote) {
-                          throw speclab::core::AssertionFailure(
-                              "write() reported a failure on the second pass",
-                              std::source_location::current());
-                      }
+                      Assertions::require(rewrote, "write() reported a failure on the second pass");
                       state->sizeStable =
                           (std::filesystem::file_size(state->out.path() / "test_ui.cppm") ==
                            before);

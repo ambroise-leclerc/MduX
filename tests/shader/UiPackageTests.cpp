@@ -29,6 +29,8 @@ import mdux.tools.spirv;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace shader = mdux::shader;
 namespace evidence = mdux::evidence;
 namespace spirv = mdux::tools::spirv;
@@ -87,68 +89,61 @@ const std::filesystem::path packageDir =
     return std::move(*result);
 }
 
+/// The package a scenario parsed, or nothing when parsing failed.
+struct ParsedPackageState {
+    std::optional<shader::ShaderPackage> package;
+};
+
 const mdux::spec::Register committedParses{
     "The committed UI package parses and validates", "evidence-unit", [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-committed-parses")
+        return speclab::Test<ParsedPackageState>("shader-ui-committed-parses")
             .Given("the committed UI package",
-                   [state] { state->package = requirePackage(committedPackage(), "the package"); })
+                   [](ParsedPackageState& state) { state.package = requirePackage(committedPackage(), "the package"); })
             .When("it is inspected", [] {})
             .Then("it parses with the expected header",
-                  [state] {
+                  [](ParsedPackageState& state) {
                       // Guards every assertion below, and doubles as a check that the strict
                       // reader accepts what the writer committed - a round trip through the
                       // filesystem and a git checkout.
                       mdux::spec::Checks checks;
-                      checks.expect(state->package->header.id == "mdux-ui", "the header id");
-                      checks.expect(state->package->header.kind == "shader", "the header kind");
-                      checks.expect(state->package->sidecarPath == "shaders.spv",
+                      checks.expect(state.package->header.id == "mdux-ui", "the header id");
+                      checks.expect(state.package->header.kind == "shader", "the header kind");
+                      checks.expect(state.package->sidecarPath == "shaders.spv",
                                     "the sidecar path");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct VertexAndFragmentOnlyState {
+    std::optional<shader::ShaderPackage> package;
+    const shader::ShaderModule* vertex{nullptr};
+    const shader::ShaderModule* fragment{nullptr};
+};
+
 const mdux::spec::Register vertexAndFragmentOnly{
     "The UI package provides exactly a vertex and a fragment module", "evidence-unit", [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-            const shader::ShaderModule* vertex{nullptr};
-            const shader::ShaderModule* fragment{nullptr};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-vertex-and-fragment-only")
+        return speclab::Test<VertexAndFragmentOnlyState>("shader-ui-vertex-and-fragment-only")
             .Given("the committed UI package",
-                   [state] { state->package = requirePackage(committedPackage(), "the package"); })
-            .When("its modules are looked up", [state] {
-                if (state->package->modules.size() != 2) {
-                    throw speclab::core::AssertionFailure(
-                        std::format("expected 2 modules, got {}", state->package->modules.size()),
-                        std::source_location::current());
-                }
-                state->vertex = state->package->find("ui.vert");
-                state->fragment = state->package->find("ui.frag");
-                if (state->vertex == nullptr || state->fragment == nullptr) {
-                    throw speclab::core::AssertionFailure(
-                        "one of the expected modules was not found",
-                        std::source_location::current());
+                   [](VertexAndFragmentOnlyState& state) { state.package = requirePackage(committedPackage(), "the package"); })
+            .When("its modules are looked up", [](VertexAndFragmentOnlyState& state) {
+                Assertions::require(state.package->modules.size() == 2, "expected 2 modules, got {}", state.package->modules.size());
+                state.vertex = state.package->find("ui.vert");
+                state.fragment = state.package->find("ui.frag");
+                if (state.vertex == nullptr || state.fragment == nullptr) {
+                    Assertions::fail("one of the expected modules was not found");
                 }
             })
             .Then("it provides a vertex and a fragment module with entry point main",
-                  [state] {
+                  [](VertexAndFragmentOnlyState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->vertex->stage == shader::Stage::Vertex,
+                      checks.expect(state.vertex->stage == shader::Stage::Vertex,
                                     "the vertex module stage");
-                      checks.expect(state->vertex->entryPoint == "main",
+                      checks.expect(state.vertex->entryPoint == "main",
                                     "the vertex module entry point");
-                      checks.expect(state->fragment->stage == shader::Stage::Fragment,
+                      checks.expect(state.fragment->stage == shader::Stage::Fragment,
                                     "the fragment module stage");
-                      checks.expect(state->fragment->entryPoint == "main",
+                      checks.expect(state.fragment->entryPoint == "main",
                                     "the fragment module entry point");
                       checks.raise();
                   })
@@ -157,30 +152,20 @@ const mdux::spec::Register vertexAndFragmentOnly{
 
 const mdux::spec::Register twoCombinedImageSamplers{
     "The UI pipeline binds fixed coverage and RGBA samplers", "evidence-unit", [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-two-combined-image-samplers")
+        return speclab::Test<ParsedPackageState>("shader-ui-two-combined-image-samplers")
             .Given("the committed UI package",
-                   [state] { state->package = requirePackage(committedPackage(), "the package"); })
-            .When("its descriptors are inspected", [state] {
-                if (state->package->descriptors.size() != 2) {
-                    throw speclab::core::AssertionFailure(
-                        std::format("expected 2 descriptors, got {}",
-                                    state->package->descriptors.size()),
-                        std::source_location::current());
-                }
+                   [](ParsedPackageState& state) { state.package = requirePackage(committedPackage(), "the package"); })
+            .When("its descriptors are inspected", [](ParsedPackageState& state) {
+                Assertions::require(state.package->descriptors.size() == 2, "expected 2 descriptors, got {}", state.package->descriptors.size());
             })
             .Then("the atlas bindings have fixed sets, bindings, kinds, counts and stages",
-                  [state] {
+                  [](ParsedPackageState& state) {
                       // The atlas is bound for every draw, including one that is entirely solid: a
                       // descriptor set whose shape depended on the content would put a conditional
                       // in the renderer's hot path and in its budget, which is the opposite of
                       // fixed.
-                      const shader::DescriptorBinding& coverage = state->package->descriptors[0];
-                      const shader::DescriptorBinding& rgba = state->package->descriptors[1];
+                      const shader::DescriptorBinding& coverage = state.package->descriptors[0];
+                      const shader::DescriptorBinding& rgba = state.package->descriptors[1];
                       mdux::spec::Checks checks;
                       checks.expect(coverage.set == 0 && rgba.set == 0, "both sets are 0");
                       checks.expect(coverage.binding == 0 && rgba.binding == 1,
@@ -206,28 +191,18 @@ const mdux::spec::Register twoCombinedImageSamplers{
 
 const mdux::spec::Register eightBytePushConstant{
     "The UI pipeline takes an 8-byte vertex-only push constant", "evidence-unit", [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-eight-byte-push-constant")
+        return speclab::Test<ParsedPackageState>("shader-ui-eight-byte-push-constant")
             .Given("the committed UI package",
-                   [state] { state->package = requirePackage(committedPackage(), "the package"); })
-            .When("its push constants are inspected", [state] {
-                if (state->package->pushConstants.size() != 1) {
-                    throw speclab::core::AssertionFailure(
-                        std::format("expected 1 push constant range, got {}",
-                                    state->package->pushConstants.size()),
-                        std::source_location::current());
-                }
+                   [](ParsedPackageState& state) { state.package = requirePackage(committedPackage(), "the package"); })
+            .When("its push constants are inspected", [](ParsedPackageState& state) {
+                Assertions::require(state.package->pushConstants.size() == 1, "expected 1 push constant range, got {}", state.package->pushConstants.size());
             })
             .Then("the range is 8 bytes at offset 0 for the vertex stage",
-                  [state] {
+                  [](ParsedPackageState& state) {
                       // The viewport size, so a governed draw list can hold pixel coordinates and
                       // contain no projection maths and no dependency on the surface it will be
                       // drawn to.
-                      const shader::PushConstantRange& range = state->package->pushConstants.front();
+                      const shader::PushConstantRange& range = state.package->pushConstants.front();
                       mdux::spec::Checks checks;
                       checks.expect(range.offset == 0, "the offset is 0");
                       checks.expect(range.size == 8, "the size is 8 bytes");
@@ -238,42 +213,38 @@ const mdux::spec::Register eightBytePushConstant{
             .Execute();
     }};
 
+struct SidecarDigestsAgreeState {
+    std::optional<shader::ShaderPackage> package;
+    std::optional<std::vector<std::byte>> sidecar;
+};
+
 const mdux::spec::Register sidecarDigestsAgree{
     "The sidecar matches the digests the package records", "evidence-unit", [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-            std::optional<std::vector<std::byte>> sidecar;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-sidecar-digests-agree")
+        return speclab::Test<SidecarDigestsAgreeState>("shader-ui-sidecar-digests-agree")
             .Given("the committed package and its sidecar",
-                   [state] {
-                       state->package =
+                   [](SidecarDigestsAgreeState& state) {
+                       state.package =
                            requirePackage(committedPackage(), "the package");
-                       state->sidecar = readFile(packageDir / state->package->sidecarPath);
-                       if (!state->sidecar.has_value()) {
-                           throw speclab::core::AssertionFailure(
-                               "the sidecar could not be read", std::source_location::current());
-                       }
+                       state.sidecar = readFile(packageDir / state.package->sidecarPath);
+                       Assertions::require(state.sidecar.has_value(), "the sidecar could not be read");
                    })
             .When("the recorded digests are compared against the bytes beside them", [] {})
             .Then("the sidecar and every module digest match the package records",
-                  [state] {
+                  [](SidecarDigestsAgreeState& state) {
                       // The package's own claims, checked against the bytes beside it.
                       // `evidence.shader.mdux-ui` compares both files against a fresh bake; this
                       // checks they agree with *each other*, which is what a consumer that only
                       // has the committed directory can rely on.
                       mdux::spec::Checks checks;
-                      checks.expect(state->sidecar->size() == state->package->sidecarByteLength,
+                      checks.expect(state.sidecar->size() == state.package->sidecarByteLength,
                                     "the sidecar length matches");
-                      checks.expect(evidence::sha256(*state->sidecar) ==
-                                        state->package->sidecarSha256,
+                      checks.expect(evidence::sha256(*state.sidecar) ==
+                                        state.package->sidecarSha256,
                                     "the sidecar digest matches");
 
-                      for (const shader::ShaderModule& module : state->package->modules) {
+                      for (const shader::ShaderModule& module : state.package->modules) {
                           const std::span<const std::byte> range{
-                              state->sidecar->data() + module.byteOffset,
+                              state.sidecar->data() + module.byteOffset,
                               static_cast<std::size_t>(module.byteLength)};
                           checks.expect(evidence::sha256(range) == module.sha256,
                                         std::format("the digest of module '{}' matches", module.id));
@@ -283,45 +254,39 @@ const mdux::spec::Register sidecarDigestsAgree{
             .Execute();
     }};
 
+struct ModulesWellFormedSpirvState {
+    std::optional<shader::ShaderPackage> package;
+    std::optional<std::vector<std::byte>> sidecar;
+    std::vector<mdux::tools::spirv::Reflection> reflections;
+};
+
 const mdux::spec::Register modulesWellFormedSpirv{
     "Every module in the sidecar is well-formed SPIR-V for its declared stage", "evidence-unit",
     [] {
-        struct State {
-            std::optional<shader::ShaderPackage> package;
-            std::optional<std::vector<std::byte>> sidecar;
-            std::vector<mdux::tools::spirv::Reflection> reflections;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-ui-modules-well-formed-spirv")
+        return speclab::Test<ModulesWellFormedSpirvState>("shader-ui-modules-well-formed-spirv")
             .Given("the committed package and its sidecar",
-                   [state] {
-                       state->package =
+                   [](ModulesWellFormedSpirvState& state) {
+                       state.package =
                            requirePackage(committedPackage(), "the package");
-                       state->sidecar = readFile(packageDir / state->package->sidecarPath);
-                       if (!state->sidecar.has_value()) {
-                           throw speclab::core::AssertionFailure(
-                               "the sidecar could not be read", std::source_location::current());
-                       }
+                       state.sidecar = readFile(packageDir / state.package->sidecarPath);
+                       Assertions::require(state.sidecar.has_value(), "the sidecar could not be read");
                    })
-            .When("each module range is reflected", [state] {
-                for (const shader::ShaderModule& module : state->package->modules) {
+            .When("each module range is reflected", [](ModulesWellFormedSpirvState& state) {
+                for (const shader::ShaderModule& module : state.package->modules) {
                     // validate() bounded these ranges against the length package.json *declares*
                     // for the sidecar. This span is over the bytes actually read, so a truncated
                     // file still runs off the end - UB in place of the test failure this scenario
                     // exists to produce. Subtraction, because the sum can wrap.
-                    const std::size_t sidecarSize = state->sidecar->size();
+                    const std::size_t sidecarSize = state.sidecar->size();
                     if (module.byteOffset > sidecarSize ||
                         module.byteLength > sidecarSize - module.byteOffset) {
-                        throw speclab::core::AssertionFailure(
-                            std::format("module '{}' spans [{}, {}) of a sidecar that is {} bytes "
+                        Assertions::fail(std::format("module '{}' spans [{}, {}) of a sidecar that is {} bytes "
                                         "on disk",
                                         module.id, module.byteOffset,
-                                        module.byteOffset + module.byteLength, sidecarSize),
-                            std::source_location::current());
+                                        module.byteOffset + module.byteLength, sidecarSize));
                     }
                     const std::span<const std::byte> range{
-                        state->sidecar->data() + module.byteOffset,
+                        state.sidecar->data() + module.byteOffset,
                         static_cast<std::size_t>(module.byteLength)};
 
                     // Reflecting the range rather than checking its first four bytes is what
@@ -332,20 +297,16 @@ const mdux::spec::Register modulesWellFormedSpirv{
                     // magic-number check cannot see, and it reaches a device as a vertex shader
                     // bound to the fragment stage.
                     auto reflection = spirv::reflect(range);
-                    if (!reflection.has_value()) {
-                        throw speclab::core::AssertionFailure(
-                            std::format("module '{}' did not reflect", module.id),
-                            std::source_location::current());
-                    }
-                    state->reflections.push_back(*reflection);
+                    Assertions::require(reflection.has_value(), "module '{}' did not reflect", module.id);
+                    state.reflections.push_back(*reflection);
                 }
             })
             .Then("each reflects to its declared stage, entry point and portable SPIR-V version",
-                  [state] {
+                  [](ModulesWellFormedSpirvState& state) {
                       mdux::spec::Checks checks;
-                      for (std::size_t i = 0; i < state->package->modules.size(); ++i) {
-                          const shader::ShaderModule& module = state->package->modules[i];
-                          const mdux::tools::spirv::Reflection& reflection = state->reflections[i];
+                      for (std::size_t i = 0; i < state.package->modules.size(); ++i) {
+                          const shader::ShaderModule& module = state.package->modules[i];
+                          const mdux::tools::spirv::Reflection& reflection = state.reflections[i];
                           checks.expect(reflection.stage == module.stage,
                                         std::format("module '{}' reflects to its stage",
                                                     module.id));
