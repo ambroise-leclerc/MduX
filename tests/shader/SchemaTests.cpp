@@ -126,8 +126,8 @@ const mdux::spec::Register wireRoundTrips{
     }};
 
 struct UnknownWireValueRejectedState {
-    SchemaError stageError;
-    SchemaError kindError;
+    std::optional<SchemaError> stageError;
+    std::optional<SchemaError> kindError;
 };
 
 const mdux::spec::Register unknownWireValueRejected{
@@ -730,9 +730,9 @@ const mdux::spec::Register packageRoundTrip{
     }};
 
 struct MalformedTextRejectedState {
-    SchemaError notJson;
-    SchemaError notAnObject;
-    SchemaError wrongShape;
+    std::optional<SchemaError> notJson;
+    std::optional<SchemaError> notAnObject;
+    std::optional<SchemaError> wrongShape;
 };
 
 const mdux::spec::Register malformedTextRejected{
@@ -769,7 +769,7 @@ const mdux::spec::Register malformedTextRejected{
     }};
 
 struct ParseRunsValidateState {
-    SchemaError error;
+    std::optional<SchemaError> error;
 };
 
 const mdux::spec::Register parseRunsValidate{
