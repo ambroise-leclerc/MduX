@@ -25,16 +25,15 @@ import mdux.tools.medui.serialize;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md   = mdux::tools::medui;
 namespace json = mdux::evidence::json;
 
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-                                              std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -42,25 +41,19 @@ namespace json = mdux::evidence::json;
 
 [[nodiscard]] md::ast::Screen parseOrFail(std::string_view source, std::string_view label) {
     md::ParseResult parsed = md::parse(source, std::string{label});
-    if (!parsed.ok()) {
-        throw speclab::core::AssertionFailure(std::format("{} did not parse cleanly", label), std::source_location::current());
-    }
+    Assertions::require(parsed.ok(), "{} did not parse cleanly", label);
     return std::move(*parsed.screen);
 }
 
 [[nodiscard]] json::Value reparse(std::string_view text) {
     auto value = json::parse(text);
-    if (!value) {
-        throw speclab::core::AssertionFailure("document JSON did not parse", std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(value), "document JSON did not parse");
     return std::move(*value);
 }
 
 [[nodiscard]] std::string written(const json::Value& value) {
     auto text = json::write(value);
-    if (!text) {
-        throw speclab::core::AssertionFailure("document JSON could not be written", std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(text), "document JSON could not be written");
     return *text;
 }
 
@@ -134,9 +127,7 @@ const mdux::spec::Register documentsRefuseMalformedShapes{
                       const std::string  base = written(md::screenDocument(parseOrFail(fixture("accepted-goldens.medui"), "goldens")));
                       const auto         find = [&](std::string_view needle) {
                           const auto at = base.find(needle);
-                          if (at == std::string::npos) {
-                              throw speclab::core::AssertionFailure(std::format("the goldens document has no {}", needle), std::source_location::current());
-                          }
+                          Assertions::require(at != std::string::npos, "the goldens document has no {}", needle);
                           return at;
                       };
                       const auto replaced = [&](std::string_view needle, std::string_view with) {

@@ -28,6 +28,8 @@ import mdux.tools.medui.semantic;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
@@ -35,10 +37,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-                                              std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -47,7 +46,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] md::ast::Screen parseOrFail(std::string_view source) {
     md::ParseResult parsed = md::parse(source, "goldens.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("golden test source did not parse", std::source_location::current());
+        Assertions::fail("golden test source did not parse");
     }
     return std::move(*parsed.screen);
 }
@@ -56,9 +55,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] md::LayoutResult layoutOf(std::string_view source, std::int64_t width, std::int64_t height) {
     const md::ast::Screen screen   = parseOrFail(source);
     md::LayoutResult      resolved = md::resolveLayout(screen, "goldens.medui", {.surfaceWidth = width, .surfaceHeight = height});
-    if (!resolved.ok()) {
-        throw speclab::core::AssertionFailure("golden test source did not resolve", std::source_location::current());
-    }
+    Assertions::require(resolved.ok(), "golden test source did not resolve");
     return resolved;
 }
 
