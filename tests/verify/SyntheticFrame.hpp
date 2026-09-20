@@ -62,8 +62,7 @@ public:
     [[nodiscard]] mdux::verify::FramebufferView view() const {
         auto made = mdux::verify::FramebufferView::createPacked(pixels_, width_, height_);
         if (!made.has_value()) {
-            throw speclab::core::AssertionFailure(std::string{"the synthetic frame was refused: "} + std::string{mdux::verify::describe(made.error())},
-                                                  std::source_location::current());
+            speclab::core::Assertions::fail(std::format("the synthetic frame was refused: {}", mdux::verify::describe(made.error())));
         }
         return *made;
     }
@@ -82,9 +81,7 @@ private:
 /// moved, which is one of the two regressions this suite exists to catch.
 [[nodiscard]] inline mdux::core::ColorRgba8 tintOf(std::string_view token) {
     const auto resolved = mdux::medui::resolveColorToken(token);
-    if (!resolved.has_value()) {
-        throw speclab::core::AssertionFailure(std::string{"the governed table does not define "} + std::string{token}, std::source_location::current());
-    }
+    speclab::core::Assertions::require(resolved.has_value(), "the governed table does not define {}", token);
     return mdux::medui::quantise(*resolved);
 }
 

@@ -41,6 +41,8 @@ namespace {
 namespace ms = mdux::medui;
 namespace mv = mdux::verify;
 
+using speclab::core::Assertions;
+
 using mdux::core::ColorRgba8;
 using mdux::test::verify::Canvas;
 using mdux::test::verify::tintOf;
@@ -179,8 +181,7 @@ constexpr mv::GoldenEntry feedGolden{
 [[nodiscard]] mv::GoldenExpectation expect(const mv::GoldenEntry& entry, const ms::ScreenPackage& screen, mv::RenderScope scope) {
     auto made = mv::GoldenExpectation::create(entry, screen, scope, ground);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::string{"the golden was refused: "} + std::string{mv::describe(made.error())},
-                                              std::source_location::current());
+        Assertions::fail(std::format("the golden was refused: {}", mv::describe(made.error())));
     }
     return *made;
 }
@@ -497,9 +498,7 @@ const mdux::spec::Register aTwoLayerCompositeIsAllowedTwoStepsOfRounding{
 
                       const auto colourAt = [&](std::size_t composites) {
                           const auto expectation = mv::GoldenExpectation::create(haltGolden, haltScreen, mv::RenderScope::localeFree(), topbar, composites);
-                          if (!expectation.has_value()) {
-                              throw speclab::core::AssertionFailure("the fixture golden must resolve", std::source_location::current());
-                          }
+                          Assertions::require(expectation.has_value(), "the fixture golden must resolve");
                           Canvas canvas{16, 20, topbar};
                           canvas.fill({4, 4, 8, 6}, rendered);
                           // One fully covered pixel, so the check is answering ForeignColour or Held
@@ -517,9 +516,7 @@ const mdux::spec::Register aTwoLayerCompositeIsAllowedTwoStepsOfRounding{
                       // colour misses by far more than two steps on the channels that carry the
                       // coverage, so two composites do not admit it either.
                       const auto foreign = mv::GoldenExpectation::create(haltGolden, haltScreen, mv::RenderScope::localeFree(), topbar, 2);
-                      if (!foreign.has_value()) {
-                          throw speclab::core::AssertionFailure("the fixture golden must resolve", std::source_location::current());
-                      }
+                      Assertions::require(foreign.has_value(), "the fixture golden must resolve");
                       Canvas wrong{16, 20, topbar};
                       wrong.fill({4, 4, 8, 6}, ColorRgba8{.r = 215, .g = 20, .b = 135, .a = 255});
                       wrong.set(5, 5, fault);
