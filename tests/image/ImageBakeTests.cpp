@@ -9,6 +9,10 @@ import mdux.tools.cli;
 import mdux.tools.imagebake;
 #include "../framework/SpecLabBridge.hpp"
 
+namespace {
+using speclab::core::Assertions;
+}  // namespace
+
 const mdux::spec::Register imageBakerReproducesCommittedPackage{
     "The image baker reproduces the committed QOI package",
     "evidence-unit",
@@ -21,19 +25,15 @@ const mdux::spec::Register imageBakerReproducesCommittedPackage{
                       namespace bake = mdux::tools::imagebake;
                       const std::filesystem::path root{MDUX_REPO_ROOT};
                       const auto                  recipeBytes = bake::readFile(root / "recipes/image/brand-mark.toml");
-                      if (!recipeBytes.has_value())
-                          throw speclab::core::AssertionFailure("recipe unreadable", std::source_location::current());
+                      Assertions::require(recipeBytes.has_value(), "recipe unreadable");
                       const std::string_view                    recipeText{reinterpret_cast<const char*>(recipeBytes->data()), recipeBytes->size()};
                       std::vector<mdux::tools::cli::Diagnostic> diagnostics;
                       const auto                                recipe = bake::parseRecipe(recipeText, "recipes/image/brand-mark.toml", diagnostics);
-                      if (!recipe.has_value())
-                          throw speclab::core::AssertionFailure("recipe rejected", std::source_location::current());
+                      Assertions::require(recipe.has_value(), "recipe rejected");
                       const auto output = bake::run(*recipe, "recipes/image/brand-mark.toml", *recipeBytes, root, diagnostics);
-                      if (!output.has_value())
-                          throw speclab::core::AssertionFailure("bake failed", std::source_location::current());
+                      Assertions::require(output.has_value(), "bake failed");
                       const auto committed = bake::readFile(root / "generated/image/brand-mark/package.json");
-                      if (!committed.has_value())
-                          throw speclab::core::AssertionFailure("committed package unreadable", std::source_location::current());
+                      Assertions::require(committed.has_value(), "committed package unreadable");
                       const std::string_view committedText{reinterpret_cast<const char*>(committed->data()), committed->size()};
                       const auto             parsed = mdux::image::ImagePackage::parse(output->packageJson);
                       mdux::spec::Checks     checks;

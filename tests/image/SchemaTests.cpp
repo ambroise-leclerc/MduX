@@ -9,6 +9,8 @@ import mdux.image.schema;
 #include "../framework/SpecLabBridge.hpp"
 
 namespace {
+
+using speclab::core::Assertions;
 namespace image = mdux::image;
 
 [[nodiscard]] image::ImagePackage validPackage() {
@@ -31,11 +33,9 @@ const mdux::spec::Register imageSchemaRoundTrip{"An image package round-trips th
                                                               [] {
                                                                   image::ImagePackage package = validPackage();
                                                                   const auto          written = package.write();
-                                                                  if (!written.has_value())
-                                                                      throw speclab::core::AssertionFailure("write failed", std::source_location::current());
+                                                                  Assertions::require(written.has_value(), "write failed");
                                                                   const auto parsed = image::ImagePackage::parse(*written);
-                                                                  if (!parsed.has_value())
-                                                                      throw speclab::core::AssertionFailure("parse failed", std::source_location::current());
+                                                                  Assertions::require(parsed.has_value(), "parse failed");
                                                                   mdux::spec::Checks checks;
                                                                   checks.expect(parsed->header.id == package.header.id, "id survives");
                                                                   checks.expect(parsed->width == 2 && parsed->height == 1, "extent survives");
