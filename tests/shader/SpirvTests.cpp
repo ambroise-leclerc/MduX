@@ -23,6 +23,8 @@ import mdux.tools.spirv;
 
 namespace {
 
+using speclab::core::Assertions;
+
 using namespace mdux::tools::spirv;
 using namespace mdux::test::spirv;
 namespace shader = mdux::shader;
@@ -31,148 +33,130 @@ namespace shader = mdux::shader;
 // Header validation
 // ---------------------------------------------------------------------------
 
+/// A module `reflect()` accepts: the bytes fed in, and the reflection read back.
+struct ReflectedModuleState {
+    std::vector<std::byte> module;
+    std::optional<Reflection> reflection;
+};
+
 const mdux::spec::Register minimalReflects{
     "A minimal module reflects its stage and entry point", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-minimal-reflects")
-            .Given("a minimal module", [state] { state->module = minimal().bytes(); })
+        return speclab::Test<ReflectedModuleState>("shader-spirv-minimal-reflects")
+            .Given("a minimal module", [](ReflectedModuleState& state) { state.module = minimal().bytes(); })
             .When("it is reflected",
-                  [state] {
+                  [](ReflectedModuleState& state) {
                       // Guards every rejection below: if this failed they could all pass for the
                       // wrong reason.
-                      auto result = reflect(state->module);
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the minimal module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the minimal module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("it reports the vertex stage, the main entry point and version 1.3",
-                  [state] {
+                  [](ReflectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->stage == shader::Stage::Vertex,
+                      checks.expect(state.reflection->stage == shader::Stage::Vertex,
                                     "the stage is Vertex");
-                      checks.expect(state->reflection->entryPoint == "main",
+                      checks.expect(state.reflection->entryPoint == "main",
                                     "the entry point is main");
-                      checks.expect(state->reflection->versionMajor == 1,
+                      checks.expect(state.reflection->versionMajor == 1,
                                     "the major version is 1");
-                      checks.expect(state->reflection->versionMinor == 3,
+                      checks.expect(state.reflection->versionMinor == 3,
                                     "the minor version is 3");
-                      checks.expect(state->reflection->descriptors.empty(), "no descriptors");
-                      checks.expect(!state->reflection->pushConstant.has_value(),
+                      checks.expect(state.reflection->descriptors.empty(), "no descriptors");
+                      checks.expect(!state.reflection->pushConstant.has_value(),
                                     "no push constant block");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct EmptyOrMisalignedRejectedState {
+    std::array<std::byte, 6> misaligned{};
+    std::optional<ParseError> empty;
+    std::optional<ParseError> odd;
+};
+
 const mdux::spec::Register emptyOrMisalignedRejected{
     "An empty or misaligned module is rejected", "evidence-unit", [] {
-        struct State {
-            std::array<std::byte, 6> misaligned{};
-            ParseError empty;
-            ParseError odd;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-empty-or-misaligned-rejected")
+        return speclab::Test<EmptyOrMisalignedRejectedState>("shader-spirv-empty-or-misaligned-rejected")
             .Given("an empty buffer and a buffer whose length is not a multiple of four", [] {})
             .When("each is reflected",
-                  [state] {
+                  [](EmptyOrMisalignedRejectedState& state) {
                       auto empty = reflect({});
-                      if (empty.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "an empty module was accepted",
-                              std::source_location::current());
-                      }
-                      state->empty = empty.error();
+                      Assertions::require(!empty.has_value(), "an empty module was accepted");
+                      state.empty = empty.error();
 
-                      auto odd = reflect(state->misaligned);
-                      if (odd.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a misaligned module was accepted",
-                              std::source_location::current());
-                      }
-                      state->odd = odd.error();
+                      auto odd = reflect(state.misaligned);
+                      Assertions::require(!odd.has_value(), "a misaligned module was accepted");
+                      state.odd = odd.error();
                   })
             .Then("each is rejected with its own code",
-                  [state] {
+                  [](EmptyOrMisalignedRejectedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->empty == ParseError::Empty,
+                      checks.expect(state.empty == ParseError::Empty,
                                     "the empty buffer is Empty");
-                      checks.expect(state->odd == ParseError::NotWordAligned,
+                      checks.expect(state.odd == ParseError::NotWordAligned,
                                     "the misaligned buffer is NotWordAligned");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct ShorterThanHeaderRejectedState {
+    std::optional<ParseError> error;
+};
+
 const mdux::spec::Register shorterThanHeaderRejected{
     "A module shorter than a header is rejected", "evidence-unit", [] {
-        struct State {
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-shorter-than-header-rejected")
+        return speclab::Test<ShorterThanHeaderRejectedState>("shader-spirv-shorter-than-header-rejected")
             .Given("a buffer shorter than the five-word header", [] {})
             .When("it is reflected",
-                  [state] {
+                  [](ShorterThanHeaderRejectedState& state) {
                       const std::array<std::byte, 8> tooShort{};
                       auto result = reflect(tooShort);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module shorter than a header was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                      Assertions::require(!result.has_value(), "a module shorter than a header was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as TooShort",
-                  [state] {
+                  [](ShorterThanHeaderRejectedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::TooShort,
+                      checks.expect(state.error == ParseError::TooShort,
                                     "the error is TooShort");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// A module that is refused: the bytes fed in, and the error `reflect()` reported.
+///
+/// The error is optional so that an assertion cannot pass against a field no step wrote: zero is
+/// `ParseError::Empty`, a real enumerator, and one scenario below asserts exactly that value.
+struct RejectedModuleState {
+    std::vector<std::byte> module;
+    std::optional<ParseError> error;
+};
+
 const mdux::spec::Register badMagicRejected{
     "A bad magic number is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-bad-magic-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-bad-magic-rejected")
             .Given("a module whose magic number is not the SPIR-V magic",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        Builder builder = minimal();
                        builder.poke(0, 0xdeadbeefu);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module with a bad magic number was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a module with a bad magic number was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as BadMagic",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::BadMagic,
+                      checks.expect(state.error == ParseError::BadMagic,
                                     "the error is BadMagic");
                       checks.raise();
                   })
@@ -181,87 +165,68 @@ const mdux::spec::Register badMagicRejected{
 
 const mdux::spec::Register byteSwappedRefused{
     "A byte-swapped module is refused rather than swapped", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-byte-swapped-refused")
+        return speclab::Test<RejectedModuleState>("shader-spirv-byte-swapped-refused")
             .Given("a module whose magic number is byte-swapped",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        // Accepting it would mean the same shader could bake to two different
                        // committed artifacts depending on the endianness of the machine that ran
                        // the bake.
                        Builder builder = minimal();
                        builder.poke(0, 0x03022307u);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a byte-swapped module was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a byte-swapped module was accepted");
+                      state.error = result.error();
                   })
             .Then("it is refused as ForeignEndianness",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::ForeignEndianness,
+                      checks.expect(state.error == ParseError::ForeignEndianness,
                                     "the error is ForeignEndianness");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct UnsupportedVersionRejectedState {
+    std::vector<std::byte> tooNew;
+    std::vector<std::byte> tooOld;
+    std::optional<ParseError> newer;
+    std::optional<ParseError> older;
+};
+
 const mdux::spec::Register unsupportedVersionRejected{
     "An unsupported SPIR-V version is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> tooNew;
-            std::vector<std::byte> tooOld;
-            ParseError newer;
-            ParseError older;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-unsupported-version-rejected")
+        return speclab::Test<UnsupportedVersionRejectedState>("shader-spirv-unsupported-version-rejected")
             .Given("a module at version 2.0 and one at version 0.9",
-                   [state] {
+                   [](UnsupportedVersionRejectedState& state) {
                        Builder tooNew = minimal();
                        tooNew.poke(1, 0x00020000u);  // 2.0
-                       state->tooNew = tooNew.bytes();
+                       state.tooNew = tooNew.bytes();
 
                        Builder tooOld = minimal();
                        tooOld.poke(1, 0x00000900u);  // 0.9
-                       state->tooOld = tooOld.bytes();
+                       state.tooOld = tooOld.bytes();
                    })
             .When("each is reflected",
-                  [state] {
-                      auto newer = reflect(state->tooNew);
-                      if (newer.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module at version 2.0 was accepted",
-                              std::source_location::current());
-                      }
-                      state->newer = newer.error();
+                  [](UnsupportedVersionRejectedState& state) {
+                      auto newer = reflect(state.tooNew);
+                      Assertions::require(!newer.has_value(), "a module at version 2.0 was accepted");
+                      state.newer = newer.error();
 
-                      auto older = reflect(state->tooOld);
-                      if (older.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module at version 0.9 was accepted",
-                              std::source_location::current());
-                      }
-                      state->older = older.error();
+                      auto older = reflect(state.tooOld);
+                      Assertions::require(!older.has_value(), "a module at version 0.9 was accepted");
+                      state.older = older.error();
                   })
             .Then("both are rejected as UnsupportedVersion",
-                  [state] {
+                  [](UnsupportedVersionRejectedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->newer == ParseError::UnsupportedVersion,
+                      checks.expect(state.newer == ParseError::UnsupportedVersion,
                                     "version 2.0 is UnsupportedVersion");
-                      checks.expect(state->older == ParseError::UnsupportedVersion,
+                      checks.expect(state.older == ParseError::UnsupportedVersion,
                                     "version 0.9 is UnsupportedVersion");
                       checks.raise();
                   })
@@ -270,33 +235,23 @@ const mdux::spec::Register unsupportedVersionRejected{
 
 const mdux::spec::Register reservedHeaderWordRejected{
     "A non-zero reserved header word is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-reserved-header-word-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-reserved-header-word-rejected")
             .Given("a module whose reserved header word is non-zero",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        Builder builder = minimal();
                        builder.poke(4, 1u);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module with a non-zero reserved word was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a module with a non-zero reserved word was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as ReservedSchemaNonZero",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::ReservedSchemaNonZero,
+                      checks.expect(state.error == ParseError::ReservedSchemaNonZero,
                                     "the error is ReservedSchemaNonZero");
                       checks.raise();
                   })
@@ -309,35 +264,25 @@ const mdux::spec::Register reservedHeaderWordRejected{
 
 const mdux::spec::Register zeroWordCountRejected{
     "An instruction claiming zero words is rejected rather than looping", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-zero-word-count-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-zero-word-count-rejected")
             .Given("a module whose first instruction claims zero words",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        // A word count of zero would leave the cursor where it was; without this
                        // check the parser would spin forever on a malformed file.
                        Builder builder = minimal();
                        builder.poke(5, opEntryPoint);  // word count 0 in the high half
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "an instruction claiming zero words was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "an instruction claiming zero words was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as ZeroWordCount",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::ZeroWordCount,
+                      checks.expect(state.error == ParseError::ZeroWordCount,
                                     "the error is ZeroWordCount");
                       checks.raise();
                   })
@@ -346,33 +291,23 @@ const mdux::spec::Register zeroWordCountRejected{
 
 const mdux::spec::Register truncatedInstructionRejected{
     "An instruction extending past the module is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-truncated-instruction-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-truncated-instruction-rejected")
             .Given("a module whose first instruction extends past the end",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        Builder builder = minimal();
                        builder.poke(5, (99u << 16) | opEntryPoint);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a truncated instruction was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a truncated instruction was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as TruncatedInstruction",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::TruncatedInstruction,
+                      checks.expect(state.error == ParseError::TruncatedInstruction,
                                     "the error is TruncatedInstruction");
                       checks.raise();
                   })
@@ -381,32 +316,22 @@ const mdux::spec::Register truncatedInstructionRejected{
 
 const mdux::spec::Register noEntryPointRejected{
     "A module with no entry point is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-no-entry-point-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-no-entry-point-rejected")
             .Given("a header-only module",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        const Builder builder;  // header only
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module with no entry point was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a module with no entry point was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as NoEntryPoint",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::NoEntryPoint,
+                      checks.expect(state.error == ParseError::NoEntryPoint,
                                     "the error is NoEntryPoint");
                       checks.raise();
                   })
@@ -415,33 +340,23 @@ const mdux::spec::Register noEntryPointRejected{
 
 const mdux::spec::Register secondEntryPointRejected{
     "A second entry point is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-second-entry-point-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-second-entry-point-rejected")
             .Given("a module declaring a second entry point",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        Builder builder = minimal();
                        builder.opWithName(opEntryPoint, {executionModelFragment, 2u}, "other");
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a module with two entry points was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a module with two entry points was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as MultipleEntryPoints",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::MultipleEntryPoints,
+                      checks.expect(state.error == ParseError::MultipleEntryPoints,
                                     "the error is MultipleEntryPoints");
                       checks.raise();
                   })
@@ -450,33 +365,23 @@ const mdux::spec::Register secondEntryPointRejected{
 
 const mdux::spec::Register unsupportedExecutionModelRejected{
     "An unsupported execution model is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-unsupported-execution-model-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-unsupported-execution-model-rejected")
             .Given("a module declaring the compute execution model",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        // The schema has no Stage enumerator for compute, and inventing one here
                        // would put the schema's vocabulary in two places.
-                       state->module = minimal(executionModelGLCompute).bytes();
+                       state.module = minimal(executionModelGLCompute).bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a compute module was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a compute module was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as UnsupportedExecutionModel",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::UnsupportedExecutionModel,
+                      checks.expect(state.error == ParseError::UnsupportedExecutionModel,
                                     "the error is UnsupportedExecutionModel");
                       checks.raise();
                   })
@@ -485,30 +390,21 @@ const mdux::spec::Register unsupportedExecutionModelRejected{
 
 const mdux::spec::Register fragmentModuleReflects{
     "A fragment module reflects as fragment", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-fragment-module-reflects")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-fragment-module-reflects")
             .Given("a fragment module",
-                   [state] { state->module = minimal(executionModelFragment).bytes(); })
+                   [](ReflectedModuleState& state) { state.module = minimal(executionModelFragment).bytes(); })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the fragment module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the fragment module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("its stage is Fragment",
-                  [state] {
+                  [](ReflectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->stage == shader::Stage::Fragment,
+                      checks.expect(state.reflection->stage == shader::Stage::Fragment,
                                     "the stage is Fragment");
                       checks.raise();
                   })
@@ -517,30 +413,21 @@ const mdux::spec::Register fragmentModuleReflects{
 
 const mdux::spec::Register nonDefaultEntryPointPreserved{
     "A non-default entry point name is preserved", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-non-default-entry-point-preserved")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-non-default-entry-point-preserved")
             .Given("a module whose entry point is named vertexMain",
-                   [state] { state->module = minimal(executionModelVertex, "vertexMain").bytes(); })
+                   [](ReflectedModuleState& state) { state.module = minimal(executionModelVertex, "vertexMain").bytes(); })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the entry point name is preserved",
-                  [state] {
+                  [](ReflectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->entryPoint == "vertexMain",
+                      checks.expect(state.reflection->entryPoint == "vertexMain",
                                     "the entry point is vertexMain");
                       checks.raise();
                   })
@@ -549,34 +436,25 @@ const mdux::spec::Register nonDefaultEntryPointPreserved{
 
 const mdux::spec::Register entryPointNameMultipleOfFourDecodes{
     "An entry point name whose length is a multiple of four decodes", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-entry-point-name-multiple-of-four")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-entry-point-name-multiple-of-four")
             .Given("a module whose entry point name is exactly one word long",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        // The packing edge case: "abcd" fills one word exactly, so the NUL needs a
                        // word of its own.
-                       state->module = minimal(executionModelVertex, "abcd").bytes();
+                       state.module = minimal(executionModelVertex, "abcd").bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the name decodes to abcd",
-                  [state] {
+                  [](ReflectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->entryPoint == "abcd",
+                      checks.expect(state.reflection->entryPoint == "abcd",
                                     "the entry point is abcd");
                       checks.raise();
                   })
@@ -589,49 +467,35 @@ const mdux::spec::Register entryPointNameMultipleOfFourDecodes{
 
 const mdux::spec::Register combinedImageSamplerReflected{
     "A combined image sampler is reflected with its set and binding", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-combined-image-sampler-reflected")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-combined-image-sampler-reflected")
             .Given("a fragment module declaring a combined image sampler at set 0, binding 3",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        Builder builder = minimal(executionModelFragment);
                        addCombinedImageSampler(builder, 0, 3);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the sampler is reported with its set, binding, kind, count and stage",
-                  [state] {
-                      if (state->reflection->descriptors.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 descriptor, got {}",
-                                          state->reflection->descriptors.size()),
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->descriptors.size() == 1, "expected 1 descriptor, got {}", state.reflection->descriptors.size());
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->descriptors[0].set == 0,
+                      checks.expect(state.reflection->descriptors[0].set == 0,
                                     "set 0");
-                      checks.expect(state->reflection->descriptors[0].binding == 3,
+                      checks.expect(state.reflection->descriptors[0].binding == 3,
                                     "binding 3");
-                      checks.expect(state->reflection->descriptors[0].kind ==
+                      checks.expect(state.reflection->descriptors[0].kind ==
                                         shader::DescriptorKind::CombinedImageSampler,
                                     "kind CombinedImageSampler");
-                      checks.expect(state->reflection->descriptors[0].count == 1,
+                      checks.expect(state.reflection->descriptors[0].count == 1,
                                     "count 1");
-                      checks.expect(state->reflection->descriptors[0].stages == shader::fragmentBit,
+                      checks.expect(state.reflection->descriptors[0].stages == shader::fragmentBit,
                                     "the stage bit is fragment");
                       checks.raise();
                   })
@@ -640,42 +504,28 @@ const mdux::spec::Register combinedImageSamplerReflected{
 
 const mdux::spec::Register arrayBindingElementCountOnce{
     "An array binding reports its element count once", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-array-binding-element-count-once")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-array-binding-element-count-once")
             .Given("a module declaring an arrayed combined image sampler of four elements",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        Builder builder = minimal(executionModelFragment);
                        addCombinedImageSampler(builder, 0, 0, 4);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("it reports the count once, on the single descriptor",
-                  [state] {
-                      if (state->reflection->descriptors.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 descriptor, got {}",
-                                          state->reflection->descriptors.size()),
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->descriptors.size() == 1, "expected 1 descriptor, got {}", state.reflection->descriptors.size());
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->descriptors[0].count == 4,
+                      checks.expect(state.reflection->descriptors[0].count == 4,
                                     "the count is 4");
-                      checks.expect(state->reflection->descriptors[0].kind ==
+                      checks.expect(state.reflection->descriptors[0].kind ==
                                         shader::DescriptorKind::CombinedImageSampler,
                                     "kind CombinedImageSampler");
                       checks.raise();
@@ -685,15 +535,9 @@ const mdux::spec::Register arrayBindingElementCountOnce{
 
 const mdux::spec::Register uniformBlockReflected{
     "A uniform block is reflected as a uniform buffer", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-uniform-block-reflected")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-uniform-block-reflected")
             .Given("a module declaring a uniform block variable",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        constexpr std::uint32_t floatTypeId = 30;
                        constexpr std::uint32_t structTypeId = 31;
                        constexpr std::uint32_t pointerTypeId = 32;
@@ -707,29 +551,21 @@ const mdux::spec::Register uniformBlockReflected{
                        builder.op(opVariable, {pointerTypeId, variableId, storageClassUniform});
                        builder.op(opDecorate, {variableId, decorationDescriptorSet, 0u});
                        builder.op(opDecorate, {variableId, decorationBinding, 0u});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the block is reported as a UniformBuffer",
-                  [state] {
-                      if (state->reflection->descriptors.size() != 1) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 1 descriptor, got {}",
-                                          state->reflection->descriptors.size()),
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->descriptors.size() == 1, "expected 1 descriptor, got {}", state.reflection->descriptors.size());
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->descriptors[0].kind ==
+                      checks.expect(state.reflection->descriptors[0].kind ==
                                         shader::DescriptorKind::UniformBuffer,
                                     "kind UniformBuffer");
                       checks.raise();
@@ -739,15 +575,9 @@ const mdux::spec::Register uniformBlockReflected{
 
 const mdux::spec::Register descriptorMissingSetRejected{
     "A descriptor missing its set is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-descriptor-missing-set-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-descriptor-missing-set-rejected")
             .Given("a module whose descriptor has a binding but no descriptor set",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        // A binding the shader author forgot to decorate cannot be placed in a
                        // pipeline layout, and guessing a set of 0 would produce a layout that
                        // silently disagrees with the shader.
@@ -764,22 +594,18 @@ const mdux::spec::Register descriptorMissingSetRejected{
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassUniformConstant});
                        builder.op(opDecorate, {variableId, decorationBinding, 0u});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a descriptor without a set was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a descriptor without a set was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as MissingDescriptorSet",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::MissingDescriptorSet,
+                      checks.expect(state.error == ParseError::MissingDescriptorSet,
                                     "the error is MissingDescriptorSet");
                       checks.raise();
                   })
@@ -788,15 +614,9 @@ const mdux::spec::Register descriptorMissingSetRejected{
 
 const mdux::spec::Register descriptorMissingBindingRejected{
     "A descriptor missing its binding is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-descriptor-missing-binding-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-descriptor-missing-binding-rejected")
             .Given("a module whose descriptor has a set but no binding",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        constexpr std::uint32_t imageTypeId = 10;
                        constexpr std::uint32_t sampledTypeId = 11;
                        constexpr std::uint32_t pointerTypeId = 13;
@@ -810,22 +630,18 @@ const mdux::spec::Register descriptorMissingBindingRejected{
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassUniformConstant});
                        builder.op(opDecorate, {variableId, decorationDescriptorSet, 0u});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a descriptor without a binding was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a descriptor without a binding was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as MissingBinding",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::MissingBinding,
+                      checks.expect(state.error == ParseError::MissingBinding,
                                     "the error is MissingBinding");
                       checks.raise();
                   })
@@ -834,15 +650,9 @@ const mdux::spec::Register descriptorMissingBindingRejected{
 
 const mdux::spec::Register descriptorsOrderedBySetThenBinding{
     "Descriptors are ordered by set then binding", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-descriptors-ordered-by-set-then-binding")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-descriptors-ordered-by-set-then-binding")
             .Given("a module declaring three descriptors out of order",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        // Emitted out of order so the ordering cannot pass by accident. Without
                        // the sort the committed package would depend on the id allocation order
                        // inside whatever compiler produced the SPIR-V, which byte-identity cannot
@@ -873,39 +683,31 @@ const mdux::spec::Register descriptorsOrderedBySetThenBinding{
                            builder.op(opDecorate,
                                       {placement.id, decorationBinding, placement.binding});
                        }
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the descriptors are sorted by set then binding",
-                  [state] {
-                      if (state->reflection->descriptors.size() != 3) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("expected 3 descriptors, got {}",
-                                          state->reflection->descriptors.size()),
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->descriptors.size() == 3, "expected 3 descriptors, got {}", state.reflection->descriptors.size());
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->descriptors[0].set == 0,
+                      checks.expect(state.reflection->descriptors[0].set == 0,
                                     "first descriptor set 0");
-                      checks.expect(state->reflection->descriptors[0].binding == 1,
+                      checks.expect(state.reflection->descriptors[0].binding == 1,
                                     "first descriptor binding 1");
-                      checks.expect(state->reflection->descriptors[1].set == 0,
+                      checks.expect(state.reflection->descriptors[1].set == 0,
                                     "second descriptor set 0");
-                      checks.expect(state->reflection->descriptors[1].binding == 5,
+                      checks.expect(state.reflection->descriptors[1].binding == 5,
                                     "second descriptor binding 5");
-                      checks.expect(state->reflection->descriptors[2].set == 1,
+                      checks.expect(state.reflection->descriptors[2].set == 1,
                                     "third descriptor set 1");
-                      checks.expect(state->reflection->descriptors[2].binding == 0,
+                      checks.expect(state.reflection->descriptors[2].binding == 0,
                                     "third descriptor binding 0");
                       checks.raise();
                   })
@@ -918,43 +720,30 @@ const mdux::spec::Register descriptorsOrderedBySetThenBinding{
 
 const mdux::spec::Register vec4PushConstantReflected{
     "A vec4 push constant block reflects as offset 0 size 16", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-vec4-push-constant-reflected")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-vec4-push-constant-reflected")
             .Given("a module declaring a push constant block holding one vec4",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        Builder builder = minimal();
                        addVec4PushConstant(builder);
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the block is reported at offset 0 with size 16 and the vertex stage",
-                  [state] {
-                      if (!state->reflection->pushConstant.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "the module declared no push constant block",
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->pushConstant.has_value(), "the module declared no push constant block");
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->pushConstant->offset == 0,
+                      checks.expect(state.reflection->pushConstant->offset == 0,
                                     "the offset is 0");
-                      checks.expect(state->reflection->pushConstant->size == 16,
+                      checks.expect(state.reflection->pushConstant->size == 16,
                                     "the size is 16");
-                      checks.expect(state->reflection->pushConstant->stages == shader::vertexBit,
+                      checks.expect(state.reflection->pushConstant->stages == shader::vertexBit,
                                     "the stage bit is vertex");
                       checks.raise();
                   })
@@ -963,15 +752,9 @@ const mdux::spec::Register vec4PushConstantReflected{
 
 const mdux::spec::Register pushConstantSizeFollowsMemberOffsets{
     "A push constant block's size follows its member offsets", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            std::optional<Reflection> reflection;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-push-constant-size-follows-member-offsets")
+        return speclab::Test<ReflectedModuleState>("shader-spirv-push-constant-size-follows-member-offsets")
             .Given("a module declaring a push constant block of two vec4s at offsets 0 and 16",
-                   [state] {
+                   [](ReflectedModuleState& state) {
                        // Two vec4s at offsets 0 and 16 make a 32-byte block. Deriving the size
                        // from the offsets is what makes any padding the shader compiler inserted
                        // come out right.
@@ -991,30 +774,23 @@ const mdux::spec::Register pushConstantSizeFollowsMemberOffsets{
                                   {pointerTypeId, storageClassPushConstant, structTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
+                  [](ReflectedModuleState& state) {
+                      auto result = reflect(state.module);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the module was rejected: {}",
-                                          describe(result.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
                       }
-                      state->reflection = std::move(*result);
+                      state.reflection = std::move(*result);
                   })
             .Then("the block is reported at offset 0 with size 32",
-                  [state] {
-                      if (!state->reflection->pushConstant.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "the module declared no push constant block",
-                              std::source_location::current());
-                      }
+                  [](ReflectedModuleState& state) {
+                      Assertions::require(state.reflection->pushConstant.has_value(), "the module declared no push constant block");
                       mdux::spec::Checks checks;
-                      checks.expect(state->reflection->pushConstant->offset == 0,
+                      checks.expect(state.reflection->pushConstant->offset == 0,
                                     "the offset is 0");
-                      checks.expect(state->reflection->pushConstant->size == 32,
+                      checks.expect(state.reflection->pushConstant->size == 32,
                                     "the size is 32");
                       checks.raise();
                   })
@@ -1023,15 +799,9 @@ const mdux::spec::Register pushConstantSizeFollowsMemberOffsets{
 
 const mdux::spec::Register pushConstantNonStructRejected{
     "A push constant variable pointing at a non-struct is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-push-constant-non-struct-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-push-constant-non-struct-rejected")
             .Given("a module whose push constant variable points at a float",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        constexpr std::uint32_t floatTypeId = 70;
                        constexpr std::uint32_t pointerTypeId = 71;
                        constexpr std::uint32_t variableId = 72;
@@ -1042,22 +812,18 @@ const mdux::spec::Register pushConstantNonStructRejected{
                                   {pointerTypeId, storageClassPushConstant, floatTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a non-struct push constant was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a non-struct push constant was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as PushConstantNotAStruct",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::PushConstantNotAStruct,
+                      checks.expect(state.error == ParseError::PushConstantNotAStruct,
                                     "the error is PushConstantNotAStruct");
                       checks.raise();
                   })
@@ -1066,15 +832,9 @@ const mdux::spec::Register pushConstantNonStructRejected{
 
 const mdux::spec::Register structWithNoOffsetsRejected{
     "A struct with no member offsets has no computable size", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-struct-with-no-offsets-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-struct-with-no-offsets-rejected")
             .Given("a module whose push constant struct has no member offsets",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        constexpr std::uint32_t floatTypeId = 80;
                        constexpr std::uint32_t structTypeId = 81;
                        constexpr std::uint32_t pointerTypeId = 82;
@@ -1087,22 +847,18 @@ const mdux::spec::Register structWithNoOffsetsRejected{
                                   {pointerTypeId, storageClassPushConstant, structTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a struct with no member offsets was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a struct with no member offsets was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as UnsupportedType",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::UnsupportedType,
+                      checks.expect(state.error == ParseError::UnsupportedType,
                                     "the error is UnsupportedType");
                       checks.raise();
                   })
@@ -1111,15 +867,9 @@ const mdux::spec::Register structWithNoOffsetsRejected{
 
 const mdux::spec::Register bitWidthNotWholeBytesRejected{
     "A bit width that is not a whole number of bytes is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-bit-width-not-whole-bytes-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-bit-width-not-whole-bytes-rejected")
             .Given("a module whose push constant struct uses a 12-bit float",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        // SPIR-V encodes widths this reflector cannot lay out: 1-bit integers are
                        // legal, and wider odd widths are legal under capabilities not implemented
                        // here. `width / 8` answers 0 for the first and truncates the second, so
@@ -1139,22 +889,18 @@ const mdux::spec::Register bitWidthNotWholeBytesRejected{
                                   {pointerTypeId, storageClassPushConstant, structTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a non-byte-aligned bit width was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a non-byte-aligned bit width was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as UnsupportedType",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::UnsupportedType,
+                      checks.expect(state.error == ParseError::UnsupportedType,
                                     "the error is UnsupportedType");
                       checks.raise();
                   })
@@ -1163,15 +909,9 @@ const mdux::spec::Register bitWidthNotWholeBytesRejected{
 
 const mdux::spec::Register zeroBitWidthRejected{
     "A zero bit width is rejected rather than sized as empty", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-zero-bit-width-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-zero-bit-width-rejected")
             .Given("a module whose push constant struct uses a zero-width float",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        constexpr std::uint32_t floatTypeId = 110;
                        constexpr std::uint32_t structTypeId = 111;
                        constexpr std::uint32_t pointerTypeId = 112;
@@ -1185,22 +925,18 @@ const mdux::spec::Register zeroBitWidthRejected{
                                   {pointerTypeId, storageClassPushConstant, structTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a zero-width type was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a zero-width type was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as UnsupportedType",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::UnsupportedType,
+                      checks.expect(state.error == ParseError::UnsupportedType,
                                     "the error is UnsupportedType");
                       checks.raise();
                   })
@@ -1209,15 +945,9 @@ const mdux::spec::Register zeroBitWidthRejected{
 
 const mdux::spec::Register secondPushConstantBlockRejected{
     "A second push constant block is rejected", "evidence-unit", [] {
-        struct State {
-            std::vector<std::byte> module;
-            ParseError error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-spirv-second-push-constant-block-rejected")
+        return speclab::Test<RejectedModuleState>("shader-spirv-second-push-constant-block-rejected")
             .Given("a module declaring two push constant blocks",
-                   [state] {
+                   [](RejectedModuleState& state) {
                        constexpr std::uint32_t floatTypeId = 90;
                        constexpr std::uint32_t structTypeId = 91;
                        constexpr std::uint32_t pointerTypeId = 92;
@@ -1232,22 +962,18 @@ const mdux::spec::Register secondPushConstantBlockRejected{
                                   {pointerTypeId, storageClassPushConstant, structTypeId});
                        builder.op(opVariable,
                                   {pointerTypeId, variableId, storageClassPushConstant});
-                       state->module = builder.bytes();
+                       state.module = builder.bytes();
                    })
             .When("it is reflected",
-                  [state] {
-                      auto result = reflect(state->module);
-                      if (result.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              "a second push constant block was accepted",
-                              std::source_location::current());
-                      }
-                      state->error = result.error();
+                  [](RejectedModuleState& state) {
+                      auto result = reflect(state.module);
+                      Assertions::require(!result.has_value(), "a second push constant block was accepted");
+                      state.error = result.error();
                   })
             .Then("it is rejected as MultiplePushConstantBlocks",
-                  [state] {
+                  [](RejectedModuleState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ParseError::MultiplePushConstantBlocks,
+                      checks.expect(state.error == ParseError::MultiplePushConstantBlocks,
                                     "the error is MultiplePushConstantBlocks");
                       checks.raise();
                   })
