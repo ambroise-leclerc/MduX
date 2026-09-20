@@ -524,13 +524,13 @@ mdux_discover_tests(vulkansc_object_tests)
 # (checked by an upstream ThreadSanitizer leg). No suite here uses those builders, so the bump is
 # routine; the registry lock is what reaches this repository, through TestSuite.
 #
-# v0.4.0 (ambroise-leclerc/SpecLab#33) makes `speclab::Test<State>(id)` its own overload, building
-# the shared state in place instead of materialising and moving a default-constructed value. A
-# state that is neither copyable nor movable - the shader specs' `TempDir`, which removes its
-# directory in the destructor and so deletes its copy constructor - could not be used before, which
-# is why tests/shader/EmitTests.cpp kept the older make_shared idiom in #372. Source compatibility
-# is not total: `Test<State>` is now an overload set, so naming it without calling it
-# (`&speclab::Test<S>`) no longer deduces. Nothing here does that.
+# v0.4.0 (#365, ambroise-leclerc/SpecLab#33) makes `speclab::Test<State>(id)` its own overload,
+# building the shared state in place instead of materialising and moving a default-constructed
+# value. A state that is neither copyable nor movable - the shader specs' `TempDir`, which removes
+# its directory in the destructor and so deletes its copy constructor - could not be used before,
+# which is why tests/shader/EmitTests.cpp still uses the older make_shared idiom. Source
+# compatibility is not total: `Test<State>` is now an overload set, so naming it without calling
+# it (`&speclab::Test<S>`) no longer deduces. Nothing here does that.
 #
 # Read the tag name as documentation and the SHA as the pin. To bump, resolve the new tag to its
 # commit and change both, in a reviewable diff.
