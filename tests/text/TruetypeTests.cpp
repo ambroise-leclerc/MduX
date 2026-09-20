@@ -1151,7 +1151,9 @@ const mdux::spec::Register layoutTablesAreSkipped{
             .Execute();
     }};
 
-struct ZeroLengthGlyphParsesState {
+/// Carries a serialized font, the `Font` it parsed into, and the glyph read out of it - what
+/// every "this glyph shape parses" scenario needs across its three steps.
+struct ParsedGlyphState {
     Builder::Serialized            serialized;
     std::optional<tt::Font>        font;
     std::optional<tt::SimpleGlyph> glyph;
@@ -1164,9 +1166,9 @@ const mdux::spec::Register zeroLengthGlyphParses{
         // This is the spec's encoding for a glyph with no outline, and it is how every real font
         // stores the space character: DejaVuSans has 63 such records, gid 3 (space) among them.
         // Treating it as a truncation would fail the space character of every stock font.
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-zero-length-glyph-parses")
+        return speclab::Test<ParsedGlyphState>("text-truetype-zero-length-glyph-parses")
             .Given("a font whose glyph 0 occupies no bytes at all, followed by a square glyph",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder().rawGlyph(0, {}).rawGlyph(1, squareGlyph()).serialize();
                        auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
@@ -1175,7 +1177,7 @@ const mdux::spec::Register zeroLengthGlyphParses{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the zero-length glyph",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       Assertions::require(state.font->loca.size() >= 2 && state.font->loca[0] == state.font->loca[1],
                                           "the fixture did not produce a zero-length loca span");
                       auto glyph = tt::parseGlyph(*state.font, 0);
@@ -1185,7 +1187,7 @@ const mdux::spec::Register zeroLengthGlyphParses{
                       state.glyph = std::move(*glyph);
                   })
             .Then("it is a blank glyph, and the glyph after it is unaffected",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       mdux::spec::Checks checks;
                       checks.expect(state.glyph->glyphIndex == 0, "glyphIndex");
                       checks.expect(state.glyph->endPtsOfContours.empty(), "no end points");
@@ -1205,9 +1207,9 @@ const mdux::spec::Register hintedGlyphParses{
         // engine, so the bytes have no consumer, and roughly 16% of a stock font's glyphs carry
         // them. The fixture's instruction bytes are values that would read as legal flags, so a
         // parser that failed to skip them would produce a *different* outline rather than fail.
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-hinted-glyph-parses")
+        return speclab::Test<ParsedGlyphState>("text-truetype-hinted-glyph-parses")
             .Given("a font whose only glyph is the square glyph plus 4 bytes of bytecode",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder().rawGlyph(0, hintedSquareGlyph()).serialize();
                        auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
@@ -1216,7 +1218,7 @@ const mdux::spec::Register hintedGlyphParses{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph = tt::parseGlyph(*state.font, 0);
                       if (!glyph.has_value()) {
                           Assertions::fail(std::format("hinted glyph was rejected: {}", tt::describe(glyph.error())));
@@ -1224,7 +1226,7 @@ const mdux::spec::Register hintedGlyphParses{
                       state.glyph = std::move(*glyph);
                   })
             .Then("the outline matches squareGlyph()'s, and no instruction byte leaked into it",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
@@ -1248,9 +1250,9 @@ const mdux::spec::Register overlapSimpleFlagParses{
         // Bit 6 is OVERLAP_SIMPLE in the current OpenType spec - a rasteriser hint with no
         // shaping semantics that modern tooling sets. Masking it as reserved would refuse fonts
         // whose only unusual property is having been built recently.
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-overlap-simple-flag-parses")
+        return speclab::Test<ParsedGlyphState>("text-truetype-overlap-simple-flag-parses")
             .Given("a one-point glyph whose flag is on-curve + OVERLAP_SIMPLE",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder().rawGlyph(0, overlapSimpleGlyph()).serialize();
                        auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
@@ -1259,7 +1261,7 @@ const mdux::spec::Register overlapSimpleFlagParses{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph = tt::parseGlyph(*state.font, 0);
                       if (!glyph.has_value()) {
                           Assertions::fail(std::format("OVERLAP_SIMPLE glyph was rejected: {}", tt::describe(glyph.error())));
@@ -1267,7 +1269,7 @@ const mdux::spec::Register overlapSimpleFlagParses{
                       state.glyph = std::move(*glyph);
                   })
             .Then("the point is read with its coordinates and on-curve bit intact",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 1, "1 point");
@@ -1826,9 +1828,9 @@ const mdux::spec::Register squareGlyphParses{
     "A simple square glyph parses into 4 on-curve points and one contour",
     "evidence-unit",
     [] {
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-square-glyph-parses")
+        return speclab::Test<ParsedGlyphState>("text-truetype-square-glyph-parses")
             .Given("a font with an empty and a square glyph",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder().rawGlyph(0, emptyGlyph()).rawGlyph(1, squareGlyph()).serialize();
                        auto font         = tt::parse(state.serialized.bytes);
                        if (!font.has_value()) {
@@ -1837,7 +1839,7 @@ const mdux::spec::Register squareGlyphParses{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the square glyph",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph = tt::parseGlyph(*state.font, 1);
                       if (!glyph.has_value()) {
                           Assertions::fail(std::format("square glyph failed to parse: {}", tt::describe(glyph.error())));
@@ -1845,7 +1847,7 @@ const mdux::spec::Register squareGlyphParses{
                       state.glyph = std::move(*glyph);
                   })
             .Then("it has 4 on-curve points at the square's corners",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.glyphIndex == 1, "glyphIndex");
@@ -1874,9 +1876,9 @@ const mdux::spec::Register compositeGlyphFlattens{
     "A composite glyph flattens into its component's contours, translated into place",
     "evidence-unit",
     [] {
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-translate")
+        return speclab::Test<ParsedGlyphState>("text-truetype-composite-translate")
             .Given("a font whose glyph 2 is a composite translating the square glyph 1 by (10, 20)",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
@@ -1889,7 +1891,7 @@ const mdux::spec::Register compositeGlyphFlattens{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph = tt::parseGlyph(*state.font, 2);
                       if (!glyph.has_value()) {
                           Assertions::fail(std::format("composite failed to parse: {}", tt::describe(glyph.error())));
@@ -1897,7 +1899,7 @@ const mdux::spec::Register compositeGlyphFlattens{
                       state.glyph = std::move(*glyph);
                   })
             .Then("it carries the square's four points, each shifted by (10, 20), and a recomputed bbox",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.glyphIndex == 2, "glyphIndex is the composite's own");
@@ -1917,9 +1919,9 @@ const mdux::spec::Register compositeGlyphScales{
     "A composite glyph applies a WE_HAVE_A_SCALE transform before translating",
     "evidence-unit",
     [] {
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-scale")
+        return speclab::Test<ParsedGlyphState>("text-truetype-composite-scale")
             .Given("a composite scaling the square glyph by 0.5 (F2Dot14 0x2000) then translating by (0, 0)",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
@@ -1932,7 +1934,7 @@ const mdux::spec::Register compositeGlyphScales{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph   = tt::parseGlyph(*state.font, 2);
                       state.glyph = glyph.has_value() ? std::optional{*glyph} : std::nullopt;
                       if (!glyph.has_value()) {
@@ -1940,7 +1942,7 @@ const mdux::spec::Register compositeGlyphScales{
                       }
                   })
             .Then("the square's 100-unit corners have halved to 50",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
@@ -1957,9 +1959,9 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
     "SCALED_COMPONENT_OFFSET puts the component offset through the same scale as the points",
     "evidence-unit",
     [] {
-        return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-composite-scaled-offset")
+        return speclab::Test<ParsedGlyphState>("text-truetype-composite-scaled-offset")
             .Given("a composite scaling the square by 0.5 and translating by (100, 0) with SCALED_COMPONENT_OFFSET",
-                   [](ZeroLengthGlyphParsesState& state) {
+                   [](ParsedGlyphState& state) {
                        state.serialized = Builder()
                                                .rawGlyph(0, emptyGlyph())
                                                .rawGlyph(1, squareGlyph())
@@ -1972,7 +1974,7 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       auto glyph = tt::parseGlyph(*state.font, 2);
                       if (!glyph.has_value()) {
                           Assertions::fail(std::format("composite failed to parse: {}", tt::describe(glyph.error())));
@@ -1980,7 +1982,7 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
                       state.glyph = std::move(*glyph);
                   })
             .Then("the offset was halved with the points - the square lands at x 50..100, not 100..150",
-                  [](ZeroLengthGlyphParsesState& state) {
+                  [](ParsedGlyphState& state) {
                       const auto&        g = *state.glyph;
                       mdux::spec::Checks checks;
                       checks.expect(g.points.size() == 4, "4 points");
@@ -1996,7 +1998,8 @@ const mdux::spec::Register compositeScaledOffsetIsTransformed{
             .Execute();
     }};
 
-struct CompositeResolutionBudgetEnforcedState {
+/// A font whose composite glyph is expected to be refused, and the code it was refused with.
+struct CompositeRejectionState {
     Builder::Serialized     serialized;
     std::optional<tt::Font> font;
     tt::ParseError          code{tt::ParseError::Empty};
@@ -2007,9 +2010,9 @@ const mdux::spec::Register compositeResolutionBudgetEnforced{
     "A composite fanning out to more components than the budget allows is refused, not walked forever",
     "evidence-unit",
     [] {
-        return speclab::Test<CompositeResolutionBudgetEnforcedState>("text-truetype-composite-budget")
+        return speclab::Test<CompositeRejectionState>("text-truetype-composite-budget")
             .Given("a single composite with 5000 components, each resolving the empty glyph 1",
-                   [](CompositeResolutionBudgetEnforcedState& state) {
+                   [](CompositeRejectionState& state) {
                        // Empty components add no points and no contours, so neither the per-glyph
                        // point cap nor the nesting cap fires - only the resolution budget does.
                        state.serialized = Builder()
@@ -2024,7 +2027,7 @@ const mdux::spec::Register compositeResolutionBudgetEnforced{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the composite",
-                  [](CompositeResolutionBudgetEnforcedState& state) {
+                  [](CompositeRejectionState& state) {
                       auto glyph      = tt::parseGlyph(*state.font, 2);
                       state.rejected = !glyph.has_value();
                       if (!glyph.has_value()) {
@@ -2032,7 +2035,7 @@ const mdux::spec::Register compositeResolutionBudgetEnforced{
                       }
                   })
             .Then("it is refused with CompositeBudgetExceeded",
-                  [](CompositeResolutionBudgetEnforcedState& state) {
+                  [](CompositeRejectionState& state) {
                       mdux::spec::Checks checks;
                       checks.expect(state.rejected, "the fan-out was refused");
                       checks.expect(state.code == tt::ParseError::CompositeBudgetExceeded,
@@ -2046,9 +2049,9 @@ const mdux::spec::Register compositeNestingCapEnforced{
     "A composite chain deeper than the parser's cap is refused rather than overflowing the stack",
     "evidence-unit",
     [] {
-        return speclab::Test<CompositeResolutionBudgetEnforcedState>("text-truetype-composite-nesting-cap")
+        return speclab::Test<CompositeRejectionState>("text-truetype-composite-nesting-cap")
             .Given("a chain of 10 composites, each referencing the next, ending at the square glyph",
-                   [](CompositeResolutionBudgetEnforcedState& state) {
+                   [](CompositeRejectionState& state) {
                        Builder b;
                        b.rawGlyph(0, emptyGlyph());
                        b.rawGlyph(1, squareGlyph());
@@ -2065,7 +2068,7 @@ const mdux::spec::Register compositeNestingCapEnforced{
                        state.font = std::move(*font);
                    })
             .When("parseGlyph() is called for the top of the chain",
-                  [](CompositeResolutionBudgetEnforcedState& state) {
+                  [](CompositeRejectionState& state) {
                       auto glyph      = tt::parseGlyph(*state.font, 2);
                       state.rejected = !glyph.has_value();
                       if (!glyph.has_value()) {
@@ -2073,7 +2076,7 @@ const mdux::spec::Register compositeNestingCapEnforced{
                       }
                   })
             .Then("it is refused with CompositeNestingTooDeep",
-                  [](CompositeResolutionBudgetEnforcedState& state) {
+                  [](CompositeRejectionState& state) {
                       mdux::spec::Checks checks;
                       checks.expect(state.rejected, "the deep chain was refused");
                       checks.expect(state.code == tt::ParseError::CompositeNestingTooDeep,
@@ -2084,9 +2087,9 @@ const mdux::spec::Register compositeNestingCapEnforced{
     }};
 
 const mdux::spec::Register emptyGlyphParses{"An empty glyph (numberOfContours == 0) parses with no points", "evidence-unit", [] {
-                                                return speclab::Test<ZeroLengthGlyphParsesState>("text-truetype-empty-glyph-parses")
+                                                return speclab::Test<ParsedGlyphState>("text-truetype-empty-glyph-parses")
                                                     .Given("a font with one empty glyph",
-                                                           [](ZeroLengthGlyphParsesState& state) {
+                                                           [](ParsedGlyphState& state) {
                                                                state.serialized = Builder().rawGlyph(0, emptyGlyph()).serialize();
                                                                auto font         = tt::parse(state.serialized.bytes);
                                                                if (!font.has_value()) {
@@ -2095,7 +2098,7 @@ const mdux::spec::Register emptyGlyphParses{"An empty glyph (numberOfContours ==
                                                                state.font = std::move(*font);
                                                            })
                                                     .When("parseGlyph() is called for the empty glyph",
-                                                          [](ZeroLengthGlyphParsesState& state) {
+                                                          [](ParsedGlyphState& state) {
                                                               auto glyph = tt::parseGlyph(*state.font, 0);
                                                               if (!glyph.has_value()) {
                                                                   Assertions::fail(std::format("empty glyph failed to parse: {}", tt::describe(glyph.error())));
@@ -2103,7 +2106,7 @@ const mdux::spec::Register emptyGlyphParses{"An empty glyph (numberOfContours ==
                                                               state.glyph = std::move(*glyph);
                                                           })
                                                     .Then("it has no contours and no points",
-                                                          [](ZeroLengthGlyphParsesState& state) {
+                                                          [](ParsedGlyphState& state) {
                                                               const auto&        g = *state.glyph;
                                                               mdux::spec::Checks checks;
                                                               checks.expect(g.endPtsOfContours.empty(), "no end points");
