@@ -24,6 +24,8 @@ import mdux.tools.atlaspacker;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ap = mdux::tools::atlas;
 using ap::PackError;
 
@@ -73,35 +75,33 @@ using ap::PackError;
 
 }  // namespace
 
+struct LayoutIsSoundAndPowerOfTwoState {
+    std::vector<ap::GlyphExtent> extents;
+    ap::AtlasLayout              layout;
+};
+
 const mdux::spec::Register layoutIsSoundAndPowerOfTwo{
     "A packed sheet is power-of-two, contains every glyph, and overlaps none of them",
     "evidence-unit",
     [] {
-        struct State {
-            std::vector<ap::GlyphExtent> extents;
-            ap::AtlasLayout              layout;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-atlas-layout-sound")
-            .Given("forty glyphs of mixed size plus a blank", [state] { state->extents = mixedGlyphs(); })
+        return speclab::Test<LayoutIsSoundAndPowerOfTwoState>("text-atlas-layout-sound")
+            .Given("forty glyphs of mixed size plus a blank", [](LayoutIsSoundAndPowerOfTwoState& state) { state.extents = mixedGlyphs(); })
             .When("they are packed",
-                  [state] {
-                      auto result = ap::pack(state->extents);
+                  [](LayoutIsSoundAndPowerOfTwoState& state) {
+                      auto result = ap::pack(state.extents);
                       if (!result.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("packing failed: {}", ap::describe(result.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("packing failed: {}", ap::describe(result.error())));
                       }
-                      state->layout = std::move(*result);
+                      state.layout = std::move(*result);
                   })
             .Then("both edges are powers of two, every glyph is inside, and none overlap",
-                  [state] {
+                  [](LayoutIsSoundAndPowerOfTwoState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        layout = state->layout;
+                      const auto&        layout = state.layout;
                       checks.expect(isPowerOfTwo(layout.width) && isPowerOfTwo(layout.height),
                                     std::format("{}x{} are both powers of two", layout.width, layout.height));
-                      checks.expect(layout.slots.size() == state->extents.size(),
-                                    std::format("every glyph got a slot: {} of {}", layout.slots.size(), state->extents.size()));
+                      checks.expect(layout.slots.size() == state.extents.size(),
+                                    std::format("every glyph got a slot: {} of {}", layout.slots.size(), state.extents.size()));
                       for (const auto& slot : layout.slots) {
                           checks.expect(slot.x + slot.width <= layout.width && slot.y + slot.height <= layout.height,
                                         std::format("glyph {} at ({},{}) {}x{} is inside the {}x{} sheet", slot.id, slot.x, slot.y,
@@ -117,6 +117,12 @@ const mdux::spec::Register layoutIsSoundAndPowerOfTwo{
             .Execute();
     }};
 
+struct LayoutIsIndependentOfInputOrderState {
+    ap::AtlasLayout forward;
+    ap::AtlasLayout reversed;
+    ap::AtlasLayout shuffled;
+};
+
 const mdux::spec::Register layoutIsIndependentOfInputOrder{
     "The same glyph set packs identically however it arrived",
     "evidence-unit",
@@ -128,17 +134,10 @@ const mdux::spec::Register layoutIsIndependentOfInputOrder{
         //
         // This is also what the (height, width, id) sort exists for: height alone would leave
         // equal-height glyphs free to swap depending on whether std::sort happened to be stable.
-        struct State {
-            ap::AtlasLayout forward;
-            ap::AtlasLayout reversed;
-            ap::AtlasLayout shuffled;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-atlas-order-independent")
+        return speclab::Test<LayoutIsIndependentOfInputOrderState>("text-atlas-order-independent")
             .Given("one glyph set in three different input orders", [] {})
             .When("each is packed",
-                  [state] {
+                  [](LayoutIsIndependentOfInputOrderState& state) {
                       auto forward = mixedGlyphs();
                       auto reversed = forward;
                       std::ranges::reverse(reversed);
@@ -150,17 +149,16 @@ const mdux::spec::Register layoutIsIndependentOfInputOrder{
                       const auto packOrThrow = [](std::span<const ap::GlyphExtent> in, std::string_view what) {
                           auto r = ap::pack(in);
                           if (!r.has_value()) {
-                              throw speclab::core::AssertionFailure(std::format("{} failed: {}", what, ap::describe(r.error())),
-                                                                    std::source_location::current());
+                              Assertions::fail(std::format("{} failed: {}", what, ap::describe(r.error())));
                           }
                           return std::move(*r);
                       };
-                      state->forward  = packOrThrow(forward, "forward");
-                      state->reversed = packOrThrow(reversed, "reversed");
-                      state->shuffled = packOrThrow(shuffled, "shuffled");
+                      state.forward  = packOrThrow(forward, "forward");
+                      state.reversed = packOrThrow(reversed, "reversed");
+                      state.shuffled = packOrThrow(shuffled, "shuffled");
                   })
             .Then("all three layouts are identical",
-                  [state] {
+                  [](LayoutIsIndependentOfInputOrderState& state) {
                       mdux::spec::Checks checks;
                       const auto same = [](const ap::AtlasLayout& a, const ap::AtlasLayout& b) {
                           if (a.width != b.width || a.height != b.height || a.slots.size() != b.slots.size()) {
@@ -175,10 +173,10 @@ const mdux::spec::Register layoutIsIndependentOfInputOrder{
                           }
                           return true;
                       };
-                      checks.expect(same(state->forward, state->reversed),
-                                    std::format("reversed matches forward ({}x{} vs {}x{})", state->reversed.width,
-                                                state->reversed.height, state->forward.width, state->forward.height));
-                      checks.expect(same(state->forward, state->shuffled), "the swapped-pairs order matches forward");
+                      checks.expect(same(state.forward, state.reversed),
+                                    std::format("reversed matches forward ({}x{} vs {}x{})", state.reversed.width,
+                                                state.reversed.height, state.forward.width, state.forward.height));
+                      checks.expect(same(state.forward, state.shuffled), "the swapped-pairs order matches forward");
                       checks.raise();
                   })
             .Execute();
