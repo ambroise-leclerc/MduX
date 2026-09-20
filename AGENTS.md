@@ -256,6 +256,12 @@ look-alike command line; they are not needed to build by hand, and each uses its
   GCC 15 ICE guard was removed when the floor rose to GCC 16); `EcgClassifierExample` (epic #18 -
   links `MduX::Core`, needs no Vulkan or window, consumes generated `constexpr` model metadata, and
   embeds only its weight blob with `mdux_embed_blob()`)
+- Spec suites use SpecLab's own facilities: `speclab::Test<State>` for state shared between
+  Given/When/Then (state structs at namespace scope, an MSVC 19.44 constraint),
+  `Assertions::require(cond, "fmt", args)` for a hard failure, `Assertions::fail` when the message
+  must read a failure payload that `require` would evaluate on the success path, and
+  `mdux::spec::Checks` for collected expectations. `tests/draw/DrawTests.cpp` is the converted
+  pattern; #365 tracks the remaining suites.
 - Tests: twenty-eight executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
   `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and eighteen on SpecLab
