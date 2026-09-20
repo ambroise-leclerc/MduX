@@ -22,14 +22,14 @@ import mdux.tools.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace json   = mdux::evidence::json;
 namespace schema = mdux::tools::schema;
 
 [[nodiscard]] json::Value parse(std::string_view text) {
     auto value = json::parse(text);
-    if (!value) {
-        throw speclab::core::AssertionFailure(std::format("test JSON did not parse: {}", text), std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(value), "test JSON did not parse: {}", text);
     return std::move(*value);
 }
 

@@ -30,6 +30,8 @@ import mdux.tools.medui.serialize;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace ms  = mdux::medui;
 namespace cli = mdux::tools::cli;
@@ -37,10 +39,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-                                              std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -49,7 +48,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] md::ast::Screen parseOrFail(std::string_view source, std::string_view label) {
     md::ParseResult parsed = md::parse(source, std::string{label});
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure(std::format("{} did not parse cleanly", label), std::source_location::current());
+        Assertions::fail(std::format("{} did not parse cleanly", label));
     }
     return std::move(*parsed.screen);
 }

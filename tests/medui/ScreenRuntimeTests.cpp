@@ -29,6 +29,8 @@ import mdux.text.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ms = mdux::medui;
 
 /// Storage a caller sizes once from a screen's budget, exactly as a device would.
@@ -42,9 +44,7 @@ struct Scratch {
 
     [[nodiscard]] mdux::draw::DrawList list(const mdux::draw::DrawBudget& budget) {
         auto created = mdux::draw::DrawList::create(vertices, indices, commands, budget);
-        if (!created.has_value()) {
-            throw speclab::core::AssertionFailure("the scratch does not satisfy the screen's budget", std::source_location::current());
-        }
+        Assertions::require(created.has_value(), "the scratch does not satisfy the screen's budget");
         return std::move(*created);
     }
 };
@@ -586,9 +586,7 @@ constexpr ms::ScreenPackage labelScreen{.id                   = "label",
 
 [[nodiscard]] ms::TextPackageApproval approvalFor(const mdux::text::TextPackage& text) {
     const auto canonical = text.write();
-    if (!canonical.has_value()) {
-        throw speclab::core::AssertionFailure("the fixture text package did not serialize", std::source_location::current());
-    }
+    Assertions::require(canonical.has_value(), "the fixture text package did not serialize");
     return ms::TextPackageApproval{.locale        = text.locale,
                                    .packageId     = text.header.id,
                                    .packageSha256 = mdux::evidence::sha256(std::as_bytes(std::span{canonical->data(), canonical->size()}))};
@@ -596,9 +594,7 @@ constexpr ms::ScreenPackage labelScreen{.id                   = "label",
 
 [[nodiscard]] std::string packageJsonFor(const mdux::text::TextPackage& text) {
     const auto canonical = text.write();
-    if (!canonical.has_value()) {
-        throw speclab::core::AssertionFailure("the fixture text package did not serialize", std::source_location::current());
-    }
+    Assertions::require(canonical.has_value(), "the fixture text package did not serialize");
     return *canonical;
 }
 
@@ -618,7 +614,7 @@ bindOrThrow(const ms::ScreenPackage& screen, const mdux::font::FontPackage& font
     const std::string packageJson = packageJsonFor(text);
     auto              made        = ms::TextBinding::create(screen, font, text, bytesOf(packageJson), records);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the fixture binding was refused: {}", ms::describe(made.error())), std::source_location::current());
+        Assertions::fail(std::format("the fixture binding was refused: {}", ms::describe(made.error())));
     }
     return *made;
 }
@@ -981,9 +977,7 @@ const mdux::spec::Register imageBindingIsAuthenticated{
                       image.sidecarByteLength = pixels.size();
                       image.sidecarSha256     = mdux::evidence::sha256(pixels);
                       const auto packageJson  = image.write();
-                      if (!packageJson.has_value()) {
-                          throw speclab::core::AssertionFailure("the fixture image package did not serialize", std::source_location::current());
-                      }
+                      Assertions::require(packageJson.has_value(), "the fixture image package did not serialize");
 
                       const std::array approvals{
                           ms::ImagePackageApproval{.packageId     = "runtime-image",

@@ -18,6 +18,8 @@ import mdux.tools.medui.semantic;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
@@ -36,7 +38,7 @@ namespace cli = mdux::tools::cli;
 [[nodiscard]] md::SemanticResult analyze(std::string_view source, std::span<const std::string_view> themes, std::span<const mdux::text::TextPackage> packages) {
     md::ParseResult parsed = md::parse(source, "semantic-test.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("semantic test source did not parse", std::source_location::current());
+        Assertions::fail("semantic test source did not parse");
     }
     // Resource-identifier resolution (MEDUI-E035) is off unless a scenario supplies lists via the
     // overload below: most scenarios exercise value forms and domains, not `img()`/`template:`
@@ -53,7 +55,7 @@ namespace cli = mdux::tools::cli;
                                          std::span<const std::string_view>        imageIds) {
     md::ParseResult parsed = md::parse(source, "semantic-test.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("semantic test source did not parse", std::source_location::current());
+        Assertions::fail("semantic test source did not parse");
     }
     return md::analyze(*parsed.screen,
                        "semantic-test.medui",
@@ -432,7 +434,7 @@ const mdux::spec::Register theLocalePolicyIsAskedForNotInferred{
                       // the top of this file already guards exactly this.
                       const md::ParseResult parsed = md::parse(source, "policy.medui");
                       if (!parsed.screen || !parsed.diagnostics.empty()) {
-                          throw speclab::core::AssertionFailure("the locale-policy source did not parse", std::source_location::current());
+                          Assertions::fail("the locale-policy source did not parse");
                       }
 
                       const md::SemanticResult required = md::analyze(*parsed.screen,
