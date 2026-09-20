@@ -28,6 +28,8 @@ import mdux.tools.textbake;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace cli = mdux::tools::cli;
 namespace bake = mdux::tools::textbake;
 namespace text = mdux::text;
@@ -61,19 +63,13 @@ sidecar = "runs.bin"
 [[nodiscard]] bake::BakeOutputs produceValid() {
     std::vector<cli::Diagnostic> diagnostics;
     auto recipe = bake::parseRecipe(validRecipe(), "fixture.toml", diagnostics);
-    if (!recipe.has_value()) {
-        throw speclab::core::AssertionFailure(
-            "valid recipe did not parse", std::source_location::current());
-    }
+    Assertions::require(recipe.has_value(), "valid recipe did not parse");
     const std::string text = validRecipe();
     std::span<const std::byte> bytes{
         reinterpret_cast<const std::byte*>(text.data()), text.size()};
     auto outputs = bake::run(*recipe, "fixture.toml", bytes, std::filesystem::current_path(),
                               diagnostics);
-    if (!outputs.has_value()) {
-        throw speclab::core::AssertionFailure(
-            "run() rejected a valid recipe", std::source_location::current());
-    }
+    Assertions::require(outputs.has_value(), "run() rejected a valid recipe");
     return *outputs;
 }
 
@@ -94,30 +90,29 @@ sidecar = "runs.bin"
 // parseRecipe: success and rejection paths
 // ---------------------------------------------------------------------------
 
+struct ValidRecipeParsesState {
+    std::optional<bake::Recipe> recipe;
+    std::vector<cli::Diagnostic> diagnostics;
+};
+
 const mdux::spec::Register validRecipeParses{
     "A well-formed recipe parses with every field populated", "evidence-unit", [] {
-        struct State {
-            std::optional<bake::Recipe> recipe;
-            std::vector<cli::Diagnostic> diagnostics;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-recipe-valid")
-            .Given("a well-formed no-run recipe", [state] {
-                state->recipe =
-                    bake::parseRecipe(validRecipe(), "fixture.toml", state->diagnostics);
+        return speclab::Test<ValidRecipeParsesState>("text-bake-recipe-valid")
+            .Given("a well-formed no-run recipe", [](ValidRecipeParsesState& state) {
+                state.recipe =
+                    bake::parseRecipe(validRecipe(), "fixture.toml", state.diagnostics);
             })
             .When("it is parsed", [] {})
             .Then("every field is populated and no diagnostic is reported",
-                   [state] {
+                   [](ValidRecipeParsesState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(state->recipe.has_value(), "parse succeeded");
-                        checks.expect(state->diagnostics.empty(), "no diagnostics");
-                        if (state->recipe.has_value()) {
-                            checks.expect(state->recipe->id == "label-welcome", "id");
-                            checks.expect(state->recipe->atlas == "roboto-ui", "atlas");
-                            checks.expect(state->recipe->locale == "en-US", "locale");
-                            checks.expect(state->recipe->sidecar == "runs.bin", "sidecar");
+                        checks.expect(state.recipe.has_value(), "parse succeeded");
+                        checks.expect(state.diagnostics.empty(), "no diagnostics");
+                        if (state.recipe.has_value()) {
+                            checks.expect(state.recipe->id == "label-welcome", "id");
+                            checks.expect(state.recipe->atlas == "roboto-ui", "atlas");
+                            checks.expect(state.recipe->locale == "en-US", "locale");
+                            checks.expect(state.recipe->sidecar == "runs.bin", "sidecar");
                         }
                         checks.raise();
                    })
@@ -199,68 +194,58 @@ sidecar = ""
 // run(): S1 produces a no-run package, and it survives a round trip
 // ---------------------------------------------------------------------------
 
+struct RunProducesNoRunPackageState {
+    bake::BakeOutputs outputs;
+};
+
 const mdux::spec::Register runProducesNoRunPackage{
     "run() produces a no-run package whose sidecar is zero bytes", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-run-no-run-package")
-            .Given("a valid recipe", [state] { state->outputs = produceValid(); })
+        return speclab::Test<RunProducesNoRunPackageState>("text-bake-run-no-run-package")
+            .Given("a valid recipe", [](RunProducesNoRunPackageState& state) { state.outputs = produceValid(); })
             .When("run() is called", [] {})
             .Then("the produced package has no runs and an empty sidecar",
-                   [state] {
+                   [](RunProducesNoRunPackageState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(state->outputs.sidecar.empty(),
+                        checks.expect(state.outputs.sidecar.empty(),
                                        "sidecar is empty (S1 produces no runs)");
-                        checks.expect(state->outputs.runCount == 0, "runCount is zero");
-                        checks.expect(state->outputs.packageId == "label-welcome",
+                        checks.expect(state.outputs.runCount == 0, "runCount is zero");
+                        checks.expect(state.outputs.packageId == "label-welcome",
                                        "packageId carries through");
-                        checks.expect(!state->outputs.packageJson.empty(),
+                        checks.expect(!state.outputs.packageJson.empty(),
                                        "packageJson is non-empty");
-                        checks.expect(!state->outputs.reportJson.empty(),
+                        checks.expect(!state.outputs.reportJson.empty(),
                                        "reportJson is non-empty");
-                        checks.expect(state->outputs.sidecarName == "runs.bin", "sidecar name");
+                        checks.expect(state.outputs.sidecarName == "runs.bin", "sidecar name");
                         checks.raise();
                    })
             .Execute();
     }};
 
+struct RunPackageRoundTripsState {
+    bake::BakeOutputs outputs;
+    std::optional<text::TextPackage> parsed;
+    bool bytesSurvive{false};
+};
+
 const mdux::spec::Register runPackageRoundTrips{
     "run()'s packageJson parses back into a validating TextPackage", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::optional<text::TextPackage> parsed;
-            bool bytesSurvive{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-run-round-trip")
-            .Given("a valid recipe's outputs", [state] {
-                state->outputs = produceValid();
-                auto parsed = text::TextPackage::parse(state->outputs.packageJson);
+        return speclab::Test<RunPackageRoundTripsState>("text-bake-run-round-trip")
+            .Given("a valid recipe's outputs", [](RunPackageRoundTripsState& state) {
+                state.outputs = produceValid();
+                auto parsed = text::TextPackage::parse(state.outputs.packageJson);
                 // Re-writing the parsed package must reproduce the same bytes. This is the
                 // property the evidence pipeline's byte comparison depends on; a baker whose
                 // JSON did not round-trip would silently drift against any committed artifact.
-                if (!parsed.has_value()) {
-                    throw speclab::core::AssertionFailure(
-                        "TextPackage::parse() rejected run()'s output",
-                        std::source_location::current());
-                }
-                state->parsed = *parsed;
-                auto rewritten = state->parsed->write();
-                if (!rewritten.has_value()) {
-                    throw speclab::core::AssertionFailure(
-                        "re-writing the parsed package failed",
-                        std::source_location::current());
-                }
-                state->bytesSurvive = (*rewritten == state->outputs.packageJson);
+                Assertions::require(parsed.has_value(), "TextPackage::parse() rejected run()'s output");
+                state.parsed = *parsed;
+                auto rewritten = state.parsed->write();
+                Assertions::require(rewritten.has_value(), "re-writing the parsed package failed");
+                state.bytesSurvive = (*rewritten == state.outputs.packageJson);
             })
             .When("the package is parsed and re-serialized", [] {})
             .Then("it validates, has the recipe's id/atlas/locale, and is byte-identical",
-                   [state] {
-                        const text::TextPackage& package = *state->parsed;
+                   [](RunPackageRoundTripsState& state) {
+                        const text::TextPackage& package = *state.parsed;
                         mdux::spec::Checks checks;
                         checks.expect(package.header.id == "label-welcome", "header id");
                         checks.expect(package.header.kind == "text", "header kind");
@@ -268,37 +253,32 @@ const mdux::spec::Register runPackageRoundTrips{
                         checks.expect(package.locale == "en-US", "locale");
                         checks.expect(package.sidecarByteLength == 0, "sidecar byte length");
                         checks.expect(package.runs.empty(), "the package has no runs");
-                        checks.expect(state->bytesSurvive,
+                        checks.expect(state.bytesSurvive,
                                        "re-serializing reproduces the same bytes");
                         checks.raise();
                    })
             .Execute();
     }};
 
+struct RunReportCarriesRecipeAndToolState {
+    bake::BakeOutputs outputs;
+    std::optional<mdux::evidence::BakeReport> parsed;
+};
+
 const mdux::spec::Register runReportCarriesRecipeAndTool{
     "run()'s report records the recipe, tool, and resolved options", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::optional<mdux::evidence::BakeReport> parsed;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-run-report-contents")
-            .Given("a valid recipe's outputs", [state] {
-                state->outputs = produceValid();
-                auto parsed = mdux::evidence::BakeReport::parse(state->outputs.reportJson);
-                if (!parsed.has_value()) {
-                    throw speclab::core::AssertionFailure(
-                        "BakeReport::parse() rejected run()'s report.json",
-                        std::source_location::current());
-                }
-                state->parsed = *parsed;
+        return speclab::Test<RunReportCarriesRecipeAndToolState>("text-bake-run-report-contents")
+            .Given("a valid recipe's outputs", [](RunReportCarriesRecipeAndToolState& state) {
+                state.outputs = produceValid();
+                auto parsed = mdux::evidence::BakeReport::parse(state.outputs.reportJson);
+                Assertions::require(parsed.has_value(), "BakeReport::parse() rejected run()'s report.json");
+                state.parsed = *parsed;
             })
             .When("the report is parsed", [] {})
             .Then("it names mdux-textbake, carries the recipe path, and lists package.json and "
                   "the sidecar as outputs",
-                   [state] {
-                        const mdux::evidence::BakeReport& report = *state->parsed;
+                   [](RunReportCarriesRecipeAndToolState& state) {
+                        const mdux::evidence::BakeReport& report = *state.parsed;
                         mdux::spec::Checks checks;
                         checks.expect(report.tool == "mdux-textbake", "tool");
                         checks.expect(!report.toolVersion.empty(), "toolVersion is non-empty");
@@ -319,105 +299,99 @@ const mdux::spec::Register runReportCarriesRecipeAndTool{
 // write() and verify(): committed-artifact comparison
 // ---------------------------------------------------------------------------
 
+struct WriteProducesFilesState {
+    bake::BakeOutputs outputs;
+    std::filesystem::path dir;
+    std::vector<cli::Diagnostic> diagnostics;
+    bool ok{false};
+    bool hasPackage{false};
+    bool hasReport{false};
+    bool hasSidecar{false};
+};
+
 const mdux::spec::Register writeProducesFiles{
     "write() produces package.json, report.json and the sidecar in the output directory",
     "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::filesystem::path dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool ok{false};
-            bool hasPackage{false};
-            bool hasReport{false};
-            bool hasSidecar{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-write-files")
-            .Given("a valid recipe's outputs and a fresh directory", [state] {
-                state->outputs = produceValid();
-                state->dir = freshTempDir("write");
-                state->ok = bake::write(state->outputs, state->dir, state->diagnostics);
-                state->hasPackage = std::filesystem::exists(state->dir / "package.json");
-                state->hasReport = std::filesystem::exists(state->dir / "report.json");
-                state->hasSidecar = std::filesystem::exists(state->dir / state->outputs.sidecarName);
+        return speclab::Test<WriteProducesFilesState>("text-bake-write-files")
+            .Given("a valid recipe's outputs and a fresh directory", [](WriteProducesFilesState& state) {
+                state.outputs = produceValid();
+                state.dir = freshTempDir("write");
+                state.ok = bake::write(state.outputs, state.dir, state.diagnostics);
+                state.hasPackage = std::filesystem::exists(state.dir / "package.json");
+                state.hasReport = std::filesystem::exists(state.dir / "report.json");
+                state.hasSidecar = std::filesystem::exists(state.dir / state.outputs.sidecarName);
             })
             .When("write() is called and the directory is inspected", [] {})
             .Then("write succeeds with no diagnostics and all three files are present",
-                   [state] {
+                   [](WriteProducesFilesState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(state->ok, "write returned true");
-                        checks.expect(state->diagnostics.empty(), "no diagnostics");
-                        checks.expect(state->hasPackage, "package.json exists");
-                        checks.expect(state->hasReport, "report.json exists");
-                        checks.expect(state->hasSidecar, "sidecar exists");
+                        checks.expect(state.ok, "write returned true");
+                        checks.expect(state.diagnostics.empty(), "no diagnostics");
+                        checks.expect(state.hasPackage, "package.json exists");
+                        checks.expect(state.hasReport, "report.json exists");
+                        checks.expect(state.hasSidecar, "sidecar exists");
                         // Cleanup: leave the temp tree clean.
                         std::error_code code;
-                        std::filesystem::remove_all(state->dir, code);
+                        std::filesystem::remove_all(state.dir, code);
                         checks.raise();
                    })
             .Execute();
     }};
+
+struct VerifyReportsMissingArtifactState {
+    bake::BakeOutputs outputs;
+    std::filesystem::path dir;
+    std::vector<cli::Diagnostic> diagnostics;
+    bool ok{true};
+};
 
 const mdux::spec::Register verifyReportsMissingArtifact{
     "verify() reports TXT007 when a committed package is missing", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::filesystem::path dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool ok{true};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-verify-missing")
-            .Given("a valid recipe's outputs and a directory with no committed files", [state] {
-                state->outputs = produceValid();
-                state->dir = freshTempDir("verify-missing");
+        return speclab::Test<VerifyReportsMissingArtifactState>("text-bake-verify-missing")
+            .Given("a valid recipe's outputs and a directory with no committed files", [](VerifyReportsMissingArtifactState& state) {
+                state.outputs = produceValid();
+                state.dir = freshTempDir("verify-missing");
             })
-            .When("verify() is called against the empty directory", [state] {
-                state->ok = bake::verify(state->outputs, state->dir / "package.json",
-                                          state->dir / "report.json", state->diagnostics);
+            .When("verify() is called against the empty directory", [](VerifyReportsMissingArtifactState& state) {
+                state.ok = bake::verify(state.outputs, state.dir / "package.json",
+                                          state.dir / "report.json", state.diagnostics);
             })
             .Then("verify fails and the first diagnostic is the missing-artifact code",
-                   [state] {
+                   [](VerifyReportsMissingArtifactState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(!state->ok, "verify returns false on missing artifacts");
-                        checks.expect(!state->diagnostics.empty(),
+                        checks.expect(!state.ok, "verify returns false on missing artifacts");
+                        checks.expect(!state.diagnostics.empty(),
                                        "at least one diagnostic is reported");
-                        if (!state->diagnostics.empty()) {
-                            checks.expect(state->diagnostics.front().code == "TXT007",
+                        if (!state.diagnostics.empty()) {
+                            checks.expect(state.diagnostics.front().code == "TXT007",
                                            "the first diagnostic is TXT007");
                         }
                         std::error_code code;
-                        std::filesystem::remove_all(state->dir, code);
+                        std::filesystem::remove_all(state.dir, code);
                         checks.raise();
                    })
             .Execute();
     }};
 
+struct VerifyReportsByteDifferenceState {
+    bake::BakeOutputs outputs;
+    std::filesystem::path dir;
+    std::vector<cli::Diagnostic> writeDiagnostics;
+    std::vector<cli::Diagnostic> verifyDiagnostics;
+    bool ok{true};
+    std::size_t flipIndex{0};
+};
+
 const mdux::spec::Register verifyReportsByteDifference{
     "verify() reports TXT008 when a committed package's bytes differ", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::filesystem::path dir;
-            std::vector<cli::Diagnostic> writeDiagnostics;
-            std::vector<cli::Diagnostic> verifyDiagnostics;
-            bool ok{true};
-            std::size_t flipIndex{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-verify-differs")
+        return speclab::Test<VerifyReportsByteDifferenceState>("text-bake-verify-differs")
             .Given("a valid recipe's outputs and a directory with a same-length corrupted "
                    "committed package.json",
-                   [state] {
-                       state->outputs = produceValid();
-                       state->dir = freshTempDir("verify-differs");
-                       if (!bake::write(state->outputs, state->dir, state->writeDiagnostics)) {
-                           throw speclab::core::AssertionFailure(
-                               "write() failed for the diff setup",
-                               std::source_location::current());
-                       }
+                   [](VerifyReportsByteDifferenceState& state) {
+                       state.outputs = produceValid();
+                       state.dir = freshTempDir("verify-differs");
+                       Assertions::require(bake::write(state.outputs, state.dir, state.writeDiagnostics),
+                                           "write() failed for the diff setup");
                        // Same-length corruption: read the committed package.json back, flip one
                        // byte near the middle, and rewrite the file. The byte is flipped to a
                        // value that is not what `run()` produced, so the first-differing-byte
@@ -426,44 +400,36 @@ const mdux::spec::Register verifyReportsByteDifference{
                        // arithmetic the review flagged as "wrong once and then wrong quietly", so
                        // the assertion below also pins the reported offset rather than merely the
                        // code.
-                       const std::filesystem::path packagePath = state->dir / "package.json";
+                       const std::filesystem::path packagePath = state.dir / "package.json";
                        std::ifstream input{packagePath, std::ios::binary | std::ios::ate};
-                       if (!input) {
-                           throw speclab::core::AssertionFailure(
-                               "could not open package.json for the diff setup",
-                               std::source_location::current());
-                       }
+                       Assertions::require(input.is_open(), "could not open package.json for the diff setup");
                        const auto size = input.tellg();
                        input.seekg(0);
                        std::string text(static_cast<std::size_t>(size), '\0');
                        input.read(text.data(), size);
                        input.close();
-                       if (text.size() < 4) {
-                           throw speclab::core::AssertionFailure(
-                               "package.json is too short to flip a mid-file byte",
-                               std::source_location::current());
-                       }
+                       Assertions::require(text.size() >= 4, "package.json is too short to flip a mid-file byte");
                        // Flip byte at size/2. Choose a replacement value that is not the original,
                        // so the diff is real. `text[size / 2]` is well-defined because size >= 4.
                        const std::size_t flipIndex = text.size() / 2;
                        const char original = text[flipIndex];
                        char replacement = (original == 'X') ? 'Y' : 'X';
                        text[flipIndex] = replacement;
-                       state->flipIndex = flipIndex;
+                       state.flipIndex = flipIndex;
                        std::ofstream output{packagePath, std::ios::binary | std::ios::trunc};
                        output.write(text.data(), static_cast<std::streamsize>(text.size()));
                    })
-            .When("verify() is called against the corrupted committed bytes", [state] {
-                state->ok = bake::verify(state->outputs, state->dir / "package.json",
-                                          state->dir / "report.json", state->verifyDiagnostics);
+            .When("verify() is called against the corrupted committed bytes", [](VerifyReportsByteDifferenceState& state) {
+                state.ok = bake::verify(state.outputs, state.dir / "package.json",
+                                          state.dir / "report.json", state.verifyDiagnostics);
             })
             .Then("verify fails, a TXT008 diagnostic is reported, and it names the flipped byte offset",
-                   [state] {
+                   [](VerifyReportsByteDifferenceState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(!state->ok, "verify returns false on a diff");
+                        checks.expect(!state.ok, "verify returns false on a diff");
                         bool foundDiffers = false;
                         bool offsetPinned = false;
-                        for (const cli::Diagnostic& message : state->verifyDiagnostics) {
+                        for (const cli::Diagnostic& message : state.verifyDiagnostics) {
                             if (message.code == "TXT008" &&
                                 message.file.find("package.json") != std::string::npos) {
                                 foundDiffers = true;
@@ -472,7 +438,7 @@ const mdux::spec::Register verifyReportsByteDifference{
                                 // index we flipped so the offset reporting is actually tested,
                                 // not just the code.
                                 const std::string needle =
-                                    "at byte " + std::to_string(state->flipIndex) + ":";
+                                    "at byte " + std::to_string(state.flipIndex) + ":";
                                 offsetPinned = message.message.find(needle) != std::string::npos;
                                 break;
                             }
@@ -481,45 +447,41 @@ const mdux::spec::Register verifyReportsByteDifference{
                         checks.expect(offsetPinned,
                                        "the reported byte offset matches the flipped index");
                         std::error_code code;
-                        std::filesystem::remove_all(state->dir, code);
+                        std::filesystem::remove_all(state.dir, code);
                         checks.raise();
                    })
             .Execute();
     }};
 
+struct VerifyAcceptsIdenticalCommittedState {
+    bake::BakeOutputs outputs;
+    std::filesystem::path dir;
+    std::vector<cli::Diagnostic> writeDiagnostics;
+    std::vector<cli::Diagnostic> verifyDiagnostics;
+    bool ok{false};
+};
+
 const mdux::spec::Register verifyAcceptsIdenticalCommitted{
     "verify() succeeds when the committed bytes are byte-identical", "evidence-unit", [] {
-        struct State {
-            bake::BakeOutputs outputs;
-            std::filesystem::path dir;
-            std::vector<cli::Diagnostic> writeDiagnostics;
-            std::vector<cli::Diagnostic> verifyDiagnostics;
-            bool ok{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-verify-identical")
-            .Given("a valid recipe's outputs and a directory holding an identical copy", [state] {
-                state->outputs = produceValid();
-                state->dir = freshTempDir("verify-identical");
-                if (!bake::write(state->outputs, state->dir, state->writeDiagnostics)) {
-                    throw speclab::core::AssertionFailure(
-                        "write() failed for the identical-copy setup",
-                        std::source_location::current());
-                }
+        return speclab::Test<VerifyAcceptsIdenticalCommittedState>("text-bake-verify-identical")
+            .Given("a valid recipe's outputs and a directory holding an identical copy", [](VerifyAcceptsIdenticalCommittedState& state) {
+                state.outputs = produceValid();
+                state.dir = freshTempDir("verify-identical");
+                Assertions::require(bake::write(state.outputs, state.dir, state.writeDiagnostics),
+                                    "write() failed for the identical-copy setup");
             })
-            .When("verify() is called against the just-written copy", [state] {
-                state->ok = bake::verify(state->outputs, state->dir / "package.json",
-                                          state->dir / "report.json", state->verifyDiagnostics);
+            .When("verify() is called against the just-written copy", [](VerifyAcceptsIdenticalCommittedState& state) {
+                state.ok = bake::verify(state.outputs, state.dir / "package.json",
+                                          state.dir / "report.json", state.verifyDiagnostics);
             })
             .Then("verify succeeds with no diagnostics",
-                   [state] {
+                   [](VerifyAcceptsIdenticalCommittedState& state) {
                         mdux::spec::Checks checks;
-                        checks.expect(state->ok, "verify returns true on identical bytes");
-                        checks.expect(state->verifyDiagnostics.empty(),
+                        checks.expect(state.ok, "verify returns true on identical bytes");
+                        checks.expect(state.verifyDiagnostics.empty(),
                                        "no diagnostics on a matching verify");
                         std::error_code code;
-                        std::filesystem::remove_all(state->dir, code);
+                        std::filesystem::remove_all(state.dir, code);
                         checks.raise();
                    })
             .Execute();
@@ -564,6 +526,13 @@ lastCodePoints  = [126])";
 
 }  // namespace
 
+struct FontRecipeBakesAnAtlasState {
+    std::string                              text;
+    std::optional<bake::Recipe>              recipe;
+    std::optional<bake::BakeOutputs>         outputs;
+    std::vector<mdux::tools::cli::Diagnostic> diagnostics;
+};
+
 const mdux::spec::Register fontRecipeBakesAnAtlas{
     "A font recipe bakes an atlas whose glyphs carry slots, advances and blanks",
     "evidence-unit",
@@ -572,44 +541,32 @@ const mdux::spec::Register fontRecipeBakesAnAtlas{
         // rasterise each outline, pack the results, and emit a package that describes all of it.
         // The committed artifact's byte-identity is checked separately by `evidence.font.dejavu-ui`;
         // what this scenario adds is the *shape* of the result, which a digest cannot describe.
-        struct State {
-            std::string                              text;
-            std::optional<bake::Recipe>              recipe;
-            std::optional<bake::BakeOutputs>         outputs;
-            std::vector<mdux::tools::cli::Diagnostic> diagnostics;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-font-atlas")
+        return speclab::Test<FontRecipeBakesAnAtlasState>("text-bake-font-atlas")
             .Given("a recipe naming the printable ASCII range",
-                   [state] {
-                       state->text = fontRecipeText(R"(names           = ["ascii"]
+                   [](FontRecipeBakesAnAtlasState& state) {
+                       state.text = fontRecipeText(R"(names           = ["ascii"]
 firstCodePoints = [32]
 lastCodePoints  = [126])");
                    })
             .When("it is parsed and baked",
-                  [state] {
-                      state->recipe = bake::parseRecipe(state->text, "fixture.toml", state->diagnostics);
-                      if (!state->recipe.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("recipe did not parse: {}", state->diagnostics.empty()
-                                                                          ? std::string{"(no diagnostic)"}
-                                                                          : state->diagnostics.front().message),
-                              std::source_location::current());
+                  [](FontRecipeBakesAnAtlasState& state) {
+                      state.recipe = bake::parseRecipe(state.text, "fixture.toml", state.diagnostics);
+                      if (!state.recipe.has_value()) {
+                          Assertions::fail(std::format("recipe did not parse: {}", state.diagnostics.empty()
+                                                                                        ? std::string{"(no diagnostic)"}
+                                                                                        : state.diagnostics.front().message));
                       }
-                      const auto bytes = std::as_bytes(std::span{state->text.data(), state->text.size()});
-                      state->outputs   = bake::run(*state->recipe, "fixture.toml", bytes, repositoryRoot(), state->diagnostics);
-                      if (!state->outputs.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("bake failed: {}", state->diagnostics.empty() ? std::string{"(no diagnostic)"}
-                                                                                        : state->diagnostics.back().message),
-                              std::source_location::current());
+                      const auto bytes = std::as_bytes(std::span{state.text.data(), state.text.size()});
+                      state.outputs   = bake::run(*state.recipe, "fixture.toml", bytes, repositoryRoot(), state.diagnostics);
+                      if (!state.outputs.has_value()) {
+                          Assertions::fail(std::format("bake failed: {}", state.diagnostics.empty() ? std::string{"(no diagnostic)"}
+                                                                                                      : state.diagnostics.back().message));
                       }
                   })
             .Then("95 glyphs land on a power-of-two sheet, and the space is blank but advances",
-                  [state] {
+                  [](FontRecipeBakesAnAtlasState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        out = *state->outputs;
+                      const auto&        out = *state.outputs;
                       checks.expect(out.glyphCount == 95, std::format("95 glyphs, got {}", out.glyphCount));
                       const auto isPow2 = [](std::uint32_t v) { return v != 0 && (v & (v - 1)) == 0; };
                       checks.expect(isPow2(out.atlasWidth) && isPow2(out.atlasHeight),
@@ -853,10 +810,7 @@ struct FixtureFont {
     /// Writes the package into `dir` and returns its bare filename.
     [[nodiscard]] static std::string writeInto(const std::filesystem::path& dir, Shape shape = Shape::Plain) {
         auto text = package(shape).write();
-        if (!text.has_value()) {
-            throw speclab::core::AssertionFailure("the fixture font package is not valid",
-                                                  std::source_location::current());
-        }
+        Assertions::require(text.has_value(), "the fixture font package is not valid");
         std::ofstream out{dir / "font.json", std::ios::binary | std::ios::trunc};
         out << *text;
         out.close();
@@ -891,42 +845,36 @@ sidecar = "runs.bin"
 
 }  // namespace
 
+struct StringsPositionIntoRecordsState {
+    std::filesystem::path        dir;
+    std::optional<bake::Recipe>  recipe;
+    std::optional<bake::BakeOutputs> outputs;
+    std::vector<cli::Diagnostic> diagnostics;
+};
+
 const mdux::spec::Register stringsPositionIntoRecords{
     "A [strings] table bakes into v1 records at the advances the font package declares", "evidence-unit", [] {
-        struct State {
-            std::filesystem::path        dir;
-            std::optional<bake::Recipe>  recipe;
-            std::optional<bake::BakeOutputs> outputs;
-            std::vector<cli::Diagnostic> diagnostics;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-bake-strings-positioned")
-            .Given("a font package on disk and a recipe naming two strings", [state] {
-                state->dir            = freshTempDir("strings");
-                const auto fontName   = FixtureFont::writeInto(state->dir);
+        return speclab::Test<StringsPositionIntoRecordsState>("text-bake-strings-positioned")
+            .Given("a font package on disk and a recipe naming two strings", [](StringsPositionIntoRecordsState& state) {
+                state.dir            = freshTempDir("strings");
+                const auto fontName   = FixtureFont::writeInto(state.dir);
                 const std::string src = textRecipeText(fontName, R"(keys   = ["STR-AB", "STR-A"]
 values = ["AB A",  "A"])");
-                state->recipe = bake::parseRecipe(src, "fixture.toml", state->diagnostics);
-                if (!state->recipe.has_value()) {
-                    throw speclab::core::AssertionFailure("the recipe did not parse",
-                                                          std::source_location::current());
-                }
+                state.recipe = bake::parseRecipe(src, "fixture.toml", state.diagnostics);
+                Assertions::require(state.recipe.has_value(), "the recipe did not parse");
                 const auto bytes = std::as_bytes(std::span{src.data(), src.size()});
-                state->outputs   = bake::run(*state->recipe, "fixture.toml", bytes, state->dir, state->diagnostics);
-                if (!state->outputs.has_value()) {
-                    throw speclab::core::AssertionFailure(
-                        std::format("the bake failed: {}", state->diagnostics.empty()
-                                                               ? std::string{"(no diagnostic)"}
-                                                               : state->diagnostics.back().message),
-                        std::source_location::current());
+                state.outputs   = bake::run(*state.recipe, "fixture.toml", bytes, state.dir, state.diagnostics);
+                if (!state.outputs.has_value()) {
+                    Assertions::fail(std::format("the bake failed: {}", state.diagnostics.empty()
+                                                                             ? std::string{"(no diagnostic)"}
+                                                                             : state.diagnostics.back().message));
                 }
             })
             .When("the package and its sidecar are read back", [] {})
             .Then("each run holds one record per code point, at the expected pen positions",
-                  [state] {
+                  [](StringsPositionIntoRecordsState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        out = *state->outputs;
+                      const auto&        out = *state.outputs;
 
                       // The expected bytes, derived by hand from the fixture's own advances rather
                       // than from the implementation's formula - a test that recomputed the formula
@@ -992,7 +940,7 @@ values = ["AB A",  "A"])");
                       }
 
                       std::error_code ignored;
-                      std::filesystem::remove_all(state->dir, ignored);
+                      std::filesystem::remove_all(state.dir, ignored);
                       checks.raise();
                   })
             .Execute();
