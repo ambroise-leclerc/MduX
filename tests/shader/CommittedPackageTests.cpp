@@ -25,6 +25,8 @@ import mdux.tools.spirv;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace shader = mdux::shader;
 namespace spirv = mdux::tools::spirv;
 
@@ -68,60 +70,45 @@ const std::filesystem::path generatedShaderDir =
     return dirs;
 }
 
+/// One reflected module of one committed package, and the package it came from.
+struct Module {
+    std::string package;
+    std::string id;
+    spirv::Reflection reflection;
+};
+
+struct EveryPackageTargetsPortableSpirvState {
+    std::vector<std::filesystem::path> dirs;
+    std::vector<Module> modules;
+};
+
 const mdux::spec::Register everyPackageTargetsPortableSpirv{
     "Every committed shader package targets SPIR-V a Vulkan 1.2 implementation accepts",
     "evidence-unit", [] {
-        struct Module {
-            std::string package;
-            std::string id;
-            spirv::Reflection reflection;
-        };
-        struct State {
-            std::vector<std::filesystem::path> dirs;
-            std::vector<Module> modules;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-committed-packages-portable-spirv")
+        return speclab::Test<EveryPackageTargetsPortableSpirvState>("shader-committed-packages-portable-spirv")
             .Given("every committed shader package",
-                   [state] {
-                       state->dirs = committedPackageDirs();
+                   [](EveryPackageTargetsPortableSpirvState& state) {
+                       state.dirs = committedPackageDirs();
                        // A discovery-based test that discovers nothing passes every assertion
                        // below without checking anything. Renaming the directory, or running the
                        // binary with MDUX_REPO_ROOT pointing somewhere else, must fail here rather
                        // than report success over an empty set.
-                       if (state->dirs.empty()) {
-                           throw speclab::core::AssertionFailure(
-                               std::format("no committed packages found under {}",
-                                           generatedShaderDir.string()),
-                               std::source_location::current());
-                       }
+                       Assertions::require(!state.dirs.empty(), "no committed packages found under {}", generatedShaderDir.string());
                    })
             .When("each module in each package is reflected",
-                  [state] {
-                      for (const std::filesystem::path& dir : state->dirs) {
+                  [](EveryPackageTargetsPortableSpirvState& state) {
+                      for (const std::filesystem::path& dir : state.dirs) {
                           const std::string name = dir.filename().string();
                           auto text = readFile(dir / "package.json");
-                          if (!text.has_value()) {
-                              throw speclab::core::AssertionFailure(
-                                  std::format("package '{}' could not be read", name),
-                                  std::source_location::current());
-                          }
+                          Assertions::require(text.has_value(), "package '{}' could not be read", name);
                           auto parsed = shader::ShaderPackage::parse(std::string_view{
                               reinterpret_cast<const char*>(text->data()), text->size()});
                           if (!parsed.has_value()) {
-                              throw speclab::core::AssertionFailure(
-                                  std::format("package '{}' did not parse: {}", name,
-                                              shader::describe(parsed.error())),
-                                  std::source_location::current());
+                              Assertions::fail(std::format("package '{}' did not parse: {}", name,
+                                              shader::describe(parsed.error())));
                           }
                           auto sidecar = readFile(dir / parsed->sidecarPath);
-                          if (!sidecar.has_value()) {
-                              throw speclab::core::AssertionFailure(
-                                  std::format("package '{}' sidecar '{}' could not be read", name,
-                                              parsed->sidecarPath),
-                                  std::source_location::current());
-                          }
+                          Assertions::require(sidecar.has_value(), "package '{}' sidecar '{}' could not be read", name, parsed->sidecarPath);
                           for (const shader::ShaderModule& module : parsed->modules) {
                               // ShaderPackage::validate() already checked these ranges, but against
                               // the sidecar length *declared in package.json*. This span is over the
@@ -132,37 +119,30 @@ const mdux::spec::Register everyPackageTargetsPortableSpirv{
                               const std::size_t sidecarSize = sidecar->size();
                               if (module.byteOffset > sidecarSize ||
                                   module.byteLength > sidecarSize - module.byteOffset) {
-                                  throw speclab::core::AssertionFailure(
-                                      std::format("module '{}' of package '{}' spans [{}, {}) of a "
+                                  Assertions::fail(std::format("module '{}' of package '{}' spans [{}, {}) of a "
                                                   "sidecar that is {} bytes on disk",
                                                   module.id, name, module.byteOffset,
                                                   module.byteOffset + module.byteLength,
-                                                  sidecarSize),
-                                      std::source_location::current());
+                                                  sidecarSize));
                               }
                               const std::span<const std::byte> range{
                                   sidecar->data() + module.byteOffset,
                                   static_cast<std::size_t>(module.byteLength)};
                               auto reflection = spirv::reflect(range);
-                              if (!reflection.has_value()) {
-                                  throw speclab::core::AssertionFailure(
-                                      std::format("module '{}' of package '{}' did not reflect",
-                                                  module.id, name),
-                                      std::source_location::current());
-                              }
-                              state->modules.push_back({name, module.id, *reflection});
+                              Assertions::require(reflection.has_value(), "module '{}' of package '{}' did not reflect", module.id, name);
+                              state.modules.push_back({name, module.id, *reflection});
                           }
                       }
                   })
             .Then("each module is SPIR-V 1.5 or lower",
-                  [state] {
+                  [](EveryPackageTargetsPortableSpirvState& state) {
                       // MoltenVK exposes Vulkan 1.2 semantics and rejects the SPIR-V 1.6 that
                       // `--target-env vulkan1.3` emits. The recipes under recipes/shader/ say so
                       // in a comment; this is the assertion that makes re-baking at 1.3 fail here
                       // rather than at runtime on a device - and only on the one CI leg that has
                       // a device.
                       mdux::spec::Checks checks;
-                      for (const Module& module : state->modules) {
+                      for (const Module& module : state.modules) {
                           checks.expect(
                               module.reflection.versionMajor == 1 &&
                                   module.reflection.versionMinor <= 5,
