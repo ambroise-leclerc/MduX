@@ -8,6 +8,8 @@ import mdux.tools.qoi;
 #include "../framework/SpecLabBridge.hpp"
 
 namespace {
+
+using speclab::core::Assertions;
 [[nodiscard]] std::vector<std::byte> twoPixelQoi() {
     const std::array<unsigned char, 31> raw{'q', 'o', 'i', 'f', 0, 0, 0, 2, 0, 0, 0, 1, 4, 0, 0xfe, 10, 20, 30, 0xff, 40, 50, 60, 70, 0, 0, 0, 0, 0, 0, 0, 1};
     std::vector<std::byte>              bytes;
@@ -48,8 +50,7 @@ const mdux::spec::Register qoiDecodesRgbAndRgba{"QOI RGB and RGBA chunks decode 
                                                         .Then("the decoded pixels preserve channels and alpha",
                                                               [] {
                                                                   const auto decoded = mdux::tools::qoi::decode(twoPixelQoi());
-                                                                  if (!decoded.has_value())
-                                                                      throw speclab::core::AssertionFailure("decode failed", std::source_location::current());
+                                                                  Assertions::require(decoded.has_value(), "decode failed");
                                                                   constexpr std::array<std::byte, 8> expected{std::byte{10},
                                                                                                               std::byte{20},
                                                                                                               std::byte{30},
@@ -92,9 +93,7 @@ const mdux::spec::Register qoiDecodesCompactOpcodes{"QOI compact opcodes preserv
                                                             .Then("INDEX, DIFF, LUMA and RUN decode in sequence",
                                                                   [] {
                                                                       const auto decoded = mdux::tools::qoi::decode(opcodeQoi());
-                                                                      if (!decoded.has_value())
-                                                                          throw speclab::core::AssertionFailure("decode failed",
-                                                                                                                std::source_location::current());
+                                                                      Assertions::require(decoded.has_value(), "decode failed");
                                                                       constexpr std::array<std::byte, 20> expected{
                                                                           std::byte{10},  std::byte{20},  std::byte{30},  std::byte{255}, std::byte{11},
                                                                           std::byte{19},  std::byte{30},  std::byte{255}, std::byte{14},  std::byte{21},

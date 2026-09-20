@@ -56,60 +56,62 @@ constexpr std::string_view kTool = "mdux-fontbake";
 // Subcommands
 // ---------------------------------------------------------------------------
 
+/// State shared by the steps of `bakeTakesRecipeAndOutputDir`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct BakeTakesRecipeAndOutputDirState {
+        Invocation invocation;
+};
+
 const mdux::spec::Register bakeTakesRecipeAndOutputDir{
     "bake takes a recipe and an output directory", "evidence-unit", [] {
-        struct State {
-            Invocation invocation;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-bake-takes-recipe-and-output-dir")
+        return speclab::Test<BakeTakesRecipeAndOutputDirState>("cli-bake-takes-recipe-and-output-dir")
             .Given("the bake subcommand with a recipe and an output directory",
-                   [state] {
-                       state->invocation =
+                   [](BakeTakesRecipeAndOutputDirState& state) {
+                       state.invocation =
                            parsedOk({"bake", "recipes/font/roboto-ui.toml", "build/mdux_bake"});
                    })
             .When("the invocation is inspected", [] {})
             .Then("it names the bake mode, text format, recipe and output directory",
-                  [state] {
+                  [](BakeTakesRecipeAndOutputDirState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->invocation.mode == Mode::Bake, "mode is Bake");
-                      checks.expect(state->invocation.format == Format::Text, "format is Text");
-                      checks.expect(state->invocation.bake.recipe == "recipes/font/roboto-ui.toml",
+                      checks.expect(state.invocation.mode == Mode::Bake, "mode is Bake");
+                      checks.expect(state.invocation.format == Format::Text, "format is Text");
+                      checks.expect(state.invocation.bake.recipe == "recipes/font/roboto-ui.toml",
                                     "recipe");
-                      checks.expect(state->invocation.bake.outputDir == "build/mdux_bake",
+                      checks.expect(state.invocation.bake.outputDir == "build/mdux_bake",
                                     "output directory");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `verifyTakesRecipeAndCommittedFiles`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct VerifyTakesRecipeAndCommittedFilesState {
+        Invocation invocation;
+};
+
 const mdux::spec::Register verifyTakesRecipeAndCommittedFiles{
     "verify takes a recipe and the two committed files", "evidence-unit", [] {
-        struct State {
-            Invocation invocation;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-verify-takes-recipe-and-committed-files")
+        return speclab::Test<VerifyTakesRecipeAndCommittedFilesState>("cli-verify-takes-recipe-and-committed-files")
             .Given("the verify subcommand with a recipe and both committed files",
-                   [state] {
-                       state->invocation = parsedOk({"verify", "recipes/font/roboto-ui.toml",
+                   [](VerifyTakesRecipeAndCommittedFilesState& state) {
+                       state.invocation = parsedOk({"verify", "recipes/font/roboto-ui.toml",
                                                      "generated/font/roboto-ui/package.json",
                                                      "generated/font/roboto-ui/report.json"});
                    })
             .When("the invocation is inspected", [] {})
             .Then("it names the verify mode, the recipe and both committed paths",
-                  [state] {
+                  [](VerifyTakesRecipeAndCommittedFilesState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->invocation.mode == Mode::Verify, "mode is Verify");
-                      checks.expect(state->invocation.verify.recipe ==
+                      checks.expect(state.invocation.mode == Mode::Verify, "mode is Verify");
+                      checks.expect(state.invocation.verify.recipe ==
                                         "recipes/font/roboto-ui.toml",
                                     "recipe");
-                      checks.expect(state->invocation.verify.packagePath ==
+                      checks.expect(state.invocation.verify.packagePath ==
                                         "generated/font/roboto-ui/package.json",
                                     "package path");
-                      checks.expect(state->invocation.verify.reportPath ==
+                      checks.expect(state.invocation.verify.reportPath ==
                                         "generated/font/roboto-ui/report.json",
                                     "report path");
                       checks.raise();
@@ -117,61 +119,63 @@ const mdux::spec::Register verifyTakesRecipeAndCommittedFiles{
             .Execute();
     }};
 
+/// State shared by the steps of `formatAcceptedEverywhere`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct FormatAcceptedEverywhereState {
+        std::array<Invocation, 3> jsonVariants;
+        Invocation text;
+};
+
 const mdux::spec::Register formatAcceptedEverywhere{
     "--format is accepted before, between and after positionals", "evidence-unit", [] {
-        struct State {
-            std::array<Invocation, 3> jsonVariants;
-            Invocation text;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-format-position")
+        return speclab::Test<FormatAcceptedEverywhereState>("cli-format-position")
             .Given("--format=json placed before, between and after the positionals",
-                   [state] {
-                       state->jsonVariants = {
+                   [](FormatAcceptedEverywhereState& state) {
+                       state.jsonVariants = {
                            parsedOk({"--format=json", "bake", "r.toml", "out"}),
                            parsedOk({"bake", "--format=json", "r.toml", "out"}),
                            parsedOk({"bake", "r.toml", "out", "--format=json"}),
                        };
-                       state->text = parsedOk({"bake", "r.toml", "out", "--format=text"});
+                       state.text = parsedOk({"bake", "r.toml", "out", "--format=text"});
                    })
             .When("each spelling is parsed", [] {})
             .Then("all three spellings give a json bake of the same recipe",
-                  [state] {
+                  [](FormatAcceptedEverywhereState& state) {
                       mdux::spec::Checks checks;
-                      for (const Invocation& invocation : state->jsonVariants) {
+                      for (const Invocation& invocation : state.jsonVariants) {
                           checks.expect(invocation.format == Format::Json,
                                         "--format=json parses as Json");
                           checks.expect(invocation.bake.recipe == "r.toml", "recipe");
                           checks.expect(invocation.bake.outputDir == "out", "output directory");
                       }
-                      checks.expect(state->text.format == Format::Text,
+                      checks.expect(state.text.format == Format::Text,
                                     "the --format=text spelling stays Text");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `argcArgvOverloadSkipsArgvZero`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct ArgcArgvOverloadSkipsArgvZeroState {
+        Invocation invocation;
+};
+
 const mdux::spec::Register argcArgvOverloadSkipsArgvZero{
     "The argc/argv overload skips argv[0]", "evidence-unit", [] {
-        struct State {
-            Invocation invocation;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-argc-argv-skips-argv0")
+        return speclab::Test<ArgcArgvOverloadSkipsArgvZeroState>("cli-argc-argv-skips-argv0")
             .Given("an argv array whose first element is the program name",
-                   [state] {
+                   [](ArgcArgvOverloadSkipsArgvZeroState& state) {
                        const std::array<const char*, 4> argv{"/usr/local/bin/mdux-fontbake",
                                                              "bake", "r.toml", "out"};
-                       state->invocation = parse(kTool, static_cast<int>(argv.size()), argv.data());
+                       state.invocation = parse(kTool, static_cast<int>(argv.size()), argv.data());
                    })
             .When("it is decoded into an invocation", [] {})
             .Then("argv[0] is skipped and the trailing arguments are read",
-                  [state] {
+                  [](ArgcArgvOverloadSkipsArgvZeroState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->invocation.mode == Mode::Bake, "mode is Bake");
-                      checks.expect(state->invocation.bake.recipe == "r.toml", "recipe");
+                      checks.expect(state.invocation.mode == Mode::Bake, "mode is Bake");
+                      checks.expect(state.invocation.bake.recipe == "r.toml", "recipe");
                       checks.raise();
                   })
             .Execute();
@@ -181,16 +185,17 @@ const mdux::spec::Register argcArgvOverloadSkipsArgvZero{
 // Usage errors
 // ---------------------------------------------------------------------------
 
+/// State shared by the steps of `usageErrorsNameWhatWasWrong`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct UsageErrorsNameWhatWasWrongState {
+        std::vector<std::string> messages;
+};
+
 const mdux::spec::Register usageErrorsNameWhatWasWrong{
     "Usage errors name what was wrong and print the usage text", "evidence-unit", [] {
-        struct State {
-            std::vector<std::string> messages;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-usage-errors-name-what-was-wrong")
-            .Given("a set of malformed invocations", [state] {
-                state->messages = {
+        return speclab::Test<UsageErrorsNameWhatWasWrongState>("cli-usage-errors-name-what-was-wrong")
+            .Given("a set of malformed invocations", [](UsageErrorsNameWhatWasWrongState& state) {
+                state.messages = {
                     usageErrorOf({}),
                     usageErrorOf({"build", "r.toml", "out"}),
                     usageErrorOf({"bake"}),
@@ -204,38 +209,38 @@ const mdux::spec::Register usageErrorsNameWhatWasWrong{
             })
             .When("each is parsed", [] {})
             .Then("the error names the problem and carries the usage text",
-                  [state] {
+                  [](UsageErrorsNameWhatWasWrongState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->messages[0].find("expected a subcommand") !=
+                      checks.expect(state.messages[0].find("expected a subcommand") !=
                                         std::string::npos,
                                     "no arguments");
-                      checks.expect(state->messages[1].find("unrecognized subcommand 'build'") !=
+                      checks.expect(state.messages[1].find("unrecognized subcommand 'build'") !=
                                         std::string::npos,
                                     "unrecognized subcommand");
-                      checks.expect(state->messages[2].find("bake takes exactly 2 arguments") !=
+                      checks.expect(state.messages[2].find("bake takes exactly 2 arguments") !=
                                         std::string::npos,
                                     "missing bake arguments");
-                      checks.expect(state->messages[3].find("got 1") != std::string::npos,
+                      checks.expect(state.messages[3].find("got 1") != std::string::npos,
                                     "one argument counted");
-                      checks.expect(state->messages[4].find("got 3") != std::string::npos,
+                      checks.expect(state.messages[4].find("got 3") != std::string::npos,
                                     "three arguments counted");
-                      checks.expect(state->messages[5].find("verify takes exactly 3 arguments") !=
+                      checks.expect(state.messages[5].find("verify takes exactly 3 arguments") !=
                                         std::string::npos,
                                     "verify arity");
-                      checks.expect(state->messages[6].find("unrecognized option '--wat'") !=
+                      checks.expect(state.messages[6].find("unrecognized option '--wat'") !=
                                         std::string::npos,
                                     "unrecognized option");
-                      checks.expect(state->messages[7].find("unrecognized --format value 'xml'") !=
+                      checks.expect(state.messages[7].find("unrecognized --format value 'xml'") !=
                                         std::string::npos,
                                     "unrecognized format");
                       // The space-separated spelling gets its own message rather than
                       // "unrecognized option".
-                      checks.expect(state->messages[8].find("takes its value with '='") !=
+                      checks.expect(state.messages[8].find("takes its value with '='") !=
                                         std::string::npos,
                                     "space-separated format spelling");
                       // Every usage error carries the usage text, so a caller has one place to
                       // print it.
-                      checks.expect(state->messages[0].find(
+                      checks.expect(state.messages[0].find(
                                         "mdux-fontbake bake   <recipe> <output-dir>") !=
                                         std::string::npos,
                                     "bake usage text is carried");
@@ -244,22 +249,23 @@ const mdux::spec::Register usageErrorsNameWhatWasWrong{
             .Execute();
     }};
 
+/// State shared by the steps of `helpIsReportedAndCarriesUsage`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct HelpIsReportedAndCarriesUsageState {
+        std::array<std::string, 2> raised;
+};
+
 const mdux::spec::Register helpIsReportedAndCarriesUsage{
     "--help is a UsageError carrying the usage text", "evidence-unit", [] {
-        struct State {
-            std::array<std::string, 2> raised;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-help-is-usage-error")
-            .Given("--help and -h", [state] {
-                state->raised = {usageErrorOf({"--help"}), usageErrorOf({"-h"})};
+        return speclab::Test<HelpIsReportedAndCarriesUsageState>("cli-help-is-usage-error")
+            .Given("--help and -h", [](HelpIsReportedAndCarriesUsageState& state) {
+                state.raised = {usageErrorOf({"--help"}), usageErrorOf({"-h"})};
             })
             .When("each is parsed", [] {})
             .Then("the error message is exactly the usage text",
-                  [state] {
+                  [](HelpIsReportedAndCarriesUsageState& state) {
                       mdux::spec::Checks checks;
-                      for (const std::string& raised : state->raised) {
+                      for (const std::string& raised : state.raised) {
                           checks.expect(raised == usage(kTool), "message equals usage()");
                       }
                       checks.raise();
@@ -306,16 +312,17 @@ const mdux::spec::Register usageDocumentsBothSubcommandsAndOptions{
 // The diagnostic envelope
 // ---------------------------------------------------------------------------
 
+/// State shared by the steps of `jsonDiagnosticsEnvelopeShape`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct JsonDiagnosticsEnvelopeShapeState {
+        std::string json;
+};
+
 const mdux::spec::Register jsonDiagnosticsEnvelopeShape{
     "JSON diagnostics use the published envelope shape", "evidence-unit", [] {
-        struct State {
-            std::string json;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-json-diagnostics-envelope-shape")
+        return speclab::Test<JsonDiagnosticsEnvelopeShapeState>("cli-json-diagnostics-envelope-shape")
             .Given("an error finding with a fix hint",
-                   [state] {
+                   [](JsonDiagnosticsEnvelopeShapeState& state) {
                        const std::vector<Diagnostic> diagnostics{
                            Diagnostic{.file = "recipes/font/roboto-ui.toml",
                                       .line = 7,
@@ -325,11 +332,11 @@ const mdux::spec::Register jsonDiagnosticsEnvelopeShape{
                                       .message = "glyph budget exceeded",
                                       .fixHint = "raise atlasWidth or reduce the charset"},
                        };
-                       state->json = render(diagnostics, Format::Json, kTool);
+                       state.json = render(diagnostics, Format::Json, kTool);
                    })
             .When("it is rendered as JSON", [] {})
             .Then("the envelope matches the published shape exactly",
-                  [state] {
+                  [](JsonDiagnosticsEnvelopeShapeState& state) {
                       // Pinned literally, and deliberately so: this is the published contract of
                       // docs/governance/schemas/diagnostic.schema.json, which every later baker
                       // emits. A field added, renamed or reordered here changes what agents parse
@@ -337,7 +344,7 @@ const mdux::spec::Register jsonDiagnosticsEnvelopeShape{
                       // unnoticed.
                       mdux::spec::Checks checks;
                       checks.expect(
-                          state->json ==
+                          state.json ==
                               "{\n"
                               "  \"tool\": \"mdux-fontbake\",\n"
                               "  \"findings\": [\n"
@@ -358,16 +365,17 @@ const mdux::spec::Register jsonDiagnosticsEnvelopeShape{
             .Execute();
     }};
 
+/// State shared by the steps of `unknownPositionIsZeroOnBothAxes`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct UnknownPositionIsZeroOnBothAxesState {
+        std::string json;
+};
+
 const mdux::spec::Register unknownPositionIsZeroOnBothAxes{
     "An unknown position is carried as zero on both axes", "evidence-unit", [] {
-        struct State {
-            std::string json;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-unknown-position-is-zero-on-both-axes")
+        return speclab::Test<UnknownPositionIsZeroOnBothAxesState>("cli-unknown-position-is-zero-on-both-axes")
             .Given("a finding with no position at all",
-                   [state] {
+                   [](UnknownPositionIsZeroOnBothAxesState& state) {
                        // A tool with no position at all must still emit both fields. Omitting them
                        // would make the envelope's shape depend on the finding, which is exactly
                        // what a strict consumer cannot tolerate - `column` is always present, and 0
@@ -378,31 +386,32 @@ const mdux::spec::Register unknownPositionIsZeroOnBothAxes{
                                        .message = "no charset",
                                        .fixHint = ""},
                         };
-                       state->json = render(diagnostics, Format::Json, kTool);
+                       state.json = render(diagnostics, Format::Json, kTool);
                    })
             .When("it is rendered as JSON", [] {})
             .Then("both position fields are present and zero",
-                  [state] {
+                  [](UnknownPositionIsZeroOnBothAxesState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->json.find("\"line\": 0,\n") != std::string::npos,
+                      checks.expect(state.json.find("\"line\": 0,\n") != std::string::npos,
                                     "line is zero");
-                      checks.expect(state->json.find("\"column\": 0,\n") != std::string::npos,
+                      checks.expect(state.json.find("\"column\": 0,\n") != std::string::npos,
                                     "column is zero");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `commaSeparatesMultipleFindings`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct CommaSeparatesMultipleFindingsState {
+        std::string json;
+};
+
 const mdux::spec::Register commaSeparatesMultipleFindings{
     "JSON diagnostics separate multiple findings with a comma", "evidence-unit", [] {
-        struct State {
-            std::string json;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-json-separate-multiple-findings")
+        return speclab::Test<CommaSeparatesMultipleFindingsState>("cli-json-separate-multiple-findings")
             .Given("two findings",
-                   [state] {
+                   [](CommaSeparatesMultipleFindingsState& state) {
                         const std::vector<Diagnostic> diagnostics{
                             Diagnostic{.file = "a.toml",
                                        .line = 1,
@@ -415,18 +424,18 @@ const mdux::spec::Register commaSeparatesMultipleFindings{
                                        .message = "second",
                                        .fixHint = ""},
                         };
-                       state->json = render(diagnostics, Format::Json, kTool);
+                       state.json = render(diagnostics, Format::Json, kTool);
                    })
             .When("it is rendered as JSON", [] {})
             .Then("the two findings are separated with a comma",
-                  [state] {
+                  [](CommaSeparatesMultipleFindingsState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->json.find("    },\n    {\n") != std::string::npos,
+                      checks.expect(state.json.find("    },\n    {\n") != std::string::npos,
                                     "a comma separates the findings");
-                      checks.expect(state->json.find("\"message\": \"first\"") !=
+                      checks.expect(state.json.find("\"message\": \"first\"") !=
                                         std::string::npos,
                                     "the first message");
-                      checks.expect(state->json.find("\"message\": \"second\"") !=
+                      checks.expect(state.json.find("\"message\": \"second\"") !=
                                         std::string::npos,
                                     "the second message");
                       checks.raise();
@@ -434,48 +443,50 @@ const mdux::spec::Register commaSeparatesMultipleFindings{
             .Execute();
     }};
 
+/// State shared by the steps of `emptyFindingListIsWellFormed`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct EmptyFindingListIsWellFormedState {
+        std::string json;
+        std::string text;
+};
+
 const mdux::spec::Register emptyFindingListIsWellFormed{
     "An empty finding list still produces a well-formed envelope", "evidence-unit", [] {
-        struct State {
-            std::string json;
-            std::string text;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-empty-finding-list-is-well-formed")
+        return speclab::Test<EmptyFindingListIsWellFormedState>("cli-empty-finding-list-is-well-formed")
             .Given("no findings at all",
-                   [state] {
-                       state->json = render({}, Format::Json, kTool);
-                       state->text = render({}, Format::Text, kTool);
+                   [](EmptyFindingListIsWellFormedState& state) {
+                       state.json = render({}, Format::Json, kTool);
+                       state.text = render({}, Format::Text, kTool);
                    })
             .When("both formats are rendered", [] {})
             .Then("the JSON envelope is well formed and the text is empty",
-                  [state] {
+                  [](EmptyFindingListIsWellFormedState& state) {
                       // A consumer must not have to special-case success; it parses the same shape
                       // either way.
                       mdux::spec::Checks checks;
-                      checks.expect(state->json ==
+                      checks.expect(state.json ==
                                         "{\n"
                                         "  \"tool\": \"mdux-fontbake\",\n"
                                         "  \"findings\": []\n"
                                         "}\n",
                                     "empty JSON envelope");
-                      checks.expect(state->text.empty(), "empty text output");
+                      checks.expect(state.text.empty(), "empty text output");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `jsonDiagnosticsEscape`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct JsonDiagnosticsEscapeState {
+        std::string json;
+};
+
 const mdux::spec::Register jsonDiagnosticsEscape{
     "JSON diagnostics escape what would otherwise break the envelope", "evidence-unit", [] {
-        struct State {
-            std::string json;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-json-diagnostics-escape")
+        return speclab::Test<JsonDiagnosticsEscapeState>("cli-json-diagnostics-escape")
             .Given("a finding with a quote, a newline, a tab and a backslash in it",
-                   [state] {
+                   [](JsonDiagnosticsEscapeState& state) {
                        const std::vector<Diagnostic> diagnostics{
                            Diagnostic{.file = "a\"b.toml",
                                       .line = 1,
@@ -483,47 +494,48 @@ const mdux::spec::Register jsonDiagnosticsEscape{
                                       .message = "line one\nline two\ttabbed",
                                       .fixHint = "use a backslash: \\"},
                        };
-                       state->json = render(diagnostics, Format::Json, kTool);
+                       state.json = render(diagnostics, Format::Json, kTool);
                    })
             .When("it is rendered as JSON", [] {})
             .Then("every character that would break the envelope is escaped",
-                  [state] {
+                  [](JsonDiagnosticsEscapeState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->json.find("\"file\": \"a\\\"b.toml\"") !=
+                      checks.expect(state.json.find("\"file\": \"a\\\"b.toml\"") !=
                                         std::string::npos,
                                     "the quote in the file name is escaped");
-                      checks.expect(state->json.find("line one\\nline two\\ttabbed") !=
+                      checks.expect(state.json.find("line one\\nline two\\ttabbed") !=
                                         std::string::npos,
                                     "the newline and tab are escaped");
-                      checks.expect(state->json.find("use a backslash: \\\\") !=
+                      checks.expect(state.json.find("use a backslash: \\\\") !=
                                         std::string::npos,
                                     "the backslash is escaped");
                       // A raw newline inside a JSON string would make the envelope unparseable.
-                      const std::size_t messageStart = state->json.find("\"message\":");
+                      const std::size_t messageStart = state.json.find("\"message\":");
                       if (messageStart == std::string::npos) {
                           throw speclab::core::AssertionFailure(
                               "the diagnostic message was not rendered",
                               std::source_location::current());
                       }
-                      checks.expect(state->json.find('\n', messageStart) >
-                                        state->json.find("tabbed"),
+                      checks.expect(state.json.find('\n', messageStart) >
+                                        state.json.find("tabbed"),
                                     "no raw newline inside the JSON string");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `textDiagnosticsFollowTheConvention`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct TextDiagnosticsFollowTheConventionState {
+        std::string text;
+};
+
 const mdux::spec::Register textDiagnosticsFollowTheConvention{
     "Text diagnostics follow the file:line:column: severity: [code] message convention",
     "evidence-unit", [] {
-        struct State {
-            std::string text;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-text-diagnostics-convention")
+        return speclab::Test<TextDiagnosticsFollowTheConventionState>("cli-text-diagnostics-convention")
             .Given("findings with, without and without any position",
-                   [state] {
+                   [](TextDiagnosticsFollowTheConventionState& state) {
                        const std::vector<Diagnostic> diagnostics{
                            Diagnostic{.file = "recipes/font/roboto-ui.toml",
                                       .line = 7,
@@ -547,14 +559,14 @@ const mdux::spec::Register textDiagnosticsFollowTheConvention{
                                       .message = "charset has no digits",
                                       .fixHint = ""},
                        };
-                       state->text = render(diagnostics, Format::Text, kTool);
+                       state.text = render(diagnostics, Format::Text, kTool);
                    })
             .When("it is rendered as text", [] {})
             .Then("every line follows the file:line:column: severity: [code] message convention",
-                  [state] {
+                  [](TextDiagnosticsFollowTheConventionState& state) {
                       mdux::spec::Checks checks;
                       checks.expect(
-                          state->text ==
+                          state.text ==
                               "recipes/font/roboto-ui.toml:7:22: error: [FB001] glyph budget exceeded\n"
                               "    fix: raise atlasWidth\n"
                               "recipes/font/roboto-ui.toml:3: note: [FB004] charset resolved from "
@@ -567,45 +579,47 @@ const mdux::spec::Register textDiagnosticsFollowTheConvention{
             .Execute();
     }};
 
+/// State shared by the steps of `severityNamesAreStable`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct SeverityNamesAreStableState {
+        std::array<std::string_view, 3> names;
+};
+
 const mdux::spec::Register severityNamesAreStable{
     "Severity names are stable", "evidence-unit", [] {
-        struct State {
-            std::array<std::string_view, 3> names;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-severity-names-are-stable")
+        return speclab::Test<SeverityNamesAreStableState>("cli-severity-names-are-stable")
             .Given("the severity enumerators",
-                   [state] {
+                   [](SeverityNamesAreStableState& state) {
                        // These strings are part of the published envelope; renaming one breaks
                        // consumers.
-                       state->names = {describe(Severity::Error), describe(Severity::Warning),
+                       state.names = {describe(Severity::Error), describe(Severity::Warning),
                                        describe(Severity::Note)};
                    })
             .When("each is described", [] {})
             .Then("the wire names stay the published ones",
-                  [state] {
+                  [](SeverityNamesAreStableState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->names[0] == "error", "Error");
-                      checks.expect(state->names[1] == "warning", "Warning");
-                      checks.expect(state->names[2] == "note", "Note");
+                      checks.expect(state.names[0] == "error", "Error");
+                      checks.expect(state.names[1] == "warning", "Warning");
+                      checks.expect(state.names[2] == "note", "Note");
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `exitStatusFailsOnlyOnError`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct ExitStatusFailsOnlyOnErrorState {
+        int none;
+        int warningOnly;
+        int withError;
+};
+
 const mdux::spec::Register exitStatusFailsOnlyOnError{
     "exitStatus fails only on an error", "evidence-unit", [] {
-        struct State {
-            int none;
-            int warningOnly;
-            int withError;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-exit-status-fails-only-on-error")
+        return speclab::Test<ExitStatusFailsOnlyOnErrorState>("cli-exit-status-fails-only-on-error")
             .Given("a clean run, a warning-only run and a run with an error",
-                   [state] {
+                   [](ExitStatusFailsOnlyOnErrorState& state) {
                         const std::vector<Diagnostic> warnings{
                             Diagnostic{.file = "a",
                                        .code = "",
@@ -630,19 +644,19 @@ const mdux::spec::Register exitStatusFailsOnlyOnError{
                                        .message = "e",
                                        .fixHint = ""},
                         };
-                       state->none = exitStatus({});
-                       state->warningOnly = exitStatus(warnings);
-                       state->withError = exitStatus(error);
+                       state.none = exitStatus({});
+                       state.warningOnly = exitStatus(warnings);
+                       state.withError = exitStatus(error);
                    })
             .When("each exit status is computed", [] {})
             .Then("only an error fails the run",
-                  [state] {
+                  [](ExitStatusFailsOnlyOnErrorState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->none == 0, "no findings");
+                      checks.expect(state.none == 0, "no findings");
                       // A warning alone must not fail a bake - only CI's byte-comparison decides
                       // that.
-                      checks.expect(state->warningOnly == 0, "warnings do not fail");
-                      checks.expect(state->withError == 1, "an error fails");
+                      checks.expect(state.warningOnly == 0, "warnings do not fail");
+                      checks.expect(state.withError == 1, "an error fails");
                       checks.raise();
                   })
             .Execute();

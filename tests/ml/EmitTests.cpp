@@ -40,35 +40,37 @@ void writeText(const std::filesystem::path& path, std::string_view text) {
     }
 }
 
+/// State shared by the steps of `committedPackageRenders`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct CommittedPackageRendersState {
+        std::vector<cli::Diagnostic>     diagnostics;
+        std::optional<emit::EmitOutputs> outputs;
+};
+
 const mdux::spec::Register committedPackageRenders{
     "The committed ECG package renders both generated forms",
     "evidence-unit",
     [] {
-        struct State {
-            std::vector<cli::Diagnostic>     diagnostics;
-            std::optional<emit::EmitOutputs> outputs;
-        };
-        auto state = std::make_shared<State>();
-        return speclab::Test("ml-emit-committed-package-renders")
+        return speclab::Test<CommittedPackageRendersState>("ml-emit-committed-package-renders")
             .Given("the committed ECG package", [] {})
             .When("the model emitter renders it",
-                  [state] {
-                      state->outputs = emit::renderModel(committedPackagePath(), state->diagnostics);
+                  [](CommittedPackageRendersState& state) {
+                      state.outputs = emit::renderModel(committedPackagePath(), state.diagnostics);
                   })
             .Then("a module, header, and compile-time schema assertion are present",
-                  [state] {
-                      if (!state->outputs.has_value()) {
+                  [](CommittedPackageRendersState& state) {
+                      if (!state.outputs.has_value()) {
                           throw speclab::core::AssertionFailure("renderModel() produced no output", std::source_location::current());
                       }
                       mdux::spec::Checks checks;
-                      checks.expect(state->diagnostics.empty(), "no diagnostics");
-                      checks.expect(state->outputs->stem == "model_ecg_demo", "the file stem");
-                      checks.expect(state->outputs->moduleName == "mdux.ml.generated.model_ecg_demo", "the module name");
-                      checks.expect(state->outputs->moduleSource.contains("static_assert(model.validate().has_value()"),
+                      checks.expect(state.diagnostics.empty(), "no diagnostics");
+                      checks.expect(state.outputs->stem == "model_ecg_demo", "the file stem");
+                      checks.expect(state.outputs->moduleName == "mdux.ml.generated.model_ecg_demo", "the module name");
+                      checks.expect(state.outputs->moduleSource.contains("static_assert(model.validate().has_value()"),
                                     "the module validates the emitted package at compile time");
-                      checks.expect(state->outputs->headerSource.contains("static_assert(model.validate().has_value()"),
+                      checks.expect(state.outputs->headerSource.contains("static_assert(model.validate().has_value()"),
                                     "the header validates the emitted package at compile time");
-                      checks.expect(!state->outputs->moduleSource.contains("weights.bin"), "weight bytes are not emitted");
+                      checks.expect(!state.outputs->moduleSource.contains("weights.bin"), "weight bytes are not emitted");
                       checks.raise();
                   })
             .Execute();
@@ -170,47 +172,51 @@ const mdux::spec::Register reservedIdentifierReported{"A model id that maps to a
                                                               .Execute();
                                                       }};
 
+/// State shared by the steps of `unreadablePackageReported`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct UnreadablePackageReportedState {
+        std::vector<cli::Diagnostic> diagnostics;
+        bool                         produced{true};
+};
+
 const mdux::spec::Register unreadablePackageReported{
     "An unreadable model package is diagnosed",
     "evidence-unit",
     [] {
-        struct State {
-            std::vector<cli::Diagnostic> diagnostics;
-            bool                         produced{true};
-        };
-        auto state = std::make_shared<State>();
-        return speclab::Test("ml-emit-unreadable-package")
+        return speclab::Test<UnreadablePackageReportedState>("ml-emit-unreadable-package")
             .Given("a package path that does not exist", [] {})
             .When("the emitter tries to read it",
-                  [state] {
-                      state->produced = emit::renderModel("does-not-exist/package.json", state->diagnostics).has_value();
+                  [](UnreadablePackageReportedState& state) {
+                      state.produced = emit::renderModel("does-not-exist/package.json", state.diagnostics).has_value();
                   })
             .Then("MLE001 is reported and nothing is rendered",
-                  [state] {
+                  [](UnreadablePackageReportedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(!state->produced, "no outputs");
-                      checks.expect(state->diagnostics.size() == 1, "one diagnostic");
-                      if (!state->diagnostics.empty()) {
-                          checks.expect(state->diagnostics.front().code == "MLE001", "the stable diagnostic code");
+                      checks.expect(!state.produced, "no outputs");
+                      checks.expect(state.diagnostics.size() == 1, "one diagnostic");
+                      if (!state.diagnostics.empty()) {
+                          checks.expect(state.diagnostics.front().code == "MLE001", "the stable diagnostic code");
                       }
                       checks.raise();
                   })
             .Execute();
     }};
 
+/// State shared by the steps of `identifierParity`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct IdentifierParityState {
+        std::size_t              compared{0};
+        std::vector<std::string> mismatches;
+};
+
 const mdux::spec::Register identifierParity{
     "The CMake and C++ model identifier rules agree",
     "evidence-unit",
     [] {
-        struct State {
-            std::size_t              compared{0};
-            std::vector<std::string> mismatches;
-        };
-        auto state = std::make_shared<State>();
-        return speclab::Test("ml-emit-identifier-parity")
+        return speclab::Test<IdentifierParityState>("ml-emit-identifier-parity")
             .Given("the identifier answers CMake wrote at configure time", [] {})
             .When("each is compared with identifierForModel()",
-                  [state] {
+                  [](IdentifierParityState& state) {
                       std::ifstream parity{MDUX_MODEL_IDENTIFIER_PARITY_FILE};
                       if (!parity.is_open()) {
                           throw speclab::core::AssertionFailure("the model identifier parity file could not be opened", std::source_location::current());
@@ -225,17 +231,17 @@ const mdux::spec::Register identifierParity{
                           const std::string fromCMake = line.substr(tab + 1);
                           const std::string fromCpp   = emit::identifierForModel(id);
                           if (fromCpp != fromCMake) {
-                              state->mismatches.push_back(std::format("'{}': CMake '{}', C++ '{}'", id, fromCMake, fromCpp));
+                              state.mismatches.push_back(std::format("'{}': CMake '{}', C++ '{}'", id, fromCMake, fromCpp));
                           }
-                          ++state->compared;
+                          ++state.compared;
                       }
                   })
             .Then("all configured examples match and the corpus is non-empty",
-                  [state] {
+                  [](IdentifierParityState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->compared == 8, "all eight identifiers were compared");
-                      checks.expect(state->mismatches.empty(), "the rules agree");
-                      for (const std::string& mismatch : state->mismatches) {
+                      checks.expect(state.compared == 8, "all eight identifiers were compared");
+                      checks.expect(state.mismatches.empty(), "the rules agree");
+                      for (const std::string& mismatch : state.mismatches) {
                           checks.expect(false, mismatch);
                       }
                       checks.raise();

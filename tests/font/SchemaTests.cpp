@@ -71,6 +71,14 @@ using fp::SchemaError;
 
 }  // namespace
 
+/// State shared by the steps of `packageSurvivesARoundTrip`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct PackageSurvivesARoundTripState {
+        fp::FontPackage original;
+        std::string     text;
+        std::optional<fp::FontPackage> parsed;
+};
+
 const mdux::spec::Register packageSurvivesARoundTrip{
     "A package written by this module reads back identical through it",
     "evidence-unit",
@@ -78,39 +86,32 @@ const mdux::spec::Register packageSurvivesARoundTrip{
         // The assertion the module exists for. If the writer and the reader disagreed about a
         // field's name, width or units, this is where it shows - and it shows as a difference in
         // the value rather than as an opinion about what the JSON should have looked like.
-        struct State {
-            fp::FontPackage original;
-            std::string     text;
-            std::optional<fp::FontPackage> parsed;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("font-schema-round-trip")
+        return speclab::Test<PackageSurvivesARoundTripState>("font-schema-round-trip")
             .Given("a valid package with glyphs, a charset and kerning",
-                   [state] {
-                       state->original = validPackage();
-                       state->original.kerning = {fp::KerningPair{.left = U'1', .right = U'2', .adjustment = -40}};
+                   [](PackageSurvivesARoundTripState& state) {
+                       state.original = validPackage();
+                       state.original.kerning = {fp::KerningPair{.left = U'1', .right = U'2', .adjustment = -40}};
                    })
             .When("it is written and parsed back",
-                  [state] {
-                      auto text = state->original.write();
+                  [](PackageSurvivesARoundTripState& state) {
+                      auto text = state.original.write();
                       if (!text.has_value()) {
                           throw speclab::core::AssertionFailure(std::format("write failed: {}", fp::describe(text.error())),
                                                                 std::source_location::current());
                       }
-                      state->text  = std::move(*text);
-                      auto parsed  = fp::FontPackage::parse(state->text);
+                      state.text  = std::move(*text);
+                      auto parsed  = fp::FontPackage::parse(state.text);
                       if (!parsed.has_value()) {
                           throw speclab::core::AssertionFailure(std::format("parse failed: {}", fp::describe(parsed.error())),
                                                                 std::source_location::current());
                       }
-                      state->parsed = std::move(*parsed);
+                      state.parsed = std::move(*parsed);
                   })
             .Then("every field survives, and writing it again produces the same bytes",
-                  [state] {
+                  [](PackageSurvivesARoundTripState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        a = state->original;
-                      const auto&        b = *state->parsed;
+                      const auto&        a = state.original;
+                      const auto&        b = *state.parsed;
                       checks.expect(a.id == b.id && a.unitsPerEm == b.unitsPerEm && a.pixelSize == b.pixelSize,
                                     "identity and metrics survive");
                       checks.expect(a.locales == b.locales, "locales survive");
@@ -137,7 +138,7 @@ const mdux::spec::Register packageSurvivesARoundTrip{
 
                       // Byte-level idempotence, which is what the committed artifact depends on.
                       auto again = b.write();
-                      checks.expect(again.has_value() && *again == state->text,
+                      checks.expect(again.has_value() && *again == state.text,
                                     "re-writing the parsed package produces identical bytes");
                       checks.raise();
                   })
@@ -344,6 +345,13 @@ const mdux::spec::Register parserRejectsOutOfRangeIntegers{
             .Execute();
     }};
 
+/// State shared by the steps of `committedPackageParses`. At namespace scope because MSVC 19.44
+/// cannot instantiate speclab::Test<State> for a function-local type.
+struct CommittedPackageParsesState {
+        std::string                    text;
+        std::optional<fp::FontPackage> package;
+};
+
 const mdux::spec::Register committedPackageParses{
     "The committed dejavu-ui package parses and permits exactly its charset",
     "evidence-unit",
@@ -351,15 +359,9 @@ const mdux::spec::Register committedPackageParses{
         // The end-to-end assertion: the artifact this repository ships is one this module accepts.
         // A schema that only ever validated its own fixtures would not have caught a baker writing
         // a field under a different name.
-        struct State {
-            std::string                    text;
-            std::optional<fp::FontPackage> package;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("font-schema-committed-package")
+        return speclab::Test<CommittedPackageParsesState>("font-schema-committed-package")
             .Given("generated/font/dejavu-ui/package.json",
-                   [state] {
+                   [](CommittedPackageParsesState& state) {
                        const std::filesystem::path path =
                            std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "font" / "dejavu-ui" / "package.json";
                        std::ifstream in{path, std::ios::binary};
@@ -367,22 +369,22 @@ const mdux::spec::Register committedPackageParses{
                            throw speclab::core::AssertionFailure(std::format("cannot open {}", path.string()),
                                                                  std::source_location::current());
                        }
-                       state->text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                       state.text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
                    })
             .When("it is parsed",
-                  [state] {
-                      auto package = fp::FontPackage::parse(state->text);
+                  [](CommittedPackageParsesState& state) {
+                      auto package = fp::FontPackage::parse(state.text);
                       if (!package.has_value()) {
                           throw speclab::core::AssertionFailure(
                               std::format("the committed package does not validate: {}", fp::describe(package.error())),
                               std::source_location::current());
                       }
-                      state->package = std::move(*package);
+                      state.package = std::move(*package);
                   })
             .Then("it carries printable-ASCII and the Latin-1 accented set (#318), with tabular digits",
-                  [state] {
+                  [](CommittedPackageParsesState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        package = *state->package;
+                      const auto&        package = *state.package;
                       checks.expect(package.id == "dejavu-ui", "id");
                       // 95 printable ASCII (U+0020..U+007E) + 85 of U+00AB..U+00FF + OE/oe. The
                       // exact total is pinned so a font swap that quietly dropped a composite is
