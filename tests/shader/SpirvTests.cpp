@@ -33,7 +33,7 @@ namespace shader = mdux::shader;
 // Header validation
 // ---------------------------------------------------------------------------
 
-/// A module that parses: the bytes fed in, and the reflection read back.
+/// A module `reflect()` accepts: the bytes fed in, and the reflection read back.
 struct ReflectedModuleState {
     std::vector<std::byte> module;
     std::optional<Reflection> reflection;
@@ -48,7 +48,9 @@ const mdux::spec::Register minimalReflects{
                       // Guards every rejection below: if this failed they could all pass for the
                       // wrong reason.
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the minimal module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the minimal module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("it reports the vertex stage, the main entry point and version 1.3",
@@ -127,7 +129,7 @@ const mdux::spec::Register shorterThanHeaderRejected{
             .Execute();
     }};
 
-/// A module that is refused: the bytes fed in, and the error parse() reported.
+/// A module that is refused: the bytes fed in, and the error `reflect()` reported.
 ///
 /// The error is optional so that an assertion cannot pass against a field no step wrote: zero is
 /// `ParseError::Empty`, a real enumerator, and one scenario below asserts exactly that value.
@@ -394,7 +396,9 @@ const mdux::spec::Register fragmentModuleReflects{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the fragment module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the fragment module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("its stage is Fragment",
@@ -415,7 +419,9 @@ const mdux::spec::Register nonDefaultEntryPointPreserved{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the entry point name is preserved",
@@ -440,7 +446,9 @@ const mdux::spec::Register entryPointNameMultipleOfFourDecodes{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the name decodes to abcd",
@@ -469,7 +477,9 @@ const mdux::spec::Register combinedImageSamplerReflected{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the sampler is reported with its set, binding, kind, count and stage",
@@ -504,7 +514,9 @@ const mdux::spec::Register arrayBindingElementCountOnce{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("it reports the count once, on the single descriptor",
@@ -544,7 +556,9 @@ const mdux::spec::Register uniformBlockReflected{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the block is reported as a UniformBuffer",
@@ -674,7 +688,9 @@ const mdux::spec::Register descriptorsOrderedBySetThenBinding{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the descriptors are sorted by set then binding",
@@ -714,7 +730,9 @@ const mdux::spec::Register vec4PushConstantReflected{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the block is reported at offset 0 with size 16 and the vertex stage",
@@ -761,7 +779,9 @@ const mdux::spec::Register pushConstantSizeFollowsMemberOffsets{
             .When("it is reflected",
                   [](ReflectedModuleState& state) {
                       auto result = reflect(state.module);
-                      Assertions::require(result.has_value(), "the module was rejected: {}", describe(result.error()));
+                      if (!result.has_value()) {
+                          Assertions::fail(std::format("the module was rejected: {}", describe(result.error())));
+                      }
                       state.reflection = std::move(*result);
                   })
             .Then("the block is reported at offset 0 with size 32",
