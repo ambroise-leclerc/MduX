@@ -9,7 +9,9 @@ import mdux.tools.cli;
 import mdux.tools.imagebake;
 #include "../framework/SpecLabBridge.hpp"
 
+namespace {
 using speclab::core::Assertions;
+}  // namespace
 
 const mdux::spec::Register imageBakerReproducesCommittedPackage{
     "The image baker reproduces the committed QOI package",

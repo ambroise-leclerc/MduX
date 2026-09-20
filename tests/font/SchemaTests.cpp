@@ -71,13 +71,15 @@ using fp::SchemaError;
 
 }  // namespace
 
+namespace {
 /// State shared by the steps of `packageSurvivesARoundTrip`. At namespace scope because MSVC 19.44
 /// cannot instantiate speclab::Test<State> for a function-local type.
 struct PackageSurvivesARoundTripState {
-        fp::FontPackage original;
-        std::string     text;
-        std::optional<fp::FontPackage> parsed;
+    fp::FontPackage original;
+    std::string     text;
+    std::optional<fp::FontPackage> parsed;
 };
+}  // namespace
 
 const mdux::spec::Register packageSurvivesARoundTrip{
     "A package written by this module reads back identical through it",
@@ -345,12 +347,14 @@ const mdux::spec::Register parserRejectsOutOfRangeIntegers{
             .Execute();
     }};
 
+namespace {
 /// State shared by the steps of `committedPackageParses`. At namespace scope because MSVC 19.44
 /// cannot instantiate speclab::Test<State> for a function-local type.
 struct CommittedPackageParsesState {
-        std::string                    text;
-        std::optional<fp::FontPackage> package;
+    std::string                    text;
+    std::optional<fp::FontPackage> package;
 };
+}  // namespace
 
 const mdux::spec::Register committedPackageParses{
     "The committed dejavu-ui package parses and permits exactly its charset",
