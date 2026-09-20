@@ -52,9 +52,7 @@ namespace mx = mdux::examples;
         std::ifstream in{path, std::ios::binary};
         std::string   text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
         auto          parsed = mdux::font::FontPackage::parse(text);
-        if (!parsed) {
-            throw speclab::core::AssertionFailure("the committed font did not parse", std::source_location::current());
-        }
+        speclab::core::Assertions::require(parsed.has_value(), "the committed font did not parse");
         return std::move(*parsed);
     }();
     return font;

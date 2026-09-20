@@ -30,7 +30,7 @@ namespace toml = mdux::tools::toml;
 // ---------------------------------------------------------------------------
 
 [[noreturn]] inline void fail(std::string message, std::source_location where = std::source_location::current()) {
-    throw speclab::core::AssertionFailure(std::move(message), where);
+    speclab::core::Assertions::fail(message, where);
 }
 
 [[nodiscard]] inline const char* env(const char* name) {

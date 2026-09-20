@@ -53,6 +53,8 @@ namespace {
 namespace ms = mdux::medui;
 namespace mv = mdux::verify;
 
+using speclab::core::Assertions;
+
 using mdux::core::ColorRgba8;
 using mdux::core::Px;
 using mdux::test::verify::Canvas;
@@ -238,9 +240,7 @@ constexpr std::uint32_t glyphRows  = 6;
 
 [[nodiscard]] const ms::CompiledNode& titleNode() {
     const ms::CompiledNode* node = labelledScreen.find("title");
-    if (node == nullptr) {
-        throw speclab::core::AssertionFailure("the fixture screen lost its label", std::source_location::current());
-    }
+    Assertions::require(node != nullptr, "the fixture screen lost its label");
     return *node;
 }
 
@@ -255,7 +255,7 @@ constexpr mv::RenderScope approvedLocale = mv::RenderScope::forLocale(localeTag)
 expect(const ms::CompiledNode& node, std::span<const std::byte> records, const mdux::font::FontPackage& font, std::span<const std::byte> atlas) {
     auto made = mv::TextExpectation::createSynthetic(node, approvedLocale, records, font, atlas, ground);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the text expectation was refused: {}", mv::describe(made.error())), std::source_location::current());
+        Assertions::fail(std::format("the text expectation was refused: {}", mv::describe(made.error())));
     }
     return *made;
 }
@@ -315,9 +315,7 @@ struct BoundArtifacts {
         };
 
         auto written = text.write();
-        if (!written.has_value()) {
-            throw speclab::core::AssertionFailure("the fixture text package would not serialise", std::source_location::current());
-        }
+        Assertions::require(written.has_value(), "the fixture text package would not serialise");
         packageJson = std::move(*written);
         packageBytes.assign(std::as_bytes(std::span{packageJson}).begin(), std::as_bytes(std::span{packageJson}).end());
 
@@ -333,9 +331,7 @@ struct BoundArtifacts {
 
     [[nodiscard]] const ms::CompiledNode& title() const {
         const ms::CompiledNode* node = screen.find("title");
-        if (node == nullptr) {
-            throw speclab::core::AssertionFailure("the fixture screen lost its label", std::source_location::current());
-        }
+        Assertions::require(node != nullptr, "the fixture screen lost its label");
         return *node;
     }
 
@@ -343,8 +339,7 @@ struct BoundArtifacts {
     [[nodiscard]] ms::TextBinding binding() const {
         auto made = ms::TextBinding::create(screen, font, text, packageBytes, runs);
         if (!made.has_value()) {
-            throw speclab::core::AssertionFailure(std::format("the fixture artifacts were refused: {}", ms::describe(made.error())),
-                                                  std::source_location::current());
+            Assertions::fail(std::format("the fixture artifacts were refused: {}", ms::describe(made.error())));
         }
         return *made;
     }
@@ -614,8 +609,7 @@ const mdux::spec::Register aFaintEdgeOverACompositedGroundStillHolds{
 
                       auto made = mv::TextExpectation::createSynthetic(faintNode, approvedLocale, records, font, atlas, field, 1);
                       if (!made.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("the expectation was refused: {}", mv::describe(made.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("the expectation was refused: {}", mv::describe(made.error())));
                       }
                       const mv::TextExpectation run = *made;
 

@@ -44,6 +44,8 @@ namespace {
 namespace ms = mdux::medui;
 namespace mv = mdux::verify;
 
+using speclab::core::Assertions;
+
 using mdux::core::ColorRgba8;
 using mdux::core::Px;
 using mdux::test::verify::Canvas;
@@ -73,8 +75,7 @@ constexpr ColorRgba8 ground{.r = 10, .g = 10, .b = 10, .a = 255};
 [[nodiscard]] mv::RawImageExpectation withBaseline(ms::NodeRect roi, mdux::evidence::Digest baseline) {
     auto made = mv::RawImageExpectation::createWithBaseline("readout", mv::RenderScope::localeFree(), roi, baseline);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::string{"the expectation was refused: "} + std::string{mv::describe(made.error())},
-                                              std::source_location::current());
+        Assertions::fail(std::format("the expectation was refused: {}", mv::describe(made.error())));
     }
     return *made;
 }
@@ -82,8 +83,7 @@ constexpr ColorRgba8 ground{.r = 10, .g = 10, .b = 10, .a = 255};
 [[nodiscard]] mv::RawImageExpectation noBaseline(ms::NodeRect roi) {
     auto made = mv::RawImageExpectation::create("readout", mv::RenderScope::localeFree(), roi);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::string{"the expectation was refused: "} + std::string{mv::describe(made.error())},
-                                              std::source_location::current());
+        Assertions::fail(std::format("the expectation was refused: {}", mv::describe(made.error())));
     }
     return *made;
 }
@@ -217,9 +217,7 @@ const mdux::spec::Register theDigestIsRowMajorAndStrideIndependent{
                       }
 
                       const auto packed = mv::FramebufferView::createPacked(pixels, width, height);
-                      if (!packed.has_value()) {
-                          throw speclab::core::AssertionFailure("the packed view was refused", std::source_location::current());
-                      }
+                      Assertions::require(packed.has_value(), "the packed view was refused");
 
                       // The same pixels with 8 padding bytes per row.
                       constexpr std::size_t paddedStride = widthSz * 4 + 8;
@@ -236,8 +234,7 @@ const mdux::spec::Register theDigestIsRowMajorAndStrideIndependent{
                       }
                       const auto padded = mv::FramebufferView::create(paddedBytes, width, height, paddedStride, mv::PixelFormat::Rgba8Unorm);
                       if (!padded.has_value()) {
-                          throw speclab::core::AssertionFailure(std::string{"the padded view was refused: "} + std::string{mv::describe(padded.error())},
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("the padded view was refused: {}", mv::describe(padded.error())));
                       }
 
                       // The digest of the whole image, packed.
