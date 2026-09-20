@@ -33,6 +33,8 @@ import mdux.text.raster;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace rr = mdux::text::raster;
 using rr::RasterError;
 
@@ -87,8 +89,7 @@ struct Built {
 [[nodiscard]] rr::CoverageBitmap mustRasterise(const rr::RasterRequest& request, std::string_view what) {
     auto result = rr::rasterise(request);
     if (!result.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("{} was rejected: {}", what, rr::describe(result.error())),
-                                              std::source_location::current());
+        Assertions::fail(std::format("{} was rejected: {}", what, rr::describe(result.error())));
     }
     return std::move(*result);
 }
@@ -99,6 +100,12 @@ struct Built {
 // Coverage the assertion can derive rather than record.
 // ---------------------------------------------------------------------------
 
+/// What a rasterisation scenario carries: the outline it built, and the bitmap it produced.
+struct RasteredOutlineState {
+    Built              built;
+    rr::CoverageBitmap bitmap;
+};
+
 const mdux::spec::Register solidSquareIsFullyCovered{
     "A pixel-aligned square rasterises to solid 255, reaching full coverage without a clamp",
     "evidence-unit",
@@ -107,19 +114,13 @@ const mdux::spec::Register solidSquareIsFullyCovered{
         // result is entirely inside the contour. This is the scenario that proves 255 is
         // *reachable*: if the normalisation divided by anything larger than the true accumulator
         // ceiling, full coverage would read 254 and nothing else here would notice.
-        struct State {
-            Built                  built;
-            rr::CoverageBitmap     bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-solid-square")
-            .Given("a square covering exactly 4x4 pixels", [state] { state->built = contours({box(0, 0, 2048, 2048)}); })
-            .When("it is rasterised", [state] { state->bitmap = mustRasterise(requestFor(state->built, 4), "a 4x4 square"); })
+        return speclab::Test<RasteredOutlineState>("text-raster-solid-square")
+            .Given("a square covering exactly 4x4 pixels", [](RasteredOutlineState& state) { state.built = contours({box(0, 0, 2048, 2048)}); })
+            .When("it is rasterised", [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 4), "a 4x4 square"); })
             .Then("every pixel is 255 and the bitmap is 4x4",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       checks.expect(b.width == 4 && b.height == 4, std::format("4x4 bitmap{}", render(b)));
                       if (b.width == 4 && b.height == 4) {
                           bool allFull = true;
@@ -143,21 +144,15 @@ const mdux::spec::Register halfCoveredColumnIsHalfValue{
         // 1024 is 1 pixel tall. Column 0 is fully inside; column 1 is covered for exactly half
         // its width. Half of the 4096 accumulator ceiling is 2048, and 2048 * 255 / 4096 == 127
         // by integer division - derived, not recorded.
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-half-covered-column")
+        return speclab::Test<RasteredOutlineState>("text-raster-half-covered-column")
             .Given("a rectangle 1.5 pixels wide and 1 pixel tall",
-                   [state] { state->built = contours({box(0, 0, 1536, 1024)}); })
+                   [](RasteredOutlineState& state) { state.built = contours({box(0, 0, 1536, 1024)}); })
             .When("it is rasterised at 2 pixels per em",
-                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 2), "a 1.5x1 rectangle"); })
+                  [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 2), "a 1.5x1 rectangle"); })
             .Then("column 0 is 255 and column 1 is 127",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       checks.expect(b.width == 2 && b.height == 1, std::format("2x1 bitmap{}", render(b)));
                       if (b.width == 2 && b.height == 1) {
                           checks.expect(at(b, 0, 0) == 255, std::format("full column is 255{}", render(b)));
@@ -175,23 +170,17 @@ const mdux::spec::Register counterContourLeavesHole{
         // Two nested squares wound in opposite directions. Under nonzero winding the inner one
         // cancels the outer and leaves a hole; under even-odd it would too, so the discriminating
         // half of this scenario is its sibling below, where both wind the same way.
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-counter-contour-hole")
+        return speclab::Test<RasteredOutlineState>("text-raster-counter-contour-hole")
             .Given("a 4x4 square with a counter-wound 2x2 square inside it",
-                   [state] {
-                       state->built = contours({box(0, 0, 2048, 2048), box(512, 512, 1536, 1536, /*clockwise=*/true)});
+                   [](RasteredOutlineState& state) {
+                       state.built = contours({box(0, 0, 2048, 2048), box(512, 512, 1536, 1536, /*clockwise=*/true)});
                    })
             .When("it is rasterised at 4 pixels per em",
-                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 4), "a square with a counter"); })
+                  [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 4), "a square with a counter"); })
             .Then("the middle is empty and the border is solid",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       checks.expect(b.width == 4 && b.height == 4, std::format("4x4 bitmap{}", render(b)));
                       if (b.width == 4 && b.height == 4) {
                           checks.expect(at(b, 1, 1) == 0 && at(b, 2, 1) == 0 && at(b, 1, 2) == 0 && at(b, 2, 2) == 0,
@@ -212,21 +201,15 @@ const mdux::spec::Register sameWoundContourFillsSolid{
         // still punch a hole here; nonzero must not. Real fonts rely on this - an 'o' works only
         // because its counter is wound against the bowl, and a glyph whose contours happen to
         // agree must stay solid.
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-same-wound-solid")
+        return speclab::Test<RasteredOutlineState>("text-raster-same-wound-solid")
             .Given("a 4x4 square with a same-wound 2x2 square inside it",
-                   [state] { state->built = contours({box(0, 0, 2048, 2048), box(512, 512, 1536, 1536)}); })
+                   [](RasteredOutlineState& state) { state.built = contours({box(0, 0, 2048, 2048), box(512, 512, 1536, 1536)}); })
             .When("it is rasterised at 4 pixels per em",
-                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 4), "two same-wound squares"); })
+                  [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 4), "two same-wound squares"); })
             .Then("the result is solid, with no hole in the middle",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       if (b.width == 4 && b.height == 4) {
                           checks.expect(at(b, 1, 1) == 255 && at(b, 2, 2) == 255,
                                         std::format("the centre stays filled{}", render(b)));
@@ -246,23 +229,17 @@ const mdux::spec::Register triangleCornerIsPartial{
         // running from (4,0) to (0,4) in pixel space. That line bisects every pixel it crosses,
         // so each diagonal pixel is covered exactly half and reads 2048 * 255 / 4096 == 127 -
         // derivable, so this asserts the value rather than merely that it is "somewhere between".
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-triangle-corner")
+        return speclab::Test<RasteredOutlineState>("text-raster-triangle-corner")
             .Given("a right triangle filling the lower-left half of a 4x4 box",
-                   [state] {
-                       state->built = contours({std::vector<rr::OutlinePoint>{{0, 0, true}, {2048, 0, true}, {0, 2048, true}}});
+                   [](RasteredOutlineState& state) {
+                       state.built = contours({std::vector<rr::OutlinePoint>{{0, 0, true}, {2048, 0, true}, {0, 2048, true}}});
                    })
             .When("it is rasterised at 4 pixels per em",
-                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 4), "a triangle"); })
+                  [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 4), "a triangle"); })
             .Then("the right-angle corner is solid, the opposite corner empty, the diagonal partial",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       checks.expect(b.width == 4 && b.height == 4, std::format("4x4 bitmap{}", render(b)));
                       if (b.width == 4 && b.height == 4) {
                           // Bitmap row 3 is the bottom of the glyph, row 0 the top.
@@ -285,6 +262,13 @@ const mdux::spec::Register triangleCornerIsPartial{
             .Execute();
     }};
 
+struct QuadraticCurveApexIsExactState {
+    Built              single;
+    Built              implied;
+    rr::CoverageBitmap singleBitmap;
+    rr::CoverageBitmap impliedBitmap;
+};
+
 const mdux::spec::Register quadraticCurveApexIsExact{
     "A quadratic curve reaches exactly its computed apex, and implied midpoints do too",
     "evidence-unit",
@@ -303,31 +287,23 @@ const mdux::spec::Register quadraticCurveApexIsExact{
         //
         // The curve needs 6 segments at this size, so it is well past the >= 3 threshold where
         // the defect appears at all.
-        struct State {
-            Built              single;
-            Built              implied;
-            rr::CoverageBitmap singleBitmap;
-            rr::CoverageBitmap impliedBitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-quadratic-apex")
+        return speclab::Test<QuadraticCurveApexIsExactState>("text-raster-quadratic-apex")
             .Given("a box whose right side bulges out on one quadratic, and one built from two adjacent off-curve points",
-                   [state] {
-                       state->single = contours({std::vector<rr::OutlinePoint>{
+                   [](QuadraticCurveApexIsExactState& state) {
+                       state.single = contours({std::vector<rr::OutlinePoint>{
                            {0, 0, true}, {1024, 0, true}, {2048, 1024, false}, {1024, 2048, true}, {0, 2048, true}}});
-                       state->implied = contours({std::vector<rr::OutlinePoint>{
+                       state.implied = contours({std::vector<rr::OutlinePoint>{
                            {0, 0, true}, {1024, 0, true}, {2048, 512, false}, {2048, 1536, false}, {1024, 2048, true}, {0, 2048, true}}});
                    })
             .When("both are rasterised at 8 pixels per em",
-                  [state] {
-                      state->singleBitmap  = mustRasterise(requestFor(state->single, 8), "a bulging box");
-                      state->impliedBitmap = mustRasterise(requestFor(state->implied, 8), "an implied-midpoint box");
+                  [](QuadraticCurveApexIsExactState& state) {
+                      state.singleBitmap  = mustRasterise(requestFor(state.single, 8), "a bulging box");
+                      state.impliedBitmap = mustRasterise(requestFor(state.implied, 8), "an implied-midpoint box");
                   })
             .Then("the single-control curve stops exactly at its apex, and the implied one fills too",
-                  [state] {
+                  [](QuadraticCurveApexIsExactState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        single = state->singleBitmap;
+                      const auto&        single = state.singleBitmap;
                       // The derived assertion. 7 here means the subdivision regressed.
                       checks.expect(single.width == 6 && single.height == 8,
                                     std::format("apex at exactly 6 px wide, 8 tall{}", render(single)));
@@ -339,7 +315,7 @@ const mdux::spec::Register quadraticCurveApexIsExact{
                                         std::format("the curved edge is antialiased{}", render(single)));
                       }
 
-                      const auto& implied = state->impliedBitmap;
+                      const auto& implied = state.impliedBitmap;
                       checks.expect(implied.width >= 6 && implied.height == 8,
                                     std::format("the implied-midpoint curve fills a comparable box{}", render(implied)));
                       if (implied.width >= 6 && implied.height == 8) {
@@ -360,23 +336,20 @@ const mdux::spec::Register blankOutlineYieldsEmptyBitmap{
         // The space character's shape, once S4 feeds a real font through: a contour exists but is
         // degenerate. An atlas packer must be able to tell "nothing to pack" from "one blank
         // pixel to pack", so the distinction is part of the contract rather than a detail.
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-blank-outline")
+        return speclab::Test<RasteredOutlineState>("text-raster-blank-outline")
             .Given("a contour whose points are collinear along a horizontal line",
-                   [state] {
-                       state->built = contours({std::vector<rr::OutlinePoint>{{0, 0, true}, {1024, 0, true}, {2048, 0, true}}});
+                   [](RasteredOutlineState& state) {
+                       state.built = contours({std::vector<rr::OutlinePoint>{{0, 0, true}, {1024, 0, true}, {2048, 0, true}}});
                    })
-            .When("it is rasterised", [state] { state->bitmap = mustRasterise(requestFor(state->built, 8), "a collinear contour"); })
+            .When("it is rasterised",
+                  [](RasteredOutlineState& state) {
+                      state.bitmap = mustRasterise(requestFor(state.built, 8), "a collinear contour");
+                  })
             .Then("the bitmap is empty",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->bitmap.width == 0 && state->bitmap.height == 0, "zero extent");
-                      checks.expect(state->bitmap.coverage.empty(), "no coverage bytes");
+                      checks.expect(state.bitmap.width == 0 && state.bitmap.height == 0, "zero extent");
+                      checks.expect(state.bitmap.coverage.empty(), "no coverage bytes");
                       checks.raise();
                   })
             .Execute();
@@ -500,6 +473,10 @@ const mdux::spec::Register rasterRejections{
             .Execute();
     }};
 
+struct SweepWorkBoundIsEnforcedState {
+    Built built;
+};
+
 const mdux::spec::Register sweepWorkBoundIsEnforced{
     "An outline whose sweep cost explodes is refused before the sweep, not merely before allocation",
     "evidence-unit",
@@ -520,27 +497,22 @@ const mdux::spec::Register sweepWorkBoundIsEnforced{
         //
         // That combination is the point: the request is comfortably legal by area and is refused
         // only because the sweep it asks for is not.
-        struct State {
-            Built built;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-sweep-work-bound")
+        return speclab::Test<SweepWorkBoundIsEnforcedState>("text-raster-sweep-work-bound")
             .Given("a comb of ~1200 full-height strokes at the maximum pixel size",
-                   [state] {
+                   [](SweepWorkBoundIsEnforcedState& state) {
                        std::vector<rr::OutlinePoint> points;
                        points.reserve(2400);
                        for (std::int32_t i = 0; i < 1200; ++i) {
                            points.push_back({i, 0, true});
                            points.push_back({i, 2048, true});
                        }
-                       state->built = contours({points});
+                       state.built = contours({points});
                    })
             .When("nothing", [] {})
             .Then("it is refused with OutlineTooComplex, and a normal glyph at the same size still works",
-                  [state] {
+                  [](SweepWorkBoundIsEnforcedState& state) {
                       mdux::spec::Checks checks;
-                      auto              result = rr::rasterise(requestFor(state->built, rr::maxPixelSize));
+                      auto              result = rr::rasterise(requestFor(state.built, rr::maxPixelSize));
                       checks.expect(!result.has_value(), "the comb is refused");
                       if (!result.has_value()) {
                           checks.expect(result.error() == RasterError::OutlineTooComplex,
@@ -578,21 +550,15 @@ const mdux::spec::Register wideFillIsBoundedByBitmapArea{
         // well under a second. A regression to per-pixel writes would show up here as a timeout
         // rather than a wrong answer, which is why the assertions below also check the coverage:
         // a fast wrong answer would otherwise pass.
-        struct State {
-            Built              built;
-            rr::CoverageBitmap bitmap;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-wide-fill-bounded")
+        return speclab::Test<RasteredOutlineState>("text-raster-wide-fill-bounded")
             .Given("a rectangle 16384 pixels wide and 512 tall",
-                   [state] { state->built = contours({box(0, 0, 65536, 2048)}); })
+                   [](RasteredOutlineState& state) { state.built = contours({box(0, 0, 65536, 2048)}); })
             .When("it is rasterised at 512 pixels per em",
-                  [state] { state->bitmap = mustRasterise(requestFor(state->built, 512), "a very wide rectangle"); })
+                  [](RasteredOutlineState& state) { state.bitmap = mustRasterise(requestFor(state.built, 512), "a very wide rectangle"); })
             .Then("it is the expected extent and solid throughout",
-                  [state] {
+                  [](RasteredOutlineState& state) {
                       mdux::spec::Checks checks;
-                      const auto&        b = state->bitmap;
+                      const auto&        b = state.bitmap;
                       checks.expect(b.width == 16384 && b.height == 512,
                                     std::format("16384x512, got {}x{}", b.width, b.height));
                       if (b.width == 16384 && b.height == 512) {
@@ -632,6 +598,12 @@ constexpr std::uint32_t determinismPixelSize = 37;
                      std::vector<rr::OutlinePoint>{{701, 743, true}, {683, 1201, true}, {1163, 1231, true}, {1181, 761, true}}});
 }
 
+struct RasterDeterminismState {
+    Built                    built;
+    rr::CoverageBitmap       bitmap;
+    std::array<char, 64>     hex{};
+};
+
 const mdux::spec::Register rasterDeterminism{
     "The reference glyph rasterises to a frozen digest on every toolchain",
     "determinism",
@@ -659,31 +631,24 @@ const mdux::spec::Register rasterDeterminism{
          * coverage that is derivable by hand, so a change that makes the rasteriser consistently
          * *wrong* fails there rather than silently re-freezing here.
          */
-        struct State {
-            Built                    built;
-            rr::CoverageBitmap       bitmap;
-            std::array<char, 64>     hex{};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("text-raster-determinism-crossToolchain")
-            .Given("the reference glyph", [state] { state->built = referenceGlyph(); })
+        return speclab::Test<RasterDeterminismState>("text-raster-determinism-crossToolchain")
+            .Given("the reference glyph", [](RasterDeterminismState& state) { state.built = referenceGlyph(); })
             .When("it is rasterised and its coverage digested",
-                  [state] {
-                      state->bitmap = mustRasterise(requestFor(state->built, determinismPixelSize), "the reference glyph");
+                  [](RasterDeterminismState& state) {
+                      state.bitmap = mustRasterise(requestFor(state.built, determinismPixelSize), "the reference glyph");
                       const auto digest =
-                          mdux::evidence::sha256(std::as_bytes(std::span<const std::uint8_t>{state->bitmap.coverage}));
-                      state->hex = mdux::evidence::toHex(digest);
+                          mdux::evidence::sha256(std::as_bytes(std::span<const std::uint8_t>{state.bitmap.coverage}));
+                      state.hex = mdux::evidence::toHex(digest);
                   })
             .Then("the digest and the bitmap geometry match the frozen values",
-                  [state] {
+                  [](RasterDeterminismState& state) {
                       mdux::spec::Checks checks;
-                      const std::string_view actual{state->hex.data(), state->hex.size()};
+                      const std::string_view actual{state.hex.data(), state.hex.size()};
                       // Geometry is asserted alongside the digest so a failure says which of the
                       // two moved: a size change is a different bug from a coverage change, and
                       // the digest alone cannot tell them apart.
-                      checks.expect(state->bitmap.width == 29 && state->bitmap.height == 32,
-                                    std::format("bitmap is 29x32, got {}x{}", state->bitmap.width, state->bitmap.height));
+                      checks.expect(state.bitmap.width == 29 && state.bitmap.height == 32,
+                                    std::format("bitmap is 29x32, got {}x{}", state.bitmap.width, state.bitmap.height));
                       checks.expect(actual == frozenDigest,
                                     std::format("coverage digest\n  expected {}\n  actual   {}", frozenDigest, actual));
                       checks.raise();
