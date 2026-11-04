@@ -442,7 +442,7 @@ const mdux::spec::Register writeLeavesUnchangedUntouched{
                           std::filesystem::file_size(state.out.path() / "test_ui.cppm");
                       const bool rewrote =
                           write(*state.outputs, state.out.path(), state.diagnostics);
-                      Assertions::require(static_cast<bool>(rewrote), "write() reported a failure on the second pass");
+                      Assertions::require(rewrote,"write() reported a failure on the second pass");
                       state.sizeStable =
                           (std::filesystem::file_size(state.out.path() / "test_ui.cppm") ==
                            before);

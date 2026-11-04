@@ -67,7 +67,9 @@ namespace cli = mdux::tools::cli;
 /// The fixture recipe, parsed. Every scenario that compiles starts here.
 [[nodiscard]] md::Recipe textlessRecipe(std::vector<cli::Diagnostic>& diagnostics) {
     const std::optional<md::Recipe> recipe = md::parseRecipe(fixture("textless-screen.toml"), "tests/medui/fixtures/textless-screen.toml", diagnostics);
-    Assertions::require(recipe.has_value(), "the fixture recipe did not parse: {}", firstCode(diagnostics));
+    if (!recipe.has_value()) {
+        Assertions::fail(std::format("the fixture recipe did not parse: {}", firstCode(diagnostics)));
+    }
     return *recipe;
 }
 

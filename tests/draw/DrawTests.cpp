@@ -13,8 +13,9 @@
  * expectation (`mdux::spec::Checks`). Sizes that guard indexing stay hard, so a wrong size fails
  * the scenario rather than letting the checks read out of bounds.
  *
- * This suite is the pattern for #365. A hard failure is `Assertions::require(static_cast<bool>(cond), "fmt", args)`,
- * which formats only on failure and captures the caller's location; the helpers below keep an
+ * This suite is the pattern for #365. A hard failure is `Assertions::require(cond, "fmt", args)`,
+ * which formats only on failure and captures the caller's location (`cond` must be a `bool`; a
+ * stream or `std::expected` needs `static_cast<bool>` first); the helpers below keep an
  * `if` and call `Assertions::fail`, because their message reads `result.error()`, which require()
  * would evaluate on the success path too. Step state is a `speclab::Test<State>`: each state
  * struct sits at namespace scope just above its scenario, because MSVC 19.44 cannot instantiate
