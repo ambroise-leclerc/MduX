@@ -261,9 +261,10 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `Assertions::require(cond, "fmt", args)` for a hard failure, `Assertions::fail` when the message
   must read a failure payload that `require` would evaluate on the success path, and
   `mdux::spec::Checks` for collected expectations. `tests/draw/DrawTests.cpp` is the reference
-  pattern; the conversion (#365) is complete. What remains on `make_shared` is deliberate:
-  `tests/spec/BridgeSpec.cpp`, which must construct the failure the framework is tested against,
-  and helpers that forward their caller's `std::source_location`.
+  pattern; the conversion (#365) is complete. `tests/spec/BridgeSpec.cpp` deliberately retains
+  `make_shared` for shared state across its bridge scenarios, including failure propagation.
+  Separately, helpers that forward their caller's `std::source_location` retain explicit failure
+  calls to preserve that location; these helpers do not use `make_shared`.
 - Tests: twenty-eight executables. Nine on the in-repository MduXTest framework (`core_tests`,
   `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
   `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and eighteen on SpecLab
