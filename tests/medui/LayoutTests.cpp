@@ -18,6 +18,8 @@ import mdux.tools.medui.parser;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
@@ -30,10 +32,7 @@ static_assert(std::integral<decltype(md::LayoutRect::height)>);
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-                                              std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -43,7 +42,7 @@ static_assert(std::integral<decltype(md::LayoutRect::height)>);
 [[nodiscard]] md::LayoutResult layout(std::string_view source, std::int64_t width, std::int64_t height) {
     md::ParseResult parsed = md::parse(source, "layout.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("layout test source did not parse", std::source_location::current());
+        Assertions::fail("layout test source did not parse");
     }
     return md::resolveLayout(*parsed.screen, "layout.medui", {.surfaceWidth = width, .surfaceHeight = height});
 }

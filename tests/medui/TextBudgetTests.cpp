@@ -38,6 +38,8 @@ import mdux.tools.medui.textbudget;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md   = mdux::tools::medui;
 namespace cli  = mdux::tools::cli;
 namespace font = mdux::font;
@@ -219,12 +221,10 @@ struct ApprovedText {
 [[nodiscard]] md::LayoutResult layoutOf(std::string_view source) {
     md::ParseResult parsed = md::parse(source, "budget.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("text budget test source did not parse", std::source_location::current());
+        Assertions::fail("text budget test source did not parse");
     }
     md::LayoutResult resolved = md::resolveLayout(*parsed.screen, "budget.medui", {.surfaceWidth = 200, .surfaceHeight = 100});
-    if (!resolved.ok()) {
-        throw speclab::core::AssertionFailure("text budget test source did not resolve", std::source_location::current());
-    }
+    Assertions::require(resolved.ok(), "text budget test source did not resolve");
     return resolved;
 }
 
