@@ -28,10 +28,6 @@ namespace {
 
 using namespace mdux::tools::shaderemit;
 using namespace mdux::test::spirv;
-// These scenarios keep the `std::make_shared<State>` idiom rather than `speclab::Test<State>`:
-// their state holds a `TempDir`, which deletes its copy constructor and so has no move
-// constructor, and `Test<State>` materialises and moves its initial value even when the state is
-// only default-constructed (ambroise-leclerc/SpecLab#32). The assertions are converted.
 using speclab::core::Assertions;
 
 namespace cli = mdux::tools::cli;
@@ -129,36 +125,36 @@ const mdux::spec::Register identifierForMaps{
             .Execute();
     }};
 
+/// A successful emit: the directory it ran in, the sidecar and package it read, and the outputs.
+struct EmittedOutputsState {
+    TempDir dir;
+    std::vector<std::byte> sidecar;
+    std::filesystem::path packagePath;
+    std::vector<cli::Diagnostic> diagnostics;
+    std::optional<EmitOutputs> outputs;
+};
+
 const mdux::spec::Register wellFormedRendersBoth{
     "A well-formed package renders both outputs", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<std::byte> sidecar;
-            std::filesystem::path packagePath;
-            std::vector<cli::Diagnostic> diagnostics;
-            std::optional<EmitOutputs> outputs;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-well-formed-renders-both")
+        return speclab::Test<EmittedOutputsState>("shader-emit-well-formed-renders-both")
             .Given("a well-formed package over a minimal sidecar",
-                   [state] {
-                       state->sidecar = minimal().bytes();
-                       state->packagePath =
-                           writePackage(state->dir.path(), packageOver(state->sidecar),
-                                        state->sidecar);
+                   [](EmittedOutputsState& state) {
+                       state.sidecar = minimal().bytes();
+                       state.packagePath =
+                           writePackage(state.dir.path(), packageOver(state.sidecar),
+                                        state.sidecar);
                    })
             .When("it is rendered",
-                  [state] {
-                      state->outputs =
-                          render(state->packagePath, state->diagnostics);
+                  [](EmittedOutputsState& state) {
+                      state.outputs =
+                          render(state.packagePath, state.diagnostics);
                   })
             .Then("both outputs are produced and carry the same payload",
-                  [state] {
-                      Assertions::require(state->outputs.has_value(), "render() produced no outputs");
-                      const EmitOutputs& outputs = *state->outputs;
+                  [](EmittedOutputsState& state) {
+                      Assertions::require(state.outputs.has_value(), "render() produced no outputs");
+                      const EmitOutputs& outputs = *state.outputs;
                       mdux::spec::Checks checks;
-                      checks.expect(state->diagnostics.empty(), "no diagnostics");
+                      checks.expect(state.diagnostics.empty(), "no diagnostics");
                       checks.expect(outputs.stem == "test_ui", "the stem");
                       checks.expect(outputs.moduleName ==
                                         "mdux.shader.generated.test_ui",
@@ -193,35 +189,26 @@ const mdux::spec::Register wellFormedRendersBoth{
 const mdux::spec::Register noDescriptorsEmptySpan{
     "A package with no descriptors renders an empty span, not an empty array", "evidence-unit",
     [] {
-        struct State {
-            TempDir dir;
-            std::vector<std::byte> sidecar;
-            std::filesystem::path packagePath;
-            std::vector<cli::Diagnostic> diagnostics;
-            std::optional<EmitOutputs> outputs;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-no-descriptors-empty-span")
+        return speclab::Test<EmittedOutputsState>("shader-emit-no-descriptors-empty-span")
             .Given("a package with no descriptors",
-                   [state] {
+                   [](EmittedOutputsState& state) {
                        // A zero-length C array is ill-formed, so the empty case cannot use the
                        // same spelling as the populated one. Both must still produce an accessor
                        // with the same type.
-                       state->sidecar = minimal().bytes();
-                       state->packagePath =
-                           writePackage(state->dir.path(), packageOver(state->sidecar),
-                                        state->sidecar);
+                       state.sidecar = minimal().bytes();
+                       state.packagePath =
+                           writePackage(state.dir.path(), packageOver(state.sidecar),
+                                        state.sidecar);
                    })
             .When("it is rendered",
-                  [state] {
-                      state->outputs =
-                          render(state->packagePath, state->diagnostics);
+                  [](EmittedOutputsState& state) {
+                      state.outputs =
+                          render(state.packagePath, state.diagnostics);
                   })
             .Then("the empty contract is spelled as a span, not an array",
-                  [state] {
-                      Assertions::require(state->outputs.has_value(), "render() produced no outputs");
-                      const EmitOutputs& outputs = *state->outputs;
+                  [](EmittedOutputsState& state) {
+                      Assertions::require(state.outputs.has_value(), "render() produced no outputs");
+                      const EmitOutputs& outputs = *state.outputs;
                       mdux::spec::Checks checks;
                       checks.expect(outputs.moduleSource.find("descriptors[] = {") ==
                                         std::string::npos,
@@ -241,32 +228,32 @@ const mdux::spec::Register noDescriptorsEmptySpan{
             .Execute();
     }};
 
+/// A refused emit: the directory it ran in and the diagnostics it reported.
+struct EmitRefusalState {
+    TempDir dir;
+    std::vector<cli::Diagnostic> diagnostics;
+    bool hadOutputs{true};
+};
+
 const mdux::spec::Register unreadablePackageReported{
     "An unreadable package is reported", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool hadOutputs{true};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-unreadable-package-reported")
+        return speclab::Test<EmitRefusalState>("shader-emit-unreadable-package-reported")
             .Given("a package path that does not exist",
-                   [state] { state->diagnostics.clear(); })
+                   [](EmitRefusalState& state) { state.diagnostics.clear(); })
             .When("it is rendered",
-                  [state] {
-                      auto outputs = render(state->dir.path() / "package.json",
-                                            state->diagnostics);
-                      state->hadOutputs = outputs.has_value();
+                  [](EmitRefusalState& state) {
+                      auto outputs = render(state.dir.path() / "package.json",
+                                            state.diagnostics);
+                      state.hadOutputs = outputs.has_value();
                   })
             .Then("a SHE001 diagnostic names the failure and its remedy",
-                  [state] {
-                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
+                  [](EmitRefusalState& state) {
+                      Assertions::require(state.diagnostics.size() == 1, "expected 1 diagnostic, got {}", state.diagnostics.size());
                       mdux::spec::Checks checks;
-                      checks.expect(!state->hadOutputs, "no outputs are produced");
-                      checks.expect(state->diagnostics[0].code == "SHE001",
+                      checks.expect(!state.hadOutputs, "no outputs are produced");
+                      checks.expect(state.diagnostics[0].code == "SHE001",
                                     "the code is SHE001");
-                      checks.expect(state->diagnostics[0].fixHint.find("mdux-bake-update") !=
+                      checks.expect(state.diagnostics[0].fixHint.find("mdux-bake-update") !=
                                         std::string::npos,
                                     "the fix hint names mdux-bake-update");
                       checks.raise();
@@ -276,31 +263,24 @@ const mdux::spec::Register unreadablePackageReported{
 
 const mdux::spec::Register notShaderPackageReported{
     "A package that is not a shader package is reported with the reason", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool hadOutputs{true};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-not-shader-package-reported")
+        return speclab::Test<EmitRefusalState>("shader-emit-not-shader-package-reported")
             .Given("a package whose kind is font",
-                   [state] {
-                       writeText(state->dir.path() / "package.json",
+                   [](EmitRefusalState& state) {
+                       writeText(state.dir.path() / "package.json",
                                  R"({"schemaVersion":1,"id":"x","kind":"font"})");
                    })
             .When("it is rendered",
-                  [state] {
-                      auto outputs = render(state->dir.path() / "package.json",
-                                            state->diagnostics);
-                      state->hadOutputs = outputs.has_value();
+                  [](EmitRefusalState& state) {
+                      auto outputs = render(state.dir.path() / "package.json",
+                                            state.diagnostics);
+                      state.hadOutputs = outputs.has_value();
                   })
             .Then("a SHE002 diagnostic names the reason",
-                  [state] {
-                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
+                  [](EmitRefusalState& state) {
+                      Assertions::require(state.diagnostics.size() == 1, "expected 1 diagnostic, got {}", state.diagnostics.size());
                       mdux::spec::Checks checks;
-                      checks.expect(!state->hadOutputs, "no outputs are produced");
-                      checks.expect(state->diagnostics[0].code == "SHE002",
+                      checks.expect(!state.hadOutputs, "no outputs are produced");
+                      checks.expect(state.diagnostics[0].code == "SHE002",
                                     "the code is SHE002");
                       checks.raise();
                   })
@@ -309,36 +289,29 @@ const mdux::spec::Register notShaderPackageReported{
 
 const mdux::spec::Register missingSidecarReported{
     "A missing sidecar is reported against the sidecar, not the package", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool hadOutputs{true};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-missing-sidecar-reported")
+        return speclab::Test<EmitRefusalState>("shader-emit-missing-sidecar-reported")
             .Given("a package.json whose sidecar was never written",
-                   [state] {
+                   [](EmitRefusalState& state) {
                        const std::vector<std::byte> sidecar = minimal().bytes();
                        const shader::ShaderPackage package = packageOver(sidecar);
                        auto text = package.write();
                        Assertions::require(text.has_value(), "package.write() rejected the package");
-                       writeText(state->dir.path() / "package.json", *text);
+                       writeText(state.dir.path() / "package.json", *text);
                    })
             .When("it is rendered",
-                  [state] {
-                      auto outputs = render(state->dir.path() / "package.json",
-                                            state->diagnostics);
-                      state->hadOutputs = outputs.has_value();
+                  [](EmitRefusalState& state) {
+                      auto outputs = render(state.dir.path() / "package.json",
+                                            state.diagnostics);
+                      state.hadOutputs = outputs.has_value();
                   })
             .Then("a SHE003 diagnostic names the sidecar",
-                  [state] {
-                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
+                  [](EmitRefusalState& state) {
+                      Assertions::require(state.diagnostics.size() == 1, "expected 1 diagnostic, got {}", state.diagnostics.size());
                       mdux::spec::Checks checks;
-                      checks.expect(!state->hadOutputs, "no outputs are produced");
-                      checks.expect(state->diagnostics[0].code == "SHE003",
+                      checks.expect(!state.hadOutputs, "no outputs are produced");
+                      checks.expect(state.diagnostics[0].code == "SHE003",
                                     "the code is SHE003");
-                      checks.expect(state->diagnostics[0].file.find("shaders.spv") !=
+                      checks.expect(state.diagnostics[0].file.find("shaders.spv") !=
                                         std::string::npos,
                                     "the diagnostic names the sidecar file");
                       checks.raise();
@@ -346,48 +319,48 @@ const mdux::spec::Register missingSidecarReported{
             .Execute();
     }};
 
+/// A refused emit whose scenario also needs the package path it rejected.
+struct SidecarRefusalState {
+    TempDir dir;
+    std::vector<cli::Diagnostic> diagnostics;
+    bool hadOutputs{true};
+    std::filesystem::path packagePath;
+};
+
 const mdux::spec::Register tamperedSidecarRefused{
     "A sidecar that does not match the recorded digest is refused", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool hadOutputs{true};
-            std::filesystem::path packagePath;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-tampered-sidecar-refused")
+        return speclab::Test<SidecarRefusalState>("shader-emit-tampered-sidecar-refused")
             .Given("a sidecar altered after the package was written",
-                   [state] {
+                   [](SidecarRefusalState& state) {
                        // The check that stops unreviewed bytes reaching a binary. Without it, a
                        // hand-edited sidecar would be rendered into source and linked while every
                        // artifact check stayed green - the digest under review would describe one
                        // thing and the compiled bytes another.
                        const std::vector<std::byte> sidecar = minimal().bytes();
                        const std::filesystem::path packagePath =
-                           writePackage(state->dir.path(), packageOver(sidecar), sidecar);
+                           writePackage(state.dir.path(), packageOver(sidecar), sidecar);
 
                        std::vector<std::byte> tampered = sidecar;
                        const std::size_t last = tampered.size() - 1;
                        tampered[last] = static_cast<std::byte>(
                            std::to_integer<unsigned>(tampered[last]) ^ 0xffu);
-                       writeBytes(state->dir.path() / "shaders.spv", tampered);
+                       writeBytes(state.dir.path() / "shaders.spv", tampered);
 
-                       state->packagePath = packagePath;
+                       state.packagePath = packagePath;
                    })
             .When("it is rendered",
-                  [state] {
-                      auto outputs = render(state->packagePath, state->diagnostics);
-                      state->hadOutputs = outputs.has_value();
+                  [](SidecarRefusalState& state) {
+                      auto outputs = render(state.packagePath, state.diagnostics);
+                      state.hadOutputs = outputs.has_value();
                   })
             .Then("a SHE004 diagnostic says the sidecar was hand-edited",
-                  [state] {
-                      Assertions::require(state->diagnostics.size() == 1, "expected 1 diagnostic, got {}", state->diagnostics.size());
+                  [](SidecarRefusalState& state) {
+                      Assertions::require(state.diagnostics.size() == 1, "expected 1 diagnostic, got {}", state.diagnostics.size());
                       mdux::spec::Checks checks;
-                      checks.expect(!state->hadOutputs, "no outputs are produced");
-                      checks.expect(state->diagnostics[0].code == "SHE004",
+                      checks.expect(!state.hadOutputs, "no outputs are produced");
+                      checks.expect(state.diagnostics[0].code == "SHE004",
                                     "the code is SHE004");
-                      checks.expect(state->diagnostics[0].fixHint.find("do not hand-edit") !=
+                      checks.expect(state.diagnostics[0].fixHint.find("do not hand-edit") !=
                                         std::string::npos,
                                     "the fix hint says do not hand-edit");
                       checks.raise();
@@ -397,36 +370,28 @@ const mdux::spec::Register tamperedSidecarRefused{
 
 const mdux::spec::Register wrongLengthSidecarRefused{
     "A sidecar of the wrong length is refused", "evidence-unit", [] {
-        struct State {
-            TempDir dir;
-            std::vector<cli::Diagnostic> diagnostics;
-            bool hadOutputs{true};
-            std::filesystem::path packagePath;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-wrong-length-sidecar-refused")
+        return speclab::Test<SidecarRefusalState>("shader-emit-wrong-length-sidecar-refused")
             .Given("a sidecar truncated after the package was written",
-                   [state] {
+                   [](SidecarRefusalState& state) {
                        const std::vector<std::byte> sidecar = minimal().bytes();
                        const std::filesystem::path packagePath =
-                           writePackage(state->dir.path(), packageOver(sidecar), sidecar);
+                           writePackage(state.dir.path(), packageOver(sidecar), sidecar);
 
                        std::vector<std::byte> truncated{sidecar.begin(), sidecar.end() - 4};
-                       writeBytes(state->dir.path() / "shaders.spv", truncated);
+                       writeBytes(state.dir.path() / "shaders.spv", truncated);
 
-                       state->packagePath = packagePath;
+                       state.packagePath = packagePath;
                    })
             .When("it is rendered",
-                  [state] {
-                      auto outputs = render(state->packagePath, state->diagnostics);
-                      state->hadOutputs = outputs.has_value();
+                  [](SidecarRefusalState& state) {
+                      auto outputs = render(state.packagePath, state.diagnostics);
+                      state.hadOutputs = outputs.has_value();
                   })
             .Then("a SHE004 diagnostic is the only one",
-                  [state] {
+                  [](SidecarRefusalState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(!state->hadOutputs, "no outputs are produced");
-                      checks.expect(codesOf(state->diagnostics) ==
+                      checks.expect(!state.hadOutputs, "no outputs are produced");
+                      checks.expect(codesOf(state.diagnostics) ==
                                         std::vector<std::string>{"SHE004"},
                                     "the only code is SHE004");
                       checks.raise();
@@ -434,64 +399,63 @@ const mdux::spec::Register wrongLengthSidecarRefused{
             .Execute();
     }};
 
+struct WriteLeavesUnchangedUntouchedState {
+    TempDir source;
+    TempDir out;
+    std::vector<std::byte> sidecar;
+    std::filesystem::path packagePath;
+    std::vector<cli::Diagnostic> diagnostics;
+    std::optional<EmitOutputs> outputs;
+    bool sizeStable{false};
+    bool timeStable{false};
+};
+
 const mdux::spec::Register writeLeavesUnchangedUntouched{
     "write() creates both files and leaves an unchanged file untouched", "evidence-unit", [] {
-        struct State {
-            TempDir source;
-            TempDir out;
-            std::vector<std::byte> sidecar;
-            std::filesystem::path packagePath;
-            std::vector<cli::Diagnostic> diagnostics;
-            std::optional<EmitOutputs> outputs;
-            bool sizeStable{false};
-            bool timeStable{false};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("shader-emit-write-leaves-unchanged-untouched")
+        return speclab::Test<WriteLeavesUnchangedUntouchedState>("shader-emit-write-leaves-unchanged-untouched")
             .Given("a well-formed package rendered in the source directory",
-                   [state] {
+                   [](WriteLeavesUnchangedUntouchedState& state) {
                        // Rewriting an unchanged file would restamp it and force every consumer to
                        // recompile on every build, which for a few thousand bytes of shader is not
                        // free.
-                       state->sidecar = minimal().bytes();
-                       state->packagePath =
-                           writePackage(state->source.path(), packageOver(state->sidecar),
-                                        state->sidecar);
-                       state->outputs =
-                           render(state->packagePath, state->diagnostics);
-                       Assertions::require(state->outputs.has_value(), "render() produced no outputs");
-                       Assertions::require(write(*state->outputs, state->out.path(), state->diagnostics), "write() reported a failure");
-                       if (!std::filesystem::exists(state->out.path() / "test_ui.cppm") ||
-                           !std::filesystem::exists(state->out.path() / "test_ui.hpp")) {
+                       state.sidecar = minimal().bytes();
+                       state.packagePath =
+                           writePackage(state.source.path(), packageOver(state.sidecar),
+                                        state.sidecar);
+                       state.outputs =
+                           render(state.packagePath, state.diagnostics);
+                       Assertions::require(state.outputs.has_value(), "render() produced no outputs");
+                       Assertions::require(write(*state.outputs, state.out.path(), state.diagnostics), "write() reported a failure");
+                       if (!std::filesystem::exists(state.out.path() / "test_ui.cppm") ||
+                           !std::filesystem::exists(state.out.path() / "test_ui.hpp")) {
                            Assertions::fail("write() did not create both files");
                        }
                    })
             .When("the same outputs are written again over the existing files",
-                  [state] {
+                  [](WriteLeavesUnchangedUntouchedState& state) {
                       const auto firstWrite =
-                          std::filesystem::last_write_time(state->out.path() / "test_ui.cppm");
+                          std::filesystem::last_write_time(state.out.path() / "test_ui.cppm");
                       // A timestamp comparison needs the two writes to be distinguishable; the
                       // file system's resolution is coarser than this loop would be, so the
                       // content is checked instead.
                       const auto before =
-                          std::filesystem::file_size(state->out.path() / "test_ui.cppm");
+                          std::filesystem::file_size(state.out.path() / "test_ui.cppm");
                       const bool rewrote =
-                          write(*state->outputs, state->out.path(), state->diagnostics);
-                      Assertions::require(rewrote, "write() reported a failure on the second pass");
-                      state->sizeStable =
-                          (std::filesystem::file_size(state->out.path() / "test_ui.cppm") ==
+                          write(*state.outputs, state.out.path(), state.diagnostics);
+                      Assertions::require(static_cast<bool>(rewrote), "write() reported a failure on the second pass");
+                      state.sizeStable =
+                          (std::filesystem::file_size(state.out.path() / "test_ui.cppm") ==
                            before);
-                      state->timeStable =
-                          (std::filesystem::last_write_time(state->out.path() / "test_ui.cppm") ==
+                      state.timeStable =
+                          (std::filesystem::last_write_time(state.out.path() / "test_ui.cppm") ==
                            firstWrite);
                   })
             .Then("both files exist and the unchanged file is not restamped",
-                  [state] {
+                  [](WriteLeavesUnchangedUntouchedState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->sizeStable, "the file size is unchanged");
-                      checks.expect(state->timeStable, "the modification time is unchanged");
-                      checks.expect(state->diagnostics.empty(), "no diagnostics");
+                      checks.expect(state.sizeStable, "the file size is unchanged");
+                      checks.expect(state.timeStable, "the modification time is unchanged");
+                      checks.expect(state.diagnostics.empty(), "no diagnostics");
                       checks.raise();
                   })
             .Execute();

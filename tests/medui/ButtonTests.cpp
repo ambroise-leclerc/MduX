@@ -52,6 +52,8 @@ import mdux.text.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ms   = mdux::medui;
 namespace draw = mdux::draw;
 namespace font = mdux::font;
@@ -154,9 +156,7 @@ struct Labels {
         run("STR-FREEZE", 12, 6);
 
         const auto written = package.write();
-        if (!written.has_value()) {
-            throw speclab::core::AssertionFailure("the fixture text package does not serialize", std::source_location::current());
-        }
+        Assertions::require(written.has_value(), "the fixture text package does not serialize");
         canonical = *written;
         approval  = ms::TextPackageApproval{.locale = package.locale, .packageId = package.header.id, .packageSha256 = mdux::evidence::sha256(bytes())};
     }
@@ -243,8 +243,7 @@ static_assert(underScreen.validate().has_value(), "and so is a button over a pan
 [[nodiscard]] ms::TextBinding bindText(const ms::ScreenPackage& screen) {
     auto made = ms::TextBinding::create(screen, theFont(), theLabels().package, theLabels().bytes(), theLabels().sidecar);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())),
-                                              std::source_location::current());
+        Assertions::fail(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())));
     }
     return *made;
 }
@@ -257,9 +256,7 @@ struct Scratch {
 
     [[nodiscard]] draw::DrawList list() {
         auto created = draw::DrawList::create(vertices, indices, commands, testBudget);
-        if (!created.has_value()) {
-            throw speclab::core::AssertionFailure("the scratch does not satisfy its own budget", std::source_location::current());
-        }
+        Assertions::require(created.has_value(), "the scratch does not satisfy its own budget");
         return std::move(*created);
     }
 };

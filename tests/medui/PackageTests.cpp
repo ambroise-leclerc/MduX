@@ -32,6 +32,8 @@ import mdux.tools.medui.parser;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace ms  = mdux::medui;
 namespace cli = mdux::tools::cli;
@@ -49,10 +51,7 @@ constexpr std::array fixtureImageApprovals{
 [[nodiscard]] std::string fixture(std::string_view name) {
     const std::filesystem::path path = std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream               in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-                                              std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -61,13 +60,10 @@ constexpr std::array fixtureImageApprovals{
 [[nodiscard]] md::LayoutResult layoutOf(std::string_view source, std::int64_t width, std::int64_t height) {
     md::ParseResult parsed = md::parse(source, "package.medui");
     if (!parsed.screen || !parsed.diagnostics.empty()) {
-        throw speclab::core::AssertionFailure("package test source did not parse", std::source_location::current());
+        Assertions::fail("package test source did not parse");
     }
     md::LayoutResult resolved = md::resolveLayout(*parsed.screen, "package.medui", {.surfaceWidth = width, .surfaceHeight = height});
-    if (!resolved.ok()) {
-        throw speclab::core::AssertionFailure(std::format("package test source did not resolve: {}", resolved.diagnostics.front().message),
-                                              std::source_location::current());
-    }
+    Assertions::require(resolved.ok(), "package test source did not resolve: {}", resolved.diagnostics.front().message);
     return resolved;
 }
 
@@ -122,9 +118,7 @@ const std::array everyComponentCharsets{
 
 [[nodiscard]] const ms::CompiledNode& node(const ms::ScreenPackage& package, std::string_view id) {
     const ms::CompiledNode* found = package.find(id);
-    if (found == nullptr) {
-        throw speclab::core::AssertionFailure(std::format("the compiled screen has no node '{}'", id), std::source_location::current());
-    }
+    Assertions::require(found != nullptr, "the compiled screen has no node '{}'", id);
     return *found;
 }
 
@@ -132,9 +126,7 @@ const std::array everyComponentCharsets{
 /// an edit that silently did nothing would make a rejection scenario pass for the wrong reason.
 [[nodiscard]] std::string editing(std::string text, std::string_view what, std::string_view with) {
     const std::size_t at = text.find(what);
-    if (at == std::string::npos) {
-        throw speclab::core::AssertionFailure(std::format("the package bytes do not contain '{}'", what), std::source_location::current());
-    }
+    Assertions::require(at != std::string::npos, "the package bytes do not contain '{}'", what);
     return text.replace(at, what.size(), with);
 }
 

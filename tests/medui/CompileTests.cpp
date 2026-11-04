@@ -38,6 +38,8 @@ import mdux.tools.medui.textbudget;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace ms  = mdux::medui;
 namespace cli = mdux::tools::cli;
@@ -48,9 +50,7 @@ namespace cli = mdux::tools::cli;
 
 [[nodiscard]] std::string fixture(std::string_view name) {
     std::ifstream in{repoRoot() / "tests" / "medui" / "fixtures" / name, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened", name), std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened", name);
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -67,9 +67,7 @@ namespace cli = mdux::tools::cli;
 /// The fixture recipe, parsed. Every scenario that compiles starts here.
 [[nodiscard]] md::Recipe textlessRecipe(std::vector<cli::Diagnostic>& diagnostics) {
     const std::optional<md::Recipe> recipe = md::parseRecipe(fixture("textless-screen.toml"), "tests/medui/fixtures/textless-screen.toml", diagnostics);
-    if (!recipe.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the fixture recipe did not parse: {}", firstCode(diagnostics)), std::source_location::current());
-    }
+    Assertions::require(recipe.has_value(), "the fixture recipe did not parse: {}", firstCode(diagnostics));
     return *recipe;
 }
 

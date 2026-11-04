@@ -29,6 +29,8 @@ import mdux.font.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace fp = mdux::font;
 using fp::SchemaError;
 
@@ -98,14 +100,12 @@ const mdux::spec::Register packageSurvivesARoundTrip{
                   [](PackageSurvivesARoundTripState& state) {
                       auto text = state.original.write();
                       if (!text.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("write failed: {}", fp::describe(text.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("write failed: {}", fp::describe(text.error())));
                       }
                       state.text  = std::move(*text);
                       auto parsed  = fp::FontPackage::parse(state.text);
                       if (!parsed.has_value()) {
-                          throw speclab::core::AssertionFailure(std::format("parse failed: {}", fp::describe(parsed.error())),
-                                                                std::source_location::current());
+                          Assertions::fail(std::format("parse failed: {}", fp::describe(parsed.error())));
                       }
                       state.parsed = std::move(*parsed);
                   })
@@ -369,19 +369,14 @@ const mdux::spec::Register committedPackageParses{
                        const std::filesystem::path path =
                            std::filesystem::path{MDUX_REPO_ROOT} / "generated" / "font" / "dejavu-ui" / "package.json";
                        std::ifstream in{path, std::ios::binary};
-                       if (!in) {
-                           throw speclab::core::AssertionFailure(std::format("cannot open {}", path.string()),
-                                                                 std::source_location::current());
-                       }
+                       Assertions::require(static_cast<bool>(in), "cannot open {}", path.string());
                        state.text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
                    })
             .When("it is parsed",
                   [](CommittedPackageParsesState& state) {
                       auto package = fp::FontPackage::parse(state.text);
                       if (!package.has_value()) {
-                          throw speclab::core::AssertionFailure(
-                              std::format("the committed package does not validate: {}", fp::describe(package.error())),
-                              std::source_location::current());
+                          Assertions::fail(std::format("the committed package does not validate: {}", fp::describe(package.error())));
                       }
                       state.package = std::move(*package);
                   })

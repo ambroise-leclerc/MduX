@@ -23,6 +23,8 @@ using namespace mdux::tools::cli;
 
 namespace {
 
+using speclab::core::Assertions;
+
 constexpr std::string_view kTool = "mdux-fontbake";
 
 /// Parses `arguments`, failing hard on an unexpected UsageError rather than recording it.
@@ -273,35 +275,34 @@ const mdux::spec::Register helpIsReportedAndCarriesUsage{
             .Execute();
     }};
 
+struct UsageDocumentsBothSubcommandsAndOptionsState {
+    std::string text;
+};
+
 const mdux::spec::Register usageDocumentsBothSubcommandsAndOptions{
     "usage() documents both subcommands and both options", "evidence-unit", [] {
-        struct State {
-            std::string text;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("cli-usage-documents")
-            .Given("the usage text", [state] { state->text = usage(kTool); })
+        return speclab::Test<UsageDocumentsBothSubcommandsAndOptionsState>("cli-usage-documents")
+            .Given("the usage text", [](UsageDocumentsBothSubcommandsAndOptionsState& state) { state.text = usage(kTool); })
             .When("it is read", [] {})
             .Then("it documents both subcommands, both options and the bake/verify rule",
-                  [state] {
+                  [](UsageDocumentsBothSubcommandsAndOptionsState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->text.find("mdux-fontbake bake   <recipe> <output-dir>") !=
+                      checks.expect(state.text.find("mdux-fontbake bake   <recipe> <output-dir>") !=
                                         std::string::npos,
                                     "bake usage line");
-                      checks.expect(state->text.find(
+                      checks.expect(state.text.find(
                                         "mdux-fontbake verify <recipe> <package.json> <report.json>") !=
                                         std::string::npos,
                                     "verify usage line");
-                      checks.expect(state->text.find("--format=json|text") != std::string::npos,
+                      checks.expect(state.text.find("--format=json|text") != std::string::npos,
                                     "--format option");
-                      checks.expect(state->text.find("--help") != std::string::npos, "--help option");
+                      checks.expect(state.text.find("--help") != std::string::npos, "--help option");
                       // States the rule a baker author most needs to know.
-                      checks.expect(state->text.find("verify") != std::string::npos,
+                      checks.expect(state.text.find("verify") != std::string::npos,
                                     "the verify action");
-                      checks.expect(state->text.find("writing nothing") != std::string::npos,
+                      checks.expect(state.text.find("writing nothing") != std::string::npos,
                                     "the writing-nothing rule");
-                      checks.expect(state->text.find("ADR-007") != std::string::npos,
+                      checks.expect(state.text.find("ADR-007") != std::string::npos,
                                     "the evidence-pipeline reference");
                       checks.raise();
                   })
@@ -511,11 +512,7 @@ const mdux::spec::Register jsonDiagnosticsEscape{
                                     "the backslash is escaped");
                       // A raw newline inside a JSON string would make the envelope unparseable.
                       const std::size_t messageStart = state.json.find("\"message\":");
-                      if (messageStart == std::string::npos) {
-                          throw speclab::core::AssertionFailure(
-                              "the diagnostic message was not rendered",
-                              std::source_location::current());
-                      }
+                      Assertions::require(messageStart != std::string::npos, "the diagnostic message was not rendered");
                       checks.expect(state.json.find('\n', messageStart) >
                                         state.json.find("tabbed"),
                                     "no raw newline inside the JSON string");
