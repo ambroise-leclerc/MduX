@@ -63,7 +63,9 @@ constexpr std::array fixtureImageApprovals{
         Assertions::fail("package test source did not parse");
     }
     md::LayoutResult resolved = md::resolveLayout(*parsed.screen, "package.medui", {.surfaceWidth = width, .surfaceHeight = height});
-    Assertions::require(resolved.ok(), "package test source did not resolve: {}", resolved.diagnostics.front().message);
+    if (!resolved.ok()) {
+        Assertions::fail(std::format("package test source did not resolve: {}", resolved.diagnostics.front().message));
+    }
     return resolved;
 }
 
