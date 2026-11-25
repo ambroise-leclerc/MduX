@@ -108,6 +108,20 @@
 > round trip across the whole accepted fixture corpus, the two safety-metadata cases, the
 > unknown-field case and the documented comment loss; 326/326 `medui`-labelled tests pass. Epic
 > #311's next child, **#326**, is now unblocked.
+>
+> **Update, 25 November 2026 — epic #311 closed; Phase 2 complete.** All three children merged to
+> `develop`: #325 ([PR #351](https://github.com/ambroise-leclerc/MduX/pull/351)), #326
+> ([PR #352](https://github.com/ambroise-leclerc/MduX/pull/352)) and #327
+> ([PR #353](https://github.com/ambroise-leclerc/MduX/pull/353)). The epic's three completion
+> criteria map onto them: the reuse decision and compiler-derived catalog/validation are ADR-023; the
+> real-renderer previews with explicit locale and fixture data and bounded resource lifetime are
+> ADR-024; source-trivia reporting (the `PRV010` comment-loss gate ADR-023 required of whichever
+> child wrote source back), compile validation, digest-based optimistic concurrency, explicit
+> proposal submission, the headless-browser `studio` test and the negative server paths are ADR-025.
+> As with the four earlier epics, the residual is carried on the ADRs rather than the issue:
+> ADR-023, ADR-024 and ADR-025 stay **Proposed** pending maintainer engineering acceptance, plus
+> ADR-024's preview-fidelity review and ADR-025's domain review of the acknowledgement model. All
+> five Phase-2 epics (#307–#311) are now closed.
 
 The original six waves delivered the foundations: trust zones, governance records, baked evidence,
 a real Vulkan renderer, deterministic ML inference, fonts and text, a host-side MedUI compiler,
@@ -124,10 +138,10 @@ metadata scope and TrustSC's B/C scope remain an intentional difference.
 |---|---|
 | Original parity epics #7–#19 | 13 closed; no remaining children |
 | Original release waves | Six shipped, v0.2.0 through v0.8.0 |
-| Phase 2 epics | 4 of 5 closed (#307, #308, #309, #310); 1 open: #311 |
-| Phase 2 child issues | 16 total (#312–#327): 14 closed (#312–#324, #326), 2 open — #325 delivered pending ratification, #327 implemented on its work branch |
+| Phase 2 epics | 5 of 5 closed (#307, #308, #309, #310, #311) |
+| Phase 2 child issues | 16 total (#312–#327): all closed; residual reviews carried on the Proposed ADRs |
 | Additional platform epic #222 | Closed; outside the original thirteen-epic count |
-| Unblocked child issues | [#327](https://github.com/ambroise-leclerc/MduX/issues/327), implemented pending review; see [Next to implement](#next-to-implement) |
+| Unblocked child issues | None; see [Next to implement](#next-to-implement) for the carried residuals |
 
 ## Preview backend implementation (#326)
 
@@ -138,15 +152,14 @@ review; [the protocol](tools/preview.md) records deployment and refusal behavior
 
 ## Studio editing and change proposals (#327)
 
-The embedded MedUI Studio is implemented on the #327 work branch and recorded by
+The embedded MedUI Studio merged with #327 ([PR #353](https://github.com/ambroise-leclerc/MduX/pull/353)) and is recorded by
 [ADR-025](adr/ADR-025-medui-studio-editing-and-reviewable-change-proposals.md) (Proposed): screen and
 locale selection, palette, inspector, selection/move/resize, undo/redo and diagnostics over the
 versioned AST document `mdux.tools.medui.document`; invalid edits shown against the last valid
 production frame; and explicit, reviewed proposals with digest checks, comment-loss and safety-metadata
 acknowledgements, git plumbing in a service-owned repository and no automatic merge. `preview.proposals`
 covers the server paths with real git, and `ctest -L studio` drives the Studio in headless Chrome
-against the real renderer on the macOS, Windows and Linux Clang legs. The issue-status tables above
-remain the merged-delivery record until it merges.
+against the real renderer on the macOS, Windows and Linux Clang legs.
 
 ## Current comparison
 
@@ -160,7 +173,7 @@ are superseded; closing the original backlog does not imply complete application
 | Content and dynamic bindings | Label, image, numeric/clock, trace, status, text/caret and control faces are implemented. `resolvePress()` resolves a traced action. | Corresponding components are connected to application state and platform input. | Epic #308 **closed**: bounded interaction, editing and the presented `MedicalScreenMonitorExample` in two approved locales are delivered. Residual: the PAR-REQ-006 critical-action host policy is open for domain review. |
 | Presentation and streaming | `UiRenderer` consumes host Vulkan resources; `MedicalScreenMonitorExample` (#318, ADR-018 clause 6) presents the committed `endoscope-monitor` screen in a window, runs the assembled `updateMonitor()` loop with every live component bound, and routes real pointer/keyboard input through `mdux.medui.input`, in two approved locales. A `VulkanViewport` reserves geometry but its stream content is deferred. | The Vulkan/winit adapter presents medical screens and renders a bounded streaming waterfall. | #310 for viewport content. “Every component draws” does not mean the MduX viewport already has a stream renderer. |
 | Verification | Committed bundle verification checks approved locale text and golden obligations. The current driver binds text/images, not live reading, trace, status or field state. `ColorHash` is a tint predicate, versioned `mdux.local/tint-composition` v1; the raw RGBA8 digest is a separate `mdux.local/raw-image-digest` with no committed baseline. #314 gates `MEDUI-PROFILE-RENDERED`/`-EVIDENCE` against the pinned corpus and emits a derived RENDERED envelope. | Scenario replay supports events, frame advances, state expectations, pinned time and captures. `ColorHash` compares raw-pixel digests; no baseline files are committed at this head. | #307 predicate meaning is resolved and gated on the MduX side. Epic #309 **closed**: the `verify.scenario.<id>` gate verifies dynamic scenario captures without weakening the static screen gate ([ADR-021](adr/ADR-021-dynamic-scenario-capture-evidence.md), Proposed; verifier-area domain review open). |
-| Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311: host editing/preview interfaces and Studio integration, with a reuse decision before a fork. |
+| Authoring tools | Machine-readable grammar, diagnostics, IR, recipe schemas and tool manifest. | MedUI Studio has real-renderer previews, editing, palette/inspector, undo/redo and change proposals; a VS Code extension supplies syntax highlighting. | #311 **closed**: host editing API (ADR-023), native preview service (ADR-024) and embedded Studio with reviewed proposals (ADR-025), reusing the compiler surfaces rather than forking TrustSC's DTO layer. Residual: maintainer acceptance and domain review on those ADRs. |
 | Evidence, ML and text | Recipe-driven committed artifacts, cross-toolchain byte checks, shared host/device inference kernels, fail-closed model creation and bounded runtime bindings. | Baked font/image/shader/model artifacts, deterministic inference and bounded draw paths; the screen/text join still allocates at startup. | Retain existing MduX guarantees. TrustSC #47 is a sibling-side tightening proposal, not missing MduX work. |
 | Platform evidence | MSVC/Windows, GCC/Linux, Clang/libc++ on Linux and Apple Silicon macOS, with pixel/evidence gates and sanitizers. | Current CI builds/tests the Rust workspace on Linux with lavapipe, baker verification, monitor smoke and Studio preview checks. | Do not trade MduX's wider platform coverage for API similarity. |
 
@@ -216,35 +229,29 @@ ADR-015's local architectural direction is accepted, and
 dispositions (8 September 2026); PAR-REQ-004–010 review and shared
 profile adoption gates remain explicit in the decision map.
 
-\#312–#326 are all closed or delivered, and with them **epics #307, #308, #309 and #310**. The last
-executable work is the Studio integration issue (**#327**), under the one remaining epic **#311**.
-Canonical interfaces land before their consumers, and each design issue produces the ADR and
-canonical types its epic's implementation children then consume. The
-[Next to implement](#next-to-implement) subsection records the recommended order and what each
-unblocks. No new version number or release date is assigned until a deliverable and its evidence are
-agreed.
+\#312–#327 are all closed, and with them all five Phase-2 epics, **#307, #308, #309, #310 and
+#311**. Canonical interfaces landed before their consumers, and each design issue produced the ADR
+and canonical types its epic's implementation children then consumed. No new version number or
+release date is assigned until a deliverable and its evidence are agreed.
 
 ### Next to implement
 
-Assessed 13 September 2026 against `develop`. **#313, #318, #319, #320 and #321 have all merged;
-epics #307, #308 and #309 are closed. #322, #323 and #324 are all merged and epic #310 is closed**
-(ADR-022, Proposed, ratification carried on the ADR). **#325 is delivered** (ADR-023, Proposed;
-`mdux.tools.medui.serialize`) and **#326 has merged** (ADR-024, Proposed). One child issue remains
-under epic #311. Re-assessed 14 September 2026.
+Re-assessed 25 November 2026 against `develop`. **No Phase-2 child issue remains open.** #325, #326
+and #327 merged (PRs #351, #352, #353; ADR-023, ADR-024 and ADR-025, all Proposed) and epic #311 is
+closed, the last of the five. What remains is review, not implementation.
 
-| Rank | Issue | Why now | Unblocks | Shape |
-|---|---|---|---|---|
-| 1 | [**#327**](https://github.com/ambroise-leclerc/MduX/issues/327) — Studio editing and change proposals | Unblocked by #326's merge; implemented on its work branch (ADR-025, Proposed). | Closing epic #311 | The embedded Studio over the preview service, the AST document view, and reviewed proposals that push a branch and never merge. |
-
-The four closed epics leave documented residuals rather than open implementation: the #307 TrustSC
+The five closed epics leave documented residuals rather than open implementation: the #307 TrustSC
 joint rendered/evidence sign-off (on ADR-016 / ADR-017 §3), the #308 PAR-REQ-006 critical-action
 host policy, the #309 / ADR-021 verifier-area domain review — one shared domain review covers the
 last two together with the ADR-016/017 items — and the #310 / ADR-022 residual: maintainer
 engineering acceptance, and a domain review of the demonstrator waterfall's numeric bounds and
-colour ramp. #325 carries the same kind of residual on ADR-023: maintainer engineering acceptance.
+colour ramp. #311 carries the same kind of residual on its three ADRs: maintainer engineering
+acceptance of ADR-023, ADR-024 and ADR-025, ADR-024's preview-fidelity review, and ADR-025's domain
+review of the comment-loss and safety-metadata acknowledgement model.
 
-Recommended sequencing: **#327** is what remains - epic #311's own children run in their existing
-order (#325 ✓ → #326 ✓ → #327, implemented pending review).
+Recommended sequencing: none is pending. A successor programme, if one is planned, should start from
+those reviews and from a fresh comparison against TrustSC's then-current head, since the comparison
+above was assessed in September 2026.
 
 ### [#307](https://github.com/ambroise-leclerc/MduX/issues/307) — Shared MedUI behavior and verification contract · closed
 
@@ -552,9 +559,16 @@ epic #310 is otherwise complete.
 | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) | Render a bounded waterfall inside the compiled VulkanViewport | [#322](https://github.com/ambroise-leclerc/MduX/issues/322) ✓ · **delivered** (same ADR-022; `recordWaterfall()`, `ViewportBinding`/`ViewportSlot`, the `VulkanViewport` `render()` case, nine new `ScreenError` cases) |
 | [#324](https://github.com/ambroise-leclerc/MduX/issues/324) | Exercise streaming viewport updates in the monitor and pixel tests | [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓, [#318](https://github.com/ambroise-leclerc/MduX/issues/318) ✓ · **delivered** (same ADR-022; the monitor's synthetic waterfall, the `RegionPainted` scenario obligation, the GPU pixel-prediction test) |
 
-### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · in progress
+### [#311](https://github.com/ambroise-leclerc/MduX/issues/311) — MedUI authoring tools and Studio integration · closed
 
 Expose a stable host-only editing/preview interface and reuse the TrustSC Studio frontend where practical through a MduX backend, ending in a tested proposal workflow.
+
+**Epic closed 25 November 2026** with all three children merged to `develop` (PRs #351, #352, #353).
+The reuse decision went to the existing compiler surfaces rather than TrustSC's Rust DTO layer
+(ADR-023); the Studio frontend is MduX's own, embedded in `mdux-preview` and driven against the
+production offscreen renderer (ADR-024, ADR-025). The residual — maintainer acceptance of the three
+Proposed ADRs, ADR-024's preview-fidelity review and ADR-025's acknowledgement-model domain review —
+is carried on those ADRs, the same disposition as #307–#310.
 
 **#325 delivered** 13 September 2026: [ADR-023](adr/ADR-023-medui-host-editing-api-and-round-trip-source-contract.md)
 (Proposed) names the existing `grammar()`/`cli::Diagnostic`/`screenIr()` surfaces as the host
@@ -565,9 +579,9 @@ ADR in this programme has.
 
 | Child | Deliverable | Prerequisites / status |
 |---|---|---|
-| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **delivered** (ADR-023, Proposed; `mdux.tools.medui.serialize`'s `serializeScreen()`, the catalog/diagnostic/compile reuse decision, the schema-negotiation rule) |
-| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **merged** ([ADR-024](adr/ADR-024-local-native-preview-service.md)) |
-| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) ✓ · **implemented, pending review** ([ADR-025](adr/ADR-025-medui-studio-editing-and-reviewable-change-proposals.md)) |
+| [#325](https://github.com/ambroise-leclerc/MduX/issues/325) | Define the MduX host editing API and round-trip source contract | [#312](https://github.com/ambroise-leclerc/MduX/issues/312) ✓ · **closed** ([PR #351](https://github.com/ambroise-leclerc/MduX/pull/351), ADR-023, Proposed; `mdux.tools.medui.serialize`'s `serializeScreen()`, the catalog/diagnostic/compile reuse decision, the schema-negotiation rule) |
+| [#326](https://github.com/ambroise-leclerc/MduX/issues/326) | Serve real MduX previews with explicit locale and dynamic fixture data | [#325](https://github.com/ambroise-leclerc/MduX/issues/325) ✓, [#316](https://github.com/ambroise-leclerc/MduX/issues/316) ✓, [#323](https://github.com/ambroise-leclerc/MduX/issues/323) ✓ · **closed** ([PR #352](https://github.com/ambroise-leclerc/MduX/pull/352), [ADR-024](adr/ADR-024-local-native-preview-service.md)) |
+| [#327](https://github.com/ambroise-leclerc/MduX/issues/327) | Integrate Studio editing and reviewable change proposals | [#326](https://github.com/ambroise-leclerc/MduX/issues/326) ✓ · **closed** ([PR #353](https://github.com/ambroise-leclerc/MduX/pull/353), [ADR-025](adr/ADR-025-medui-studio-editing-and-reviewable-change-proposals.md)) |
 
 ### Delivery and evidence rules
 
@@ -1101,9 +1115,8 @@ lint — is real, but it is narrower. The wording is fixed in #40 and #38:
 
 ---
 
-_Original programme: 13 closed epics and six shipped waves. Phase 2: 4 of 5 epics closed
-(#307, #308, #309, #310); 1 open (#311) - #310's three children (#322, #323, #324) all merged
-under ADR-022, Proposed, ratification residual carried on the ADR; #311's first child (#325)
-delivered under ADR-023, Proposed, same kind of residual; #326 merged under ADR-024, Proposed.
-1 open child issue remains (#327, implemented under ADR-025, pending review).
-Status assessed 14 September 2026._
+_Original programme: 13 closed epics and six shipped waves. Phase 2: all 5 epics closed
+(#307, #308, #309, #310, #311) and all 16 child issues (#312–#327) closed. Residual maintainer and
+domain reviews are carried on the Proposed ADRs (ADR-016/017 §3, ADR-021, ADR-022, ADR-023,
+ADR-024, ADR-025) rather than on open issues.
+Status assessed 25 November 2026._
