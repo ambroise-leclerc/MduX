@@ -29,6 +29,8 @@ import mdux.tools.medui.parser;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
@@ -36,11 +38,7 @@ namespace cli = mdux::tools::cli;
     const std::filesystem::path path =
         std::filesystem::path{MDUX_REPO_ROOT} / "tests" / "medui" / "fixtures" / name;
     std::ifstream in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(
-            std::format("fixture {} could not be opened at {}", name, path.generic_string()),
-            std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened at {}", name, path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();

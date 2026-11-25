@@ -42,6 +42,8 @@ import mdux.text.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ms   = mdux::medui;
 namespace core = mdux::core;
 namespace draw = mdux::draw;
@@ -141,9 +143,7 @@ struct FontCarrier {
             mdux::text::TextRun{.id = "STR-UNUSED", .byteOffset = 0, .byteLength = sidecar.size(), .sha256 = mdux::evidence::sha256(sidecar)});
 
         const auto written = package.write();
-        if (!written.has_value()) {
-            throw speclab::core::AssertionFailure("the fixture text package does not serialize", std::source_location::current());
-        }
+        Assertions::require(written.has_value(), "the fixture text package does not serialize");
         canonical = *written;
         approval  = ms::TextPackageApproval{.locale = package.locale, .packageId = package.header.id, .packageSha256 = mdux::evidence::sha256(bytes())};
     }
@@ -174,8 +174,7 @@ const FontCarrier& theCarrier() {
 [[nodiscard]] ms::TextBinding bindText(const ms::ScreenPackage& screen) {
     auto made = ms::TextBinding::create(screen, theFont(), theCarrier().package, theCarrier().bytes(), theCarrier().sidecar);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())),
-                                              std::source_location::current());
+        Assertions::fail(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())));
     }
     return *made;
 }
@@ -192,9 +191,7 @@ struct Scratch {
 
     [[nodiscard]] draw::DrawList list() {
         auto created = draw::DrawList::create(vertices, indices, commands, budget());
-        if (!created.has_value()) {
-            throw speclab::core::AssertionFailure("the scratch does not satisfy its own budget", std::source_location::current());
-        }
+        Assertions::require(created.has_value(), "the scratch does not satisfy its own budget");
         return std::move(*created);
     }
 };
@@ -276,28 +273,27 @@ const mdux::spec::Register theTwoAlphabetsStayApart{
             .Execute();
     }};
 
+struct DigitsFillSlotsMostSignificantFirstState {
+    Scratch                  scratch;
+    std::vector<float>       lefts;
+    std::optional<VertexBox> box;
+};
+
 const mdux::spec::Register digitsFillSlotsMostSignificantFirst{
     "A value fills its slots most significant first, zero-padded",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                  scratch;
-            std::vector<float>       lefts;
-            std::optional<VertexBox> box;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-digits-fill-slots")
+        return speclab::Test<DigitsFillSlotsMostSignificantFirstState>("reading-digits-fill-slots")
             .Given("the pattern '##.# mmHg' and the reading 74 tenths",
-                   [state] {
-                       draw::DrawList list = state->scratch.list();
+                   [](DigitsFillSlotsMostSignificantFirstState& state) {
+                       draw::DrawList list = state.scratch.list();
                        requireRecorded(ms::recordNumeric(list, theFont(), node, "##.# mmHg", 74, digits), "the reading");
-                       state->lefts = glyphLefts(list.vertices());
-                       state->box   = boxOf(list.vertices());
+                       state.lefts = glyphLefts(list.vertices());
+                       state.box   = boxOf(list.vertices());
                    })
             .When("the recorded glyphs are read back", [] {})
             .Then("they are '07.4 mmHg', one pen step apart, at the node's corner",
-                  [state] {
+                  [](DigitsFillSlotsMostSignificantFirstState& state) {
                       // Zero-padded rather than right-shifted: a slot that showed nothing would make
                       // `7.4` and `74.0` the same picture at a glance, and the leading zero is what a
                       // fixed-width readout uses to keep the decimal point in one place.
@@ -306,8 +302,8 @@ const mdux::spec::Register digitsFillSlotsMostSignificantFirst{
                       // skips a degenerate extent - which is why eight glyphs are expected from nine
                       // characters.
                       mdux::spec::Checks checks;
-                      checks.expect(state->lefts.size() == 8, std::format("nine characters less one blank space is eight glyphs, got {}", state->lefts.size()));
-                      if (state->lefts.size() != 8) {
+                      checks.expect(state.lefts.size() == 8, std::format("nine characters less one blank space is eight glyphs, got {}", state.lefts.size()));
+                      if (state.lefts.size() != 8) {
                           checks.raise();
                           return;
                       }
@@ -315,121 +311,117 @@ const mdux::spec::Register digitsFillSlotsMostSignificantFirst{
                       // skipped - so the glyph after it starts at 50 rather than at 40.
                       const std::array<float, 8> expected{20.0F, 30.0F, 40.0F, 50.0F, 70.0F, 80.0F, 90.0F, 100.0F};
                       for (std::size_t index = 0; index < expected.size(); ++index) {
-                          checks.expect(state->lefts[index] == expected[index],
-                                        std::format("glyph {} starts at {}, expected {}", index, state->lefts[index], expected[index]));
+                          checks.expect(state.lefts[index] == expected[index],
+                                        std::format("glyph {} starts at {}, expected {}", index, state.lefts[index], expected[index]));
                       }
-                      checks.expect(state->box.has_value() && state->box->left == static_cast<float>(node.x), "the ink starts at the node's left edge");
-                      checks.expect(state->box.has_value() && state->box->top == static_cast<float>(node.y), "and at its top edge");
+                      checks.expect(state.box.has_value() && state.box->left == static_cast<float>(node.x), "the ink starts at the node's left edge");
+                      checks.expect(state.box.has_value() && state.box->top == static_cast<float>(node.y), "and at its top edge");
                       checks.raise();
                   })
             .Execute();
     }};
+
+struct TheEnvelopeBoundsEveryValueState {
+    Scratch                          scratch;
+    std::optional<ms::PatternExtent> envelope;
+    std::vector<VertexBox>           drawn;
+};
 
 const mdux::spec::Register theEnvelopeBoundsEveryValue{
     "measurePattern() bounds every reading the pattern can produce",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                          scratch;
-            std::optional<ms::PatternExtent> envelope;
-            std::vector<VertexBox>           drawn;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-envelope-bounds-every-value")
+        return speclab::Test<TheEnvelopeBoundsEveryValueState>("reading-envelope-bounds-every-value")
             .Given("the envelope of '##.# mmHg', and every extreme reading it can show",
-                   [state] {
+                   [](TheEnvelopeBoundsEveryValueState& state) {
                        const auto measured = ms::measurePattern(theFont(), "##.# mmHg", ms::PatternKind::Numeric);
                        if (!measured.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("the pattern was not measurable: {}", ms::describe(measured.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("the pattern was not measurable: {}", ms::describe(measured.error())));
                        }
-                       state->envelope = *measured;
+                       state.envelope = *measured;
 
                        for (const std::int64_t value : {std::int64_t{0}, std::int64_t{1}, std::int64_t{74}, std::int64_t{505}, std::int64_t{999}}) {
-                           draw::DrawList list = state->scratch.list();
+                           draw::DrawList list = state.scratch.list();
                            requireRecorded(ms::recordNumeric(list, theFont(), node, "##.# mmHg", value, digits), std::format("the reading {}", value));
                            if (const auto box = boxOf(list.vertices()); box.has_value()) {
-                               state->drawn.push_back(*box);
+                               state.drawn.push_back(*box);
                            }
                        }
                    })
             .When("each drawn reading is compared against the envelope", [] {})
             .Then("none of them exceeds it",
-                  [state] {
+                  [](TheEnvelopeBoundsEveryValueState& state) {
                       // The implication ADR-010 decision 4's amendment rests on: a node that holds
                       // the envelope holds any reading the pattern will ever draw. Checked by drawing
                       // the extremes rather than by arguing that it follows.
                       mdux::spec::Checks checks;
-                      checks.expect(state->drawn.size() == 5, "every reading recorded something");
-                      for (const VertexBox& box : state->drawn) {
+                      checks.expect(state.drawn.size() == 5, "every reading recorded something");
+                      for (const VertexBox& box : state.drawn) {
                           const auto width  = static_cast<std::int64_t>(box.right - box.left);
                           const auto height = static_cast<std::int64_t>(box.bottom - box.top);
-                          checks.expect(width <= state->envelope->width,
-                                        std::format("a reading is {}px wide against an envelope of {}", width, state->envelope->width));
-                          checks.expect(height <= state->envelope->height,
-                                        std::format("a reading is {}px tall against an envelope of {}", height, state->envelope->height));
+                          checks.expect(width <= state.envelope->width,
+                                        std::format("a reading is {}px wide against an envelope of {}", width, state.envelope->width));
+                          checks.expect(height <= state.envelope->height,
+                                        std::format("a reading is {}px tall against an envelope of {}", height, state.envelope->height));
                       }
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AClockRendersItsFieldsState {
+    Scratch            scratch;
+    std::vector<float> timeLefts;
+    std::size_t        dateGlyphs{0};
+};
+
 const mdux::spec::Register aClockRendersItsFields{
     "A clock draws the fields its format fixes, in the order the contract fixes them",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch            scratch;
-            std::vector<float> timeLefts;
-            std::size_t        dateGlyphs{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-clock-renders-its-fields")
+        return speclab::Test<AClockRendersItsFieldsState>("reading-clock-renders-its-fields")
             .Given("07:04:09 under both closed formats",
-                   [state] {
+                   [](AClockRendersItsFieldsState& state) {
                        constexpr ms::CivilTime now{.year = 2026, .month = 9, .day = 4, .hour = 7, .minute = 4, .second = 9};
 
-                       draw::DrawList timeList = state->scratch.list();
+                       draw::DrawList timeList = state.scratch.list();
                        requireRecorded(ms::recordClock(timeList, theFont(), node, ms::ClockFormat::TimeSeconds, now, digits), "the time");
-                       state->timeLefts = glyphLefts(timeList.vertices());
+                       state.timeLefts = glyphLefts(timeList.vertices());
 
                        Scratch        dateScratch;
                        draw::DrawList dateList = dateScratch.list();
                        requireRecorded(ms::recordClock(dateList, theFont(), node, ms::ClockFormat::DateTimeSeconds, now, digits), "the date and time");
-                       state->dateGlyphs = dateList.vertices().size() / 4;
+                       state.dateGlyphs = dateList.vertices().size() / 4;
                    })
             .When("the recorded glyph counts are compared against the renderings", [] {})
             .Then("each format draws exactly its own shape",
-                  [state] {
+                  [](AClockRendersItsFieldsState& state) {
                       // `HH:MM:SS` is eight characters with no blanks, so eight glyphs.
                       // `YYYY-MM-DD HH:MM:SS` is nineteen with one blank space, so eighteen - and
                       // that second case is the one that would catch a field mapping which read the
                       // slot letters instead of the format, since `M` there is both a month and a
                       // minute.
                       mdux::spec::Checks checks;
-                      checks.expect(state->timeLefts.size() == 8, std::format("HH:MM:SS is eight glyphs, got {}", state->timeLefts.size()));
-                      checks.expect(state->dateGlyphs == 18, std::format("YYYY-MM-DD HH:MM:SS less its space is eighteen glyphs, got {}", state->dateGlyphs));
+                      checks.expect(state.timeLefts.size() == 8, std::format("HH:MM:SS is eight glyphs, got {}", state.timeLefts.size()));
+                      checks.expect(state.dateGlyphs == 18, std::format("YYYY-MM-DD HH:MM:SS less its space is eighteen glyphs, got {}", state.dateGlyphs));
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AClockFieldPastItsSlotsIsRefusedState {
+    Scratch                                      scratch;
+    std::vector<std::optional<ms::ReadingError>> errors;
+    std::size_t                                  verticesAfter{0};
+};
+
 const mdux::spec::Register aClockFieldPastItsSlotsIsRefused{
     "A clock field with more digits than its slots is refused, not truncated",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                                      scratch;
-            std::vector<std::optional<ms::ReadingError>> errors;
-            std::size_t                                  verticesAfter{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-clock-field-overflow")
+        return speclab::Test<AClockFieldPastItsSlotsIsRefusedState>("reading-clock-field-overflow")
             .Given("times whose month, day, hour, minute or second needs three digits",
-                   [state] {
+                   [](AClockFieldPastItsSlotsIsRefusedState& state) {
                        // The field types do not bound these: month, day, hour, minute and second are
                        // `std::uint8_t`, so 100-255 is representable and `push()` took the low two
                        // digits of it. An hour of 123 drew `23` - a plausible different time, which
@@ -448,75 +440,73 @@ const mdux::spec::Register aClockFieldPastItsSlotsIsRefused{
                                                                         ms::ClockFormat::TimeSeconds,
                                                                         ms::ClockFormat::DateTimeSeconds,
                                                                         ms::ClockFormat::DateTimeSeconds};
-                       draw::DrawList                           list = state->scratch.list();
+                       draw::DrawList                           list = state.scratch.list();
                        for (std::size_t index = 0; index < overflowing.size(); ++index) {
                            const auto result = ms::recordClock(list, theFont(), node, formats[index], overflowing[index], digits);
-                           state->errors.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                           state.errors.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
                        }
-                       state->verticesAfter = list.vertices().size();
+                       state.verticesAfter = list.vertices().size();
                    })
             .When("each is offered to a format that draws that field", [] {})
             .Then("every one is ValueTooLarge and nothing was recorded",
-                  [state] {
+                  [](AClockFieldPastItsSlotsIsRefusedState& state) {
                       mdux::spec::Checks checks;
-                      for (std::size_t index = 0; index < state->errors.size(); ++index) {
-                          checks.expect(state->errors[index] == ms::ReadingError::ValueTooLarge,
+                      for (std::size_t index = 0; index < state.errors.size(); ++index) {
+                          checks.expect(state.errors[index] == ms::ReadingError::ValueTooLarge,
                                         std::format("overflowing field {} is refused as ValueTooLarge", index));
                       }
-                      checks.expect(state->verticesAfter == 0, std::format("a refused clock draws nothing, got {} vertices", state->verticesAfter));
+                      checks.expect(state.verticesAfter == 0, std::format("a refused clock draws nothing, got {} vertices", state.verticesAfter));
                       checks.raise();
                   })
             .Execute();
     }};
+
+struct ATimeOnlyClockIgnoresTheYearState {
+    Scratch                         scratch;
+    std::optional<ms::ReadingError> error;
+    std::size_t                     vertices{0};
+};
 
 const mdux::spec::Register aTimeOnlyClockIgnoresTheYear{
     "A time-only clock is drawn whatever the year field holds",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                         scratch;
-            std::optional<ms::ReadingError> error;
-            std::size_t                     vertices{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-clock-time-only-ignores-year")
+        return speclab::Test<ATimeOnlyClockIgnoresTheYearState>("reading-clock-time-only-ignores-year")
             .Given("a TimeSeconds clock whose year is outside four digits",
-                   [state] {
+                   [](ATimeOnlyClockIgnoresTheYearState& state) {
                        // `HH:MM:SS` renders no year, so a host that never fills one in - or fills it
                        // with a sentinel - must still get its clock. The year bound used to be
                        // checked for both formats, which refused a perfectly drawable time.
                        constexpr ms::CivilTime now{.year = 70000, .month = 1, .day = 1, .hour = 12, .minute = 34, .second = 56};
-                       draw::DrawList          list   = state->scratch.list();
+                       draw::DrawList          list   = state.scratch.list();
                        const auto              result = ms::recordClock(list, theFont(), node, ms::ClockFormat::TimeSeconds, now, digits);
-                       state->error                   = result.has_value() ? std::nullopt : std::optional{result.error()};
-                       state->vertices                = list.vertices().size();
+                       state.error                   = result.has_value() ? std::nullopt : std::optional{result.error()};
+                       state.vertices                = list.vertices().size();
                    })
             .When("the frame is inspected", [] {})
             .Then("it is drawn, because the year is not one of its fields",
-                  [state] {
+                  [](ATimeOnlyClockIgnoresTheYearState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(!state->error.has_value(), "a time-only clock is not refused for its year");
-                      checks.expect(state->vertices > 0, "the time was drawn");
+                      checks.expect(!state.error.has_value(), "a time-only clock is not refused for its year");
+                      checks.expect(state.vertices > 0, "the time was drawn");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AClockDistinguishesMonthFromMinuteState {
+    Scratch                    scratch;
+    std::vector<std::uint32_t> septemberSlots;
+    std::vector<std::uint32_t> decemberSlots;
+};
+
 const mdux::spec::Register aClockDistinguishesMonthFromMinute{
     "A DateTimeSeconds clock puts the month in the date and the minute in the time",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                    scratch;
-            std::vector<std::uint32_t> septemberSlots;
-            std::vector<std::uint32_t> decemberSlots;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-clock-month-is-not-minute")
+        return speclab::Test<AClockDistinguishesMonthFromMinuteState>("reading-clock-month-is-not-minute")
             .Given("two times differing only in their month",
-                   [state] {
+                   [](AClockDistinguishesMonthFromMinuteState& state) {
                        // Both fields render through the same `M` in `YYYY-MM-DD HH:MM:SS`, so a rule
                        // that keyed on the letter alone would draw the same glyphs for both of these
                        // - or would swap them. The atlas slot each glyph samples is what tells them
@@ -536,26 +526,26 @@ const mdux::spec::Register aClockDistinguishesMonthFromMinute{
                        };
 
                        Scratch second;
-                       state->septemberSlots = slotsOf(september, state->scratch);
-                       state->decemberSlots  = slotsOf(december, second);
+                       state.septemberSlots = slotsOf(september, state.scratch);
+                       state.decemberSlots  = slotsOf(december, second);
                    })
             .When("the two renderings are compared glyph by glyph", [] {})
             .Then("they differ in the month's two positions and nowhere else",
-                  [state] {
+                  [](AClockDistinguishesMonthFromMinuteState& state) {
                       // `YYYY-MM-DD HH:MM:SS` draws Y Y Y Y - M M - D D H H : M M : S S, the blank
                       // space between the date and the time recording nothing. So the date's month is
                       // at drawn positions 5 and 6 - after the four year digits and the first hyphen -
                       // while the minute is at 13 and 14. A rule that keyed on the `M` alone would
                       // move both, or the wrong one, and either shows up here as a different set.
                       mdux::spec::Checks checks;
-                      checks.expect(state->septemberSlots.size() == 18 && state->decemberSlots.size() == 18, "both renderings drew eighteen glyphs");
-                      if (state->septemberSlots.size() != 18 || state->decemberSlots.size() != 18) {
+                      checks.expect(state.septemberSlots.size() == 18 && state.decemberSlots.size() == 18, "both renderings drew eighteen glyphs");
+                      if (state.septemberSlots.size() != 18 || state.decemberSlots.size() != 18) {
                           checks.raise();
                           return;
                       }
                       std::vector<std::size_t> differing;
                       for (std::size_t index = 0; index < 18; ++index) {
-                          if (state->septemberSlots[index] != state->decemberSlots[index]) {
+                          if (state.septemberSlots[index] != state.decemberSlots[index]) {
                               differing.push_back(index);
                           }
                       }
@@ -571,35 +561,34 @@ const mdux::spec::Register aClockDistinguishesMonthFromMinute{
             .Execute();
     }};
 
+struct ExpansionIsDeterministicState {
+    Scratch                       first;
+    Scratch                       second;
+    std::optional<draw::DrawList> a;
+    std::optional<draw::DrawList> b;
+};
+
 const mdux::spec::Register expansionIsDeterministic{
     "The same reading expands to byte-identical buffers",
     "determinism",
     [] {
-        struct State {
-            Scratch                       first;
-            Scratch                       second;
-            std::optional<draw::DrawList> a;
-            std::optional<draw::DrawList> b;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-expansion-is-deterministic")
+        return speclab::Test<ExpansionIsDeterministicState>("reading-expansion-is-deterministic")
             .Given("one reading expanded twice into separate storage",
-                   [state] {
-                       state->a = state->first.list();
-                       state->b = state->second.list();
-                       requireRecorded(ms::recordNumeric(*state->a, theFont(), node, "##.# mmHg", 386, digits), "the first expansion");
-                       requireRecorded(ms::recordNumeric(*state->b, theFont(), node, "##.# mmHg", 386, digits), "the second expansion");
+                   [](ExpansionIsDeterministicState& state) {
+                       state.a = state.first.list();
+                       state.b = state.second.list();
+                       requireRecorded(ms::recordNumeric(*state.a, theFont(), node, "##.# mmHg", 386, digits), "the first expansion");
+                       requireRecorded(ms::recordNumeric(*state.b, theFont(), node, "##.# mmHg", 386, digits), "the second expansion");
                    })
             .When("the two buffers are compared", [] {})
             .Then("they are identical",
-                  [state] {
+                  [](ExpansionIsDeterministicState& state) {
                       // The pen is integral throughout, so this is a statement about the integer
                       // arithmetic rather than about a floating-point mode - and it is the property
                       // that lets a device and a baker agree about which column a glyph lands in.
                       mdux::spec::Checks checks;
-                      checks.expect(std::ranges::equal(state->a->vertices(), state->b->vertices()), "the vertex buffers match");
-                      checks.expect(std::ranges::equal(state->a->indices(), state->b->indices()), "the index buffers match");
+                      checks.expect(std::ranges::equal(state.a->vertices(), state.b->vertices()), "the vertex buffers match");
+                      checks.expect(std::ranges::equal(state.a->indices(), state.b->indices()), "the index buffers match");
                       checks.raise();
                   })
             .Execute();
@@ -629,72 +618,70 @@ const mdux::spec::Register pixelConversionIsTheBakersRule{"toPixels() is the bak
 // Refusals
 // ---------------------------------------------------------------------------
 
+struct RefusesAnOversizedValueState {
+    Scratch                         scratch;
+    std::optional<draw::DrawList>   list;
+    std::optional<ms::ReadingError> error;
+};
+
 const mdux::spec::Register refusesAnOversizedValue{
     "A value with more digits than its slots is refused, not truncated",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                         scratch;
-            std::optional<draw::DrawList>   list;
-            std::optional<ms::ReadingError> error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-refuses-an-oversized-value")
+        return speclab::Test<RefusesAnOversizedValueState>("reading-refuses-an-oversized-value")
             .Given("a three-slot pattern and a four-digit reading",
-                   [state] {
-                       state->list  = state->scratch.list();
-                       state->error = requireRefused(ms::recordNumeric(*state->list, theFont(), node, "##.#", 1099, digits), "the oversized reading");
+                   [](RefusesAnOversizedValueState& state) {
+                       state.list  = state.scratch.list();
+                       state.error = requireRefused(ms::recordNumeric(*state.list, theFont(), node, "##.#", 1099, digits), "the oversized reading");
                    })
             .When("the list is inspected", [] {})
             .Then("the reading is ValueTooLarge and nothing was drawn",
-                  [state] {
+                  [](RefusesAnOversizedValueState& state) {
                       // This issue's sharpest acceptance. A truncating implementation draws `09.9`
                       // for a reading of 109.9 - a smaller, entirely plausible number, in a box whose
                       // unit says what it means, with nothing on screen to say it was cut. Dropping
                       // the most significant digit is the one failure mode a pressure readout must
                       // not have.
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::ReadingError::ValueTooLarge, "the refusal names the value");
-                      checks.expect(state->list->vertices().empty(), "no glyph was recorded");
+                      checks.expect(state.error == ms::ReadingError::ValueTooLarge, "the refusal names the value");
+                      checks.expect(state.list->vertices().empty(), "no glyph was recorded");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct RefusesMalformedInputsState {
+    Scratch                                        scratch;
+    std::optional<draw::DrawList>                  list;
+    std::array<std::optional<ms::ReadingError>, 5> errors{};
+};
+
 const mdux::spec::Register refusesMalformedInputs{
     "An empty, over-long, unbakeable or negative reading is refused",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                                        scratch;
-            std::optional<draw::DrawList>                  list;
-            std::array<std::optional<ms::ReadingError>, 5> errors{};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("reading-refuses-malformed-inputs")
+        return speclab::Test<RefusesMalformedInputsState>("reading-refuses-malformed-inputs")
             .Given("a list",
-                   [state] {
-                       state->list = state->scratch.list();
+                   [](RefusesMalformedInputsState& state) {
+                       state.list = state.scratch.list();
                    })
             .When("each malformed input is offered in turn",
-                  [state] {
-                      state->errors[0] = requireRefused(ms::recordNumeric(*state->list, theFont(), node, "", 1, digits), "an empty pattern");
+                  [](RefusesMalformedInputsState& state) {
+                      state.errors[0] = requireRefused(ms::recordNumeric(*state.list, theFont(), node, "", 1, digits), "an empty pattern");
 
                       const std::string tooLong(ms::maxPatternLength + 1, '#');
-                      state->errors[1] = requireRefused(ms::recordNumeric(*state->list, theFont(), node, tooLong, 1, digits), "an over-long pattern");
+                      state.errors[1] = requireRefused(ms::recordNumeric(*state.list, theFont(), node, tooLong, 1, digits), "an over-long pattern");
 
                       // 'Z' is outside the fixture font's charset, and ADR-010 leaves the runtime no
                       // fallback: a substitute glyph would be a reading nobody wrote.
-                      state->errors[2] = requireRefused(ms::recordNumeric(*state->list, theFont(), node, "##Z", 1, digits), "an unbakeable literal");
+                      state.errors[2] = requireRefused(ms::recordNumeric(*state.list, theFont(), node, "##Z", 1, digits), "an unbakeable literal");
 
-                      state->errors[3] = requireRefused(ms::recordNumeric(*state->list, theFont(), node, "##.#", -1, digits), "a negative reading");
+                      state.errors[3] = requireRefused(ms::recordNumeric(*state.list, theFont(), node, "##.#", -1, digits), "a negative reading");
 
-                      state->errors[4] = requireRefused(ms::recordNumeric(*state->list, theFont(), node, "mmHg", 1, digits), "a pattern with no digit slot");
+                      state.errors[4] = requireRefused(ms::recordNumeric(*state.list, theFont(), node, "mmHg", 1, digits), "a pattern with no digit slot");
                   })
             .Then("each names its own cause and the list is untouched",
-                  [state] {
+                  [](RefusesMalformedInputsState& state) {
                       mdux::spec::Checks                        checks;
                       constexpr std::array<ms::ReadingError, 5> expected{ms::ReadingError::PatternEmpty,
                                                                          ms::ReadingError::PatternTooLong,
@@ -702,9 +689,9 @@ const mdux::spec::Register refusesMalformedInputs{
                                                                          ms::ReadingError::ValueNegative,
                                                                          ms::ReadingError::NoDigitSlots};
                       for (std::size_t index = 0; index < expected.size(); ++index) {
-                          checks.expect(state->errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
+                          checks.expect(state.errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
                       }
-                      checks.expect(state->list->vertices().empty(), "no refusal left a glyph behind");
+                      checks.expect(state.list->vertices().empty(), "no refusal left a glyph behind");
                       checks.raise();
                   })
             .Execute();
@@ -800,37 +787,37 @@ requireFrame(core::Result<ms::FrameStats, ms::ScreenError> result, std::string_v
     return *result;
 }
 
+/// A render whose scenario reads the frame statistics and the vertices it emitted.
+struct RenderedFrameState {
+    Scratch                       scratch;
+    std::optional<ms::FrameStats> stats;
+    std::vector<draw::UiVertex>   vertices;
+};
+
 const mdux::spec::Register unboundNodesAreUnchanged{
     "Without a binding a NumericDisplay reserves its field and a Clock is deferred",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<ms::FrameStats> stats;
-            std::vector<draw::UiVertex>   vertices;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-unbound-readings-unchanged")
+        return speclab::Test<RenderedFrameState>("screen-unbound-readings-unchanged")
             .Given("the screen rendered with no reading binding",
-                   [state] {
+                   [](RenderedFrameState& state) {
                        const ms::ScreenPackage screen = approve(readingScreen);
-                       draw::DrawList          list   = state->scratch.list();
-                       state->stats                   = requireFrame(ms::render(screen, list, bindText(screen)), "the frame");
-                       state->vertices.assign(list.vertices().begin(), list.vertices().end());
+                       draw::DrawList          list   = state.scratch.list();
+                       state.stats                   = requireFrame(ms::render(screen, list, bindText(screen)), "the frame");
+                       state.vertices.assign(list.vertices().begin(), list.vertices().end());
                    })
             .When("the frame is inspected", [] {})
             .Then("two opaque rectangles are drawn and only the clock is deferred",
-                  [state] {
+                  [](RenderedFrameState& state) {
                       // The path every existing caller takes - the committed screen's pixel test and
                       // its `verify` leg among them - so it stays a tested contract rather than a
                       // code path nobody exercises now that a binding exists. The clock is the one
                       // deferral, because it has no token and therefore no field to reserve.
                       mdux::spec::Checks checks;
-                      checks.expect(state->stats->rects == 2, std::format("the panel and the pressure field, got {}", state->stats->rects));
-                      checks.expect(state->stats->readings == 0, "no reading was drawn");
-                      checks.expect(state->stats->deferred == 1, std::format("only the clock is deferred, got {}", state->stats->deferred));
-                      const bool opaque = std::ranges::all_of(state->vertices, [](const draw::UiVertex& vertex) {
+                      checks.expect(state.stats->rects == 2, std::format("the panel and the pressure field, got {}", state.stats->rects));
+                      checks.expect(state.stats->readings == 0, "no reading was drawn");
+                      checks.expect(state.stats->deferred == 1, std::format("only the clock is deferred, got {}", state.stats->deferred));
+                      const bool opaque = std::ranges::all_of(state.vertices, [](const draw::UiVertex& vertex) {
                           return std::bit_cast<std::array<std::uint8_t, 4>>(vertex.color)[3] == 255;
                       });
                       checks.expect(opaque, "an unbound field is opaque");
@@ -843,29 +830,22 @@ const mdux::spec::Register aBoundReadingDimsItsField{
     "A bound NumericDisplay dims its field and draws its digits at full tint",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<ms::FrameStats> stats;
-            std::vector<draw::UiVertex>   vertices;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-bound-reading-dims-its-field")
+        return speclab::Test<RenderedFrameState>("screen-bound-reading-dims-its-field")
             .Given("a binding carrying the pressure reading and the time",
-                   [state] {
+                   [](RenderedFrameState& state) {
                        static const std::array<ms::ReadingSlot, 1> slots{
                            ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
                        };
                        const ms::ScreenPackage  screen  = approve(readingScreen);
                        const ms::ReadingBinding binding = requireBound(ms::ReadingBinding::create(screen, slots, &noon, clockTint), "the binding");
 
-                       draw::DrawList list = state->scratch.list();
-                       state->stats        = requireFrame(ms::render(screen, list, bindText(screen), {}, {}, binding), "the frame");
-                       state->vertices.assign(list.vertices().begin(), list.vertices().end());
+                       draw::DrawList list = state.scratch.list();
+                       state.stats        = requireFrame(ms::render(screen, list, bindText(screen), {}, {}, binding), "the frame");
+                       state.vertices.assign(list.vertices().begin(), list.vertices().end());
                    })
             .When("the alpha of every recorded vertex is read", [] {})
             .Then("exactly one primitive is dimmed and both readings carry the full tint",
-                  [state] {
+                  [](RenderedFrameState& state) {
                       // One tint at two coverages, which #257 introduced for a waveform and which
                       // `verify-golden-two-coverage-composition` proves both golden checks admit.
                       // This node is the one that scenario's fixture actually models, since
@@ -873,7 +853,7 @@ const mdux::spec::Register aBoundReadingDimsItsField{
                       const auto  expectedDim = static_cast<std::uint8_t>((255.0F * ms::boundFieldCoverage) + 0.5F);
                       std::size_t dimmed      = 0;
                       std::size_t solid       = 0;
-                      for (const draw::UiVertex& vertex : state->vertices) {
+                      for (const draw::UiVertex& vertex : state.vertices) {
                           const auto alpha = std::bit_cast<std::array<std::uint8_t, 4>>(vertex.color)[3];
                           if (alpha == 255) {
                               ++solid;
@@ -882,68 +862,66 @@ const mdux::spec::Register aBoundReadingDimsItsField{
                           }
                       }
                       mdux::spec::Checks checks;
-                      checks.expect(state->stats->readings == 2, std::format("the pressure and the clock were drawn, got {}", state->stats->readings));
-                      checks.expect(state->stats->deferred == 0, "nothing is deferred once both are bound");
+                      checks.expect(state.stats->readings == 2, std::format("the pressure and the clock were drawn, got {}", state.stats->readings));
+                      checks.expect(state.stats->deferred == 0, "nothing is deferred once both are bound");
                       checks.expect(dimmed == 4, std::format("exactly one dimmed rectangle, got {} vertices at alpha {}", dimmed, expectedDim));
-                      checks.expect(solid + dimmed == state->vertices.size(), "every vertex is the dimmed field or a full tint");
+                      checks.expect(solid + dimmed == state.vertices.size(), "every vertex is the dimmed field or a full tint");
                       // The panel, the dimmed field, eight glyphs of `##.# mmHg` and eight of
                       // `HH:MM:SS` - the space in the template being blank and recording nothing.
-                      checks.expect(state->vertices.size() == 4 * (1 + 1 + 8 + 8),
-                                    std::format("the panel, the field and sixteen glyphs, got {} vertices", state->vertices.size()));
+                      checks.expect(state.vertices.size() == 4 * (1 + 1 + 8 + 8),
+                                    std::format("the panel, the field and sixteen glyphs, got {} vertices", state.vertices.size()));
                       checks.raise();
                   })
             .Execute();
     }};
+
+struct AnUnboundNodeStillReservesItsFieldState {
+    Scratch                       scratch;
+    std::optional<ms::FrameStats> stats;
+};
 
 const mdux::spec::Register anUnboundNodeStillReservesItsField{
     "A NumericDisplay the caller has no reading for still reserves its field",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<ms::FrameStats> stats;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-partially-bound-readings")
+        return speclab::Test<AnUnboundNodeStillReservesItsFieldState>("screen-partially-bound-readings")
             .Given("a binding carrying a time but no numeric reading",
-                   [state] {
+                   [](AnUnboundNodeStillReservesItsFieldState& state) {
                        const ms::ScreenPackage  screen  = approve(readingScreen);
                        const ms::ReadingBinding binding = requireBound(ms::ReadingBinding::create(screen, {}, &noon, clockTint), "the binding");
 
-                       draw::DrawList list = state->scratch.list();
-                       state->stats        = requireFrame(ms::render(screen, list, bindText(screen), {}, {}, binding), "the frame");
+                       draw::DrawList list = state.scratch.list();
+                       state.stats        = requireFrame(ms::render(screen, list, bindText(screen), {}, {}, binding), "the frame");
                    })
             .When("the frame's statistics are read", [] {})
             .Then("the clock is drawn and the pressure is a reserved field, not a deferral",
-                  [state] {
+                  [](AnUnboundNodeStillReservesItsFieldState& state) {
                       // A reading that has not arrived is a normal state. Binding every live node a
                       // screen carries is not a precondition of rendering it.
                       mdux::spec::Checks checks;
-                      checks.expect(state->stats->readings == 1, "only the clock was drawn");
-                      checks.expect(state->stats->deferred == 0, "the unbound NumericDisplay is a field, not a deferral");
+                      checks.expect(state.stats->readings == 1, "only the clock was drawn");
+                      checks.expect(state.stats->deferred == 0, "the unbound NumericDisplay is a field, not a deferral");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct BindingRefusesWhatItCanCheckState {
+    std::array<std::optional<ms::ScreenError>, 5> errors{};
+};
+
 const mdux::spec::Register bindingRefusesWhatItCanCheck{
     "A binding refuses an unknown node, a duplicate, a bad pattern and a bad clock tint",
     "evidence-unit",
     [] {
-        struct State {
-            std::array<std::optional<ms::ScreenError>, 5> errors{};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-reading-binding-refusals")
+        return speclab::Test<BindingRefusesWhatItCanCheckState>("screen-reading-binding-refusals")
             .Given("a screen carrying one NumericDisplay and one Clock", [] {})
             .When("each malformed slot set is offered",
-                  [state] {
+                  [](BindingRefusesWhatItCanCheckState& state) {
                       const std::array<ms::ReadingSlot, 1> unknown{
                           ms::ReadingSlot{.nodeId = "presure", .rendering = "##.#", .value = 1}
                       };
-                      state->errors[0] = requireUnbound(ms::ReadingBinding::create(readingScreen, unknown), "a mistyped node id");
+                      state.errors[0] = requireUnbound(ms::ReadingBinding::create(readingScreen, unknown), "a mistyped node id");
 
                       // A node that exists and is not a NumericDisplay. The same refusal as one that
                       // does not exist at all, because from the caller's side both mean "this slot
@@ -951,26 +929,26 @@ const mdux::spec::Register bindingRefusesWhatItCanCheck{
                       const std::array<ms::ReadingSlot, 1> wrongKind{
                           ms::ReadingSlot{.nodeId = "backdrop", .rendering = "##.#", .value = 1}
                       };
-                      state->errors[1] = requireUnbound(ms::ReadingBinding::create(readingScreen, wrongKind), "a node of the wrong kind");
+                      state.errors[1] = requireUnbound(ms::ReadingBinding::create(readingScreen, wrongKind), "a node of the wrong kind");
 
                       const std::array<ms::ReadingSlot, 2> duplicated{
                           ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.#", .value = 1},
                           ms::ReadingSlot{.nodeId = "pressure", .rendering = "###.", .value = 2}
                       };
-                      state->errors[2] = requireUnbound(ms::ReadingBinding::create(readingScreen, duplicated), "a duplicated node");
+                      state.errors[2] = requireUnbound(ms::ReadingBinding::create(readingScreen, duplicated), "a duplicated node");
 
                       const std::array<ms::ReadingSlot, 1> emptyPattern{
                           ms::ReadingSlot{.nodeId = "pressure", .rendering = "", .value = 1}
                       };
-                      state->errors[3] = requireUnbound(ms::ReadingBinding::create(readingScreen, emptyPattern), "an empty pattern");
+                      state.errors[3] = requireUnbound(ms::ReadingBinding::create(readingScreen, emptyPattern), "an empty pattern");
 
                       // A clock whose tint the governed table does not define. Checked at create()
                       // rather than per frame: it is a property of what the caller assembled.
-                      state->errors[4] = requireUnbound(ms::ReadingBinding::create(readingScreen, {}, &noon, "Theme.Colors.NotInTheTable"),
+                      state.errors[4] = requireUnbound(ms::ReadingBinding::create(readingScreen, {}, &noon, "Theme.Colors.NotInTheTable"),
                                                         "an unknown clock tint");
                   })
             .Then("each refusal names its own cause",
-                  [state] {
+                  [](BindingRefusesWhatItCanCheckState& state) {
                       constexpr std::array<ms::ScreenError, 5> expected{ms::ScreenError::UnknownReadingNode,
                                                                         ms::ScreenError::UnknownReadingNode,
                                                                         ms::ScreenError::DuplicateReading,
@@ -978,26 +956,25 @@ const mdux::spec::Register bindingRefusesWhatItCanCheck{
                                                                         ms::ScreenError::UnknownColorToken};
                       mdux::spec::Checks                       checks;
                       for (std::size_t index = 0; index < expected.size(); ++index) {
-                          checks.expect(state->errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
+                          checks.expect(state.errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
                       }
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct ABindingIsNotPortableBetweenScreensState {
+    Scratch                        scratch;
+    std::optional<ms::ScreenError> error;
+};
+
 const mdux::spec::Register aBindingIsNotPortableBetweenScreens{
     "A reading binding built for one screen is refused by another",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                        scratch;
-            std::optional<ms::ScreenError> error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-reading-binding-is-not-portable")
+        return speclab::Test<ABindingIsNotPortableBetweenScreensState>("screen-reading-binding-is-not-portable")
             .Given("a binding validated against one screen",
-                   [state] {
+                   [](ABindingIsNotPortableBetweenScreensState& state) {
                        static const std::array<ms::ReadingSlot, 1> slots{
                            ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
                        };
@@ -1010,37 +987,34 @@ const mdux::spec::Register aBindingIsNotPortableBetweenScreens{
                        ms::ScreenPackage other = screen;
                        other.id                = "other-readings";
 
-                       draw::DrawList list  = state->scratch.list();
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(other, list, bindText(screen), {}, {}, binding);
-                       if (frame.has_value()) {
-                           throw speclab::core::AssertionFailure("the foreign screen accepted the binding", std::source_location::current());
-                       }
-                       state->error = frame.error();
+                       Assertions::require(!frame.has_value(), "the foreign screen accepted the binding");
+                       state.error = frame.error();
                    })
             .When("the refusal is read", [] {})
             .Then("it names the screen rather than the reading",
-                  [state] {
+                  [](ABindingIsNotPortableBetweenScreensState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::ScreenError::ScreenNotApproved, "the frame is refused as ScreenNotApproved");
+                      checks.expect(state.error == ms::ScreenError::ScreenNotApproved, "the frame is refused as ScreenNotApproved");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AReadingOverflowingItsNodeIsRefusedState {
+    Scratch                        scratch;
+    std::optional<ms::ScreenError> error;
+    std::size_t                    kept{0};
+};
+
 const mdux::spec::Register aReadingOverflowingItsNodeIsRefused{
     "A reading wider than its node refuses the frame, whatever the compiler measured",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                        scratch;
-            std::optional<ms::ScreenError> error;
-            std::size_t                    kept{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-reading-overflowing-its-node-is-refused")
+        return speclab::Test<AReadingOverflowingItsNodeIsRefusedState>("screen-reading-overflowing-its-node-is-refused")
             .Given("a binding whose pattern is far wider than the node the compiler certified",
-                   [state] {
+                   [](AReadingOverflowingItsNodeIsRefusedState& state) {
                        // The drift this check exists for. The screen was compiled against a table
                        // saying `TPL-PRESSURE-MMHG` renders as something that fits; this device holds
                        // a table that says otherwise, and nothing in the artifacts can tell them
@@ -1068,43 +1042,40 @@ const mdux::spec::Register aReadingOverflowingItsNodeIsRefused{
                        const ms::ScreenPackage  screen  = approve(narrowScreen);
                        const ms::ReadingBinding binding = requireBound(ms::ReadingBinding::create(screen, slots), "the binding");
 
-                       draw::DrawList list  = state->scratch.list();
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(screen, list, bindText(screen), {}, {}, binding);
-                       if (frame.has_value()) {
-                           throw speclab::core::AssertionFailure("the overflowing reading was accepted", std::source_location::current());
-                       }
-                       state->error = frame.error();
-                       state->kept  = list.vertices().size();
+                       Assertions::require(!frame.has_value(), "the overflowing reading was accepted");
+                       state.error = frame.error();
+                       state.kept  = list.vertices().size();
                    })
             .When("the list is inspected", [] {})
             .Then("the frame is ReadingOverflowsNode and whole rather than partial",
-                  [state] {
+                  [](AReadingOverflowingItsNodeIsRefusedState& state) {
                       // Whole or absent, including the dimmed field this node had already recorded
                       // before its digits overflowed. A partial frame on a medical display is the
                       // worst outcome available, because it looks like a reading.
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::ScreenError::ReadingOverflowsNode, "the refusal names the node");
-                      checks.expect(state->kept == 0, std::format("the frame was rolled back whole, got {} vertices", state->kept));
+                      checks.expect(state.error == ms::ScreenError::ReadingOverflowsNode, "the refusal names the node");
+                      checks.expect(state.kept == 0, std::format("the frame was rolled back whole, got {} vertices", state.kept));
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct WhatAGoldenPinsDoesNotVaryWithTheValueState {
+    Scratch                     first;
+    Scratch                     second;
+    std::vector<draw::UiVertex> low;
+    std::vector<draw::UiVertex> high;
+};
+
 const mdux::spec::Register whatAGoldenPinsDoesNotVaryWithTheValue{
     "The rectangle and tint a golden pins are the same whatever the reading says",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                     first;
-            Scratch                     second;
-            std::vector<draw::UiVertex> low;
-            std::vector<draw::UiVertex> high;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-golden-facts-are-value-invariant")
+        return speclab::Test<WhatAGoldenPinsDoesNotVaryWithTheValueState>("screen-golden-facts-are-value-invariant")
             .Given("the same screen rendered with two different readings",
-                   [state] {
+                   [](WhatAGoldenPinsDoesNotVaryWithTheValueState& state) {
                        const ms::ScreenPackage screen = approve(readingScreen);
                        const ms::TextBinding   text   = bindText(screen);
 
@@ -1118,12 +1089,12 @@ const mdux::spec::Register whatAGoldenPinsDoesNotVaryWithTheValue{
                            into.assign(list.vertices().begin(), list.vertices().end());
                        };
 
-                       renderWith(3, state->first, state->low);
-                       renderWith(986, state->second, state->high);
+                       renderWith(3, state.first, state.low);
+                       renderWith(986, state.second, state.high);
                    })
             .When("the two frames are compared", [] {})
             .Then("the field rectangle and its tint are identical, and only the digits differ",
-                  [state] {
+                  [](WhatAGoldenPinsDoesNotVaryWithTheValueState& state) {
                       // #16's rule for dynamic kinds, checked against the frame rather than against
                       // the sidecar. `goldens.json` pins this node's bounds and colour and says
                       // nothing about its value - which is only a true description of the screen if
@@ -1132,21 +1103,21 @@ const mdux::spec::Register whatAGoldenPinsDoesNotVaryWithTheValue{
                       // magnitude, would make a correct golden describe a screen that no longer
                       // exists.
                       mdux::spec::Checks checks;
-                      checks.expect(state->low.size() >= 8 && state->high.size() >= 8, "both frames drew a panel, a field and digits");
-                      if (state->low.size() < 8 || state->high.size() < 8) {
+                      checks.expect(state.low.size() >= 8 && state.high.size() >= 8, "both frames drew a panel, a field and digits");
+                      if (state.low.size() < 8 || state.high.size() < 8) {
                           checks.raise();
                           return;
                       }
 
                       // Vertices 0-3 are the Row's panel and 4-7 the NumericDisplay's dimmed field:
                       // both recorded before any glyph, in node order.
-                      const std::span<const draw::UiVertex> lowField{state->low.data(), 8};
-                      const std::span<const draw::UiVertex> highField{state->high.data(), 8};
+                      const std::span<const draw::UiVertex> lowField{state.low.data(), 8};
+                      const std::span<const draw::UiVertex> highField{state.high.data(), 8};
                       checks.expect(std::ranges::equal(lowField, highField), "the panel and the field are byte-identical across the two readings");
 
                       // ...and the readings really were different, so the scenario is not passing
                       // because nothing changed.
-                      checks.expect(!std::ranges::equal(state->low, state->high), "the two frames differ somewhere, namely in their digits");
+                      checks.expect(!std::ranges::equal(state.low, state.high), "the two frames differ somewhere, namely in their digits");
                       checks.raise();
                   })
             .Execute();

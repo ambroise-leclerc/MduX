@@ -28,6 +28,8 @@ import mdux.medui.viewport;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ms   = mdux::medui;
 namespace core = mdux::core;
 namespace draw = mdux::draw;
@@ -478,35 +480,33 @@ struct Scratch {
 
     [[nodiscard]] draw::DrawList list() {
         auto created = draw::DrawList::create(vertices, indices, commands, budget());
-        if (!created.has_value()) {
-            throw speclab::core::AssertionFailure("the scratch does not satisfy its own budget", std::source_location::current());
-        }
+        Assertions::require(created.has_value(), "the scratch does not satisfy its own budget");
         return std::move(*created);
     }
+};
+
+/// A render into scratch storage: the storage, and the draw list it produced.
+struct RecordedListState {
+    Scratch                       scratch;
+    std::optional<draw::DrawList> list;
 };
 
 const mdux::spec::Register recordedCellsMatchTheCompositionFunctions{
     "recordWaterfall() records exactly one solid rect per cell, at waterfallCellRect()'s position and waterfallCellColor()'s tint",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<draw::DrawList> list;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("viewport-record-matches-composition")
+        return speclab::Test<RecordedListState>("viewport-record-matches-composition")
             .Given("a 2-row, 3-bin grid recorded into a band",
-                   [state] {
+                   [](RecordedListState& state) {
                        static constexpr std::array<float, 6> storage{0.0F, 0.2F, 0.4F, 0.6F, 0.8F, 1.0F};
-                       state->list = state->scratch.list();
-                       requireValid(ms::recordWaterfall(*state->list, band, gridOver(storage, 3), unitRamp), "the grid");
+                       state.list = state.scratch.list();
+                       requireValid(ms::recordWaterfall(*state.list, band, gridOver(storage, 3), unitRamp), "the grid");
                    })
             .When("the recorded rectangles and colours are read back", [] {})
             .Then("every cell is exactly what waterfallCellRect()/waterfallCellColor() predict",
-                  [state] {
+                  [](RecordedListState& state) {
                       static constexpr std::array<float, 6> storage{0.0F, 0.2F, 0.4F, 0.6F, 0.8F, 1.0F};
-                      const std::span<const draw::UiVertex> vertices = state->list->vertices();
+                      const std::span<const draw::UiVertex> vertices = state.list->vertices();
                       mdux::spec::Checks                    checks;
                       checks.expect(vertices.size() == 6 * 4, std::format("6 cells is 24 vertices, got {}", vertices.size()));
                       if (vertices.size() != 6 * 4) {
@@ -534,32 +534,31 @@ const mdux::spec::Register recordedCellsMatchTheCompositionFunctions{
             .Execute();
     }};
 
+struct RecordingPropagatesValidateRefusalState {
+    Scratch                           scratch;
+    std::optional<draw::DrawList>     list;
+    std::optional<ms::WaterfallError> error;
+};
+
 const mdux::spec::Register recordingPropagatesValidateRefusal{
     "recordWaterfall() refuses exactly what validate() refuses, and records nothing",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                           scratch;
-            std::optional<draw::DrawList>     list;
-            std::optional<ms::WaterfallError> error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("viewport-record-propagates-validate-refusal")
+        return speclab::Test<RecordingPropagatesValidateRefusalState>("viewport-record-propagates-validate-refusal")
             .Given("a style with an inverted range",
-                   [state] {
+                   [](RecordingPropagatesValidateRefusalState& state) {
                        static constexpr std::array<float, 4> storage{0.1F, 0.2F, 0.3F, 0.4F};
-                       state->list  = state->scratch.list();
-                       state->error = requireRefused(
-                           ms::recordWaterfall(*state->list, band, gridOver(storage, 2), ms::WaterfallStyle{.minimum = 1.0F, .maximum = 0.0F}),
+                       state.list  = state.scratch.list();
+                       state.error = requireRefused(
+                           ms::recordWaterfall(*state.list, band, gridOver(storage, 2), ms::WaterfallStyle{.minimum = 1.0F, .maximum = 0.0F}),
                            "the inverted style");
                    })
             .When("the list is inspected", [] {})
             .Then("the refusal is MalformedStyle and nothing was recorded",
-                  [state] {
+                  [](RecordingPropagatesValidateRefusalState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::WaterfallError::MalformedStyle, "the refusal names the style");
-                      checks.expect(state->list->vertices().empty(), "no vertex was recorded");
+                      checks.expect(state.error == ms::WaterfallError::MalformedStyle, "the refusal names the style");
+                      checks.expect(state.list->vertices().empty(), "no vertex was recorded");
                       checks.raise();
                   })
             .Execute();
@@ -569,73 +568,62 @@ const mdux::spec::Register anEmptyGridRecordsNothing{
     "A grid with zero live rows records nothing and is not an error",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<draw::DrawList> list;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("viewport-empty-grid-records-nothing")
+        return speclab::Test<RecordedListState>("viewport-empty-grid-records-nothing")
             .Given("a grid whose ring has not filled yet",
-                   [state] {
+                   [](RecordedListState& state) {
                        static constexpr std::array<float, 8> storage{};
-                       state->list = state->scratch.list();
+                       state.list = state.scratch.list();
                        requireValid(
-                           ms::recordWaterfall(*state->list, band, ms::WaterfallGrid{.storage = storage, .bins = 8, .oldestRow = 0, .rowCount = 0}, unitRamp),
+                           ms::recordWaterfall(*state.list, band, ms::WaterfallGrid{.storage = storage, .bins = 8, .oldestRow = 0, .rowCount = 0}, unitRamp),
                            "the empty grid");
                    })
             .When("the list is inspected", [] {})
             .Then("nothing was recorded and the call did not fail",
-                  [state] {
+                  [](RecordedListState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->list->vertices().empty(), "no vertex was recorded");
+                      checks.expect(state.list->vertices().empty(), "no vertex was recorded");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct ABudgetRejectionRollsBackTheWholeWaterfallState {
+    std::array<draw::UiVertex, 32>    vertices{};
+    std::array<draw::Index, 48>       indices{};
+    std::array<draw::DrawCommand, 4>  commands{};
+    std::optional<draw::DrawList>     list;
+    std::optional<ms::WaterfallError> error;
+    std::size_t                       keptVertices{0};
+};
+
 const mdux::spec::Register aBudgetRejectionRollsBackTheWholeWaterfall{
     "A budget rejection leaves no partial waterfall, and what preceded it survives",
     "evidence-unit",
     [] {
-        struct State {
-            std::array<draw::UiVertex, 32>    vertices{};
-            std::array<draw::Index, 48>       indices{};
-            std::array<draw::DrawCommand, 4>  commands{};
-            std::optional<draw::DrawList>     list;
-            std::optional<ms::WaterfallError> error;
-            std::size_t                       keptVertices{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("viewport-budget-rejection-rolls-back")
+        return speclab::Test<ABudgetRejectionRollsBackTheWholeWaterfallState>("viewport-budget-rejection-rolls-back")
             .Given("a list with room for eight quads and one rectangle already in it",
-                   [state] {
-                       auto created = draw::DrawList::create(state->vertices,
-                                                             state->indices,
-                                                             state->commands,
+                   [](ABudgetRejectionRollsBackTheWholeWaterfallState& state) {
+                       auto created = draw::DrawList::create(state.vertices,
+                                                             state.indices,
+                                                             state.commands,
                                                              draw::DrawBudget{.maxVertices = 32, .maxIndices = 48, .maxCommands = 4});
-                       if (!created.has_value()) {
-                           throw speclab::core::AssertionFailure("the small list was not created", std::source_location::current());
-                       }
-                       state->list = std::move(*created);
-                       if (!state->list->addSolidRect(band, cold).has_value()) {
-                           throw speclab::core::AssertionFailure("the prior rectangle was refused", std::source_location::current());
-                       }
+                       Assertions::require(created.has_value(), "the small list was not created");
+                       state.list = std::move(*created);
+                       Assertions::require(state.list->addSolidRect(band, cold).has_value(), "the prior rectangle was refused");
                    })
             .When("a grid far larger than the remaining budget is expanded",
-                  [state] {
+                  [](ABudgetRejectionRollsBackTheWholeWaterfallState& state) {
                       static constexpr std::array<float, ms::maxWaterfallRows * ms::maxWaterfallBins> samples{};
                       constexpr core::Rect                                                            wideBand{.x = 0, .y = 0, .width = 320, .height = 160};
-                      state->error        = requireRefused(ms::recordWaterfall(*state->list, wideBand, gridOver(samples, ms::maxWaterfallBins), unitRamp),
+                      state.error        = requireRefused(ms::recordWaterfall(*state.list, wideBand, gridOver(samples, ms::maxWaterfallBins), unitRamp),
                                                     "the oversized waterfall");
-                      state->keptVertices = state->list->vertices().size();
+                      state.keptVertices = state.list->vertices().size();
                   })
             .Then("the waterfall is rolled back and the prior rectangle survives",
-                  [state] {
+                  [](ABudgetRejectionRollsBackTheWholeWaterfallState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::WaterfallError::ListRejected, "the refusal names the list");
-                      checks.expect(state->keptVertices == 4, std::format("only the prior rectangle survives, got {} vertices", state->keptVertices));
+                      checks.expect(state.error == ms::WaterfallError::ListRejected, "the refusal names the list");
+                      checks.expect(state.keptVertices == 4, std::format("only the prior rectangle survives, got {} vertices", state.keptVertices));
                       checks.raise();
                   })
             .Execute();
@@ -683,34 +671,33 @@ requireUnbound(core::Result<ms::ViewportBinding, ms::ScreenError> result, std::s
     return result.error();
 }
 
+/// A render whose scenario only reads the frame statistics.
+struct FrameStatsState {
+    Scratch                       scratch;
+    std::optional<ms::FrameStats> stats;
+};
+
 const mdux::spec::Register unboundViewportsStayDeferred{
     "A screen rendered without viewports leaves its VulkanViewport nodes deferred, not drawn",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<ms::FrameStats> stats;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-unbound-viewports-stay-deferred")
+        return speclab::Test<FrameStatsState>("screen-unbound-viewports-stay-deferred")
             .Given("a screen of two viewports and no viewport binding",
-                   [state] {
-                       draw::DrawList list  = state->scratch.list();
+                   [](FrameStatsState& state) {
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(viewportScreen, list);
                        if (!frame.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("the frame was refused: {}", ms::describe(frame.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("the frame was refused: {}", ms::describe(frame.error())));
                        }
-                       state->stats = *frame;
+                       state.stats = *frame;
                    })
             .When("the frame's statistics are read", [] {})
             .Then("both nodes are deferred and nothing was drawn - unlike an unbound SignalTrace, which reserves a field",
-                  [state] {
+                  [](FrameStatsState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->stats->deferred == 2, std::format("both viewports are deferred, got {}", state->stats->deferred));
-                      checks.expect(state->stats->waterfalls == 0, "no waterfall was expanded");
-                      checks.expect(state->stats->rects == 0, "no rectangle was recorded - there is no field to fall back on");
+                      checks.expect(state.stats->deferred == 2, std::format("both viewports are deferred, got {}", state.stats->deferred));
+                      checks.expect(state.stats->waterfalls == 0, "no waterfall was expanded");
+                      checks.expect(state.stats->rects == 0, "no rectangle was recorded - there is no field to fall back on");
                       checks.raise();
                   })
             .Execute();
@@ -720,15 +707,9 @@ const mdux::spec::Register aBoundViewportDrawsItsWaterfallAndIsNotDeferred{
     "A bound viewport draws its waterfall and is not deferred",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                       scratch;
-            std::optional<ms::FrameStats> stats;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-bound-viewport-draws-waterfall")
+        return speclab::Test<FrameStatsState>("screen-bound-viewport-draws-waterfall")
             .Given("a screen whose first viewport is bound to a grid",
-                   [state] {
+                   [](FrameStatsState& state) {
                        static constexpr std::array<float, 6>        storage{0.0F, 0.2F, 0.4F, 0.6F, 0.8F, 1.0F};
                        static const ms::WaterfallGrid               grid = gridOver(storage, 3);
                        static const std::array<ms::ViewportSlot, 1> slots{
@@ -736,92 +717,89 @@ const mdux::spec::Register aBoundViewportDrawsItsWaterfallAndIsNotDeferred{
                        };
                        const ms::ViewportBinding binding = requireBound(ms::ViewportBinding::create(viewportScreen, slots), "the binding");
 
-                       draw::DrawList list  = state->scratch.list();
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(viewportScreen, list, {}, {}, {}, {}, {}, {}, binding);
                        if (!frame.has_value()) {
-                           throw speclab::core::AssertionFailure(std::format("the frame was refused: {}", ms::describe(frame.error())),
-                                                                 std::source_location::current());
+                           Assertions::fail(std::format("the frame was refused: {}", ms::describe(frame.error())));
                        }
-                       state->stats = *frame;
+                       state.stats = *frame;
                    })
             .When("the frame's statistics are read", [] {})
             .Then("one waterfall is expanded, the other viewport stays deferred",
-                  [state] {
+                  [](FrameStatsState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->stats->waterfalls == 1, std::format("one waterfall expanded, got {}", state->stats->waterfalls));
-                      checks.expect(state->stats->deferred == 1, "the unbound viewport is still deferred");
-                      checks.expect(state->stats->rects == 6, std::format("a 2-row, 3-bin grid is 6 rectangles, got {}", state->stats->rects));
+                      checks.expect(state.stats->waterfalls == 1, std::format("one waterfall expanded, got {}", state.stats->waterfalls));
+                      checks.expect(state.stats->deferred == 1, "the unbound viewport is still deferred");
+                      checks.expect(state.stats->rects == 6, std::format("a 2-row, 3-bin grid is 6 rectangles, got {}", state.stats->rects));
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct ViewportBindingRefusesWhatItCanCheckState {
+    std::array<std::optional<ms::ScreenError>, 4> errors{};
+};
+
 const mdux::spec::Register viewportBindingRefusesWhatItCanCheck{
     "A viewport binding refuses an unknown stream, a duplicate, a missing grid and a bad style",
     "evidence-unit",
     [] {
-        struct State {
-            std::array<std::optional<ms::ScreenError>, 4> errors{};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-viewport-binding-refusals")
+        return speclab::Test<ViewportBindingRefusesWhatItCanCheckState>("screen-viewport-binding-refusals")
             .Given("a screen carrying two named viewport streams", [] {})
             .When(
                 "each malformed slot set is offered",
-                [state] {
+                [](ViewportBindingRefusesWhatItCanCheckState& state) {
                     static constexpr std::array<float, 4> storage{0.0F, 0.5F, 1.0F, 0.5F};
                     static const ms::WaterfallGrid        grid = gridOver(storage, 2);
 
                     const std::array<ms::ViewportSlot, 1> unknown{
                         ms::ViewportSlot{.streamSource = "ENDOSCOPE_TERTIARY", .grid = &grid, .style = unitRamp}
                     };
-                    state->errors[0] = requireUnbound(ms::ViewportBinding::create(viewportScreen, unknown), "an unknown stream");
+                    state.errors[0] = requireUnbound(ms::ViewportBinding::create(viewportScreen, unknown), "an unknown stream");
 
                     const std::array<ms::ViewportSlot, 2> duplicated{
                         ms::ViewportSlot{.streamSource = "ENDOSCOPE_PRIMARY", .grid = &grid, .style = unitRamp},
                         ms::ViewportSlot{.streamSource = "ENDOSCOPE_PRIMARY", .grid = &grid, .style = unitRamp}
                     };
-                    state->errors[1] = requireUnbound(ms::ViewportBinding::create(viewportScreen, duplicated), "a duplicated stream");
+                    state.errors[1] = requireUnbound(ms::ViewportBinding::create(viewportScreen, duplicated), "a duplicated stream");
 
                     const std::array<ms::ViewportSlot, 1> gridless{
                         ms::ViewportSlot{.streamSource = "ENDOSCOPE_PRIMARY", .grid = nullptr, .style = unitRamp}
                     };
-                    state->errors[2] = requireUnbound(ms::ViewportBinding::create(viewportScreen, gridless), "a slot with no grid");
+                    state.errors[2] = requireUnbound(ms::ViewportBinding::create(viewportScreen, gridless), "a slot with no grid");
 
                     const std::array<ms::ViewportSlot, 1> badStyle{
                         ms::ViewportSlot{.streamSource = "ENDOSCOPE_SECONDARY", .grid = &grid, .style = ms::WaterfallStyle{.minimum = 5.0F, .maximum = 1.0F}}
                     };
-                    state->errors[3] = requireUnbound(ms::ViewportBinding::create(viewportScreen, badStyle), "an inverted range");
+                    state.errors[3] = requireUnbound(ms::ViewportBinding::create(viewportScreen, badStyle), "an inverted range");
                 })
             .Then("each refusal names its own cause",
-                  [state] {
+                  [](ViewportBindingRefusesWhatItCanCheckState& state) {
                       constexpr std::array<ms::ScreenError, 4> expected{ms::ScreenError::UnknownViewportSource,
                                                                         ms::ScreenError::DuplicateViewportSource,
                                                                         ms::ScreenError::MissingWaterfallGrid,
                                                                         ms::ScreenError::MalformedWaterfallStyle};
                       mdux::spec::Checks                       checks;
                       for (std::size_t index = 0; index < expected.size(); ++index) {
-                          checks.expect(state->errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
+                          checks.expect(state.errors[index] == expected[index], std::format("refusal {} is {}", index, ms::describe(expected[index])));
                       }
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AViewportBindingIsNotPortableBetweenScreensState {
+    Scratch                        scratch;
+    std::optional<ms::ScreenError> error;
+};
+
 const mdux::spec::Register aViewportBindingIsNotPortableBetweenScreens{
     "A viewport binding built for one screen is refused by another",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                        scratch;
-            std::optional<ms::ScreenError> error;
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-viewport-binding-is-not-portable")
+        return speclab::Test<AViewportBindingIsNotPortableBetweenScreensState>("screen-viewport-binding-is-not-portable")
             .Given("a binding validated against one screen",
-                   [state] {
+                   [](AViewportBindingIsNotPortableBetweenScreensState& state) {
                        static constexpr std::array<float, 4>        storage{0.0F, 0.5F, 1.0F, 0.5F};
                        static const ms::WaterfallGrid               grid = gridOver(storage, 2);
                        static const std::array<ms::ViewportSlot, 1> slots{
@@ -835,37 +813,34 @@ const mdux::spec::Register aViewportBindingIsNotPortableBetweenScreens{
                        ms::ScreenPackage other = viewportScreen;
                        other.id                = "other-viewports";
 
-                       draw::DrawList list  = state->scratch.list();
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(other, list, {}, {}, {}, {}, {}, {}, binding);
-                       if (frame.has_value()) {
-                           throw speclab::core::AssertionFailure("the foreign screen accepted the binding", std::source_location::current());
-                       }
-                       state->error = frame.error();
+                       Assertions::require(!frame.has_value(), "the foreign screen accepted the binding");
+                       state.error = frame.error();
                    })
             .When("the refusal is read", [] {})
             .Then("it names the screen rather than the grid",
-                  [state] {
+                  [](AViewportBindingIsNotPortableBetweenScreensState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::ScreenError::ScreenNotApproved, "the frame is refused as ScreenNotApproved");
+                      checks.expect(state.error == ms::ScreenError::ScreenNotApproved, "the frame is refused as ScreenNotApproved");
                       checks.raise();
                   })
             .Execute();
     }};
 
+struct AnOversizedGridRefusesTheWholeFrameAtRenderTimeState {
+    Scratch                        scratch;
+    std::optional<ms::ScreenError> error;
+    std::size_t                    kept{0};
+};
+
 const mdux::spec::Register anOversizedGridRefusesTheWholeFrameAtRenderTime{
     "A grid ViewportBinding::create() could not check refuses the whole frame at render time",
     "evidence-unit",
     [] {
-        struct State {
-            Scratch                        scratch;
-            std::optional<ms::ScreenError> error;
-            std::size_t                    kept{0};
-        };
-        auto state = std::make_shared<State>();
-
-        return speclab::Test("screen-oversized-waterfall-refuses-the-frame")
+        return speclab::Test<AnOversizedGridRefusesTheWholeFrameAtRenderTimeState>("screen-oversized-waterfall-refuses-the-frame")
             .Given("a screen whose bound grid holds more rows than the cap admits",
-                   [state] {
+                   [](AnOversizedGridRefusesTheWholeFrameAtRenderTimeState& state) {
                        static std::array<float, (ms::maxWaterfallRows + 1) * 2> samples{};
                        static const ms::WaterfallGrid                           oversized = gridOver(samples, 2);
                        static const std::array<ms::ViewportSlot, 1>             slots{
@@ -875,20 +850,18 @@ const mdux::spec::Register anOversizedGridRefusesTheWholeFrameAtRenderTime{
                        // ViewportBinding's own doc comment - so this validates cleanly.
                        const ms::ViewportBinding binding = requireBound(ms::ViewportBinding::create(viewportScreen, slots), "the binding");
 
-                       draw::DrawList list  = state->scratch.list();
+                       draw::DrawList list  = state.scratch.list();
                        const auto     frame = ms::render(viewportScreen, list, {}, {}, {}, {}, {}, {}, binding);
-                       if (frame.has_value()) {
-                           throw speclab::core::AssertionFailure("the oversized grid was accepted", std::source_location::current());
-                       }
-                       state->error = frame.error();
-                       state->kept  = list.vertices().size();
+                       Assertions::require(!frame.has_value(), "the oversized grid was accepted");
+                       state.error = frame.error();
+                       state.kept  = list.vertices().size();
                    })
             .When("the list is inspected", [] {})
             .Then("the frame is WaterfallTooManyRows and whole rather than partial",
-                  [state] {
+                  [](AnOversizedGridRefusesTheWholeFrameAtRenderTimeState& state) {
                       mdux::spec::Checks checks;
-                      checks.expect(state->error == ms::ScreenError::WaterfallTooManyRows, "the refusal names the row cap");
-                      checks.expect(state->kept == 0, std::format("the frame was rolled back whole, got {} vertices", state->kept));
+                      checks.expect(state.error == ms::ScreenError::WaterfallTooManyRows, "the refusal names the row cap");
+                      checks.expect(state.kept == 0, std::format("the frame was rolled back whole, got {} vertices", state.kept));
                       checks.raise();
                   })
             .Execute();

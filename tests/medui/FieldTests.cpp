@@ -43,6 +43,8 @@ import mdux.text.schema;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace ms   = mdux::medui;
 namespace draw = mdux::draw;
 namespace font = mdux::font;
@@ -142,9 +144,7 @@ struct Scratch {
 
     [[nodiscard]] draw::DrawList list() {
         auto created = draw::DrawList::create(vertices, indices, commands, budget());
-        if (!created.has_value()) {
-            throw speclab::core::AssertionFailure("the scratch does not satisfy its own budget", std::source_location::current());
-        }
+        Assertions::require(created.has_value(), "the scratch does not satisfy its own budget");
         return std::move(*created);
     }
 };
@@ -231,9 +231,7 @@ struct FontCarrier {
             mdux::text::TextRun{.id = "STR-UNUSED", .byteOffset = 0, .byteLength = sidecar.size(), .sha256 = mdux::evidence::sha256(sidecar)});
 
         const auto written = package.write();
-        if (!written.has_value()) {
-            throw speclab::core::AssertionFailure("the fixture text package does not serialize", std::source_location::current());
-        }
+        Assertions::require(written.has_value(), "the fixture text package does not serialize");
         canonical = *written;
         approval  = ms::TextPackageApproval{.locale = package.locale, .packageId = package.header.id, .packageSha256 = mdux::evidence::sha256(bytes())};
     }
@@ -262,8 +260,7 @@ const FontCarrier& theCarrier() {
 [[nodiscard]] ms::TextBinding textOnlyBinding(const ms::ScreenPackage& screen) {
     auto made = ms::TextBinding::create(screen, theFont(), theCarrier().package, theCarrier().bytes(), theCarrier().sidecar);
     if (!made.has_value()) {
-        throw speclab::core::AssertionFailure(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())),
-                                              std::source_location::current());
+        Assertions::fail(std::format("the fixture text binding is invalid: {}", ms::describe(made.error())));
     }
     return *made;
 }

@@ -12,6 +12,8 @@ import mdux.tools.ml.emit;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace cli  = mdux::tools::cli;
 namespace emit = mdux::tools::ml;
 
@@ -23,9 +25,7 @@ namespace emit = mdux::tools::ml;
 /// @brief Reads a complete fixture or generated source as binary text.
 [[nodiscard]] std::string contentsOf(const std::filesystem::path& path) {
     std::ifstream in{path, std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("{} could not be opened", path.generic_string()), std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "{} could not be opened", path.generic_string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
@@ -35,9 +35,7 @@ namespace emit = mdux::tools::ml;
 void writeText(const std::filesystem::path& path, std::string_view text) {
     std::ofstream out{path, std::ios::binary | std::ios::trunc};
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!out) {
-        throw speclab::core::AssertionFailure(std::format("{} could not be written", path.generic_string()), std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(out), "{} could not be written", path.generic_string());
 }
 
 /// State shared by the steps of `committedPackageRenders`. At namespace scope because MSVC 19.44
@@ -59,9 +57,7 @@ const mdux::spec::Register committedPackageRenders{
                   })
             .Then("a module, header, and compile-time schema assertion are present",
                   [](CommittedPackageRendersState& state) {
-                      if (!state.outputs.has_value()) {
-                          throw speclab::core::AssertionFailure("renderModel() produced no output", std::source_location::current());
-                      }
+                      Assertions::require(state.outputs.has_value(), "renderModel() produced no output");
                       mdux::spec::Checks checks;
                       checks.expect(state.diagnostics.empty(), "no diagnostics");
                       checks.expect(state.outputs->stem == "model_ecg_demo", "the file stem");
@@ -218,15 +214,11 @@ const mdux::spec::Register identifierParity{
             .When("each is compared with identifierForModel()",
                   [](IdentifierParityState& state) {
                       std::ifstream parity{MDUX_MODEL_IDENTIFIER_PARITY_FILE};
-                      if (!parity.is_open()) {
-                          throw speclab::core::AssertionFailure("the model identifier parity file could not be opened", std::source_location::current());
-                      }
+                      Assertions::require(parity.is_open(), "the model identifier parity file could not be opened");
                       std::string line;
                       while (std::getline(parity, line)) {
                           const std::size_t tab = line.find('\t');
-                          if (tab == std::string::npos) {
-                              throw speclab::core::AssertionFailure("a model identifier parity line has no tab", std::source_location::current());
-                          }
+                          Assertions::require(tab != std::string::npos, "a model identifier parity line has no tab");
                           const std::string id        = line.substr(0, tab);
                           const std::string fromCMake = line.substr(tab + 1);
                           const std::string fromCpp   = emit::identifierForModel(id);

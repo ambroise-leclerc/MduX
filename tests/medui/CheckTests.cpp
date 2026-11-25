@@ -26,6 +26,8 @@ import mdux.tools.medui.diagnostics;
 
 namespace {
 
+using speclab::core::Assertions;
+
 namespace md  = mdux::tools::medui;
 namespace cli = mdux::tools::cli;
 
@@ -35,9 +37,7 @@ namespace cli = mdux::tools::cli;
 
 [[nodiscard]] std::string fixture(std::string_view name) {
     std::ifstream in{fixturePath(name), std::ios::binary};
-    if (!in) {
-        throw speclab::core::AssertionFailure(std::format("fixture {} could not be opened", name), std::source_location::current());
-    }
+    Assertions::require(static_cast<bool>(in), "fixture {} could not be opened", name);
     std::ostringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
