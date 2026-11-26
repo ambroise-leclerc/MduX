@@ -302,11 +302,12 @@
           "note": "no declared direction behaviour"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "layout and parser unit tests exist, and a pixel test compares its synthetic panel; no noheap case renders a compiled Row; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -373,11 +374,11 @@
           "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit, noheap and pixel tests exist; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -446,8 +447,11 @@
         },
         "AC-10": {
           "status": "partial",
-          "closedBy": "H2",
-          "note": "unit and pixel tests exist; no noheap case names this component"
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "unit and pixel tests exist; no noheap case names this component; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -516,11 +520,11 @@
           "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of its face and a pointer step in a replayed scenario exist; the pinned corpus carries INTERACTION, PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -591,11 +595,11 @@
           "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of its face and label and a pointer step in the committed scenario exist; the pinned corpus carries INTERACTION, PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -644,9 +648,11 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Reading.cppm"
+            "include/mdux/medui/Reading.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/ReadingTests.cpp"
           ],
-          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit"
+          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -668,11 +674,12 @@
           "note": "the template is build-measured, but one template serves every locale"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares drawn digits - the rendered checks reach only the node's bounds; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -723,9 +730,10 @@
             "include/mdux/medui/Screen.cppm",
             "include/mdux/medui/Reading.cppm",
             "src/medui/Reading.cpp",
-            "tests/medui/ReadingTests.cpp"
+            "tests/medui/ReadingTests.cpp",
+            "src/medui/Screen.cpp"
           ],
-          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred"
+          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -747,11 +755,12 @@
           "note": "two closed formats, neither locale-dependent"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares a drawn time; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles. Those BINDING vectors also refuse an impossible date and a five-digit year under TimeSeconds, where recordClock() checks only the fields the format draws - a divergence to settle before that profile is claimed"
         },
         "AC-11": {
           "status": "partial",
@@ -798,9 +807,11 @@
         "AC-05": {
           "status": "met",
           "evidence": [
-            "include/mdux/medui/Screen.cppm"
+            "include/mdux/medui/Screen.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/StatusTests.cpp"
           ],
-          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange"
+          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -822,11 +833,11 @@
           "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case and a pixel test of each bound state exist; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -875,9 +886,11 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Field.cppm"
+            "include/mdux/medui/Field.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/FieldTests.cpp"
           ],
-          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset"
+          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "partial",
@@ -900,11 +913,11 @@
           "note": "a fixed-pitch grid, which fits neither joining nor stacking scripts"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of a bound value and caret, and key and text steps in the committed scenario exist; the pinned corpus carries BINDING, INTERACTION and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -954,9 +967,11 @@
           "evidence": [
             "include/mdux/medui/Screen.cppm",
             "include/mdux/medui/Trace.cppm",
-            "src/medui/Trace.cpp"
+            "src/medui/Trace.cpp",
+            "src/medui/Screen.cpp",
+            "tests/medui/TraceTests.cpp"
           ],
-          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention"
+          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -978,11 +993,12 @@
           "note": "no declared direction behaviour; a waveform must be recorded as never mirrored"
         },
         "AC-10": {
-          "status": "met",
-          "evidence": [
-            "tests/render/ScreenPixelTests.cpp",
-            "tests/medui/ScreenNoHeapTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares a drawn waveform - the rendered checks reach only the node's bounds; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",
@@ -1031,9 +1047,11 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Viewport.cppm"
+            "include/mdux/medui/Viewport.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/ViewportContractTests.cpp"
           ],
-          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention"
+          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -1056,8 +1074,11 @@
         },
         "AC-10": {
           "status": "partial",
-          "closedBy": "H2",
-          "note": "unit and pixel tests exist; no noheap case names this component"
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "unit tests and a pixel test of a bound waterfall exist; no noheap case names this component; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
         },
         "AC-11": {
           "status": "partial",

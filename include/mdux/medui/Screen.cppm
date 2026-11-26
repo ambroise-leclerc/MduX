@@ -1160,6 +1160,13 @@ struct FrameStats {
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
  *
+ * The signal, reading, status, text-input and viewport bindings hold a *view* of slots the caller
+ * owns, so each is validated again here, by its own `create()`, before anything is recorded. A slot
+ * whose node id, stream, pattern, state or ring was changed after the binding was made refuses the
+ * frame with the error `create()` would have returned, rather than silently no longer matching its
+ * node. The text and image bindings are not re-proved: one holds values only, and the other a baked
+ * package authenticated by digest at creation, whose bytes the caller must not change afterwards.
+ *
  * Two budgets are in play and both are enforced. `DrawList` fails closed against the budget it was
  * created with, and this function additionally holds the frame to `screen.budget` - the ceiling the
  * screen itself declares - by measuring what it added. A list may legitimately be larger, because one

@@ -841,6 +841,42 @@ const mdux::spec::Register bindingRefusesWhatItCanCheck{
             .Execute();
     }};
 
+const mdux::spec::Register aSignalSlotChangedAfterCreationIsRefused{
+    "A signal slot renamed after the binding was made refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-signal-slot-identity-is-rechecked")
+            .Given("a binding made over slots the caller goes on owning", [] {})
+            .When("a slot's stream, ring or range is changed after create() accepted it", [] {})
+            .Then("the frame is refused by the error create() would have given",
+                  [] {
+                      mdux::spec::Checks                    checks;
+                      static constexpr std::array<float, 4> samples{0.0F, 1.0F, 0.5F, 0.25F};
+                      static const ms::SampleRing           ring = ringOver(samples);
+                      std::array<ms::SignalSlot, 1>         slots{
+                          ms::SignalSlot{.streamSource = "ECG_LEAD_II", .ring = &ring, .style = unitStyle}
+                      };
+                      const ms::SignalBinding binding = requireBound(ms::SignalBinding::create(traceScreen, slots), "the binding");
+
+                      Scratch scratch;
+                      slots[0].streamSource  = "ECG_LEAD_IX";
+                      auto       renamedList = scratch.list();
+                      const auto renamed     = ms::render(traceScreen, renamedList, {}, {}, binding);
+                      checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownStreamSource,
+                                    "a slot renamed after creation is UnknownStreamSource");
+                      checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+
+                      slots[0].streamSource   = "ECG_LEAD_II";
+                      slots[0].ring           = nullptr;
+                      auto       ringlessList = scratch.list();
+                      const auto ringless     = ms::render(traceScreen, ringlessList, {}, {}, binding);
+                      checks.expect(!ringless.has_value() && ringless.error() == ms::ScreenError::MissingSampleRing,
+                                    "a ring removed after creation is MissingSampleRing");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 struct ABindingIsNotPortableBetweenScreensState {
     Scratch                        scratch;
     std::optional<ms::ScreenError> error;

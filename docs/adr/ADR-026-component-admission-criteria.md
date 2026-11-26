@@ -149,6 +149,15 @@ and the data behind it is not:
   afterwards proves nothing about the frame that draws it, so these are checked afresh before each
   use, and a violation refuses the frame by a named error — never clamped, truncated or wrapped.
 
+What decides the phase is who can still write the storage, not what kind of fact it is. A binding
+that keeps a *view* of slots the caller goes on owning has proved nothing lasting about them: the
+node or stream a slot names is as writable as the value beside it. Everything `create()` checked
+about such a slot is therefore in the second phase as well, and is checked again on every frame,
+by the same function — so a slot renamed after creation refuses the frame instead of leaving its
+node drawn as though nothing had been offered. The first phase holds only what the binding keeps
+by value, and a baked package it authenticated by digest: that storage is the build's, not the
+producer's, and rehashing it on every frame would cost time linear in its size.
+
 The range checked is the one the value's type *documents*, not the one its representation happens
 to hold. A value that fits its storage, or its digit slots, and lies outside its documented domain
 is a violation like any other: an hour of 99 fits two slots and reads as a time. Where values are
@@ -227,6 +236,16 @@ Unit tests of the schema, the draw path and each refusal; a `noheap` test; a pix
 software rasteriser; a scenario step if the component is interactive; and conformance cases
 upstream when AC-01 is met by the shared contract.
 
+These are five elements and `met` means all five, each shown by a path the inventory names. Three
+readings are closed off, because each has been made:
+
+- a pixel test that paints the node's reserved field is not a pixel test of the component; the
+  element is met when the pixels compared are the bound content — the digits, the waveform;
+- a `noheap` case covers the components its screen carries, and no others;
+- upstream cases count when this repository *runs* them. A profile whose vectors name the
+  component and which `medui-conformance.toml` does not claim is a recorded shortfall, not an
+  absence of cases.
+
 ### AC-11 Authoring and tooling
 
 The component is documented in the `medui-authoring` skill, appears in `docs/medui/grammar.json`,
@@ -283,7 +302,11 @@ child of epic #388:
   pins bounds and tint but not the value. The other seven drawn components can be named by a golden
   and no committed screen does so. `Row` cannot be: its background is drawn as a synthetic node
   the golden stage skips, and a `Row` carries neither `requirement:` nor `position:`.
-- **AC-10 is partial for `Image` and `VulkanViewport`**: no `noheap` case names either.
+- **AC-10 is partial throughout.** No component has all five elements. The pinned corpus carries
+  binding, interaction, presentation and pixel profile vectors naming every component, and this
+  repository claims and runs only the compiler phases and the rendered and evidence profiles.
+  Beyond that, `Row`, `Image` and `VulkanViewport` have no `noheap` case, and `NumericDisplay`,
+  `Clock` and `SignalTrace` have no pixel test that compares their bound content.
 - **AC-09 is partial throughout**: text is key-based and budget-checked across locales, but no
   component declares a direction behaviour, and layout speaks only of absolute coordinates.
 - **AC-11 is partial throughout**: there is no component gallery.

@@ -21,7 +21,8 @@ half that goes stale without anyone noticing:
   why in `reason`; a universal criterion - one whose requirement holds for every entry of the
   dictionary, AC-01, AC-02 and AC-04 among them - is never `not-applicable`, so the status cannot
   be used to step around the floor or to reach `admitted` without evidence;
-- a `partial` or `unmet` names the epic child that closes it, and that child is declared;
+- a `partial` or `unmet` names the epic child that closes it - or the children, as a list, when
+  what is owed falls to more than one - and each is declared;
 - a `proposed` component names a declared workstream and asserts no criteria, because nobody can
   have met a criterion for a component that has not been designed;
 - a `declined` component records why.
@@ -85,7 +86,8 @@ def check_criterion(name: str, criterion: str, entry: object, children: set[str]
         if criterion in FLOOR:
             findings.append(f"{where}: a floor criterion cannot be '{status}'; the component may not be in the dictionary")
         closed_by = entry.get("closedBy")
-        if closed_by not in children:
+        owners = closed_by if isinstance(closed_by, list) else [closed_by]
+        if not owners or len(set(map(str, owners))) != len(owners) or any(owner not in children for owner in owners):
             findings.append(f"{where}: '{status}' must name a declared child in closedBy, found {closed_by!r}")
         if not entry.get("note"):
             findings.append(f"{where}: '{status}' must say what is missing in note")

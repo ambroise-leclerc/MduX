@@ -772,6 +772,30 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
         return refuse(ScreenError::ScreenNotApproved);
     }
 
+    // What `create()` proved, proved again. These five bindings keep a *view* of slots the caller
+    // owns and writes between frames - that is how a new reading arrives - so everything `create()`
+    // checked about a slot is something the producer can have changed since: the node or stream it
+    // names, its pattern, its state, its ring. A slot renamed after creation used to stop matching
+    // its node, which then drew its unbound field as though no reading had ever been offered, and
+    // the frame was accepted. Running the same checks here refuses that frame by the error
+    // `create()` would have given. It is the same function rather than a second copy of its rules,
+    // so the two cannot drift; it allocates nothing, and an unbound binding has no slots to walk.
+    if (const auto again = SignalBinding::create(screen, signals.slots()); !again.has_value()) {
+        return refuse(again.error());
+    }
+    if (const auto again = ReadingBinding::create(screen, readings.readings(), readings.now(), readings.clockColorToken()); !again.has_value()) {
+        return refuse(again.error());
+    }
+    if (const auto again = StatusBinding::create(screen, status.slots()); !again.has_value()) {
+        return refuse(again.error());
+    }
+    if (const auto again = TextInputBinding::create(screen, inputs.slots()); !again.has_value()) {
+        return refuse(again.error());
+    }
+    if (const auto again = ViewportBinding::create(screen, viewports.slots()); !again.has_value()) {
+        return refuse(again.error());
+    }
+
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*
     // draws, and `DrawList` can only enforce the budget it was created with - which may be larger,
     // because one list may carry several screens. Without this the declared ceiling was decorative:

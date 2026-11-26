@@ -396,6 +396,21 @@ const mdux::spec::Register slotsAreCheckedAgainstTheScreen{
                       auto       list  = scratch.list();
                       const auto frame = ms::render(mixedScreen, list, {}, {}, {}, {}, bindStatus(tintedScreen, slots));
                       checks.expect(!frame.has_value() && frame.error() == ms::ScreenError::ScreenNotApproved, "a binding built for another screen is refused");
+
+                      // And a slot changed after create() accepted it. The binding holds a view of
+                      // the caller's slots, so the name is re-checked on every frame: a renamed slot
+                      // used to stop matching and leave the indicator drawn unbound.
+                      std::array mutableSlots{
+                          ms::StatusSlot{.nodeId = "status", .state = 0}
+                      };
+                      const auto bound       = bindStatus(tintedScreen, mutableSlots);
+                      mutableSlots[0].nodeId = "statuz";
+                      Scratch    renamedScratch;
+                      auto       renamedList = renamedScratch.list();
+                      const auto renamed     = ms::render(tintedScreen, renamedList, {}, {}, {}, {}, bound);
+                      checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownStatusNode,
+                                    "a slot renamed after creation is UnknownStatusNode");
+                      checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
                       checks.raise();
                   })
             .Execute();

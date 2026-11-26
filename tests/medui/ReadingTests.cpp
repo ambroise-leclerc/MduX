@@ -1078,6 +1078,48 @@ const mdux::spec::Register aBindingIsNotPortableBetweenScreens{
             .Execute();
     }};
 
+const mdux::spec::Register aReadingSlotChangedAfterCreationIsRefused{
+    "A reading slot renamed or duplicated after the binding was made refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-reading-slot-identity-is-rechecked")
+            .Given("a binding made over slots the caller goes on owning", [] {})
+            .When("a slot's node id is changed after create() accepted it", [] {})
+            .Then("the frame is refused rather than drawn with the node's unbound field",
+                  [] {
+                      mdux::spec::Checks             checks;
+                      std::array<ms::ReadingSlot, 2> slots{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137},
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
+                      };
+                      const ms::ScreenPackage                screen = approve(readingScreen);
+                      const std::span<const ms::ReadingSlot> one{slots.data(), 1};
+                      const ms::ReadingBinding               binding = requireBound(ms::ReadingBinding::create(screen, one), "the binding");
+                      const ms::TextBinding                  text    = bindText(screen);
+
+                      Scratch scratch;
+                      auto    list = scratch.list();
+                      checks.expect(ms::render(screen, list, text, {}, {}, binding).has_value(), "the frame is drawn while the slot is as validated");
+
+                      // The binding holds a view, so this is all a producer has to do.
+                      slots[0].nodeId        = "pressurf";
+                      auto       renamedList = scratch.list();
+                      const auto renamed     = ms::render(screen, renamedList, text, {}, {}, binding);
+                      checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownReadingNode,
+                                    "a slot renamed after creation is UnknownReadingNode");
+                      checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+
+                      slots[0].nodeId        = "pressure";
+                      slots[0].rendering     = "";
+                      auto       emptiedList = scratch.list();
+                      const auto emptied     = ms::render(screen, emptiedList, text, {}, {}, binding);
+                      checks.expect(!emptied.has_value() && emptied.error() == ms::ScreenError::MalformedPattern,
+                                    "a pattern emptied after creation is MalformedPattern");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 struct AReadingOverflowingItsNodeIsRefusedState {
     Scratch                        scratch;
     std::optional<ms::ScreenError> error;

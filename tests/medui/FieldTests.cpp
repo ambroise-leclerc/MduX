@@ -986,6 +986,23 @@ const mdux::spec::Register aBindingBuiltForOneScreenIsRefusedByAnother{
                       const auto frame = ms::render(other, list, {}, {}, {}, {}, {}, *binding);
                       checks.expect(!frame.has_value() && frame.error() == ms::ScreenError::ScreenNotApproved, "the substituted screen is refused");
                       checks.expect(list.vertices().empty(), "and nothing is left recorded");
+
+                      // The slot's own name is re-checked per frame too: the binding holds a view of
+                      // the caller's slots, and a slot renamed after create() used to stop matching.
+                      std::array mutableSlots{
+                          ms::TextInputSlot{.nodeId = "entry", .text = value, .caret = std::nullopt}
+                      };
+                      auto rebound = ms::TextInputBinding::create(inputScreen, mutableSlots);
+                      checks.expect(rebound.has_value(), "the second binding is made");
+                      if (rebound.has_value()) {
+                          mutableSlots[0].nodeId = "entrz";
+                          Scratch    renamedScratch;
+                          auto       renamedList = renamedScratch.list();
+                          const auto renamed     = ms::render(inputScreen, renamedList, {}, {}, {}, {}, {}, *rebound);
+                          checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownTextInputNode,
+                                        "a slot renamed after creation is UnknownTextInputNode");
+                          checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+                      }
                       checks.raise();
                   })
             .Execute();

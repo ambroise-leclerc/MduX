@@ -100,6 +100,14 @@ class CheckComponentInventoryTests(unittest.TestCase):
         document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-03"].pop("note"))
         self.assert_one_finding(document, "must say what is missing")
 
+    def test_a_gap_may_be_owned_by_several_declared_children(self) -> None:
+        """Accept a list of declared children; refuse an empty, repeated or partly undeclared one."""
+        document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-03"].update(closedBy=["A5", "B1"]))
+        self.assertEqual(self.findings_for(document), [])
+        for owners in ([], ["A5", "A5"], ["A5", "Z9"]):
+            document = self.mutated(lambda d, o=owners: d["components"][0]["criteria"]["AC-03"].update(closedBy=o))
+            self.assert_one_finding(document, "must name a declared child")
+
     def test_rejects_a_dictionary_component_missing_a_criterion(self) -> None:
         """Refuse a component in the dictionary that leaves a criterion unstated."""
         document = self.mutated(lambda d: d["components"][0]["criteria"].pop("AC-02"))
