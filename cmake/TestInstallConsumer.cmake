@@ -50,6 +50,14 @@ int main() {\n\
     if (!mdux::Compliance::isMedicalDeviceCompliant) {\n\
         return 2;\n\
     }\n\
+    // Everything above is constexpr, so it links without pulling a single object\n\
+    // out of the installed archives. These two are defined in src/mdux.cpp: the\n\
+    // consumer must resolve them from libMduX, which is what proves a sanitizer\n\
+    // build exports the runtime its instrumented objects need (#360).\n\
+    if (!mdux::initialize()) {\n\
+        return 3;\n\
+    }\n\
+    mdux::shutdown();\n\
     return 0;\n\
 }\n\
 ")
