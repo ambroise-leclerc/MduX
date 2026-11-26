@@ -17,10 +17,16 @@
 # expand_UBSAN_NULL when a module interface and its importer disagree about instrumentation (#356).
 #
 # CMAKE_CXX_FLAGS also appears on every link line CMake writes for C++, so the sanitizer runtimes
-# are linked without a separate linker-flag variable. It is set in the caller's scope, which must
-# be the root directory and must precede every add_subdirectory(): a subdirectory takes the value
-# the variable has when it is added. cmake/CheckSanitizerCoverage.cmake verifies the result
-# against compile_commands.json, as the `sanitizer-coverage` CTest label.
+# are linked into this build's own executables without a separate linker-flag variable. It does
+# not leave the build, though, so MDUX_SANITIZER_LINK_OPTION is also returned for the root
+# CMakeLists.txt to attach to MduXCore: an application linking an instrumented MduX, installed or
+# through add_subdirectory(), needs the sanitizer runtime or it fails on unresolved __asan_* and
+# __ubsan_* references. MduX_options used to carry that to consumers; MduXCore now does.
+#
+# CMAKE_CXX_FLAGS is set in the caller's scope, which must be the root directory and must precede
+# every add_subdirectory(): a subdirectory takes the value the variable has when it is added.
+# cmake/CheckSanitizerCoverage.cmake verifies the result against compile_commands.json, as the
+# `sanitizer-coverage` CTest label; InstallTreeConsumer checks the exported link option.
 function(enable_sanitizers project_name)
 
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
@@ -93,6 +99,10 @@ function(enable_sanitizers project_name)
       # entry of compile_commands.json whatever its language.
       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${MDUX_SANITIZER_FLAGS}" PARENT_SCOPE)
       set(MDUX_SANITIZER_FLAGS "${MDUX_SANITIZER_FLAGS}" PARENT_SCOPE)
+      # What a *consumer* must link with, which CMAKE_CXX_FLAGS cannot carry: it reaches neither an
+      # installed package nor the parent of a project that add_subdirectory()s MduX. The root
+      # CMakeLists.txt puts it on MduXCore as an INTERFACE link option, exported with the target.
+      set(MDUX_SANITIZER_LINK_OPTION "-fsanitize=${LIST_OF_SANITIZERS}" PARENT_SCOPE)
       message(STATUS "Sanitizers: ${MDUX_SANITIZER_FLAGS} on every C and C++ translation unit")
     endif()
   endif()

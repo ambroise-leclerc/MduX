@@ -437,6 +437,14 @@ if(MSVC)
 endif()
 
 # Target linking
+# A sanitizer build instruments MduXCore's objects, so whatever links them needs the sanitizer
+# runtime (#360). CMAKE_CXX_FLAGS provides it inside this build only; an INTERFACE link option is
+# exported with the target, and reaches MduX's consumers through its PUBLIC link to MduXCore. A link
+# option, not a link library, so the governed graph mdux_verify_trust_zones() inspects is unchanged.
+if(MDUX_SANITIZER_LINK_OPTION)
+    target_link_options(MduXCore INTERFACE ${MDUX_SANITIZER_LINK_OPTION})
+endif()
+
 target_link_libraries(MduX PUBLIC MduX::Core MduX_options)
 target_link_libraries(MduX PRIVATE MduX_warnings)
 target_link_libraries(MduXCore PRIVATE MduX_warnings)
@@ -744,6 +752,15 @@ if(MDUX_BUILD_TESTS)
     # deliberately, not add_test(NAME ... COMMAND ...) - see
     # cmake/MduXTestDiscoveryImpl.cmake's comment for why the keyword form
     # mis-parses on this project's CTest version.
+    # The consumer gets this build's flags minus the sanitizer ones (#360). It is meant to be an
+    # ordinary application: one that does not know MduX was built instrumented, and so links it only
+    # if the installed package itself carries the sanitizer link option. Passing the full
+    # CMAKE_CXX_FLAGS would supply that option from outside and hide its absence.
+    set(MDUX_CONSUMER_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    if(MDUX_SANITIZER_FLAGS)
+        string(REPLACE "${MDUX_SANITIZER_FLAGS}" "" MDUX_CONSUMER_CXX_FLAGS "${MDUX_CONSUMER_CXX_FLAGS}")
+        string(STRIP "${MDUX_CONSUMER_CXX_FLAGS}" MDUX_CONSUMER_CXX_FLAGS)
+    endif()
     add_test(InstallTreeConsumer
         "${CMAKE_COMMAND}"
         -D "BUILD_DIR=${CMAKE_BINARY_DIR}"
@@ -756,7 +773,7 @@ if(MDUX_BUILD_TESTS)
         # default. Omitting this is invisible on macOS, where libc++ *is* Clang's default, and fatal
         # on Linux, where it is not: the nested configure then scans libc++'s std.cppm with
         # libstdc++'s include path and fails on a missing '__config'. Found by #246's Linux leg.
-        -D "CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+        -D "CXX_FLAGS=${MDUX_CONSUMER_CXX_FLAGS}"
         -D "GENERATOR=${CMAKE_GENERATOR}"
         -D "EXPECTED_VERSION=${PROJECT_VERSION}"
         -P "${CMAKE_SOURCE_DIR}/cmake/TestInstallConsumer.cmake"
