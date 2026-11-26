@@ -23,7 +23,9 @@ jobs:
   # Windows Build with Vulkan
   windows-build:
     name: Windows (MSVC, Vulkan)
-    runs-on: windows-latest
+    # Pinned rather than windows-latest (#382): MSVC comes from the image, so an image move is a
+    # compiler change and belongs in a diff.
+    runs-on: windows-2025-vs2026
     env:
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
@@ -56,24 +58,21 @@ jobs:
         path: .medui-conformance
         persist-credentials: false
 
-    # Pinned, not 'latest': CMakeLists.txt hardcodes CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
-    # to a specific UUID that only matches CMake's `import std` experimental-feature
-    # ABI as of 4.1.1 - CMake changes that UUID as the feature evolves release to
-    # release, so newer CMake versions reject it ("CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
-    # is set to incorrect value") and import std silently stops working, cascading
-    # into hundreds of "could not find module 'std'" errors at compile time. Every
-    # other job in this workflow already pins 4.1.1 for the same reason (grep
-    # CMAKE_VERSION="4.1.1" below) - 'latest' here was the one job that floated,
-    # and it broke as soon as 'latest' moved past 4.1.1.
-    - name: Setup CMake (4.1.1, matching every other job in this workflow)
-      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
+    # Pinned, not 'latest': CMakeLists.txt sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD to the UUID of
+    # each qualified CMake series, and CMake changes that UUID as the feature evolves. A series this
+    # project has not reviewed either rejects the value or silently stops providing `import std`,
+    # which cascades into hundreds of "could not find module 'std'" errors at compile time - this
+    # job broke exactly that way when it floated on 'latest'. Every CMake in CI is the same release
+    # (#382), so a difference between legs is never a difference in CMake.
+    - name: Setup CMake (4.3.6, the release every CI leg uses)
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
       with:
-        cmake-version: '4.1.1'
+        cmake-version: '4.3.6'
 
     - name: Setup Vulkan SDK
       uses: humbletim/setup-vulkan-sdk@c25f41106918cde0bf347e6f201277392b3a9e9d # v1.2.1
       with:
-        vulkan-query-version: 1.3.204.0
+        vulkan-query-version: 1.4.363.0
         vulkan-components: Vulkan-Headers, Vulkan-Loader
         vulkan-use-cache: true
 
@@ -101,8 +100,8 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-        $version  = '26.2.0'
-        $expected = 'dcb2719ef346dab5b609fcb193a5f13cfc4b0502e3f4de1ad43d349477402f47'
+        $version  = '26.3.1'
+        $expected = '64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1'
         $archive  = Join-Path $env:RUNNER_TEMP 'mesa.7z'
         $target   = Join-Path $env:RUNNER_TEMP 'mesa'
         $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$version/mesa3d-$version-release-msvc.7z"

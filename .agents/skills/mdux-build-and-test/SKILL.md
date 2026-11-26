@@ -20,7 +20,7 @@ Before configuring, check:
    with `message(FATAL_ERROR ...)` if the detected compiler is below these floors — read that
    error message; it names the exact required version.
 3. **CMake**: 4.0-4.3 generally — a window, not a floor, since the root `CMakeLists.txt` rejects
-   4.4+ until that series' `import std` gate is reviewed; exactly 4.3.1 on the verified macOS
+   4.4+ until that series' `import std` gate is reviewed; exactly 4.3.6 on the verified macOS
    tuple.
 4. **Vulkan SDK**: 1.3+, discoverable via `find_package(Vulkan REQUIRED)`. Run `vulkaninfo
    --summary` (Linux/macOS) or check `%VULKAN_SDK%` (Windows) to confirm the SDK is installed and on the
@@ -40,7 +40,7 @@ know will fail or guessing at results.
    cmake .. -G Ninja
    ```
    On Apple Silicon macOS instead use `cmake --preset ninja-macos-clang`; its toolchain selects
-   upstream Clang 21.1.8/libc++, LLVM archive tools and the libc++ modules manifest.
+   upstream Clang 23.1.6/libc++, LLVM archive tools and the libc++ modules manifest.
    - `-G Ninja` is mandatory and is checked at configure time. CMake implements C++ modules only
      for the Ninja family and Visual Studio 17.4+, and Visual Studio cannot do `import std`. A
      bare `cmake ..` picks the platform default and fails with a message naming the generator it
@@ -109,7 +109,7 @@ know will fail or guessing at results.
   version floor is enforced in `CMakeLists.txt`. Report a Clang build result as unverified
   against the project's automatic CI, unless you can cite a specific manual run of that workflow.
 - **macOS Clang**: `.github/workflows/macos-arm64-build.yml` is automatic and pins upstream Clang
-  21.1.8. Its pixel and presentation steps must not be skipped; local compilation without a Metal
+  23.1.6. Its pixel and presentation steps must not be skipped; local compilation without a Metal
   device does not reproduce that evidence.
 - **MSVC**: requires `/experimental:module` and `/std:c++latest`, already wired into
   `CMakeLists.txt`; the Visual Studio *generator* is explicitly rejected in favor of Ninja for

@@ -77,10 +77,10 @@
         {
             "name": "ninja-clang",
             "displayName": "Ninja with Clang",
-            "description": "Ninja generator with upstream Clang 21 and libc++ for C++23 modules and import std. Mirrors the Linux Clang leg in .github/workflows/clang-build.yml, which runs on every push since #246. The toolchain file carries the import-std wiring that made the macOS lane work.",
+            "description": "Ninja generator with upstream Clang 23 and libc++ for C++23 modules and import std. Mirrors the Linux Clang leg in .github/workflows/clang-build.yml, which runs on every push since #246. The toolchain file carries the import-std wiring that made the macOS lane work.",
             "generator": "Ninja",
             "binaryDir": "build-clang",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/linux-clang21-libcxx.cmake",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/linux-clang23-libcxx.cmake",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -96,7 +96,7 @@
         {
             "name": "ninja-macos-clang",
             "displayName": "Ninja with upstream Clang on Apple Silicon",
-            "description": "Verified macOS configuration: arm64, upstream LLVM/Clang 21.1.8, libc++, CMake 4.3.1, Ninja, and the LunarG Vulkan SDK/MoltenVK.",
+            "description": "Verified macOS configuration: arm64, upstream LLVM/Clang 23.1.6, libc++, CMake 4.3.6, Ninja, and the LunarG Vulkan SDK/MoltenVK.",
             "generator": "Ninja",
             "binaryDir": "build-macos-clang",
             "toolchainFile": "${sourceDir}/cmake/toolchains/macos-arm64-llvm.cmake",

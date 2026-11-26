@@ -3,9 +3,14 @@ name: OSV-Scanner
 # Report-only: uses Google's reusable workflows, which upload results as SARIF to the Security
 # tab. fail-on-vuln must be set explicitly - the reusable workflows default it to true, which
 # would otherwise turn every PR red on a newly-disclosed CVE, the opposite of the non-blocking
-# cppcheck/clang-tidy pattern the rest of CI follows. Covers the two CPM-fetched dependencies
-# (Catch2 in tests/CMakeLists.txt, glfw in examples/CMakeLists.txt) and the pinned GitHub Actions
-# versions used across .github/workflows/.
+# cppcheck/clang-tidy pattern the rest of CI follows.
+#
+# What it can see is whatever manifest or lockfile the checkout contains (`-r ./`). The three
+# CPM-fetched dependencies - SpecLab (tests/CMakeLists.txt), GLFW (examples/CMakeLists.txt) and
+# cpp-httplib (tools/CMakeLists.txt) - have none: their pins live in CMake calls, which the scanner
+# does not read. So this job does not cover them. Their versions and anomaly tracking are recorded
+# in docs/governance/soup-register.toml instead, and giving the scanner an inventory it can read is
+# separate work (#382).
 
 on:
   push:
@@ -39,7 +44,7 @@ jobs:
       security-events: write
       contents: read
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
     with:
       fail-on-vuln: false
       scan-args: |-
@@ -52,7 +57,7 @@ jobs:
       security-events: write
       contents: read
     if: ${{ github.event_name == 'pull_request' }}
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
     with:
       fail-on-vuln: false
       scan-args: |-

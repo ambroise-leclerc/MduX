@@ -153,8 +153,8 @@ changed a committed artifact, authoritatively, for free. Duplicating that inside
 was redundant even before it turned out to be broken.
 
 ### 6. Four legs, in the same PR — a claim TrustSC cannot make
-The evidence tests run on Windows/MSVC, Linux/GCC 16, macOS/Clang 21 with libc++ (#222), and
-Linux/Clang 21 with libc++ (#246), in the same pull request. Byte-identity across independent
+The evidence tests run on Windows/MSVC, Linux/GCC 16, macOS/Clang 23 with libc++ (#222), and
+Linux/Clang 23 with libc++ (#246), in the same pull request. Byte-identity across independent
 toolchains, standard libraries and floating-point code generators is a strictly stronger determinism
 claim than TrustSC obtains from a single rustc, and it costs nothing extra because all four legs
 already exist.
@@ -184,7 +184,7 @@ property decision 4 of ADR-014 protects by keeping measurements out of the file.
 **#255 added a second, differently-scoped verification, and #282 made its leg count four as well.**
 The bake above re-derives `verification.json` on all four legs and byte-compares it. The
 `verify.screen.<id>` gate runs `mdux-verify-ui` over the **committed** bundle, and it is asserted as
-a named step on all four: Linux/GCC 16 and Linux/Clang 21 under lavapipe, macOS/Clang 21 under
+a named step on all four: Linux/GCC 16 and Linux/Clang 23 under lavapipe, macOS/Clang 23 under
 MoltenVK, and Windows/MSVC under Mesa's Windows lavapipe build. None of the four sets
 `SKIP_RETURN_CODE` - `mdux-verify-ui` has no 77 status and an absent device exits 3 - so a runner
 that lost its ICD fails its step as itself rather than reporting a skip.

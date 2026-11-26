@@ -28,7 +28,7 @@ jobs:
     # 16.2.0 on 2026-08-12 and turned develop red on a markdown-only commit (#205): GCC 16.2 could
     # not read the module BMIs the SpecLab sources produce - "failed to read compiled module
     # cluster ... Bad file data". The BMI format is not stable across GCC patch releases, and every
-    # other input to this job is already pinned (SpecLab to a commit SHA, CMake to 4.1.1), so the
+    # other input to this job is already pinned (SpecLab to a commit SHA, CMake to 4.3.6), so the
     # compiler was the one floating input - and the one most likely to break a C++23 modules build.
     #
     # Same reasoning as the CMake pin in windows-build.yml, which that file states at length after
@@ -95,13 +95,18 @@ jobs:
           gnupg \
           python3
 
-    - name: Install latest CMake
+    - name: Install pinned CMake
       run: |
         # Download to RUNNER_TEMP, not the checkout root - the archive would
         # otherwise trip "Verify no source-tree writes" below.
-        CMAKE_VERSION="4.1.1"
+        CMAKE_VERSION="4.3.6"
         CMAKE_ARCHIVE="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+        # Pinned SHA-256 from Kitware's own cmake-4.3.6-SHA-256.txt manifest, as in sanitizers.yml,
+        # security-analysis.yml and compliance-docs.yml - this was the one CMake download that
+        # extracted whatever it received.
+        CMAKE_SHA256="fba967b44c7b40f155f9492dacb5477aab8333699986e1e07a7d90803aba7219"
         wget -O "$CMAKE_ARCHIVE" https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+        echo "${CMAKE_SHA256}  ${CMAKE_ARCHIVE}" | sha256sum -c -
         tar -xzf "$CMAKE_ARCHIVE" -C /opt/
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake /usr/bin/cmake
         ln -sf /opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/ctest /usr/bin/ctest

@@ -73,7 +73,7 @@ way.
 
 `docs/governance/soup-register.toml` is a live, structured register
 of every third-party and build-tool dependency (issue #36). Four entries at time of writing: the
-Vulkan SDK (the only one actually deployed to a device), GLFW 3.4 (examples only), CMake, and the
+Vulkan SDK (the only one actually deployed to a device), GLFW 3.5.1 (examples only), CMake, and the
 MSVC/GCC/Clang C++23 floor. Each entry records `component_id`, supplier, license, `usage`,
 `integration_path`, `pinned_by`, `runtime_deployment`, `support_model`, `boundary_rationale`, and
 `risk_controls` as data, not prose scattered across a wiki. The register's own header states why

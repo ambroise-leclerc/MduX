@@ -25,10 +25,19 @@ driver.
 Support one macOS configuration:
 
 - Apple Silicon (`arm64`);
-- upstream LLVM/Clang 21.1.8 and its libc++ standard-library modules;
-- CMake 4.3.1 and Ninja;
+- upstream LLVM/Clang 23.1.6 and its libc++ standard-library modules;
+- CMake 4.3.6 and Ninja;
 - LLVM's `llvm-ar` and `llvm-ranlib`;
-- LunarG Vulkan SDK 1.4.309.0 with MoltenVK in automatic CI.
+- LunarG Vulkan SDK 1.4.363.1 with MoltenVK in automatic CI.
+
+**Amendment, 26 November 2026 (#382).** The tuple was 21.1.8 / 4.3.1 / 1.4.309.0 on a `macos-15`
+image when accepted; it is now the list above on `macos-26`. The decision itself is unchanged: one
+exact tuple, every other combination rejected at configure time. One mechanism changed. Homebrew
+publishes LLVM 23 only as the unversioned `llvm` formula, which moves with every patch release, so
+installing it by name cannot hold an exact version. CI therefore installs the `llvm` 23.1.6 bottle
+Homebrew published for arm64 Tahoe, fetched by its SHA-256 and checked before installation. CMake
+stays on the 4.3 series because 4.4 and 4.5 were reviewed and refused for this project (see the root
+`CMakeLists.txt` and the SOUP register's `cmake-4.0` entry).
 
 `cmake/toolchains/macos-arm64-llvm.cmake` and `ninja-macos-clang` encode that tuple. Configure fails
 closed for AppleClang, GCC on macOS, Intel Macs, a different Clang/CMake version, missing libc++

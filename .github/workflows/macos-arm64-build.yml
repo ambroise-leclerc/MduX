@@ -12,10 +12,10 @@ permissions:
 
 jobs:
   macos-arm64:
-    name: macOS 15 arm64 (Clang 21, MoltenVK)
+    name: macOS arm64 (Clang, MoltenVK)
     # Explicitly the arm64 image; do not replace this with macos-latest, whose architecture and
     # installed toolchain can move independently of this verified target.
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
@@ -43,24 +43,45 @@ jobs:
         persist-credentials: false
 
     - name: Setup pinned CMake
-      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2
+      uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
       with:
-        cmake-version: '4.3.1'
+        cmake-version: '4.3.6'
 
+    # Homebrew's unversioned `llvm` formula moves with every LLVM patch release, and a versioned
+    # `llvm@23` will only exist once LLVM 24 ships - so installing a formula by name cannot hold
+    # ADR-013's exact version. The bottle is pinned instead: the file Homebrew itself publishes for
+    # `llvm` 23.1.6 on arm64 Tahoe, addressed by its SHA-256 and checked before it is installed. Its
+    # runtime dependencies (zstd, z3) come from the current formulae, as they did before.
     - name: Install pinned upstream LLVM and host tools
       shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: '1'
+        HOMEBREW_NO_INSTALL_UPGRADE: '1'
+        HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+        LLVM_VERSION: '23.1.6'
+        LLVM_BOTTLE_SHA256: 'e8479b14cf92f2c1092ef31531a89b8c9b88e97207e3b80e330f2037e594963b'
       run: |
         set -euo pipefail
-        brew install llvm@21 ninja glfw
-        llvm_root="$(brew --prefix llvm@21)"
-        test "$("$llvm_root/bin/clang++" --version | sed -n 's/.*clang version \([0-9.]*\).*/\1/p' | head -1)" = "21.1.8"
+        brew install ninja glfw zstd z3
+        bottle="$RUNNER_TEMP/llvm--${LLVM_VERSION}.arm64_tahoe.bottle.tar.gz"
+        curl -fsSL --retry 3 -H 'Authorization: Bearer QQ==' -o "$bottle" \
+          "https://ghcr.io/v2/homebrew/core/llvm/blobs/sha256:${LLVM_BOTTLE_SHA256}"
+        echo "${LLVM_BOTTLE_SHA256}  ${bottle}" | shasum -a 256 -c -
+        brew install "$bottle"
+        llvm_root="$(brew --prefix llvm)"
+        test "$("$llvm_root/bin/clang++" --version | sed -n 's/.*clang version \([0-9.]*\).*/\1/p' | head -1)" = "$LLVM_VERSION"
         echo "MDUX_LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
         echo "$llvm_root/bin" >> "$GITHUB_PATH"
 
+    # Pinned to an untagged commit, one past v1.2. LunarG renamed the macOS installer inside the SDK
+    # zip (vulkansdk-macOS-<version>.app), and v1.2 - still the latest tag - exits 7 with
+    # "unrecognized zip/layout" on every SDK that uses it, 1.4.363.1 included. e7d6e7b adds that
+    # layout and nothing else of consequence (the rest of the commit is the action's own CI); move
+    # back to a tag once one carries it.
     - name: Install pinned LunarG SDK with MoltenVK
-      uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+      uses: humbletim/install-vulkan-sdk@e7d6e7b937bde4503c7ba5c9584c9dc68f44c4b8 # v1.2 + macOS layout fix (untagged)
       with:
-        version: 1.4.309.0
+        version: 1.4.363.1
         cache: true
 
     - name: Select and verify MoltenVK
@@ -68,7 +89,7 @@ jobs:
       run: |
         set -euo pipefail
         test "$(uname -m)" = "arm64"
-        test "$VULKAN_SDK_VERSION" = "1.4.309.0"
+        test "$VULKAN_SDK_VERSION" = "1.4.363.1"
         icd="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json"
         test -f "$icd"
         export DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}"

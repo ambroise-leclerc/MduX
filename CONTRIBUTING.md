@@ -14,7 +14,7 @@ an invitation does not guarantee merge.
 ## Supported build hosts
 
 CI verifies Windows, Linux/GCC, and Apple Silicon macOS. The macOS leg is deliberately exact:
-upstream Clang 21.1.8 with libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK 1.4.309.0/MoltenVK.
+upstream Clang 23.1.6 with libc++, CMake 4.3.6, Ninja, and LunarG Vulkan SDK 1.4.363.1/MoltenVK.
 Use `cmake --preset ninja-macos-clang`; AppleClang, GCC on macOS, and Intel Macs are unsupported.
 For rendering changes, a passing compile is insufficient: the macOS pixel suite must run without a
 skip and `VulkanSCTriangleExample --smoke-test` must present through MoltenVK.

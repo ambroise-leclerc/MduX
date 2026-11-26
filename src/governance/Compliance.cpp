@@ -128,6 +128,100 @@ Result<json::Value, GovernanceError> traceabilityMatrix(const ComplianceProgram&
     return rows;
 }
 
+namespace {
+
+// releaseEvidenceSummary() builds its arrays through these helpers rather than inline. Inline, its
+// frame measured 4104 bytes under Clang 23 against the 4096-byte -Wframe-larger-than guard from
+// #63 (#382) - the ShaderPackage::toJson() finding of #246 again, on the next Clang. Each helper
+// owns its own temporaries, so the summary's frame no longer holds all of them at once. The guard
+// was left alone.
+
+[[nodiscard]] Result<json::Value, GovernanceError> validationFailuresJson(
+    const mdux::core::ResultVoid<std::vector<ValidationFailure>>& validation) noexcept {
+    json::Value failures = json::Value::array({});
+    if (!validation.has_value()) {
+        for (const ValidationFailure& failure : validation.error()) {
+            json::Value object = json::Value::emptyObject();
+            if (!setMember(object, "code",
+                           json::Value::string(std::string{describe(failure.code)})) ||
+                !setMember(object, "subject", json::Value::string(failure.subject)) ||
+                !setMember(object, "detail", json::Value::string(failure.detail))) {
+                return err(kMalformed);
+            }
+            if (auto pushed = failures.push(std::move(object)); !pushed.has_value()) {
+                return err(kMalformed);
+            }
+        }
+    }
+    return failures;
+}
+
+[[nodiscard]] Result<json::Value, GovernanceError> failedCaseIdsJson(
+    const ComplianceProgram& program) noexcept {
+    auto failedCases = sortedBy<VerificationCase>(
+        program.verificationCases,
+        [](const VerificationCase& verificationCase) {
+            return std::string_view{verificationCase.id};
+        });
+    std::erase_if(failedCases,
+                  [](const VerificationCase* verificationCase) {
+                      return verificationCase->passed;
+                  });
+    json::Value failedCaseIds = json::Value::array({});
+    for (const VerificationCase* verificationCase : failedCases) {
+        if (auto pushed = failedCaseIds.push(json::Value::string(verificationCase->id));
+            !pushed.has_value()) {
+            return err(kMalformed);
+        }
+    }
+    return failedCaseIds;
+}
+
+[[nodiscard]] Result<json::Value, GovernanceError> openProblemReportsJson(
+    const ComplianceProgram& program) noexcept {
+    auto openReports = sortedBy<ProblemReport>(
+        program.problemReports, [](const ProblemReport& r) { return std::string_view{r.id}; });
+    std::erase_if(openReports, [](const ProblemReport* report) { return report->closed; });
+
+    json::Value openArray = json::Value::array({});
+    for (const ProblemReport* report : openReports) {
+        json::Value object = json::Value::emptyObject();
+        // affects_risk is carried because IEC 62304 §9.4 makes an open problem that could affect
+        // safety a different kind of release blocker from one that could not.
+        if (!setMember(object, "id", json::Value::string(report->id)) ||
+            !setMember(object, "description", json::Value::string(report->description)) ||
+            !setMember(object, "affects_risk", json::Value::boolean(report->affectsRisk))) {
+            return err(kMalformed);
+        }
+        if (auto pushed = openArray.push(std::move(object)); !pushed.has_value()) {
+            return err(kMalformed);
+        }
+    }
+    return openArray;
+}
+
+[[nodiscard]] Result<json::Value, GovernanceError> generatedArtifactsJson(
+    std::span<const evidence::FileRecord> artifacts) noexcept {
+    const auto sortedArtifacts = sortedBy<evidence::FileRecord>(
+        artifacts, [](const evidence::FileRecord& record) { return std::string_view{record.path}; });
+    json::Value artifactArray = json::Value::array({});
+    for (const evidence::FileRecord* record : sortedArtifacts) {
+        const std::array<char, 64> hex = evidence::toHex(record->sha256);
+        json::Value object = json::Value::emptyObject();
+        if (!setMember(object, "path", json::Value::string(record->path)) ||
+            !setMember(object, "sha256",
+                       json::Value::string(std::string{hex.data(), hex.size()}))) {
+            return err(kMalformed);
+        }
+        if (auto pushed = artifactArray.push(std::move(object)); !pushed.has_value()) {
+            return err(kMalformed);
+        }
+    }
+    return artifactArray;
+}
+
+}  // namespace
+
 Result<json::Value, GovernanceError> releaseEvidenceSummary(
     const ComplianceProgram& program, std::span<const evidence::FileRecord> artifacts) noexcept {
     const std::size_t requirementsTotal = program.requirements.size();
@@ -171,86 +265,30 @@ Result<json::Value, GovernanceError> releaseEvidenceSummary(
     // Every reason the gate failed, not merely the fact that it did. A release review told only
     // "validation_passed: false" has to re-run validate() to learn anything; carrying the failure
     // list is what makes this summary usable on its own.
-    json::Value failures = json::Value::array({});
-    if (!validation.has_value()) {
-        for (const ValidationFailure& failure : validation.error()) {
-            json::Value object = json::Value::emptyObject();
-            if (!setMember(object, "code",
-                           json::Value::string(std::string{describe(failure.code)})) ||
-                !setMember(object, "subject", json::Value::string(failure.subject)) ||
-                !setMember(object, "detail", json::Value::string(failure.detail))) {
-                return err(kMalformed);
-            }
-            if (auto pushed = failures.push(std::move(object)); !pushed.has_value()) {
-                return err(kMalformed);
-            }
-        }
-    }
-    if (!setMember(summary, "validation_failures", std::move(failures))) {
+    auto failures = validationFailuresJson(validation);
+    if (!failures.has_value() ||
+        !setMember(summary, "validation_failures", std::move(*failures))) {
         return err(kMalformed);
     }
 
     // A failed case is intentionally not a ComplianceProgram structural-validation failure, but
     // it still makes validation_passed false. Name those cases explicitly so the summary carries
     // every reason its own release gate failed.
-    auto failedCases = sortedBy<VerificationCase>(
-        program.verificationCases,
-        [](const VerificationCase& verificationCase) {
-            return std::string_view{verificationCase.id};
-        });
-    std::erase_if(failedCases,
-                  [](const VerificationCase* verificationCase) {
-                      return verificationCase->passed;
-                  });
-    json::Value failedCaseIds = json::Value::array({});
-    for (const VerificationCase* verificationCase : failedCases) {
-        if (auto pushed = failedCaseIds.push(json::Value::string(verificationCase->id));
-            !pushed.has_value()) {
-            return err(kMalformed);
-        }
-    }
-    if (!setMember(summary, "failed_verification_cases", std::move(failedCaseIds))) {
+    auto failedCaseIds = failedCaseIdsJson(program);
+    if (!failedCaseIds.has_value() ||
+        !setMember(summary, "failed_verification_cases", std::move(*failedCaseIds))) {
         return err(kMalformed);
     }
 
-    auto openReports = sortedBy<ProblemReport>(
-        program.problemReports, [](const ProblemReport& r) { return std::string_view{r.id}; });
-    std::erase_if(openReports, [](const ProblemReport* report) { return report->closed; });
-
-    json::Value openArray = json::Value::array({});
-    for (const ProblemReport* report : openReports) {
-        json::Value object = json::Value::emptyObject();
-        // affects_risk is carried because IEC 62304 §9.4 makes an open problem that could affect
-        // safety a different kind of release blocker from one that could not.
-        if (!setMember(object, "id", json::Value::string(report->id)) ||
-            !setMember(object, "description", json::Value::string(report->description)) ||
-            !setMember(object, "affects_risk", json::Value::boolean(report->affectsRisk))) {
-            return err(kMalformed);
-        }
-        if (auto pushed = openArray.push(std::move(object)); !pushed.has_value()) {
-            return err(kMalformed);
-        }
-    }
-    if (!setMember(summary, "open_problem_reports", std::move(openArray))) {
+    auto openReports = openProblemReportsJson(program);
+    if (!openReports.has_value() ||
+        !setMember(summary, "open_problem_reports", std::move(*openReports))) {
         return err(kMalformed);
     }
 
-    const auto sortedArtifacts = sortedBy<evidence::FileRecord>(
-        artifacts, [](const evidence::FileRecord& record) { return std::string_view{record.path}; });
-    json::Value artifactArray = json::Value::array({});
-    for (const evidence::FileRecord* record : sortedArtifacts) {
-        const std::array<char, 64> hex = evidence::toHex(record->sha256);
-        json::Value object = json::Value::emptyObject();
-        if (!setMember(object, "path", json::Value::string(record->path)) ||
-            !setMember(object, "sha256",
-                       json::Value::string(std::string{hex.data(), hex.size()}))) {
-            return err(kMalformed);
-        }
-        if (auto pushed = artifactArray.push(std::move(object)); !pushed.has_value()) {
-            return err(kMalformed);
-        }
-    }
-    if (!setMember(summary, "generated_artifacts", std::move(artifactArray))) {
+    auto generatedArtifacts = generatedArtifactsJson(artifacts);
+    if (!generatedArtifacts.has_value() ||
+        !setMember(summary, "generated_artifacts", std::move(*generatedArtifacts))) {
         return err(kMalformed);
     }
 

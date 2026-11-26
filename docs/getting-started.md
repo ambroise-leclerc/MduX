@@ -25,7 +25,7 @@ this high.
 | **Vulkan SDK** | 1.3+ | `find_package(Vulkan REQUIRED)` |
 
 On macOS the supported tuple is exact rather than a minimum: Apple Silicon, upstream LLVM/Clang
-21.1.8, libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK 1.4.309.0 with MoltenVK. AppleClang,
+23.1.6, libc++, CMake 4.3.6, Ninja, and LunarG Vulkan SDK 1.4.363.1 with MoltenVK. AppleClang,
 Homebrew GCC, Intel Macs, and other macOS toolchain versions are intentionally unsupported.
 
 A version below the floor fails at configure with a message naming the version it found.
@@ -54,18 +54,18 @@ ctest --output-on-failure
 That is the whole thing. `MDUX_BUILD_EXAMPLES` and `MDUX_BUILD_TESTS` default to `ON`, so the
 default configure already builds everything the test suite needs.
 
-On Apple Silicon macOS, install CMake 4.3.1, Ninja, GLFW, upstream LLVM 21.1.8 and LunarG's Vulkan
+On Apple Silicon macOS, install CMake 4.3.6, Ninja, GLFW, upstream LLVM 23.1.6 and LunarG's Vulkan
 SDK, source the SDK's `setup-env.sh`, then use the guarded preset:
 
 ```bash
-export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+export MDUX_LLVM_ROOT=/path/to/llvm-23.1.6
 cmake --preset ninja-macos-clang
 cmake --build --preset ninja-macos-clang
 ctest --preset ninja-macos-clang --output-on-failure
 ```
 
 The toolchain file discovers Homebrew's `llvm` installation when `MDUX_LLVM_ROOT` is unset, but
-still rejects any version other than 21.1.8. MoltenVK is a Vulkan portability implementation over
+still rejects any version other than 23.1.6. MoltenVK is a Vulkan portability implementation over
 Metal: application instances must enable portability enumeration and devices must enable
 `VK_KHR_portability_subset` when exposed. MduX's headless harness and triangle example do this;
 host applications remain responsible for the same setup.

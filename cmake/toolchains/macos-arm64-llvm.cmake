@@ -1,7 +1,7 @@
 # Supported macOS toolchain for issue #222.
 #
 # MduX deliberately supports one reproducible macOS configuration: Apple Silicon,
-# upstream LLVM/Clang 21.1.8, libc++, Ninja, and CMake 4.3.1. AppleClang and
+# upstream LLVM/Clang 23.1.6, libc++, Ninja, and CMake 4.3.6. AppleClang and
 # Homebrew GCC do not provide the same C++23 named-module surface.
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     message(FATAL_ERROR "The macos-arm64-llvm toolchain is only valid on macOS hosts.")
@@ -11,20 +11,19 @@ if(NOT CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
         "MduX's verified macOS target is Apple Silicon (arm64); host architecture is "
         "${CMAKE_HOST_SYSTEM_PROCESSOR}.")
 endif()
-if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.1")
+if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.6")
     message(FATAL_ERROR
-        "The verified macOS toolchain requires CMake 4.3.1 exactly; found ${CMAKE_VERSION}.")
+        "The verified macOS toolchain requires CMake 4.3.6 exactly; found ${CMAKE_VERSION}.")
 endif()
 
 set(_mdux_llvm_root "$ENV{MDUX_LLVM_ROOT}")
 if(NOT _mdux_llvm_root)
     find_program(_mdux_brew brew PATHS /opt/homebrew/bin NO_DEFAULT_PATH)
     if(_mdux_brew)
-        # `llvm@21` before `llvm`, because that is the formula CI installs and the one that stays
-        # at this ADR's version. Unversioned `llvm` follows whatever Homebrew's current LLVM is, so
-        # probing it first sends a contributor who installed exactly what CI installs into the
-        # version rejection below.
-        foreach(_mdux_brew_formula llvm@21 llvm)
+        # The unversioned `llvm` formula, which is what CI installs (from a bottle pinned by
+        # SHA-256; see macos-arm64-build.yml). A versioned `llvm@23` does not exist until LLVM 24
+        # ships, and the version check below rejects whatever this finds if it is not 23.1.6.
+        foreach(_mdux_brew_formula llvm)
             execute_process(
                 COMMAND "${_mdux_brew}" --prefix ${_mdux_brew_formula}
                 RESULT_VARIABLE _mdux_brew_result
@@ -41,8 +40,8 @@ if(NOT _mdux_llvm_root)
 endif()
 if(NOT _mdux_llvm_root)
     message(FATAL_ERROR
-        "Set MDUX_LLVM_ROOT to an upstream LLVM 21.1.8 installation, or install the formula CI "
-        "uses: brew install llvm@21.")
+        "Set MDUX_LLVM_ROOT to an upstream LLVM 23.1.6 installation, or install Homebrew's llvm "
+        "23.1.6 bottle as macos-arm64-build.yml does.")
 endif()
 
 set(CMAKE_CXX_COMPILER "${_mdux_llvm_root}/bin/clang++" CACHE FILEPATH "" FORCE)

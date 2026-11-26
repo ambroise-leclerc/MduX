@@ -19,8 +19,8 @@ implemented interaction/verification APIs or accepted shared-contract capabiliti
 ## Verified platforms
 
 Windows and Linux use native Vulkan implementations. Apple Silicon macOS is also a verified target
-through one pinned configuration: upstream Clang 21.1.8/libc++, CMake 4.3.1, Ninja, and LunarG
-Vulkan SDK 1.4.309.0 with MoltenVK. The preset and toolchain file reject AppleClang, macOS GCC,
+through one pinned configuration: upstream Clang 23.1.6/libc++, CMake 4.3.6, Ninja, and LunarG
+Vulkan SDK 1.4.363.1 with MoltenVK. The preset and toolchain file reject AppleClang, macOS GCC,
 Intel Macs, and version drift. MoltenVK is an adapter over Metal, so this adds a distinct driver
 path rather than claiming native-Vulkan equivalence; automatic CI must execute both pixel tests and
 a three-frame presentation smoke test on that path.
@@ -473,7 +473,7 @@ and a second copy compiled into a tool is the drift the issue exists to prevent.
 
 `mdux_compile_screen()` registers that invocation as `verify.screen.<id>`, so the gate covers every
 committed screen and a new one is gated by being committed. Three legs assert it as a named step —
-lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK on macOS — with `--no-tests=error`, so a label
+lavapipe on Linux/GCC 16 and Linux/Clang 23, MoltenVK on macOS — with `--no-tests=error`, so a label
 matching no screen fails rather than passing over nothing. It has no skip status: `mdux-verify-ui`
 exits 3 for an absent device as for any impossible run, and since #254 made the bake render, a leg
 without a device fails to build long before this test could be reached.

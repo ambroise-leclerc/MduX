@@ -116,8 +116,8 @@ ctest --output-on-failure
 Requires **GCC 16+**, **MSVC 17.14+** or **Clang 20+**, **CMake 4.0+**, **Ninja**, and the
 **Vulkan SDK 1.3+**.
 
-The verified macOS configuration is narrower: Apple Silicon, upstream Clang 21.1.8 with libc++,
-CMake 4.3.1, Ninja, and the LunarG Vulkan SDK/MoltenVK. Reproduce it with
+The verified macOS configuration is narrower: Apple Silicon, upstream Clang 23.1.6 with libc++,
+CMake 4.3.6, Ninja, and the LunarG Vulkan SDK/MoltenVK. Reproduce it with
 `cmake --preset ninja-macos-clang`; AppleClang, GCC on macOS, and Intel Macs are rejected.
 
 `-G Ninja` is the one flag you cannot drop. CMake implements C++ modules for the Ninja and

@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 4.0.0)
 
 # CMake still gates import std behind an experimental UUID. Fail explicitly when this project has
 # not reviewed a newer CMake series instead of silently accepting an unknown gate value.
+#
+# 4.4 and 4.5 were reviewed for #382 and are not qualified. 4.4 compiles a target whose flags differ
+# from the `std` target's against a synthesized copy of the std BMI, while the modules it imports
+# from sibling targets were built against the original; GCC then refuses every such import with
+# "import 'std' has CRC mismatch" (upstream: CMake issues 27930 and 28244). 4.5 also removes
+# CMAKE_CXX_COMPILER_IMPORT_STD and CXX_MODULE_STD, which the availability check below relies on,
+# and SpecLab v0.4.0 refuses it outright. Raise this ceiling only with a build that has passed.
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.4")
     message(FATAL_ERROR
         "CMake ${CMAKE_VERSION} has not been qualified for MduX import std support; use a 4.0-4.3 release.")
@@ -46,7 +53,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     message(FATAL_ERROR
-        "AppleClang is unsupported. Apple Silicon macOS requires upstream LLVM/Clang 21.1.8; "
+        "AppleClang is unsupported. Apple Silicon macOS requires upstream LLVM/Clang 23.1.6; "
         "configure with --preset ninja-macos-clang.")
 else()
     message(FATAL_ERROR "Unsupported compiler: ${CMAKE_CXX_COMPILER_ID}. MduX requires MSVC 17.14+, GCC 16+, or upstream Clang 20+ for C++23 modules support.")
@@ -63,15 +70,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     endif()
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR
-            "MduX on macOS requires upstream LLVM/Clang 21.1.8; AppleClang and GCC are unsupported.")
+            "MduX on macOS requires upstream LLVM/Clang 23.1.6; AppleClang and GCC are unsupported.")
     endif()
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "21.1.8")
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "23.1.6")
         message(FATAL_ERROR
-            "MduX's verified macOS compiler is upstream Clang 21.1.8 exactly; found "
+            "MduX's verified macOS compiler is upstream Clang 23.1.6 exactly; found "
             "${CMAKE_CXX_COMPILER_VERSION}.")
     endif()
-    if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.1")
-        message(FATAL_ERROR "MduX's verified macOS CMake is 4.3.1 exactly; found ${CMAKE_VERSION}.")
+    if(NOT CMAKE_VERSION VERSION_EQUAL "4.3.6")
+        message(FATAL_ERROR "MduX's verified macOS CMake is 4.3.6 exactly; found ${CMAKE_VERSION}.")
     endif()
     function(_mdux_verify_llvm_archive_tool tool_path expected_name)
         get_filename_component(tool_name "${tool_path}" NAME)
@@ -89,9 +96,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         )
         string(CONCAT tool_banner "${tool_stdout}" "\n" "${tool_stderr}")
         if(NOT tool_result EQUAL 0 OR
-           NOT tool_banner MATCHES "LLVM version 21\\.1\\.8([^0-9.]|$)")
+           NOT tool_banner MATCHES "LLVM version 23\\.1\\.6([^0-9.]|$)")
             message(FATAL_ERROR
-                "The macOS build requires LLVM 21.1.8 ${expected_name}; '${tool_path} --version' "
+                "The macOS build requires LLVM 23.1.6 ${expected_name}; '${tool_path} --version' "
                 "returned '${tool_banner}'.")
         endif()
     endfunction()
