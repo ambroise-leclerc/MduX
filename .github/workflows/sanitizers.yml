@@ -204,6 +204,11 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # Wait for the display before any test needs it (#386). This used to be implicit: ctest ran
+        # serially and reached the windowed smoke test hundreds of tests later. In parallel it gets there
+        # in under a second, before Xvfb listens, and GLFW then fails to initialise.
+        for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+        [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
         # `conformance` and `sanitizer-coverage` are excluded too: a named step runs each (#386).
@@ -237,6 +242,11 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # Wait for the display before any test needs it (#386). This used to be implicit: ctest ran
+        # serially and reached the windowed smoke test hundreds of tests later. In parallel it gets there
+        # in under a second, before Xvfb listens, and GLFW then fails to initialise.
+        for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+        [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
         # offscreen_tests and verify_ui_pixel_test exit 77 with no loader, no ICD or no device, and
         # tests/CMakeLists.txt sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does
         # not fail a run. The verify.screen.<id> gates have no such status and fail outright; the
