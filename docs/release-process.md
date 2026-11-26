@@ -84,8 +84,8 @@ every consumer.
 One test then asserts the value, and it has to move with it:
 
 ```console
-$ grep -rn 'Version::minor ==' tests/
-tests/TestRegulatoryCompliance.cpp:  1 assertion
+$ grep -rn 'Version::minor ==\|Version::getString() ==' tests/
+tests/TestRegulatoryCompliance.cpp:  2 assertions
 ```
 
 `unit_tests`, which restated the same assertions in `tests/TestVersion.cpp`, was removed by #386 as

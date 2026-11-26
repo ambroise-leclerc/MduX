@@ -14,7 +14,8 @@ TEST_CASE("IEC 62304 Version Traceability", "regulatory") {
     CHECK(mdux::Version::major == 0);
     CHECK(mdux::Version::minor == 8);
     CHECK(mdux::Version::patch == 0);
-    CHECK(!mdux::Version::getString().empty());
+    // Exact, not merely non-empty: it was tests/TestVersion.cpp's job until #386 removed that file.
+    CHECK(mdux::Version::getString() == "0.8.0");
 }
 
 TEST_CASE("IEC 62366 Vulkan Consistency", "regulatory") {
