@@ -94,7 +94,7 @@ appInfo.apiVersion = VK_MAKE_API_VERSION(1, 1, 0, 0);  // variant=1 for Vulkan S
 2. **DeviceObjectManager** - Object reservation tracking
 3. **Medical Application Profiling** - Pre-calculating resource needs
 4. **Object Reservation Calculator** - Pre-sizing all Vulkan objects
-5. **Device-lifetime object awareness** - Not destroying command pools
+5. **Device-lifetime object awareness** - The command pool is created once at initialisation and destroyed only during teardown, immediately before `vkDestroyDevice()`; it is never destroyed and recreated while the device lives
 
 ### ❌ Still Using Standard Vulkan For:
 1. **Swapchain** - Uses `VK_KHR_swapchain` (doesn't exist in Vulkan SC)
