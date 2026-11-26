@@ -8,10 +8,14 @@ admission criteria ADR-026 defines. Half of that file is judgement - whether a c
 and no script can check a judgement. This one checks the half that is mechanical, which is also the
 half that goes stale without anyone noticing:
 
-- the `delivered` components are exactly the components `docs/medui/grammar.json` lists, so the
-  inventory cannot claim a component the compiler rejects or omit one it accepts;
+- the `admitted` and `provisional` components together are exactly the components
+  `docs/medui/grammar.json` lists, so the inventory cannot claim a component the compiler rejects
+  or omit one it accepts;
+- the floor is the one ADR-026 fixes, and no component in the dictionary falls short of it;
+- an `admitted` component records no shortfall and a `provisional` one records at least one, so
+  neither status can be claimed for a component the criteria describe differently;
 - the criteria are exactly the `AC-NN` headings ADR-026 carries, in order;
-- a delivered component states every criterion, with a status from the closed set;
+- a component in the dictionary states every criterion, with a status from the closed set;
 - a `met` names evidence, and every evidence path exists;
 - a `partial` or `unmet` names the epic child that closes it, and that child is declared;
 - a `proposed` component names a declared workstream and asserts no criteria, because nobody can
@@ -35,7 +39,12 @@ INVENTORY = "docs/medui/component-inventory.json"
 GRAMMAR = "docs/medui/grammar.json"
 DECISION = "docs/adr/ADR-026-component-admission-criteria.md"
 
-COMPONENT_STATUSES = frozenset({"delivered", "proposed", "declined"})
+COMPONENT_STATUSES = frozenset({"admitted", "provisional", "proposed", "declined"})
+IN_DICTIONARY = frozenset({"admitted", "provisional"})
+# ADR-026's floor: the criteria a component may not fall short of in any status. Fixed here rather
+# than read from the inventory alone, so that editing the file cannot lower it.
+FLOOR = ("AC-01", "AC-02", "AC-04", "AC-05")
+SHORTFALLS = frozenset({"partial", "unmet"})
 CRITERION_STATUSES = frozenset({"met", "partial", "unmet", "not-applicable"})
 CRITERION_HEADING = re.compile(r"^### (?P<id>AC-\d{2}) (?P<title>.+?)\s*$", re.MULTILINE)
 PREFIX = "mdux-component-inventory"
@@ -47,7 +56,7 @@ def decision_criteria(text: str) -> list[tuple[str, str]]:
 
 
 def check_criterion(name: str, criterion: str, entry: object, children: set[str], root: Path) -> list[str]:
-    """Check one criterion entry of one delivered component."""
+    """Check one criterion entry of one component in the dictionary."""
     where = f"{name} {criterion}"
     if not isinstance(entry, dict):
         return [f"{where}: must be an object"]
@@ -63,7 +72,9 @@ def check_criterion(name: str, criterion: str, entry: object, children: set[str]
             for path in evidence:
                 if not isinstance(path, str) or not (root / path).exists():
                     findings.append(f"{where}: evidence path {path!r} does not exist")
-    elif status in ("partial", "unmet"):
+    elif status in SHORTFALLS:
+        if criterion in FLOOR:
+            findings.append(f"{where}: a floor criterion cannot be '{status}'; the component may not be in the dictionary")
         closed_by = entry.get("closedBy")
         if closed_by not in children:
             findings.append(f"{where}: '{status}' must name a declared child in closedBy, found {closed_by!r}")
@@ -91,6 +102,9 @@ def check(root: Path) -> list[str]:
         )
     criterion_ids = [identifier for identifier, _ in declared]
 
+    if tuple(inventory.get("floor", ())) != FLOOR:
+        findings.append(f"floor is {inventory.get('floor')!r}; {DECISION} fixes it at {list(FLOOR)}")
+
     children = {item.get("id") for item in inventory.get("children", [])}
     if len(children) != len(inventory.get("children", [])):
         findings.append("children: an id is declared twice")
@@ -100,12 +114,12 @@ def check(root: Path) -> list[str]:
     for name in sorted({name for name in names if names.count(name) > 1}, key=str):
         findings.append(f"{name}: listed more than once")
 
-    delivered = {c.get("name") for c in components if c.get("status") == "delivered"}
+    in_dictionary = {c.get("name") for c in components if c.get("status") in IN_DICTIONARY}
     in_grammar = {component["name"] for component in grammar.get("components", [])}
-    for name in sorted(in_grammar - delivered):
-        findings.append(f"{name}: in {GRAMMAR} but not 'delivered' in the inventory")
-    for name in sorted(delivered - in_grammar):
-        findings.append(f"{name}: 'delivered' in the inventory but absent from {GRAMMAR}")
+    for name in sorted(in_grammar - in_dictionary):
+        findings.append(f"{name}: in {GRAMMAR} but neither 'admitted' nor 'provisional' in the inventory")
+    for name in sorted(in_dictionary - in_grammar):
+        findings.append(f"{name}: in the dictionary according to the inventory but absent from {GRAMMAR}")
 
     for component in components:
         name = component.get("name")
@@ -117,12 +131,21 @@ def check(root: Path) -> list[str]:
             findings.append(f"{name}: status {status!r} is not one of {sorted(COMPONENT_STATUSES)}")
             continue
         criteria = component.get("criteria")
-        if status == "delivered":
+        if status in IN_DICTIONARY:
             if not isinstance(criteria, dict) or list(criteria) != criterion_ids:
                 findings.append(f"{name}: must state exactly the criteria {criterion_ids}, in order")
                 continue
             for criterion, entry in criteria.items():
                 findings.extend(check_criterion(name, criterion, entry, children, root))
+            owed = sorted(
+                criterion
+                for criterion, entry in criteria.items()
+                if isinstance(entry, dict) and entry.get("status") in SHORTFALLS
+            )
+            if status == "admitted" and owed:
+                findings.append(f"{name}: 'admitted' but {owed} are not met; it is 'provisional'")
+            if status == "provisional" and not owed:
+                findings.append(f"{name}: 'provisional' but records no shortfall; it is 'admitted'")
             continue
         if criteria is not None:
             findings.append(f"{name}: a '{status}' component asserts criteria")

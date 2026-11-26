@@ -12,18 +12,30 @@ from pathlib import Path
 
 import check_component_inventory as inventory
 
-DECISION = "# ADR\n\n### AC-01 Contract status\n\ntext\n\n### AC-02 Tests\n\ntext\n"
+DECISION = "".join(f"### {identifier} {title}\n\ntext\n\n" for identifier, title in (
+    ("AC-01", "Contract"), ("AC-02", "Grammar"), ("AC-03", "Cost"), ("AC-04", "Draw"), ("AC-05", "Binding")
+))
 GRAMMAR = {"components": [{"name": "Label", "fields": []}]}
 BASE = {
-    "criteria": [{"id": "AC-01", "title": "Contract status"}, {"id": "AC-02", "title": "Tests"}],
+    "criteria": [
+        {"id": "AC-01", "title": "Contract"},
+        {"id": "AC-02", "title": "Grammar"},
+        {"id": "AC-03", "title": "Cost"},
+        {"id": "AC-04", "title": "Draw"},
+        {"id": "AC-05", "title": "Binding"},
+    ],
+    "floor": ["AC-01", "AC-02", "AC-04", "AC-05"],
     "children": [{"id": "A5", "title": "States"}, {"id": "B1", "title": "Choice"}],
     "components": [
         {
             "name": "Label",
-            "status": "delivered",
+            "status": "provisional",
             "criteria": {
                 "AC-01": {"status": "met", "evidence": ["evidence.txt"]},
-                "AC-02": {"status": "partial", "closedBy": "A5", "note": "no state test"},
+                "AC-02": {"status": "met", "evidence": ["evidence.txt"]},
+                "AC-03": {"status": "partial", "closedBy": "A5", "note": "no cost function"},
+                "AC-04": {"status": "met", "evidence": ["evidence.txt"]},
+                "AC-05": {"status": "not-applicable"},
             },
         },
         {"name": "Checkbox", "status": "proposed", "workstream": "B1"},
@@ -64,13 +76,13 @@ class CheckComponentInventoryTests(unittest.TestCase):
         grammar = {"components": [{"name": "Label"}, {"name": "Image"}]}
         self.assert_one_finding(BASE, "Image: in docs/medui/grammar.json", grammar=grammar)
 
-    def test_rejects_a_delivered_component_the_grammar_lacks(self) -> None:
-        """Refuse a component recorded as delivered that the compiler does not know."""
-        self.assert_one_finding(BASE, "Label: 'delivered' in the inventory but absent", grammar={"components": []})
+    def test_rejects_a_dictionary_component_the_grammar_lacks(self) -> None:
+        """Refuse a component recorded as in the dictionary that the compiler does not know."""
+        self.assert_one_finding(BASE, "Label: in the dictionary according to the inventory but absent", grammar={"components": []})
 
     def test_rejects_criteria_that_differ_from_the_decision(self) -> None:
         """Refuse a criterion list the decision record does not define."""
-        self.assert_one_finding(BASE, "criteria differ", decision="### AC-01 Contract status\n")
+        self.assert_one_finding(BASE, "criteria differ", decision="### AC-01 Contract\n")
 
     def test_rejects_met_without_existing_evidence(self) -> None:
         """Refuse a met criterion resting on a path that is not there."""
@@ -83,15 +95,37 @@ class CheckComponentInventoryTests(unittest.TestCase):
 
     def test_rejects_a_gap_nobody_owns(self) -> None:
         """Refuse a shortfall with no declared child to close it, or no statement of what it is."""
-        document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-02"].update(closedBy="Z9"))
+        document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-03"].update(closedBy="Z9"))
         self.assert_one_finding(document, "must name a declared child")
-        document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-02"].pop("note"))
+        document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-03"].pop("note"))
         self.assert_one_finding(document, "must say what is missing")
 
-    def test_rejects_a_delivered_component_missing_a_criterion(self) -> None:
-        """Refuse a delivered component that leaves a criterion unstated."""
+    def test_rejects_a_dictionary_component_missing_a_criterion(self) -> None:
+        """Refuse a component in the dictionary that leaves a criterion unstated."""
         document = self.mutated(lambda d: d["components"][0]["criteria"].pop("AC-02"))
         self.assert_one_finding(document, "must state exactly the criteria")
+
+    def test_rejects_a_shortfall_on_a_floor_criterion(self) -> None:
+        """Refuse a component in the dictionary that falls short of the floor, and a lowered floor."""
+        document = self.mutated(
+            lambda d: d["components"][0]["criteria"].update(
+                {"AC-04": {"status": "partial", "closedBy": "A5", "note": "allocates"}}
+            )
+        )
+        self.assert_one_finding(document, "a floor criterion cannot be 'partial'")
+        document = self.mutated(lambda d: d.update(floor=["AC-01"]))
+        self.assert_one_finding(document, "floor is ['AC-01']")
+
+    def test_rejects_a_status_the_criteria_contradict(self) -> None:
+        """Refuse 'admitted' with something owed, and 'provisional' with nothing owed."""
+        document = self.mutated(lambda d: d["components"][0].update(status="admitted"))
+        self.assert_one_finding(document, "'admitted' but ['AC-03'] are not met")
+        document = self.mutated(
+            lambda d: d["components"][0]["criteria"].update({"AC-03": {"status": "met", "evidence": ["evidence.txt"]}})
+        )
+        self.assert_one_finding(document, "'provisional' but records no shortfall")
+        document["components"][0]["status"] = "admitted"
+        self.assertEqual(self.findings_for(document), [])
 
     def test_rejects_an_unknown_status(self) -> None:
         """Refuse statuses outside both closed sets."""

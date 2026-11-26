@@ -53,6 +53,12 @@
       "title": "Lifecycle records"
     }
   ],
+  "floor": [
+    "AC-01",
+    "AC-02",
+    "AC-04",
+    "AC-05"
+  ],
   "children": [
     {
       "id": "A1",
@@ -242,7 +248,7 @@
   "components": [
     {
       "name": "Row",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 194,
       "criteria": {
@@ -280,11 +286,9 @@
           "status": "not-applicable"
         },
         "AC-08": {
-          "status": "met",
-          "evidence": [
-            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-            "tests/render/ScreenPixelTests.cpp"
-          ]
+          "status": "unmet",
+          "closedBy": "A6",
+          "note": "its background is drawn as a synthetic Panel the golden stage skips, and a Row carries neither requirement: nor position:, so no golden can name it"
         },
         "AC-09": {
           "status": "partial",
@@ -312,7 +316,7 @@
     },
     {
       "name": "Label",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 242,
       "criteria": {
@@ -350,11 +354,9 @@
           "status": "not-applicable"
         },
         "AC-08": {
-          "status": "met",
-          "evidence": [
-            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-            "tests/render/ScreenPixelTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
         },
         "AC-09": {
           "status": "partial",
@@ -382,7 +384,7 @@
     },
     {
       "name": "Image",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 256,
       "criteria": {
@@ -421,11 +423,9 @@
           "status": "not-applicable"
         },
         "AC-08": {
-          "status": "met",
-          "evidence": [
-            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-            "tests/render/ScreenPixelTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
         },
         "AC-09": {
           "status": "partial",
@@ -451,7 +451,7 @@
     },
     {
       "name": "Button",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 261,
       "criteria": {
@@ -493,11 +493,9 @@
           "note": "no interaction or data-quality state has an appearance"
         },
         "AC-08": {
-          "status": "met",
-          "evidence": [
-            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
-            "tests/render/ScreenPixelTests.cpp"
-          ]
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
         },
         "AC-09": {
           "status": "partial",
@@ -525,7 +523,7 @@
     },
     {
       "name": "CriticalButton",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 261,
       "criteria": {
@@ -569,7 +567,7 @@
         "AC-08": {
           "status": "met",
           "evidence": [
-            "recipes/screen/endoscope-monitor/EndoscopeMonitor.medui",
+            "generated/screen/endoscope-monitor/goldens.json",
             "tests/render/ScreenPixelTests.cpp"
           ]
         },
@@ -599,7 +597,7 @@
     },
     {
       "name": "NumericDisplay",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 258,
       "criteria": {
@@ -645,7 +643,7 @@
         "AC-08": {
           "status": "partial",
           "closedBy": "A5",
-          "note": "bounds and tint are pinned, the value is not; a scenario capture claims only that the region was painted"
+          "note": "a committed golden pins bounds and tint, never the value; a scenario capture claims only that the region was painted"
         },
         "AC-09": {
           "status": "partial",
@@ -673,7 +671,7 @@
     },
     {
       "name": "Clock",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 258,
       "criteria": {
@@ -718,8 +716,8 @@
         },
         "AC-08": {
           "status": "partial",
-          "closedBy": "A5",
-          "note": "bounds and tint are pinned, the value is not; a scenario capture claims only that the region was painted"
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
         },
         "AC-09": {
           "status": "partial",
@@ -747,7 +745,7 @@
     },
     {
       "name": "StatusIndicator",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 259,
       "criteria": {
@@ -791,8 +789,8 @@
         },
         "AC-08": {
           "status": "partial",
-          "closedBy": "A5",
-          "note": "bounds and tint are pinned, the value is not; ColorHash is refused because the tint varies per state"
+          "closedBy": "H1",
+          "note": "no committed screen carries a golden for one, and ColorHash is refused because the tint varies per state"
         },
         "AC-09": {
           "status": "partial",
@@ -820,7 +818,7 @@
     },
     {
       "name": "TextInput",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 260,
       "criteria": {
@@ -868,8 +866,8 @@
         },
         "AC-08": {
           "status": "partial",
-          "closedBy": "A5",
-          "note": "bounds and tint are pinned, the value is not; a scenario capture claims only that the region was painted"
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
         },
         "AC-09": {
           "status": "partial",
@@ -897,7 +895,7 @@
     },
     {
       "name": "SignalTrace",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 257,
       "criteria": {
@@ -943,7 +941,7 @@
         "AC-08": {
           "status": "partial",
           "closedBy": "A5",
-          "note": "bounds and tint are pinned, the value is not; a scenario capture claims only that the region was painted"
+          "note": "a committed golden pins bounds only; a scenario capture claims only that the region was painted"
         },
         "AC-09": {
           "status": "partial",
@@ -971,7 +969,7 @@
     },
     {
       "name": "VulkanViewport",
-      "status": "delivered",
+      "status": "provisional",
       "workstream": "baseline",
       "issue": 323,
       "criteria": {
@@ -1016,8 +1014,8 @@
         },
         "AC-08": {
           "status": "partial",
-          "closedBy": "A5",
-          "note": "no governed tint, so only bounds can be pinned; a scenario capture claims only that the region was painted"
+          "closedBy": "H1",
+          "note": "no committed screen carries a golden for one, and with no governed tint only bounds could be pinned"
         },
         "AC-09": {
           "status": "partial",

@@ -49,8 +49,24 @@ Two properties of the present state make the question concrete rather than abstr
 
 ## Decision
 
-**A component enters the dictionary only when it meets the twelve criteria below, and the state of
-every entry against them is recorded in [`docs/medui/component-inventory.json`](../medui/component-inventory.json).**
+**A component is *admitted* only when it meets all twelve criteria below. A component may be present
+in the dictionary before that, as *provisional*, only if it meets the four floor criteria, and it
+is recorded as provisional until the rest are met. The state of every entry is recorded in
+[`docs/medui/component-inventory.json`](../medui/component-inventory.json).**
+
+Admission and presence are deliberately two things, because conflating them forces one of two bad
+outcomes: either nothing can be merged until every cross-cutting foundation exists, or "admitted"
+quietly comes to mean "merged".
+
+- **The floor: AC-01, AC-02, AC-04 and AC-05.** These are the properties a product cannot be
+  protected from by knowing they are missing — an unlabelled contract status, an open grammar, a
+  draw path that allocates or degrades, an unbounded binding. A component that falls short of any
+  of them does not enter the dictionary in any status. They are never `partial`.
+- **Provisional.** The floor is met and at least one other criterion is `partial` or `unmet`, each
+  naming the epic child that closes it. A provisional component is usable and is held to everything
+  it does claim, but it is no part of a completeness claim: epic #388 does not close, and no
+  workstream is reported complete, while one of its components is provisional.
+- **Admitted.** Every criterion is `met` or `not-applicable`.
 
 Each criterion has an identifier, because the inventory and later issues cite it. A criterion that
 does not apply to a component is recorded as `not-applicable` with the reason implied by the
@@ -112,7 +128,9 @@ non-valid data state cannot be mistaken for a reading.
 
 The component states which rendered checks can be discharged on it and in which states, and
 provides at least one golden-annotated instance in a committed screen. For content a scenario
-drives, it states the weakest honest claim a host check can make
+drives, it states the weakest honest claim a host check can make. A container is not exempt: one
+that draws a face of its own — a background, a border — must be nameable by a golden like any other
+drawn node, and only a container that draws nothing is `not-applicable`
 ([ADR-014](ADR-014-rendered-truth-verification.md), [ADR-021](ADR-021-dynamic-scenario-capture-evidence.md)).
 
 ### AC-09 International text
@@ -144,25 +162,28 @@ reconstructed.
 
 ### The inventory
 
-`docs/medui/component-inventory.json` lists every component epic #388 names, with one of three
+`docs/medui/component-inventory.json` lists every component epic #388 names, with one of four
 statuses:
 
-- `delivered` — in the dictionary today. Carries a status per criterion (`met`, `partial`, `unmet`,
-  `not-applicable`); every `partial` or `unmet` names the epic child that closes it, and every `met`
-  that is not self-evident from the grammar names a repository path as evidence.
+- `admitted` or `provisional` — in the dictionary today, as defined above. Either carries a status
+  per criterion (`met`, `partial`, `unmet`, `not-applicable`); every `partial` or `unmet` names the
+  epic child that closes it, and every `met` names a repository path as evidence.
 - `proposed` — named by the epic, not in the dictionary. Carries its workstream and nothing else,
   since asserting criteria for a component nobody has designed would be fiction.
 - `declined` — considered and closed with a recorded reason.
 
-`tools/docs-lint/check_component_inventory.py` gates it: the set of `delivered` entries must equal
-the component set in `docs/medui/grammar.json`, every criterion identifier must be one this record
-defines, and every evidence path must exist. The file therefore cannot disagree with the compiler
-about what exists, and cannot claim a criterion on the strength of a file that is not there.
+`tools/docs-lint/check_component_inventory.py` gates it: the `admitted` and `provisional` entries
+together must equal the component set in `docs/medui/grammar.json`; every criterion identifier must
+be one this record defines; every evidence path must exist; a floor criterion must be `met` or
+`not-applicable`; an `admitted` entry must have no shortfall and a `provisional` one at least one.
+The file therefore cannot disagree with the compiler about what exists, cannot claim a criterion on
+the strength of a file that is not there, and cannot call a component admitted while it records
+something owed on it.
 
 ### The existing eleven are audited, not grandfathered
 
-The inventory records the eleven present components against all twelve criteria as they stand. None
-meets all twelve. The shortfalls are systematic rather than per-component, and each belongs to a
+The inventory records the eleven present components against all twelve criteria as they stand. All
+eleven meet the floor; none meets all twelve, so all eleven are `provisional`. The shortfalls are systematic rather than per-component, and each belongs to a
 child of epic #388:
 
 - **AC-03 is unmet for every component**: no cost function exists and no diagnostic compares a
@@ -172,6 +193,12 @@ child of epic #388:
   locale is bound.
 - **AC-06 is partial for the three actionable components**: a press resolves, but no focus order
   exists, so non-pointer operation is not possible.
+- **AC-08 is met by one component.** Only `CriticalButton` has a golden-annotated instance in a
+  committed screen with both checks discharged. `NumericDisplay` and `SignalTrace` have one that
+  pins bounds and tint but not the value. The other seven drawn components can be named by a golden
+  and no committed screen does so. `Row` cannot be: its background is drawn as a synthetic node
+  the golden stage skips, and a `Row` carries neither `requirement:` nor `position:`.
+- **AC-10 is partial for `Image` and `VulkanViewport`**: no `noheap` case names either.
 - **AC-09 is partial throughout**: text is key-based and budget-checked across locales, but no
   component declares a direction behaviour, and layout speaks only of absolute coordinates.
 - **AC-11 is partial throughout**: there is no component gallery.
@@ -179,8 +206,8 @@ child of epic #388:
   parity programme registered, not per component.
 
 A criterion is not weakened to make an existing component pass. The components remain in the
-dictionary — removing working, verified entries would serve nobody — and the inventory is the
-record of what is still owed on each.
+dictionary as provisional — removing working, verified entries would serve nobody — and the
+inventory is the record of what is still owed on each.
 
 ## Alternatives Considered
 
@@ -198,6 +225,17 @@ either guess or encode the judgement in annotations spread through the tree. The
 the mechanical half — existence, identifiers, evidence paths — and leaves the judgement in one
 reviewed file. As criteria gain mechanical checks (AC-03's cost function, AC-11's gallery), those
 columns can move to generation.
+
+**F. Admission only when all twelve are met, with no provisional status.** The simplest rule, and
+rejected because of its order of events: AC-03, AC-07 and AC-11 each wait on a foundation that does
+not exist yet, so no component could be merged until all of them had landed, and each foundation
+would be designed without a single consumer to test it against. The floor keeps what that rule was
+protecting — the properties that must never be absent — and the provisional status keeps the rest
+visible instead of blocking.
+
+**G. Admission conditional on any shortfall, with no floor.** Rejected: it would let a component
+with an allocating draw path into the dictionary provided the inventory said so, and a governed
+runtime property is not something a JSON file can stand in for.
 
 **D. Grandfather the eleven as compliant by definition.** Rejected: it would define the bar as
 "whatever exists", and the first new component would be held to a standard its predecessors visibly
@@ -226,8 +264,11 @@ the gaps this record exists to show.
 - **A criterion proves unachievable for a legitimate component.** Mitigation: the criterion is
   amended here, by a recorded decision, for every component at once — not waived for one.
 - **The foundations the criteria presuppose (A3–A9 of epic #388) slip, blocking all admissions.**
-  Mitigation: a component may be merged behind a `partial` status that names the child closing it;
-  what it may not do is be recorded as `met`.
+  Mitigation: the provisional status exists for exactly this. A component meeting the floor merges
+  as provisional with each shortfall naming the child that closes it; it is never recorded as
+  admitted, and the linter refuses an `admitted` entry carrying a shortfall.
+- **Provisional becomes permanent.** Mitigation: the epic's completion is defined against it, and
+  the inventory makes the count a number anyone can read.
 
 ## Implementation Notes
 
