@@ -281,7 +281,10 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `glfw_translation_spec`, `monitor_loop_spec`, `scenario_spec`, `scenario_tools_spec`,
   `scenario_noheap_spec`) — see ADR-009 — plus the dedicated `verify_ui_pixel_test`.
   `mdux_discover_tests()` registers one CTest
-  entry per case, so `ctest -R <scenario>` selects an individual test.
+  entry per case, so `ctest -R <scenario>` selects an individual test. In optimised configurations
+  the test directory's own code (and SpecLab) compiles at `-O1` (`/Od` on MSVC) while every library
+  under test keeps its configuration's flags (#386); the reasoning is at the top of
+  `tests/CMakeLists.txt`.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,
   `pixel`, `regulatory`, `verify` (`mdux-verify-ui` over a committed screen bundle, registered per

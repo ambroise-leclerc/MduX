@@ -7,6 +7,34 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# Test code is compiled at -O1 in optimised configurations (#386). This changes the harness, not the
+# code under test: MduXCore, MduX and every host library are defined outside this directory and keep
+# their configuration's flags, so the objects a test exercises are the objects that ship. (The
+# generated screen, shader, model and scenario modules a few suites compile in directly are the
+# exception: they are data plus small accessors, and their shipped copies are the examples'.) Test
+# translation units were half of the whole build's compile time, and the -O3 pass was most of
+# theirs - -O1 compiles them in about 60 % of the time. The ASan/UBSan jobs already run this suite
+# at -O0, so nothing here depends on the harness being optimised.
+#
+# Directory-scoped on purpose: this rewrites only this directory's copy of the variables, so it
+# reaches the test targets and SpecLab (added below by CPM) and nothing else.
+#
+# MSVC has no middle level that saves compile time (/O1 is a full optimiser tuned for size), so its
+# test code is compiled /Od, which is what the GCC and Clang sanitizer jobs already do with -O0.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(mdux_test_config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REGEX REPLACE "(^| )-O[23s]( |$)" "\\1-O1\\2"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+    endforeach()
+elseif(MSVC)
+    foreach(mdux_test_config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REGEX REPLACE "(^| )[/-]O[12xs]( |$)" "\\1/Od\\2"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+        string(REGEX REPLACE "(^| )[/-]Ob[123]( |$)" "\\1"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+    endforeach()
+endif()
+
 # The MduXTest runner as one library, so its module interface is compiled once rather than once per
 # executable that uses it (it was compiled eight times, #386). The macros in MduXTest.hpp still come
 # in through each suite's include path.
