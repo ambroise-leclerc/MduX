@@ -25,6 +25,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "support/GlfwInitHints.hpp"
+
 import std;
 import mdux.shader.schema;
 import mdux.shader.generated.triangle;
@@ -106,6 +108,7 @@ private:
     void initWindow() {
         cout << "Initializing window...\n";
 
+        mdux::examples::applyGlfwInitHints();  // #368: GLFW 3.4's Wayland teardown
         if (!glfwInit()) {
             throw runtime_error("Failed to initialize GLFW");
         }

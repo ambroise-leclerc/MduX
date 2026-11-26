@@ -36,6 +36,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include "GlfwEventTranslation.hpp"
+#include "GlfwInitHints.hpp"
 
 namespace mdux::examples {
 
@@ -309,6 +310,7 @@ public:
     /// up an instance / device / surface / swapchain. `std::nullopt` (with a `std::cerr` line) on any
     /// failure — never a partially-initialised window.
     [[nodiscard]] static std::optional<GlfwWindow> create(int width, int height, const char* title) {
+        applyGlfwInitHints();  // #368: GLFW 3.4 unloads libdecor before disconnecting on Wayland
         if (glfwInit() != GLFW_TRUE) {
             std::cerr << "adapter: GLFW would not initialise\n";
             return std::nullopt;

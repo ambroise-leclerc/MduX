@@ -30,7 +30,10 @@ target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
 # Unconditional again now the compiler guard is gone: this example is always built, so GLFW is
 # always needed. It was moved inside the guard while the example could be excluded, to avoid a
 # find_package and possibly a source download for a target that would not be built.
-find_package(glfw3 QUIET)
+#
+# 3.4 is the floor because examples/support/GlfwInitHints.hpp names GLFW_WAYLAND_LIBDECOR, which
+# 3.4 introduced (#368). An older system GLFW is not an error: it falls through to the pinned 3.5.1.
+find_package(glfw3 3.4 QUIET)
 if(NOT glfw3_FOUND)
     # GLFW 3.5.1, pinned by commit rather than by tag, like SpecLab and cpp-httplib.
     CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG d9d6f0f1f967807ffade6598ea9a631ebaf37a56
