@@ -109,7 +109,9 @@
 > unknown-field case and the documented comment loss; 326/326 `medui`-labelled tests pass. Epic
 > #311's next child, **#326**, is now unblocked.
 >
-> **Update, 25 November 2026 — epic #311 closed; Phase 2 complete.** All three children merged to
+> **Update, 25 November 2026 — epic #311 closes with this update; Phase 2 complete.** The epic is
+> closed by the merge of [PR #381](https://github.com/ambroise-leclerc/MduX/pull/381), which carries
+> `Closes #311`, so this record and the tracker change together. All three children merged to
 > `develop`: #325 ([PR #351](https://github.com/ambroise-leclerc/MduX/pull/351)), #326
 > ([PR #352](https://github.com/ambroise-leclerc/MduX/pull/352)) and #327
 > ([PR #353](https://github.com/ambroise-leclerc/MduX/pull/353)). The epic's three completion
@@ -563,7 +565,7 @@ epic #310 is otherwise complete.
 
 Expose a stable host-only editing/preview interface and reuse the TrustSC Studio frontend where practical through a MduX backend, ending in a tested proposal workflow.
 
-**Epic closed 25 November 2026** with all three children merged to `develop` (PRs #351, #352, #353).
+**Epic closed by the merge of [PR #381](https://github.com/ambroise-leclerc/MduX/pull/381)** (`Closes #311`, assessed 25 November 2026) with all three children merged to `develop` (PRs #351, #352, #353).
 The reuse decision went to the existing compiler surfaces rather than TrustSC's Rust DTO layer
 (ADR-023); the Studio frontend is MduX's own, embedded in `mdux-preview` and driven against the
 production offscreen renderer (ADR-024, ADR-025). The residual — maintainer acceptance of the three
