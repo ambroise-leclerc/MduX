@@ -241,6 +241,13 @@ layout direction — mirrored, or never mirrored with the reason — and uses lo
 edges rather than left and right. A component that shows locale-dependent values (numbers, dates,
 units) takes their form from a per-locale, build-measured template.
 
+*Build-measured* is a statement about what is drawn, not about what was compiled: the pattern the
+runtime draws is the one the compiler measured, and something the runtime can check ties the two.
+A pattern supplied at run time and checked only for length and fit is measured again, which keeps
+it inside its box, and is not thereby the measured pattern — it can show other decimals or another
+unit beside the same digits. That is a shortfall of this criterion in its own right, separate from
+locale coverage, and closing either does not close the other.
+
 ### AC-10 Tests
 
 Unit tests of the schema, the draw path and each refusal; a `noheap` test; a pixel test under the
@@ -320,6 +327,9 @@ child of epic #388:
   `Clock` and `SignalTrace` have no pixel test that compares their bound content.
 - **AC-09 is partial throughout**: text is key-based and budget-checked across locales, but no
   component declares a direction behaviour, and layout speaks only of absolute coordinates.
+  `NumericDisplay` owes a second thing: the pattern it draws is supplied by the host at run time
+  and is not tied to the template the compiler measured, so a different pattern that fits the box
+  is drawn. Its entry names both shortfalls and both children that close them.
 - **AC-11 is partial throughout**: there is no component gallery.
 - **AC-12 is partial throughout**: requirement and hazard records exist for the behaviours the
   parity programme registered, not per component.

@@ -670,8 +670,11 @@
         },
         "AC-09": {
           "status": "partial",
-          "closedBy": "F10",
-          "note": "the template is build-measured, but one template serves every locale"
+          "closedBy": [
+            "F10",
+            "A2"
+          ],
+          "note": "two shortfalls, and closing one does not close the other. (1) One template serves every locale. (2) The pattern drawn is not the pattern measured: the compiled node carries templateId, a name, and what is drawn is ReadingSlot::rendering, supplied by the host. create() and render() check that pattern's length and that its ink fits the node; nothing checks that it is the one the compiler measured for this template. A different pattern that fits the box is drawn - other decimals, or another unit beside the same digits. Screen.cppm states this limit. F10 owns the template (per-locale forms, units as part of it); binding the drawn pattern to the measured one needs the artifact or its approval to carry the resolved pattern or a digest of it, which is a change to the compiled-screen contract and so A2's"
         },
         "AC-10": {
           "status": "partial",
