@@ -23,6 +23,33 @@ because the history is unavailable.
 
 ---
 
+## Unreleased
+
+### Toolchain, CI and dependency versions (#382)
+
+- **CMake 4.3.6 on every CI leg**, where legs had run 4.1.1 or 4.3.1. The qualified window stays
+  4.0–4.3. 4.4 and 4.5 were reviewed and refused: with GCC, 4.4 builds sibling-target module imports
+  against a different synthesized `std` BMI than their producer ("import 'std' has CRC mismatch"),
+  and SpecLab v0.4.0 refuses 4.5. The GCC leg's CMake download is now SHA-256-checked like the
+  others.
+- **LLVM/Clang 23** on the Linux Clang leg (from 21), and **upstream LLVM 23.1.6** for the verified
+  macOS tuple (from 21.1.8), installed from a SHA-256-pinned Homebrew bottle. ADR-013 is amended
+  accordingly. The Linux toolchain file is now `cmake/toolchains/linux-clang23-libcxx.cmake`.
+- **GCC stays on `gcc:16.1.0`.** `gcc:16.2.0`, the only 16.2 release, still fails to read SpecLab's
+  module BMIs ("Bad file data"), retested on this tree (ambroise-leclerc/SpecLab#17).
+- **Runners**: the Linux Clang, Windows and macOS legs are pinned to `ubuntu-26.04`,
+  `windows-2025-vs2026` and `macos-26` rather than floating, since their toolchains come from the
+  image. Container-based and lint jobs stay on `ubuntu-latest`.
+- **Vulkan**: LunarG SDK 1.4.363.1 on macOS, 1.4.363.0 headers and loader on Windows (from 1.3.204.0),
+  and Windows lavapipe from mesa-dist-win 26.3.1 (SHA-256-pinned).
+- **Dependencies**: GLFW 3.5.1 (CPM fallback now pinned by commit), cpp-httplib 0.67.0, CPM.cmake
+  0.43.2; SpecLab stays v0.4.0, the latest release. The MedUI corpus stays on `0.3.0-rc.1`, since no
+  final 0.3 release exists.
+- **Actions**: codeql-action v4.39.5, scorecard-action v2.6.0, osv-scanner-action v2.7.1 (one version
+  for both reusable workflows).
+
+---
+
 ## 0.8.0 — 6 September 2026
 
 The rest of the component dictionary (#17, all six children and one follow-on), and the rest of

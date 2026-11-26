@@ -193,8 +193,8 @@ in `include/` or `src/`.
 ## 5. Supported environment and common commands
 
 **Platforms**: Windows 10+, Linux, and Apple Silicon macOS are supported and tested. macOS has one
-verified tuple: upstream LLVM/Clang 21.1.8 with libc++, CMake 4.3.1, Ninja, and LunarG Vulkan SDK
-1.4.309.0/MoltenVK. `cmake --preset ninja-macos-clang` selects the repository toolchain file, which
+verified tuple: upstream LLVM/Clang 23.1.6 with libc++, CMake 4.3.6, Ninja, and LunarG Vulkan SDK
+1.4.363.1/MoltenVK. `cmake --preset ninja-macos-clang` selects the repository toolchain file, which
 also supplies `llvm-ar`, `llvm-ranlib`, the libc++ modules manifest and the active macOS SDK.
 AppleClang, GCC on macOS, Intel Macs, and version drift are rejected deliberately. Do not generalise
 a result from that tuple into support for an untested macOS configuration.
@@ -202,8 +202,8 @@ a result from that tuple into support for an untested macOS configuration.
 **Toolchain minimums** (enforced by fatal CMake checks in the root `CMakeLists.txt`):
 - MSVC 17.14+ (Visual Studio 2022 version 17.10+)
 - GCC 16+
-- Clang 20+ on Linux remains manual-CI only. macOS requires upstream Clang 21.1.8 exactly and is
-  automatic CI; that does not verify Linux Clang.
+- Clang 20+ on Linux; CI runs LLVM/Clang 23 with libc++ on every push. macOS requires upstream
+  Clang 23.1.6 exactly and is automatic CI; that does not verify Linux Clang.
 - CMake 4.0-4.3. This is a window, not a floor: the root `CMakeLists.txt` rejects 4.4+ with a
   fatal error until that series' experimental `import std` gate has been reviewed, because the
   gate UUID is version-specific and an unreviewed value silently disables `import std` rather
@@ -227,7 +227,7 @@ takes the platform default and stops with a message naming the generator it foun
 On Apple Silicon macOS use the verified preset instead:
 
 ```bash
-export MDUX_LLVM_ROOT=/path/to/llvm-21.1.8
+export MDUX_LLVM_ROOT=/path/to/llvm-23.1.6
 cmake --preset ninja-macos-clang
 cmake --build --preset ninja-macos-clang
 ctest --preset ninja-macos-clang --output-on-failure

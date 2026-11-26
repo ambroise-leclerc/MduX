@@ -28,7 +28,7 @@ Four entries at time of writing, split by whether they are ever deployed to a de
 built `MduX` binary: the Vulkan SDK/loader (`vulkan-sdk`), confined to the adapter target and
 mechanically checked absent from `MduXCore` by `mdux_verify_trust_zones()`.
 
-**Never deployed:** GLFW 3.4 (`glfw-3.4`, examples only, never linked into `MduX` itself), CMake 4.0+
+**Never deployed:** GLFW 3.5.1 (`glfw-3.5.1`, examples only, never linked into `MduX` itself), CMake 4.0-4.3
 (`cmake-4.0`, a build-time tool), and the MSVC/GCC/Clang C++23 toolchain floor (`cxx23-toolchain`,
 also build-time only).
 
@@ -53,7 +53,8 @@ CMake version floors and compiler version floors are enforced by explicit checks
 (`CMakeLists.txt`; see `docs/adr/ADR-003-compiler-modernization.md` for the compiler floor's
 rationale), so an update to either requires an explicit, reviewed change to that check rather than
 silently drifting to whatever a developer's machine happens to have installed. GLFW's version is
-pinned by an exact `GIT_TAG 3.4` in the CPM fallback path in `examples/CMakeLists.txt`.
+pinned by the 3.5.1 release commit (`GIT_TAG d9d6f0f1…`) in the CPM fallback path in
+`examples/CMakeLists.txt`; SpecLab and cpp-httplib are pinned by commit the same way.
 
 ## Justification records
 

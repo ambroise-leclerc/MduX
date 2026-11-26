@@ -207,7 +207,7 @@ stronger than the check the epic asked for rather than a relaxation of it.
 
 `goldens.json` is registered through `mdux_compile_screen()`, a front for `mdux_bake_artifact()`,
 so `evidence.screen.<id>` re-runs the compiler into the build tree and byte-compares the result
-against the committed file on Windows/MSVC, Linux/GCC 16, macOS/Clang 21 and Linux/Clang 21 (ADR-007
+against the committed file on Windows/MSVC, Linux/GCC 16, macOS/Clang 23 and Linux/Clang 23 (ADR-007
 decision 6). The compiler applies ADR-011's predicate to the AST — the only place the predicate's
 inputs exist — through the single implementation ADR-012 decision 4 binds the baker to. A golden
 missing for a node the predicate selects therefore cannot reach the verifier: it fails four byte
@@ -358,7 +358,7 @@ show a reading and no others: in the field's own tint, or knocked out of it back
 
 `mdux_compile_screen()` registers `verify.screen.<id>` beside the `evidence.screen.<id>` it already
 registers, running `mdux-verify-ui --screen=generated/screen/<id> --locales=all` over the
-**committed** bundle. All four legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 21, MoltenVK
+**committed** bundle. All four legs assert it — lavapipe on Linux/GCC 16 and Linux/Clang 23, MoltenVK
 on macOS, and Mesa's Windows lavapipe build on Windows/MSVC — with `--no-tests=error`, so a label
 that matched no screen fails rather than passing over nothing. #255 asserted it on the first three
 and left Windows running the test inside its full suite without a step of its own; #282 added that
