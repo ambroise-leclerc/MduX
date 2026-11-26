@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -58,12 +59,42 @@ class BuildDecisionTests(unittest.TestCase):
         self.assertTrue(classify_changes.needs_code_build([]))
         self.assertTrue(classify_changes.needs_code_build(["", "  "]))
 
+    def test_a_source_file_renamed_into_docs_selects_the_build(self) -> None:
+        # The new path alone is prose; the rename still removes src/example.cpp.
+        entry = {"filename": "docs/example.md", "previous_filename": "src/example.cpp",
+                 "status": "renamed"}
+        paths = classify_changes.paths_from_github_files([json.dumps(entry)])
+        self.assertEqual(paths, ["docs/example.md", "src/example.cpp"])
+        self.assertTrue(classify_changes.needs_code_build(paths))
+
+    def test_a_prose_rename_inside_docs_stays_docs_only(self) -> None:
+        entry = {"filename": "docs/new-name.md", "previous_filename": "docs/old-name.md",
+                 "status": "renamed"}
+        paths = classify_changes.paths_from_github_files([json.dumps(entry)])
+        self.assertFalse(classify_changes.needs_code_build(paths))
+
+    def test_a_malformed_github_listing_selects_the_build(self) -> None:
+        for stdin in ("not json\n", '{"status": "modified"}\n', "[1, 2]\n"):
+            with self.subTest(stdin=stdin), mock.patch("sys.stdin", io.StringIO(stdin)):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    classify_changes.main(["--github-files"])
+                self.assertEqual(out.getvalue().strip(), "code=true")
+
+    def test_main_reads_github_file_entries(self) -> None:
+        stdin = json.dumps({"filename": "docs/example.md", "previous_filename": "src/example.cpp"})
+        with mock.patch("sys.stdin", io.StringIO(stdin + "\n")):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                classify_changes.main(["--github-files"])
+            self.assertEqual(out.getvalue().strip(), "code=true")
+
     def test_main_prints_a_github_output_line(self) -> None:
         for stdin, expected in (("docs/roadmap.md\n", "code=false"), ("src/mdux.cpp\n", "code=true")):
             with self.subTest(stdin=stdin), mock.patch("sys.stdin", io.StringIO(stdin)):
                 out = io.StringIO()
                 with redirect_stdout(out):
-                    self.assertEqual(classify_changes.main(), 0)
+                    self.assertEqual(classify_changes.main([]), 0)
                 self.assertEqual(out.getvalue().strip(), expected)
 
 

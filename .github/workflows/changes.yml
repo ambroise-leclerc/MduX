@@ -60,13 +60,16 @@ jobs:
         # An API failure leaves an empty list too: this job must never be the reason a build is
         # skipped. Callers also gate on `code != 'false'` under `!cancelled()`, so even a failure
         # of this whole job selects the build rather than skipping it.
-        if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "$files"; then
+        # Whole file entries, one JSON object per line, rather than `.filename` alone: for a rename
+        # the old path is in `previous_filename`, and a source file renamed to docs/*.md must
+        # still select the build.
+        if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[] | tojson' > "$files"; then
           echo "::warning::Could not list the pull request's files; running the full build."
           : > "$files"
         fi
         if [ "$(wc -l < "$files")" -ge 3000 ]; then
           : > "$files"
         fi
-        echo "Changed paths:"
+        echo "Changed files:"
         sed 's/^/  /' "$files"
-        python3 tools/ci/classify_changes.py < "$files" | tee -a "$GITHUB_OUTPUT"
+        python3 tools/ci/classify_changes.py --github-files < "$files" | tee -a "$GITHUB_OUTPUT"
