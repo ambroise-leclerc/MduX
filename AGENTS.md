@@ -265,13 +265,16 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `make_shared` for shared state across its bridge scenarios, including failure propagation.
   Separately, helpers that forward their caller's `std::source_location` retain explicit failure
   calls to preserve that location; these helpers do not use `make_shared`.
-- Tests: twenty-eight executables. Nine on the in-repository MduXTest framework (`core_tests`,
-  `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`, `render_tests`,
-  `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`) and eighteen on SpecLab
-  (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`, `image_spec`, `image_tools_spec`,
-  `ml_noheap_spec`, `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`,
-  `medui_tools_spec`, `medui_noheap_spec`, `verify_spec`, `verify_ui_spec`, `conformance_spec`) — see
-  ADR-009 — plus the dedicated `verify_ui_pixel_test`. `mdux_discover_tests()` registers one CTest
+- Tests: thirty-four executables. Eight on the in-repository MduXTest framework, whose module is
+  compiled once into `mdux_test_framework` (`core_tests`, `evidence_tests`, `tools_tests`,
+  `compliance_tests`, `render_tests`, `offscreen_tests`, `vulkansc_memory_tests`,
+  `vulkansc_object_tests`), and twenty-five on SpecLab (`shader_spec`, `draw_spec`, `tools_spec`,
+  `bridge_spec`, `ml_spec`, `ml_tools_spec`, `image_spec`, `image_tools_spec`, `ml_noheap_spec`,
+  `font_spec`, `text_spec`, `text_tools_spec`, `medui_spec`, `medui_tools_spec`, `medui_noheap_spec`,
+  `input_noheap_spec`, `verify_spec`, `verify_ui_spec`, `verify_scenario_spec`, `conformance_spec`,
+  `glfw_translation_spec`, `monitor_loop_spec`, `scenario_spec`, `scenario_tools_spec`,
+  `scenario_noheap_spec`) — see ADR-009 — plus the dedicated `verify_ui_pixel_test`.
+  `mdux_discover_tests()` registers one CTest
   entry per case, so `ctest -R <scenario>` selects an individual test.
 - Test labels, which the CI steps select on: `evidence` (a committed artifact is byte-identical to
   a freshly baked one, and nothing else carries it), `evidence-unit`, `determinism`, `noheap`,

@@ -7,6 +7,24 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# The MduXTest runner as one library, so its module interface is compiled once rather than once per
+# executable that uses it (it was compiled eight times, #386). The macros in MduXTest.hpp still come
+# in through each suite's include path.
+add_library(mdux_test_framework STATIC)
+target_sources(mdux_test_framework PUBLIC FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+set_target_properties(mdux_test_framework
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux_test_framework PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux_test_framework PRIVATE /experimental:module /std:c++latest)
+endif()
+
 # Issue #280: Ccache does not model C++20 named-module dependencies. The classifier test is always
 # present and pins the fail-closed response-file parser. The integration test needs real ccache and
 # Clang's explicit BMI paths; the Linux Clang workflow installs ccache so this negative layout-change
@@ -45,8 +63,7 @@ add_executable(core_tests
     core/CoreTests.cpp
 )
 
-target_sources(core_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(core_tests PRIVATE MduX::Core)
+target_link_libraries(core_tests PRIVATE mdux_test_framework MduX::Core)
 target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(core_tests
@@ -80,8 +97,7 @@ add_executable(evidence_tests
     governance/ComplianceTests.cpp
 )
 
-target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(evidence_tests PRIVATE MduX::Core)
+target_link_libraries(evidence_tests PRIVATE mdux_test_framework MduX::Core)
 target_include_directories(evidence_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(evidence_tests
@@ -109,8 +125,7 @@ add_executable(tools_tests
     tools/TomlTests.cpp
 )
 
-target_sources(tools_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(tools_tests PRIVATE MduX::ToolsCommon)
+target_link_libraries(tools_tests PRIVATE mdux_test_framework MduX::ToolsCommon)
 target_include_directories(tools_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(tools_tests
@@ -258,8 +273,7 @@ add_executable(render_tests
     render/VulkanRendererTests.cpp
 )
 
-target_sources(render_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(render_tests PRIVATE MduX::MduX)
+target_link_libraries(render_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(render_tests
@@ -299,7 +313,6 @@ add_executable(offscreen_tests
 
 target_sources(offscreen_tests
     PRIVATE
-        FILE_SET CXX_MODULES FILES framework/MduXTest.cppm
         FILE_SET generated_modules
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
@@ -318,7 +331,7 @@ add_dependencies(offscreen_tests emit-shader-mdux-ui emit-screen-endoscope-monit
 # source tree rather than anything the build produces. It reads only; the source-tree-cleanliness
 # gate in CI stays satisfied.
 target_compile_definitions(offscreen_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
-target_link_libraries(offscreen_tests PRIVATE MduX::MduX)
+target_link_libraries(offscreen_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(offscreen_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MDUX_GENERATED_SHADER_DIR}
@@ -347,46 +360,12 @@ endif()
 add_test(NAME offscreen_tests COMMAND offscreen_tests)
 set_tests_properties(offscreen_tests PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
 
-# Basic unit tests
-add_executable(unit_tests
-    TestMain.cpp
-    TestVersion.cpp
-    TestCompliance.cpp
-)
-
-target_sources(unit_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(unit_tests PRIVATE MduX::MduX)
-target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-# Set C++23 standard for tests and enable module imports
-set_target_properties(unit_tests
-    PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-)
-
-# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
-if(TARGET __CMAKE::CXX23)
-    set_target_properties(unit_tests PROPERTIES CXX_MODULE_STD ON)
-endif()
-
-# MSVC-specific configuration for import std support
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(unit_tests PRIVATE /experimental:module)
-    target_compile_options(unit_tests PRIVATE /std:c++latest)
-endif()
-
-mdux_discover_tests(unit_tests)
-
-# Medical device compliance tests
 add_executable(compliance_tests
     ComplianceTestMain.cpp
     TestRegulatoryCompliance.cpp
 )
 
-target_sources(compliance_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(compliance_tests PRIVATE MduX::MduX)
+target_link_libraries(compliance_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(compliance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(compliance_tests
@@ -414,8 +393,7 @@ add_executable(vulkansc_memory_tests
     vulkansc/MemoryPoolManagerTests.cpp
 )
 
-target_sources(vulkansc_memory_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(vulkansc_memory_tests PRIVATE MduX::MduX)
+target_link_libraries(vulkansc_memory_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(vulkansc_memory_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_memory_tests
@@ -454,8 +432,7 @@ add_executable(vulkansc_object_tests
     vulkansc/DeviceObjectManagerTests.cpp
 )
 
-target_sources(vulkansc_object_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(vulkansc_object_tests PRIVATE MduX::MduX)
+target_link_libraries(vulkansc_object_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(vulkansc_object_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_object_tests
