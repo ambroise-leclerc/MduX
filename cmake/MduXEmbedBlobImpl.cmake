@@ -15,20 +15,16 @@ math(EXPR byte_count "${hex_length} / 2")
 
 # Twelve bytes per line keeps the generated file diffable without making it enormous. It is never
 # read by a human in practice, but a file nobody can open at all is worse.
-set(body "")
-set(index 0)
-while(index LESS hex_length)
-    string(SUBSTRING "${blob_hex}" ${index} 2 byte)
-    string(APPEND body "0x${byte},")
-    math(EXPR index "${index} + 2")
-    math(EXPR position "${index} / 2")
-    math(EXPR wrap "${position} % 12")
-    if(wrap EQUAL 0)
-        string(APPEND body "\n    ")
-    else()
-        string(APPEND body " ")
-    endif()
-endwhile()
+#
+# Two whole-string regex passes rather than a loop over bytes: string(SUBSTRING) on the full hex
+# string inside a per-byte loop is quadratic, and took 31 s for a 280 KB blob (#386). The output is
+# byte-identical to that loop's: "0xNN," joined by a space, a newline and four spaces after every
+# twelfth byte, and a trailing space after a final partial line.
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " body "${blob_hex}")
+# CMake's regex dialect has no {n} quantifier, so the eleven leading entries are spelled out.
+set(entry "0x[0-9a-f][0-9a-f], ")
+string(REPEAT "${entry}" 11 eleven_entries)
+string(REGEX REPLACE "(${eleven_entries}0x[0-9a-f][0-9a-f]), " "\\1,\n    " body "${body}")
 
 get_filename_component(input_name "${MDUX_BLOB_INPUT}" NAME)
 
