@@ -206,8 +206,8 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
-        # `conformance` is excluded too because the step below runs it with -V (#386).
-        ctest --test-dir build-asan -LE 'pixel|verify|conformance' --output-on-failure --no-tests=error
+        # `conformance` and `sanitizer-coverage` are excluded too: a named step runs each (#386).
+        ctest --test-dir build-asan -LE 'pixel|verify|conformance|sanitizer-coverage' --output-on-failure --no-tests=error
 
     # Shared MedUI observation-profile conformance (#314), broken out with -V so the vector count and
     # pinned SHA are visible, and run under the sanitizers because the R04 ROI slicing and the JSON
@@ -312,7 +312,9 @@ jobs:
       with:
         name: ninja-log-asan
         path: build-asan/.ninja_log
-        if-no-files-found: ignore
+        if-no-files-found: warn
+        # The log is a dotfile, and upload-artifact skips hidden files unless told otherwise.
+        include-hidden-files: true
 
     - name: Upload the rendered-truth diff images
       if: failure()

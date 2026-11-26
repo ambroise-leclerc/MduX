@@ -1708,11 +1708,13 @@ set_tests_properties(sanitizers.coverage.selftest PROPERTIES LABELS "build")
 # fails instead of passing. It reads compile_commands.json and fails if any translation unit lacks
 # the sanitizer flags, or if a target named here compiled nothing. The targets are the ones the
 # ASan+UBSan job used to leave uninstrumented: the governed library, the host libraries, and the
-# MduXTest suites that link only MduX::Core.
+# MduXTest suites that link only MduX::Core. mdux_test_framework is named because, since #386, it is
+# the one target that compiles MduXTest.cppm; compliance_tests replaced the removed unit_tests.
 if(MDUX_SANITIZER_FLAGS)
     set(MDUX_SANITIZER_REQUIRED_TARGETS
         MduXCore MduX MduXToolsCommon MduXMeduiLib MduXShaderBakeLib MduXMlBakeLib MduXTextBakeLib
-        MduXImageBakeLib core_tests evidence_tests tools_tests unit_tests draw_spec)
+        MduXImageBakeLib mdux_test_framework core_tests evidence_tests tools_tests compliance_tests
+        draw_spec)
     # Comma-joined: a semicolon list would be split into separate arguments on its way to CTest.
     string(JOIN "," MDUX_SANITIZER_REQUIRED_TARGETS ${MDUX_SANITIZER_REQUIRED_TARGETS})
     add_test(NAME sanitizers.coverage
