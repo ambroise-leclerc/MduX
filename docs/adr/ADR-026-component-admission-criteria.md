@@ -134,6 +134,31 @@ and the data behind it is not:
   afterwards proves nothing about the frame that draws it, so these are checked afresh before each
   use, and a violation refuses the frame by a named error — never clamped, truncated or wrapped.
 
+**One convention is admitted beside refusal, and only for one kind of value: display saturation of
+a continuous sample.** A component that plots a continuous measurement against a *display range*
+the caller supplies — a waveform's vertical scale, a colour ramp's domain — may draw a finite
+sample outside that range at the rail it overshot. This is what `mdux.medui.trace` and
+`mdux.medui.viewport` do, and the reason is theirs: an excursion past the display range is a real
+reading, and refusing the frame would blank a monitor at the moment its waveform matters most. A
+display range is a choice of scale, not a statement of which values are valid, so a sample beyond
+it has violated nothing.
+
+The convention is bounded on every side, and a component relying on it meets each condition:
+
+- it applies to the *magnitude* of a finite sample against a display range, and to nothing else —
+  a length, a count, an index, a shape, a character and a caret are refused as stated above;
+- a non-finite sample is refused, not saturated: a NaN or an infinity is not a reading at any rail;
+- the display range itself is validated, and an empty, inverted or non-finite one is refused;
+- the mapping is total and deterministic, so no sample can place a primitive outside the node;
+- the component's interface documents the convention where the range is declared;
+- it is never available to a discrete or enumerated value, nor to a value shown as digits — a
+  number that does not fit its pattern is refused, because a saturated digit string is a wrong
+  number that reads as a right one.
+
+What the convention does not settle is whether an operator can *tell* a saturated sample from a
+legitimate one at the rail. That is the out-of-range data-quality state, and it belongs to AC-07,
+where a component saturating without marking it is recorded as owing that appearance.
+
 A check that could be made at creation and is instead left to the first frame is a shortfall; a
 per-frame check of mutable data is the criterion being met, not deferred. Where the same property
 is checked in both phases, the creation check is for the diagnostic and the per-frame check is the

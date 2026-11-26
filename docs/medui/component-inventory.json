@@ -937,9 +937,10 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Trace.cppm"
+            "include/mdux/medui/Trace.cppm",
+            "src/medui/Trace.cpp"
           ],
-          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's oldest and count, refused as TooManySamples past maxSamplesPerTrace"
+          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -947,7 +948,7 @@
         "AC-07": {
           "status": "unmet",
           "closedBy": "A5",
-          "note": "no interaction or data-quality state has an appearance"
+          "note": "no data-quality state has an appearance; in particular a sample saturated at a rail is not marked as out of range"
         },
         "AC-08": {
           "status": "partial",
@@ -1015,7 +1016,7 @@
             "include/mdux/medui/Screen.cppm",
             "include/mdux/medui/Viewport.cppm"
           ],
-          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape and the style's range, because the producer moves both between frames"
+          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -1023,7 +1024,7 @@
         "AC-07": {
           "status": "unmet",
           "closedBy": "A5",
-          "note": "no interaction or data-quality state has an appearance"
+          "note": "no data-quality state has an appearance; in particular a cell saturated at a rail colour is not marked as out of range"
         },
         "AC-08": {
           "status": "partial",
