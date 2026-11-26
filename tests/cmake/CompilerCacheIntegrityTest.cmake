@@ -1,5 +1,6 @@
 foreach(required_variable
-        SOURCE_DIR BINARY_DIR CXX_COMPILER GENERATOR CACHE_BINARY CXX_FLAGS EXE_LINKER_FLAGS)
+        SOURCE_DIR BINARY_DIR CXX_COMPILER GENERATOR CACHE_BINARY CACHE_KIND CXX_FLAGS
+        EXE_LINKER_FLAGS)
     if(NOT DEFINED ${required_variable})
         message(FATAL_ERROR
             "CompilerCacheIntegrityTest.cmake: ${required_variable} must be set")
@@ -19,9 +20,19 @@ function(run_checked description)
     endif()
 endfunction()
 
+if(NOT CACHE_KIND MATCHES "^(ccache|cppmcache)$")
+    message(FATAL_ERROR
+        "CompilerCacheIntegrityTest.cmake: CACHE_KIND must be ccache or cppmcache, not '${CACHE_KIND}'")
+endif()
+
 function(assert_probe expected fixture_build)
+    # CMAKE_EXECUTABLE_SUFFIX is not set in script mode, hence the lookup.
+    set(probe "${fixture_build}/probe")
+    if(EXISTS "${probe}.exe")
+        set(probe "${probe}.exe")
+    endif()
     execute_process(
-        COMMAND "${fixture_build}/probe"
+        COMMAND "${probe}"
         RESULT_VARIABLE probe_result
         OUTPUT_VARIABLE probe_output
         ERROR_VARIABLE probe_error
@@ -52,7 +63,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(ENABLE_CACHE ON CACHE BOOL "" FORCE)
-set(CACHE_OPTION "ccache" CACHE STRING "" FORCE)
+set(CACHE_OPTION "@CACHE_KIND@" CACHE STRING "" FORCE)
 set(CACHE_BINARY "@CACHE_BINARY@" CACHE FILEPATH "" FORCE)
 include("@cache_module@")
 
@@ -78,12 +89,34 @@ int compiledLayoutSize();
 int main() { std::printf("%d\n", compiledLayoutSize()); }
 ]=])
 
-set(cache_environment
-    "${CMAKE_COMMAND}" -E env
-    --unset=CCACHE_DISABLE
-    --unset=CCACHE_RECACHE
-    "CCACHE_DIR=${fixture_cache}"
-    "CCACHE_CONFIGPATH=${fixture_config}")
+# The fixture's cache is its own: nothing of the caller's cache configuration may reach it, and in
+# particular not a remote cache or a read-only setting.
+if(CACHE_KIND STREQUAL "cppmcache")
+    set(cache_environment
+        "${CMAKE_COMMAND}" -E env
+        --unset=CPPMCACHE_DISABLE
+        --unset=CPPMCACHE_RECACHE
+        --unset=CPPMCACHE_REMOTE
+        --unset=CPPMCACHE_BASEDIR
+        --unset=CPPMCACHE_LOG
+        "CPPMCACHE_DIR=${fixture_cache}")
+    set(expected_cache_entries
+        "CACHE_BINARY:FILEPATH=${CACHE_BINARY}"
+        "MDUX_CACHE_BINARY:INTERNAL=${CACHE_BINARY}"
+        "MDUX_CACHE_KIND:INTERNAL=cppmcache")
+else()
+    set(cache_environment
+        "${CMAKE_COMMAND}" -E env
+        --unset=CCACHE_DISABLE
+        --unset=CCACHE_RECACHE
+        "CCACHE_DIR=${fixture_cache}"
+        "CCACHE_CONFIGPATH=${fixture_config}")
+    set(expected_cache_entries
+        "CACHE_BINARY:FILEPATH=${CACHE_BINARY}"
+        "MDUX_CACHE_BINARY:INTERNAL=${CACHE_BINARY}"
+        "MDUX_CACHE_KIND:INTERNAL=ccache"
+        "MDUX_CACHE_CAN_HASH_BMIS:INTERNAL=ON")
+endif()
 
 run_checked("Fixture configure"
     ${cache_environment} "${CMAKE_COMMAND}"
@@ -92,18 +125,14 @@ run_checked("Fixture configure"
     "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}"
     "-DCMAKE_EXE_LINKER_FLAGS=${EXE_LINKER_FLAGS}")
 file(READ "${fixture_build}/CMakeCache.txt" fixture_cache_contents)
-foreach(expected_cache_entry
-        "CACHE_BINARY:FILEPATH=${CACHE_BINARY}"
-        "MDUX_CACHE_BINARY:INTERNAL=${CACHE_BINARY}"
-        "MDUX_CACHE_KIND:INTERNAL=ccache"
-        "MDUX_CACHE_CAN_HASH_BMIS:INTERNAL=ON")
+foreach(expected_cache_entry IN LISTS expected_cache_entries)
     string(FIND "${fixture_cache_contents}" "${expected_cache_entry}" cache_entry_index)
     if(cache_entry_index EQUAL -1)
         message(FATAL_ERROR
             "Fixture cache does not contain the expected entry: ${expected_cache_entry}")
     endif()
 endforeach()
-run_checked("Ccache statistics reset"
+run_checked("Cache statistics reset"
     ${cache_environment} "${CACHE_BINARY}" --zero-stats)
 run_checked("Baseline module build"
     ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
@@ -134,23 +163,32 @@ execute_process(
     ERROR_VARIABLE stats_error
 )
 if(NOT stats_result EQUAL 0)
-    message(FATAL_ERROR "Reading ccache statistics failed: ${stats_error}")
+    message(FATAL_ERROR "Reading ${CACHE_KIND} statistics failed: ${stats_error}")
 endif()
-string(REGEX MATCH "direct_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
-set(direct_hits "${CMAKE_MATCH_1}")
-string(REGEX MATCH "preprocessed_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
-set(preprocessed_hits "${CMAKE_MATCH_1}")
-if(direct_hits STREQUAL "")
-    set(direct_hits 0)
+if(CACHE_KIND STREQUAL "cppmcache")
+    # cppmcache prints one "name<TAB>value" line per counter.
+    string(REGEX MATCH "(^|\n)hit[	 ]+([0-9]+)" unused "${stats_output}")
+    set(cache_hits "${CMAKE_MATCH_2}")
+    if(cache_hits STREQUAL "")
+        set(cache_hits 0)
+    endif()
+else()
+    string(REGEX MATCH "direct_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
+    set(direct_hits "${CMAKE_MATCH_1}")
+    string(REGEX MATCH "preprocessed_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
+    set(preprocessed_hits "${CMAKE_MATCH_1}")
+    if(direct_hits STREQUAL "")
+        set(direct_hits 0)
+    endif()
+    if(preprocessed_hits STREQUAL "")
+        set(preprocessed_hits 0)
+    endif()
+    math(EXPR cache_hits "${direct_hits} + ${preprocessed_hits}")
 endif()
-if(preprocessed_hits STREQUAL "")
-    set(preprocessed_hits 0)
-endif()
-math(EXPR cache_hits "${direct_hits} + ${preprocessed_hits}")
 if(cache_hits LESS 1)
     message(FATAL_ERROR
-        "The unchanged module consumer did not produce a ccache hit:\n${stats_output}")
+        "The unchanged module consumer did not produce a ${CACHE_KIND} hit:\n${stats_output}")
 endif()
 
 message(STATUS
-    "Compiler cache integrity: layout change invalidated the consumer and an unchanged rebuild hit ccache")
+    "Compiler cache integrity: layout change invalidated the consumer and an unchanged rebuild hit ${CACHE_KIND}")

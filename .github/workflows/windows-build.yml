@@ -184,13 +184,57 @@ jobs:
       with:
         arch: x64
 
+    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
+    # imports and restores the BMI a provider produces, so named-module providers and consumers are
+    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
+    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
+    # consumers. The action installs the released binary, checked against the release's checksums,
+    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
+    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
+    # develop saved and never save their own, so one branch cannot seed another's objects.
+    - name: Install cppmcache
+      uses: ambroise-leclerc/cppmcache@8bd44f6f33544ed2af142420ae3be7e63bb1894d # v0.1.0
+      with:
+        version: 0.1.0
+        cache: "false"
+
+    - name: Restore the compiler cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-windows-msvc-${{ github.sha }}
+        restore-keys: cppmcache-windows-msvc-
+
+    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
+    # allowed here is dropped whole, and this run repopulates it.
+    - name: Bound the compiler cache
+      shell: bash
+      run: |
+        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
+        echo "compiler cache: ${size_mb:-0} MiB"
+        if [ "${size_mb:-0}" -gt 1024 ]; then
+          cppmcache -C
+        fi
+
     - name: Configure CMake (MSVC with Ninja)
-      run: cmake --preset ninja-msvc -DMDUX_BUILD_PREVIEW=ON
+      run: cmake --preset ninja-msvc -DMDUX_BUILD_PREVIEW=ON -DCACHE_OPTION=cppmcache
       shell: cmd
 
     - name: Build
       run: cmake --build --preset ninja-msvc
       shell: cmd
+
+    - name: Report compiler cache statistics
+      if: ${{ !cancelled() }}
+      run: cppmcache -s
+
+    # Saved straight after the build, so a test failure later in the job does not lose it.
+    - name: Save the compiler cache
+      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-windows-msvc-${{ github.sha }}
 
     # Everything except the labels a named step below asserts, so each test runs exactly once (#386;
     # this step used to run the whole suite and the named steps then ran their labels a second time).

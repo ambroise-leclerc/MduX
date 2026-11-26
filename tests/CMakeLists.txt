@@ -64,9 +64,12 @@ add_test(NAME build.cache.classifier
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheClassifierTest.cmake)
 set_tests_properties(build.cache.classifier PROPERTIES LABELS "build")
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
-   MDUX_CACHE_KIND STREQUAL "ccache" AND
-   MDUX_CACHE_CAN_HASH_BMIS)
+# cppmcache caches module consumers on every compiler, so the check follows it everywhere; ccache
+# only does so through the launcher's Clang path.
+if(MDUX_CACHE_KIND STREQUAL "cppmcache" OR
+   (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+    MDUX_CACHE_KIND STREQUAL "ccache" AND
+    MDUX_CACHE_CAN_HASH_BMIS))
     add_test(NAME build.cache.namedModuleIntegrity
         COMMAND ${CMAKE_COMMAND}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
@@ -74,13 +77,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
             -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
             -DGENERATOR=${CMAKE_GENERATOR}
             -DCACHE_BINARY=${MDUX_CACHE_BINARY}
+            -DCACHE_KIND=${MDUX_CACHE_KIND}
             "-DCXX_FLAGS=${CMAKE_CXX_FLAGS}"
             "-DEXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CompilerCacheIntegrityTest.cmake)
     set_tests_properties(build.cache.namedModuleIntegrity PROPERTIES LABELS "build" TIMEOUT 120)
 else()
     message(STATUS
-        "build.cache.namedModuleIntegrity not registered: it requires Clang and ccache 4.8+; "
+        "build.cache.namedModuleIntegrity not registered: it requires cppmcache, or Clang and ccache 4.8+; "
         "build.cache.classifier still verifies fail-closed module-map handling")
 endif()
 

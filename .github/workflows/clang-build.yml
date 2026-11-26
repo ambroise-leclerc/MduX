@@ -134,7 +134,6 @@ jobs:
         sudo apt-get install -y \
           ninja-build \
           build-essential \
-          ccache \
           clang-23 \
           libc++-23-dev \
           libc++abi-23-dev \
@@ -166,11 +165,6 @@ jobs:
           echo "::error::${clangxx} reports major version ${major}, expected 23."
           exit 1
         fi
-        ccache_version="$(ccache --version | sed -n 's/^ccache version \([0-9][0-9.]*\).*/\1/p' | head -1)"
-        if ! dpkg --compare-versions "$ccache_version" ge 4.8; then
-          echo "::error::ccache ${ccache_version:-unknown} cannot accept per-compilation BMI inputs; 4.8+ is required."
-          exit 1
-        fi
 
     # #246's first question, answered before the configure step so that a missing manifest is
     # reported as itself rather than as an unresolved `import std` hundreds of lines later. The
@@ -199,50 +193,58 @@ jobs:
         ls -1 /usr/share/vulkan/icd.d/ || true
         vulkaninfo --summary
 
-    # The compiler cache cmake/Cache.cmake already routes this leg through, made persistent (#386).
-    # Until then every run started with an empty cache, so the launcher cost a process per compile
-    # and saved nothing. This is the one toolchain where it pays: on Clang the launcher hashes every
-    # imported BMI into a module consumer's key, so consumers are cache-eligible, whereas on GCC and
-    # MSVC every named-module compilation bypasses the cache. build.cache.namedModuleIntegrity proves
-    # a changed BMI still invalidates its consumers. Pull requests restore the newest cache develop
-    # saved and never save their own, so one branch cannot seed another's objects.
-    - name: Configure the compiler cache
-      shell: bash
-      run: |
-        {
-          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
-          echo "CCACHE_COMPILERCHECK=content"
-          echo "CCACHE_MAXSIZE=1G"
-        } >> "$GITHUB_ENV"
+    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
+    # imports and restores the BMI a provider produces, so named-module providers and consumers are
+    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
+    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
+    # consumers. The action installs the released binary, checked against the release's checksums,
+    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
+    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
+    # develop saved and never save their own, so one branch cannot seed another's objects.
+    - name: Install cppmcache
+      uses: ambroise-leclerc/cppmcache@8bd44f6f33544ed2af142420ae3be7e63bb1894d # v0.1.0
+      with:
+        version: 0.1.0
+        cache: "false"
 
     - name: Restore the compiler cache
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-linux-clang23-libcxx-${{ github.sha }}
-        restore-keys: ccache-linux-clang23-libcxx-
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-linux-clang23-libcxx-${{ github.sha }}
+        restore-keys: cppmcache-linux-clang23-libcxx-
+
+    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
+    # allowed here is dropped whole, and this run repopulates it.
+    - name: Bound the compiler cache
+      shell: bash
+      run: |
+        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
+        echo "compiler cache: ${size_mb:-0} MiB"
+        if [ "${size_mb:-0}" -gt 1024 ]; then
+          cppmcache -C
+        fi
 
     # The preset, not an equivalent-looking configure line: CMakePresets.json's ninja-clang
     # description exists precisely to keep preset and CI from drifting apart, which a
     # hand-written duplicate of its cache variables would defeat.
     - name: Configure CMake
-      run: cmake --preset ninja-clang -DMDUX_BUILD_PREVIEW=ON
+      run: cmake --preset ninja-clang -DMDUX_BUILD_PREVIEW=ON -DCACHE_OPTION=cppmcache
 
     - name: Build
       run: cmake --build --preset ninja-clang
 
     - name: Report compiler cache statistics
       if: ${{ !cancelled() }}
-      run: ccache --show-stats
+      run: cppmcache -s
 
     # Saved straight after the build, so a test failure later in the job does not lose it.
     - name: Save the compiler cache
       if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-linux-clang23-libcxx-${{ github.sha }}
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-linux-clang23-libcxx-${{ github.sha }}
 
     # Everything except the labels a named step below asserts, so each test runs exactly once (#386;
     # this step used to run the whole suite and the named steps then ran their labels a second time).
@@ -267,7 +269,7 @@ jobs:
     # bypassing every module consumer would be correct but would throw away the compile-time benefit
     # this launcher exists to preserve. Kept as a named step with --no-tests=error so losing the
     # registration cannot masquerade as a green run.
-    - name: Verify ccache invalidates named-module consumers
+    - name: Verify the compiler cache invalidates named-module consumers
       run: ctest --preset ninja-clang -R '^build\.cache\.namedModuleIntegrity$' -V --no-tests=error
 
     # The step this workflow's header used to describe as future work. It matches the MSVC and GCC

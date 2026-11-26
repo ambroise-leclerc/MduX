@@ -55,47 +55,55 @@ jobs:
     - name: Set up the verified toolchain
       uses: ./.github/actions/setup-macos-toolchain
 
-    # The compiler cache cmake/Cache.cmake already routes this leg through, made persistent (#386).
-    # Until then every run started with an empty cache, so the launcher cost a process per compile
-    # and saved nothing. This is the one toolchain where it pays: on Clang the launcher hashes every
-    # imported BMI into a module consumer's key, so consumers are cache-eligible, whereas on GCC and
-    # MSVC every named-module compilation bypasses the cache. build.cache.namedModuleIntegrity proves
-    # a changed BMI still invalidates its consumers. Pull requests restore the newest cache develop
-    # saved and never save their own, so one branch cannot seed another's objects.
-    - name: Configure the compiler cache
-      shell: bash
-      run: |
-        {
-          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
-          echo "CCACHE_COMPILERCHECK=content"
-          echo "CCACHE_MAXSIZE=1G"
-        } >> "$GITHUB_ENV"
+    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
+    # imports and restores the BMI a provider produces, so named-module providers and consumers are
+    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
+    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
+    # consumers. The action installs the released binary, checked against the release's checksums,
+    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
+    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
+    # develop saved and never save their own, so one branch cannot seed another's objects.
+    - name: Install cppmcache
+      uses: ambroise-leclerc/cppmcache@8bd44f6f33544ed2af142420ae3be7e63bb1894d # v0.1.0
+      with:
+        version: 0.1.0
+        cache: "false"
 
     - name: Restore the compiler cache
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-macos-clang23-release-${{ github.sha }}
-        restore-keys: ccache-macos-clang23-release-
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-macos-clang23-release-${{ github.sha }}
+        restore-keys: cppmcache-macos-clang23-release-
+
+    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
+    # allowed here is dropped whole, and this run repopulates it.
+    - name: Bound the compiler cache
+      shell: bash
+      run: |
+        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
+        echo "compiler cache: ${size_mb:-0} MiB"
+        if [ "${size_mb:-0}" -gt 1024 ]; then
+          cppmcache -C
+        fi
 
     - name: Configure
-      run: cmake --preset ninja-macos-clang -DMDUX_BUILD_PREVIEW=ON
+      run: cmake --preset ninja-macos-clang -DMDUX_BUILD_PREVIEW=ON -DCACHE_OPTION=cppmcache
 
     - name: Build
       run: cmake --build --preset ninja-macos-clang --parallel 4
 
     - name: Report compiler cache statistics
       if: ${{ !cancelled() }}
-      run: ccache --show-stats
+      run: cppmcache -s
 
     # Saved straight after the build, so a test failure later in the job does not lose it.
     - name: Save the compiler cache
       if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-macos-clang23-release-${{ github.sha }}
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-macos-clang23-release-${{ github.sha }}
 
     # Everything except the labels a named step below asserts, so each test runs exactly once (#386).
     # -L and -LE are regex matches against the same label strings, so this exclusion and the named
@@ -227,51 +235,60 @@ jobs:
     - name: Set up the verified toolchain
       uses: ./.github/actions/setup-macos-toolchain
 
-    # The compiler cache cmake/Cache.cmake already routes this leg through, made persistent (#386).
-    # Until then every run started with an empty cache, so the launcher cost a process per compile
-    # and saved nothing. This is the one toolchain where it pays: on Clang the launcher hashes every
-    # imported BMI into a module consumer's key, so consumers are cache-eligible, whereas on GCC and
-    # MSVC every named-module compilation bypasses the cache. build.cache.namedModuleIntegrity proves
-    # a changed BMI still invalidates its consumers. Pull requests restore the newest cache develop
-    # saved and never save their own, so one branch cannot seed another's objects.
-    - name: Configure the compiler cache
-      shell: bash
-      run: |
-        {
-          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
-          echo "CCACHE_COMPILERCHECK=content"
-          echo "CCACHE_MAXSIZE=1G"
-        } >> "$GITHUB_ENV"
+    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
+    # imports and restores the BMI a provider produces, so named-module providers and consumers are
+    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
+    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
+    # consumers. The action installs the released binary, checked against the release's checksums,
+    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
+    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
+    # develop saved and never save their own, so one branch cannot seed another's objects.
+    - name: Install cppmcache
+      uses: ambroise-leclerc/cppmcache@8bd44f6f33544ed2af142420ae3be7e63bb1894d # v0.1.0
+      with:
+        version: 0.1.0
+        cache: "false"
 
     - name: Restore the compiler cache
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-macos-clang23-asan-${{ github.sha }}
-        restore-keys: ccache-macos-clang23-asan-
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-macos-clang23-asan-${{ github.sha }}
+        restore-keys: cppmcache-macos-clang23-asan-
+
+    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
+    # allowed here is dropped whole, and this run repopulates it.
+    - name: Bound the compiler cache
+      shell: bash
+      run: |
+        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
+        echo "compiler cache: ${size_mb:-0} MiB"
+        if [ "${size_mb:-0}" -gt 1024 ]; then
+          cppmcache -C
+        fi
 
     - name: Configure ASan and UBSan
       run: |
         cmake --preset ninja-macos-clang-debug \
           -DMDUX_BUILD_EXAMPLES=OFF \
           -DENABLE_SANITIZER_ADDRESS=ON \
-          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON \
+          -DCACHE_OPTION=cppmcache
 
     - name: Build ASan and UBSan
       run: cmake --build --preset ninja-macos-clang-debug --parallel 4
 
     - name: Report compiler cache statistics
       if: ${{ !cancelled() }}
-      run: ccache --show-stats
+      run: cppmcache -s
 
     # Saved straight after the build, so a test failure later in the job does not lose it.
     - name: Save the compiler cache
       if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ runner.temp }}/ccache
-        key: ccache-macos-clang23-asan-${{ github.sha }}
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-macos-clang23-asan-${{ github.sha }}
 
     - name: Run non-render tests under ASan and UBSan
       env:
@@ -283,7 +300,7 @@ jobs:
       # The symbol scans establish properties of the Release object files the job above builds.
       # Debug and sanitizer instrumentation deliberately change those objects; rerunning the static
       # scan here can reject instrumentation/runtime references instead of MduX behavior. The runtime
-      # no-heap cases remain in this sanitized invocation. The ccache integrity check is a build
+      # no-heap cases remain in this sanitized invocation. The compiler cache integrity check is a build
       # property rather than a runtime one, and the Release job runs it.
       run: ctest --preset ninja-macos-clang-debug -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|.*\.symbolScan|^build\.cache\.namedModuleIntegrity$' --output-on-failure --no-tests=error
 
