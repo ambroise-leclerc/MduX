@@ -150,6 +150,12 @@ jobs:
 
     # Everything except the suites that talk to a GPU driver. Leak detection is on here, which is
     # the half that catches an owner dropped on the floor.
+    #
+    # Selected by label, not by name. Every suite that renders through a device carries `pixel` or
+    # `verify`, and a name list drifted: the scenario verifier (#321) and verify_ui_spec's
+    # RENDERED-envelope check (#314) render through lavapipe too, were never added to it, and from
+    # 2026-11-24 failed this step intermittently on the driver's own thread-start leak - on develop
+    # as well as on pull requests, at a commit that had passed for weeks.
     - name: Run tests under ASan and UBSan
       env:
         ASAN_OPTIONS: detect_leaks=1
@@ -159,7 +165,7 @@ jobs:
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
-        ctest --test-dir build-asan -E 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|^preview\.pixel$' --output-on-failure --no-tests=error
+        ctest --test-dir build-asan -LE 'pixel|verify' --output-on-failure --no-tests=error
 
     # Shared MedUI observation-profile conformance (#314), broken out with -V so the vector count and
     # pinned SHA are visible, and run under the sanitizers because the R04 ROI slicing and the JSON
@@ -171,8 +177,9 @@ jobs:
         UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       run: ctest --test-dir build-asan -L conformance -V --no-tests=error
 
-    # offscreen_tests, verify_ui_pixel_test and the verify.screen.<id> gates all run against
-    # lavapipe, and the Vulkan ICD leaks 512
+    # Every `pixel`- or `verify`-labelled suite - offscreen_tests, verify_ui_pixel_test, preview.pixel,
+    # the verify.screen.<id> and verify.scenario.<id> gates, verify_scenario_spec's replay scenarios
+    # and verify_ui_spec's RENDERED-envelope check - runs against lavapipe, and the Vulkan ICD leaks 512
     # bytes once, on a thread it starts itself, through pthread_once - a stack with no MduX frame in
     # it at all. That is the driver's allocation to free, not this project's, and it is not
     # suppressible by name because the frames resolve to `<unknown module>`.
@@ -201,7 +208,7 @@ jobs:
         # rather than assumed - `false | tee /dev/null` exits 0 under `bash -e` and 1 with pipefail.
         set -o pipefail
         LOG="$RUNNER_TEMP/asan-pixel.log"
-        ctest --test-dir build-asan -R 'offscreen_tests|verify_ui_pixel_test|verify\.screen\.|^preview\.pixel$' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
+        ctest --test-dir build-asan -L 'pixel|verify' --output-on-failure --no-tests=error 2>&1 | tee "$LOG"
         if grep -q "Skipped" "$LOG"; then
           echo "::error::a rendered-truth test was skipped - no Vulkan device, so part of the render path was not sanitized"
           exit 1
