@@ -286,7 +286,9 @@ look-alike command line; they are not needed to build by hand, and each uses its
   `mdux.tools.schema` (a JSON-Schema-subset engine in `MduX::ToolsCommon`); asserted as a named step
   on all five CI legs since `#314`), and `sanitizer-coverage` (registered only when a sanitizer is
   enabled: `sanitizers.coverage` reads `compile_commands.json` and fails if any translation unit
-  lacks the sanitizer flags; asserted as a named step in `sanitizers.yml` since `#360`, which moved
+  is not compiled with the sanitizers in effect, evaluating each command's options in order so a
+  later `-fno-sanitize=` or `-fsanitize-recover=` counts; its self-test is
+  `sanitizers.coverage.selftest`, label `build`; asserted as a named step in `sanitizers.yml` since `#360`, which moved
   those flags from `MduX_options` onto every translation unit so `MduXCore` is instrumented too).
 - Optional host service: `mdux-preview`, enabled by `MDUX_BUILD_PREVIEW=ON`; native loopback HTTP,
   explicit locale/fixture data, and production offscreen rendering. `MduXPreviewLib` owns the

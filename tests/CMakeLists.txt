@@ -1715,6 +1715,17 @@ if(MDUX_BUILD_PREVIEW)
     endif()
 endif()
 
+# The coverage checker's own self-test (#360): it reads hand-written compile commands, including
+# ones whose later options switch the sanitizers off or recovery back on, so it needs no sanitizer
+# build and runs in every build. Labelled `build` rather than `sanitizer-coverage`, so it cannot
+# satisfy sanitizers.yml's --no-tests=error selection in place of the real check below.
+add_test(NAME sanitizers.coverage.selftest
+    COMMAND ${CMAKE_COMMAND}
+        "-DCHECKER=${PROJECT_SOURCE_DIR}/cmake/CheckSanitizerCoverage.cmake"
+        "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/sanitizer-coverage-selftest"
+        -P ${PROJECT_SOURCE_DIR}/cmake/TestCheckSanitizerCoverage.cmake)
+set_tests_properties(sanitizers.coverage.selftest PROPERTIES LABELS "build")
+
 # Sanitizer coverage (#360). Registered only when enable_sanitizers() switched a sanitizer on, and
 # asserted by name in sanitizers.yml with --no-tests=error, so a job that stopped registering it
 # fails instead of passing. It reads compile_commands.json and fails if any translation unit lacks

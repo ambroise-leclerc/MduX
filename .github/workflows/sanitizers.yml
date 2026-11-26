@@ -153,7 +153,8 @@ jobs:
     # Before anything runs: a green result below is evidence only about code that was instrumented.
     # This job once passed for months with 0 of MduXCore's 46 translation units compiled with
     # -fsanitize (#360). The check reads compile_commands.json and fails on any translation unit
-    # without the sanitizer flags, or on a named target that compiled nothing. --no-tests=error: a
+    # whose options - evaluated in order, so a later -fno-sanitize= or -fsanitize-recover= counts -
+    # leave a sanitizer off or recovery on, or on a named target that compiled nothing. --no-tests=error: a
     # configuration that stopped registering it must fail here, not skip it.
     - name: Verify every translation unit is instrumented
       run: ctest --test-dir build-asan -L sanitizer-coverage --output-on-failure --no-tests=error

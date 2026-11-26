@@ -12,10 +12,24 @@
 # MduX_options. A green sanitizer job is evidence about the code it instrumented and nothing else,
 # so this check makes "everything was instrumented" a test result rather than an assumption.
 #
-# Every compile command must carry every flag in SANITIZER_FLAGS - including
-# -fno-sanitize-recover=all, without which a UBSan finding prints and the test passes. Each target
-# in REQUIRED_TARGETS must also have at least one compile command, so a renamed or deleted target,
-# or an empty database, fails here instead of passing vacuously.
+# What is checked is the *effect* of each compile command's options, evaluated in command-line
+# order, not the presence of SANITIZER_FLAGS' text. Presence alone would accept a command whose
+# global flags are followed by a configuration- or target-specific `-fno-sanitize=all
+# -fsanitize-recover=all`, which switches the sanitizers off and recovery back on: the compiler
+# honours the last word, so this check must too. For every command:
+#
+# - every sanitizer SANITIZER_FLAGS enables with -fsanitize= must still be enabled at the end;
+# - nothing may disable part of an enabled sanitizer: a -fno-sanitize= naming a sub-check (say
+#   `alignment`, inside `undefined`) cannot be tracked precisely here, so it is refused rather than
+#   guessed about;
+# - no sanitizer may recover at the end. Recovery is the compilers' default for UBSan, so the
+#   command must carry -fno-sanitize-recover=all (or the bare form) and nothing after it may turn
+#   any recovery back on; without that a UBSan finding prints and the test passes.
+#
+# Each target in REQUIRED_TARGETS must also have at least one compile command, so a renamed or
+# deleted target, or an empty database, fails here instead of passing vacuously.
+# tests/CMakeLists.txt registers `sanitizers.coverage.selftest` (cmake/TestCheckSanitizerCoverage.cmake),
+# which runs this script over hand-written databases, contradictory options included.
 
 foreach(required COMPILE_COMMANDS SANITIZER_FLAGS REQUIRED_TARGETS)
     if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
@@ -34,7 +48,68 @@ if(entryCount EQUAL 0)
 endif()
 
 string(REPLACE "," ";" REQUIRED_TARGETS "${REQUIRED_TARGETS}")
+
+# Evaluates sanitizer options in order, the way GCC and Clang do. Sets, in the caller's scope:
+#   <prefix>_ENABLED     sanitizer groups still enabled after the last option
+#   <prefix>_RECOVERING  groups that still recover ("default" is the compilers' own UBSan default,
+#                        cleared only by -fno-sanitize-recover or -fno-sanitize-recover=all)
+#   <prefix>_REFUSED     options this script cannot evaluate precisely and so refuses
+#
+# CMAKE_MATCH_<n> is compared through "${...}" below on purpose: when an optional group does not
+# participate in the match the variable is left undefined, and an unquoted `if(CMAKE_MATCH_2 ...)`
+# then compares the literal text "CMAKE_MATCH_2". The self-test caught exactly that, on the bare
+# -fno-sanitize-recover form.
+function(mdux_evaluate_sanitizer_options prefix)
+    set(enabled "")
+    set(recovering "default")
+    set(refused "")
+    foreach(arg IN LISTS ARGN)
+        if(arg MATCHES "^-fsanitize=(.+)$")
+            string(REPLACE "," ";" groups "${CMAKE_MATCH_1}")
+            list(APPEND enabled ${groups})
+        elseif(arg MATCHES "^-fno-sanitize=(.+)$")
+            string(REPLACE "," ";" groups "${CMAKE_MATCH_1}")
+            foreach(group IN LISTS groups)
+                if(group STREQUAL "all")
+                    set(enabled "")
+                elseif(group IN_LIST enabled)
+                    list(REMOVE_ITEM enabled "${group}")
+                else()
+                    list(APPEND refused "${arg}")
+                endif()
+            endforeach()
+        elseif(arg MATCHES "^-fsanitize-recover(=(.+))?$")
+            if("${CMAKE_MATCH_2}" STREQUAL "")
+                list(APPEND recovering "default")
+            else()
+                string(REPLACE "," ";" groups "${CMAKE_MATCH_2}")
+                list(APPEND recovering ${groups})
+            endif()
+        elseif(arg MATCHES "^-fno-sanitize-recover(=(.+))?$")
+            if("${CMAKE_MATCH_2}" STREQUAL "" OR "${CMAKE_MATCH_2}" STREQUAL "all")
+                set(recovering "")
+            else()
+                # Removing one group from `all` or from the compiler default cannot be tracked
+                # precisely, so those stay in the list and fail the command - conservatively.
+                string(REPLACE "," ";" groups "${CMAKE_MATCH_2}")
+                list(REMOVE_ITEM recovering ${groups})
+            endif()
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES enabled)
+    list(REMOVE_DUPLICATES recovering)
+    set(${prefix}_ENABLED "${enabled}" PARENT_SCOPE)
+    set(${prefix}_RECOVERING "${recovering}" PARENT_SCOPE)
+    set(${prefix}_REFUSED "${refused}" PARENT_SCOPE)
+endfunction()
+
 separate_arguments(expectedFlags UNIX_COMMAND "${SANITIZER_FLAGS}")
+mdux_evaluate_sanitizer_options(expected ${expectedFlags})
+if(expected_ENABLED STREQUAL "" OR NOT expected_RECOVERING STREQUAL "" OR NOT expected_REFUSED STREQUAL "")
+    message(FATAL_ERROR
+        "CheckSanitizerCoverage: SANITIZER_FLAGS '${SANITIZER_FLAGS}' must enable at least one "
+        "sanitizer and disable recovery with -fno-sanitize-recover=all")
+endif()
 
 set(uninstrumented "")
 set(seenTargets "")
@@ -57,12 +132,24 @@ foreach(index RANGE 0 ${lastIndex})
     list(APPEND seenTargets "${target}")
 
     separate_arguments(arguments UNIX_COMMAND "${command}")
-    foreach(flag IN LISTS expectedFlags)
-        if(NOT flag IN_LIST arguments)
-            list(APPEND uninstrumented "${target}: ${file} (missing ${flag})")
-            break()
+    mdux_evaluate_sanitizer_options(actual ${arguments})
+    set(reasons "")
+    foreach(group IN LISTS expected_ENABLED)
+        if(NOT group IN_LIST actual_ENABLED)
+            list(APPEND reasons "${group} not enabled")
         endif()
     endforeach()
+    if(actual_RECOVERING)
+        string(REPLACE ";" "," recoveringText "${actual_RECOVERING}")
+        list(APPEND reasons "recovery on for ${recoveringText}")
+    endif()
+    foreach(option IN LISTS actual_REFUSED)
+        list(APPEND reasons "partially disabled by ${option}")
+    endforeach()
+    if(reasons)
+        string(REPLACE ";" ", " reasonText "${reasons}")
+        list(APPEND uninstrumented "${target}: ${file} (${reasonText})")
+    endif()
 endforeach()
 
 list(REMOVE_DUPLICATES seenTargets)
@@ -80,7 +167,7 @@ set(failed FALSE)
 if(uninstrumented)
     set(failed TRUE)
     list(LENGTH uninstrumented badCount)
-    message(SEND_ERROR "${badCount} translation unit(s) compiled without the sanitizer flags:")
+    message(SEND_ERROR "${badCount} translation unit(s) not compiled with the sanitizers in effect:")
     foreach(line IN LISTS uninstrumented)
         message("  ${line}")
     endforeach()
