@@ -3,8 +3,9 @@ name: OSV-Scanner
 # Report-only: uses Google's reusable workflows, which upload results as SARIF to the Security
 # tab. fail-on-vuln must be set explicitly - the reusable workflows default it to true, which
 # would otherwise turn every PR red on a newly-disclosed CVE, the opposite of the non-blocking
-# cppcheck/clang-tidy pattern the rest of CI follows. Covers the two CPM-fetched dependencies
-# (Catch2 in tests/CMakeLists.txt, glfw in examples/CMakeLists.txt) and the pinned GitHub Actions
+# cppcheck/clang-tidy pattern the rest of CI follows. Covers the three CPM-fetched dependencies
+# (SpecLab in tests/CMakeLists.txt, glfw in examples/CMakeLists.txt, cpp-httplib in
+# tools/CMakeLists.txt) and the pinned GitHub Actions
 # versions used across .github/workflows/.
 
 on:

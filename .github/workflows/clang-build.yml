@@ -19,7 +19,7 @@
 # argument for running it on every PR rather than on demand.
 #
 # On ADR-007 decision 6: this is the toolchain that sharpens the claim. MSVC, GCC 16 and macOS/Clang
-# 21 already gave byte-identity across three toolchains, but the Clang leg there also changes the
+# (21 then, 23 since #382) already gave byte-identity across three toolchains, but the Clang leg there also changes the
 # platform. This one runs the same standard library and code generator as the macOS lane on the same
 # OS as the GCC lane, which separates "different toolchain" from "different platform" — the
 # comparison the doctrine actually wants.
@@ -38,8 +38,10 @@ permissions:
 
 jobs:
   clang-build:
-    name: Linux (Clang 21, libc++, Vulkan)
-    runs-on: ubuntu-latest
+    name: Linux (Clang 23, libc++, Vulkan)
+    # Pinned rather than ubuntu-latest (#382): this leg's compiler, libc++ and lavapipe all come
+    # from the image's own apt sources, so an image move is a toolchain change and belongs in a diff.
+    runs-on: ubuntu-26.04
     env:
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
@@ -73,15 +75,15 @@ jobs:
         persist-credentials: false
 
     # Pinned, not 'latest'. The root CMakeLists.txt rejects CMake 4.4+ outright until this project
-    # has reviewed that series' `import std` gate, so a floating version turns this job red the day
-    # 4.4 ships, with no change to the repository. Every other workflow already pins for the
-    # related reason that the gate UUID is version-specific: Windows to 4.1.1, macOS to 4.3.1.
-    - name: Setup CMake (4.3.1, within the qualified 4.0-4.3 window)
+    # has reviewed that series' `import std` support, so a floating version turns this job red the
+    # day a new series ships, with no change to the repository. Every CMake in CI is the same
+    # release (#382), so a difference between legs is never a difference in CMake.
+    - name: Setup CMake (4.3.6, within the qualified 4.0-4.3 window)
       uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
       with:
-        cmake-version: '4.3.1'
+        cmake-version: '4.3.6'
 
-    - name: Install LLVM/Clang 21 and libc++
+    - name: Install LLVM/Clang 23 and libc++
       run: |
         set -euo pipefail
         sudo apt-get update
@@ -102,16 +104,16 @@ jobs:
         # `jammy` line silently installs nothing on a noble runner, and the failure then surfaces as
         # a missing compiler rather than as a wrong source list.
         codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
-        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-21 main" \
-          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-21.list
+        echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-23 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm-toolchain-23.list
         sudo apt-get update
         sudo apt-get install -y \
           ninja-build \
           build-essential \
           ccache \
-          clang-21 \
-          libc++-21-dev \
-          libc++abi-21-dev \
+          clang-23 \
+          libc++-23-dev \
+          libc++abi-23-dev \
           vulkan-tools \
           libvulkan-dev \
           vulkan-utility-libraries-dev \
@@ -124,20 +126,20 @@ jobs:
     # version of this step ran `update-alternatives` and then printed `clang --version`; the
     # alternative did not win over Ubuntu's own, so a step named "Setup Clang 21" printed
     # "clang version 18.1.3" twice and passed. The build was genuinely Clang 21 - the toolchain file
-    # addresses /usr/lib/llvm-21/bin directly and never consults PATH - but a verification step that
+    # addresses /usr/lib/llvm-<major>/bin directly and never consults PATH - but a verification step that
     # demonstrates the wrong compiler is worse than none, because it is evidence pointing at the
     # wrong thing.
     #
     # The assertion is exact rather than a print, matching the macOS lane's version gate: a silently
     # different Clang would otherwise change code generation under a byte-identity claim.
-    - name: Verify Clang 21 is the compiler this job uses
+    - name: Verify Clang 23 is the compiler this job uses
       run: |
         set -euo pipefail
-        clangxx=/usr/lib/llvm-21/bin/clang++
+        clangxx=/usr/lib/llvm-23/bin/clang++
         "$clangxx" --version
         major="$("$clangxx" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)"
-        if [ "$major" != "21" ]; then
-          echo "::error::${clangxx} reports major version ${major}, expected 21."
+        if [ "$major" != "23" ]; then
+          echo "::error::${clangxx} reports major version ${major}, expected 23."
           exit 1
         fi
         ccache_version="$(ccache --version | sed -n 's/^ccache version \([0-9][0-9.]*\).*/\1/p' | head -1)"
@@ -152,8 +154,8 @@ jobs:
     - name: Report the libc++ std module manifest
       run: |
         set -euo pipefail
-        echo "Searching /usr/lib/llvm-21 for libc++.modules.json"
-        found="$(find /usr/lib/llvm-21 -name 'libc++.modules.json' 2>/dev/null || true)"
+        echo "Searching /usr/lib/llvm-23 for libc++.modules.json"
+        found="$(find /usr/lib/llvm-23 -name 'libc++.modules.json' 2>/dev/null || true)"
         if [ -z "$found" ]; then
           echo "::warning::No libc++.modules.json in this packaging; import std cannot resolve for libc++. Record on #246."
         else

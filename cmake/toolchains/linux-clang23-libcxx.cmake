@@ -4,23 +4,23 @@
 # resolve for Clang on macOS, and the part that made it work is not macOS-specific: CMake needs to be
 # pointed at libc++'s own `libc++.modules.json`, and the compile must actually select libc++.
 #
-# #246 established that this works: libc++-21-dev ships its manifest and `import std` resolves, so
+# #246 established that this works: libc++-21-dev (and libc++-23-dev since #382) ships its manifest and `import std` resolves, so
 # the leg now runs on every push. The FATAL_ERROR messages below stay verbose anyway - they are what
 # a contributor on a different LLVM packaging will read, and each names what was missing rather than
 # failing later as an unresolved `std` module.
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "The linux-clang21-libcxx toolchain is only valid on Linux hosts.")
+    message(FATAL_ERROR "The linux-clang23-libcxx toolchain is only valid on Linux hosts.")
 endif()
 
 set(_mdux_llvm_root "$ENV{MDUX_LLVM_ROOT}")
 if(NOT _mdux_llvm_root)
     # apt.llvm.org installs versioned roots here; this is the layout clang-build.yml provisions.
-    set(_mdux_llvm_root "/usr/lib/llvm-21")
+    set(_mdux_llvm_root "/usr/lib/llvm-23")
 endif()
 if(NOT IS_DIRECTORY "${_mdux_llvm_root}")
     message(FATAL_ERROR
-        "No LLVM 21 root at '${_mdux_llvm_root}'. Set MDUX_LLVM_ROOT, or install the packages "
-        "clang-build.yml installs: clang-21, libc++-21-dev, libc++abi-21-dev.")
+        "No LLVM 23 root at '${_mdux_llvm_root}'. Set MDUX_LLVM_ROOT, or install the packages "
+        "clang-build.yml installs: clang-23, libc++-23-dev, libc++abi-23-dev.")
 endif()
 
 set(CMAKE_C_COMPILER "${_mdux_llvm_root}/bin/clang" CACHE FILEPATH "" FORCE)
