@@ -302,7 +302,9 @@ jobs:
       with:
         name: ninja-log-msvc
         path: build/.ninja_log
-        if-no-files-found: ignore
+        if-no-files-found: warn
+        # The log is a dotfile, and upload-artifact skips hidden files unless told otherwise.
+        include-hidden-files: true
 
     - name: Upload the rendered-truth diff images
       if: failure()

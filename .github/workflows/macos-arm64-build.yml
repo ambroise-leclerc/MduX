@@ -170,7 +170,9 @@ jobs:
       with:
         name: ninja-log-macos
         path: build-macos-clang/.ninja_log
-        if-no-files-found: ignore
+        if-no-files-found: warn
+        # The log is a dotfile, and upload-artifact skips hidden files unless told otherwise.
+        include-hidden-files: true
 
     # Last in the job, and that position is load-bearing rather than tidy. `if: failure()` is
     # evaluated where the step sits: a failing step skips every later step that is not conditioned on
@@ -316,7 +318,9 @@ jobs:
       with:
         name: ninja-log-macos-asan
         path: build-macos-clang-debug/.ninja_log
-        if-no-files-found: ignore
+        if-no-files-found: warn
+        # The log is a dotfile, and upload-artifact skips hidden files unless told otherwise.
+        include-hidden-files: true
 
     # Last in the job, and that position is load-bearing rather than tidy. `if: failure()` is
     # evaluated where the step sits: a failing step skips every later step that is not conditioned on
