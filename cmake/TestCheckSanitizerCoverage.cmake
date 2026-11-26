@@ -41,6 +41,7 @@ check_case(split pass "-fsanitize=address -fsanitize=undefined -fno-sanitize-rec
 check_case(recoverFirst pass "-fno-sanitize-recover=all -fsanitize=address,undefined")
 check_case(bareNoRecover pass "-fsanitize=address,undefined -fno-sanitize-recover")
 check_case(reenabled pass "${base} -fno-sanitize=all -fsanitize=address,undefined")
+check_case(groupReenabledAfterRemoval pass "${base} -fno-sanitize=undefined -fsanitize=undefined")
 check_case(recoverDisabledAgain pass "${base} -fsanitize-recover=all -fno-sanitize-recover=all")
 
 # Rejected: missing flags, then every later option that undoes an earlier one.
@@ -51,6 +52,7 @@ check_case(allDisabled fail "${base} -fno-sanitize=all")
 check_case(review fail "${base} -fno-sanitize=all -fsanitize-recover=all")
 check_case(oneDisabled fail "${base} -fno-sanitize=undefined")
 check_case(subCheckDisabled fail "${base} -fno-sanitize=alignment")
+check_case(subCheckEnabledThenDisabled fail "${base} -fsanitize=alignment -fno-sanitize=alignment")
 check_case(recoverAll fail "${base} -fsanitize-recover=all")
 check_case(recoverOne fail "${base} -fsanitize-recover=undefined")
 check_case(recoverBare fail "${base} -fsanitize-recover")

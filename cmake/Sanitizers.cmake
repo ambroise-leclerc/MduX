@@ -7,13 +7,14 @@
 # units were instrumented in the ASan+UBSan job. The SpecLab-based suites were instrumented only
 # because SpecLab happened to pass its own flags to its importers.
 #
-# So a sanitizer build now instruments everything it compiles, through CMAKE_CXX_FLAGS rather than
-# a target: every MduX target, the fetched SpecLab and cpp-httplib sources, and CMake's internal
-# std-module target (which add_compile_options() would not reach - see the /utf-8 note in the root
-# CMakeLists.txt). There is no carrier to forget to link, so a target added later cannot fall out
-# of coverage again, and every importer of a named module - std included - is instrumented exactly
-# as that module was. That consistency is not cosmetic: GCC 16 crashes in expand_UBSAN_NULL when a
-# module interface and its importer disagree about instrumentation (#356).
+# So a sanitizer build now instruments everything it compiles, through CMAKE_CXX_FLAGS (and
+# CMAKE_C_FLAGS, for C sources a dependency may bring) rather than a target: every MduX target,
+# the fetched SpecLab and cpp-httplib sources, GLFW when it is built from source, and CMake's
+# internal std-module target (which add_compile_options() would not reach - see the /utf-8 note
+# in the root CMakeLists.txt). There is no carrier to forget to link, so a target added later
+# cannot fall out of coverage again, and every importer of a named module - std included - is
+# instrumented exactly as that module was. That consistency is not cosmetic: GCC 16 crashes in
+# expand_UBSAN_NULL when a module interface and its importer disagree about instrumentation (#356).
 #
 # CMAKE_CXX_FLAGS also appears on every link line CMake writes for C++, so the sanitizer runtimes
 # are linked without a separate linker-flag variable. It is set in the caller's scope, which must
@@ -86,8 +87,13 @@ function(enable_sanitizers project_name)
       # a recoverable sanitizer finding is a finding nobody sees. Aborting turns it into a failure.
       set(MDUX_SANITIZER_FLAGS "-fsanitize=${LIST_OF_SANITIZERS} -fno-sanitize-recover=all")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MDUX_SANITIZER_FLAGS}" PARENT_SCOPE)
+      # C too, although MduX itself is C++ only: a dependency built from source can bring C
+      # translation units - GLFW, fetched by examples/CMakeLists.txt when no system package is
+      # found. "Everything it compiles" has to include those, and the coverage check reads every
+      # entry of compile_commands.json whatever its language.
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${MDUX_SANITIZER_FLAGS}" PARENT_SCOPE)
       set(MDUX_SANITIZER_FLAGS "${MDUX_SANITIZER_FLAGS}" PARENT_SCOPE)
-      message(STATUS "Sanitizers: ${MDUX_SANITIZER_FLAGS} on every C++ translation unit")
+      message(STATUS "Sanitizers: ${MDUX_SANITIZER_FLAGS} on every C and C++ translation unit")
     endif()
   endif()
 

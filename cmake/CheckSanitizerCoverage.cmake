@@ -19,17 +19,18 @@
 # honours the last word, so this check must too. For every command:
 #
 # - every sanitizer SANITIZER_FLAGS enables with -fsanitize= must still be enabled at the end;
-# - nothing may disable part of an enabled sanitizer: a -fno-sanitize= naming a sub-check (say
-#   `alignment`, inside `undefined`) cannot be tracked precisely here, so it is refused rather than
-#   guessed about;
+# - nothing may disable part of an enabled sanitizer: a -fno-sanitize= naming anything but `all` or
+#   a whole group SANITIZER_FLAGS enables (say `alignment`, inside `undefined`) is refused, even
+#   when that name was itself enabled earlier, because group/sub-check overlap is not tracked here;
 # - no sanitizer may recover at the end. Recovery is the compilers' default for UBSan, so the
 #   command must carry -fno-sanitize-recover=all (or the bare form) and nothing after it may turn
 #   any recovery back on; without that a UBSan finding prints and the test passes.
 #
 # Each target in REQUIRED_TARGETS must also have at least one compile command, so a renamed or
 # deleted target, or an empty database, fails here instead of passing vacuously.
-# tests/CMakeLists.txt registers `sanitizers.coverage.selftest` (cmake/TestCheckSanitizerCoverage.cmake),
-# which runs this script over hand-written databases, contradictory options included.
+# tests/CMakeLists.txt registers `sanitizers.coverage.selftest`
+# (cmake/TestCheckSanitizerCoverage.cmake), which runs this script over hand-written databases,
+# contradictory options included.
 
 foreach(required COMPILE_COMMANDS SANITIZER_FLAGS REQUIRED_TARGETS)
     if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
@@ -72,9 +73,17 @@ function(mdux_evaluate_sanitizer_options prefix)
             foreach(group IN LISTS groups)
                 if(group STREQUAL "all")
                     set(enabled "")
-                elseif(group IN_LIST enabled)
+                elseif(group IN_LIST MDUX_EXPECTED_SANITIZERS)
+                    # A whole expected group: removing it is exact, and leaves it reported missing
+                    # unless a later -fsanitize= enables it again.
                     list(REMOVE_ITEM enabled "${group}")
                 else()
+                    # Anything else may be a sub-check of an enabled group - `alignment` inside
+                    # `undefined`, `pointer-compare` beside `address` - and that holds even when the
+                    # same name was enabled separately first: `-fsanitize=undefined
+                    # -fsanitize=alignment -fno-sanitize=alignment` leaves UBSan without its
+                    # alignment check. This script keeps no table of which check belongs to which
+                    # group, so it refuses the option rather than guess about the overlap.
                     list(APPEND refused "${arg}")
                 endif()
             endforeach()
@@ -103,8 +112,11 @@ function(mdux_evaluate_sanitizer_options prefix)
     set(${prefix}_REFUSED "${refused}" PARENT_SCOPE)
 endfunction()
 
+# Empty while SANITIZER_FLAGS itself is evaluated, so any -fno-sanitize= in it is refused.
+set(MDUX_EXPECTED_SANITIZERS "")
 separate_arguments(expectedFlags UNIX_COMMAND "${SANITIZER_FLAGS}")
 mdux_evaluate_sanitizer_options(expected ${expectedFlags})
+set(MDUX_EXPECTED_SANITIZERS "${expected_ENABLED}")
 if(expected_ENABLED STREQUAL "" OR NOT expected_RECOVERING STREQUAL "" OR NOT expected_REFUSED STREQUAL "")
     message(FATAL_ERROR
         "CheckSanitizerCoverage: SANITIZER_FLAGS '${SANITIZER_FLAGS}' must enable at least one "
