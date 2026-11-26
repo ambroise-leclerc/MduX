@@ -122,7 +122,9 @@ jobs:
     #
     # `enable_sanitizers()` in cmake/Sanitizers.cmake already carries these options; this job is
     # the first thing to switch them on. It also adds -fno-sanitize-recover=all, so a UBSan
-    # violation aborts instead of printing into a passing log.
+    # violation aborts instead of printing into a passing log. Since #360 it puts both on every
+    # translation unit the build compiles, MduXCore included, rather than on the Vulkan-carrying
+    # options target that the governed code never links.
     - name: Configure with ASan and UBSan
       run: |
         cmake -S . -B build-asan -G Ninja \
@@ -147,6 +149,14 @@ jobs:
         ASAN_OPTIONS: detect_leaks=0
         UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       run: cmake --build build-asan
+
+    # Before anything runs: a green result below is evidence only about code that was instrumented.
+    # This job once passed for months with 0 of MduXCore's 46 translation units compiled with
+    # -fsanitize (#360). The check reads compile_commands.json and fails on any translation unit
+    # without the sanitizer flags, or on a named target that compiled nothing. --no-tests=error: a
+    # configuration that stopped registering it must fail here, not skip it.
+    - name: Verify every translation unit is instrumented
+      run: ctest --test-dir build-asan -L sanitizer-coverage --output-on-failure --no-tests=error
 
     # Everything except the suites that talk to a GPU driver. Leak detection is on here, which is
     # the half that catches an owner dropped on the floor.

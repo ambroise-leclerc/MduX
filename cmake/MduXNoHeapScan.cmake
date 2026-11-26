@@ -206,6 +206,15 @@ foreach(object ${MDUX_NOHEAP_OBJECTS})
                 continue()
             endif()
         endif()
+        # Sanitizer runtime entry points are the compiler's instrumentation, not the code's own
+        # calls, and only a sanitizer build has them. They matter here because the match below is a
+        # substring match: ASan's `__asan_stack_malloc_N` (its fake stack for use-after-return
+        # detection) contains "malloc" and would otherwise fail the profile in the ASan+UBSan job,
+        # which since #360 instruments the governed code this scan exists for. A real malloc or
+        # operator new reference in the same object is still reported.
+        if(line MATCHES "(^|[ \t])__(asan|ubsan|lsan|tsan|msan)_")
+            continue()
+        endif()
         foreach(symbol ${forbidden_symbols})
             string(FIND "${line}" "${symbol}" found)
             if(NOT found EQUAL -1)

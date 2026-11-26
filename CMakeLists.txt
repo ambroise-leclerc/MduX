@@ -364,6 +364,8 @@ configure_linker(MduX_options)
 set_project_warnings(MduX_warnings)
 
 # Note: Removed -Wnull-dereference from CompilerWarnings.cmake to fix GCC 15 + import std compatibility
+# Coverage goes on MduX_options; sanitizer flags go on CMAKE_CXX_FLAGS for the whole build (#360),
+# so this must stay before the first add_subdirectory(). See cmake/Sanitizers.cmake.
 enable_sanitizers(MduX_options)
 
 
