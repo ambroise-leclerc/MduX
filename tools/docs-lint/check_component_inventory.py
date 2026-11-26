@@ -65,6 +65,24 @@ def decision_criteria(text: str) -> list[tuple[str, str]]:
     return [(match["id"], match["title"]) for match in CRITERION_HEADING.finditer(text)]
 
 
+def evidence_problem(root: Path, path: object) -> str | None:
+    """Say why `path` is not evidence in the repository under `root`, or None when it is.
+
+    Relative and contained, as well as present: `root / "/"` is the filesystem root and
+    `root / "../x"` is somebody else's file, and both exist.
+    """
+    if not isinstance(path, str) or not path.strip():
+        return f"evidence path {path!r} is not a path"
+    if Path(path).is_absolute():
+        return f"evidence path {path!r} is absolute; evidence is named relative to the repository"
+    resolved = (root / path).resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        return f"evidence path {path!r} leaves the repository"
+    if not resolved.exists():
+        return f"evidence path {path!r} does not exist"
+    return None
+
+
 def check_criterion(name: str, criterion: str, entry: object, children: set[str], root: Path) -> list[str]:
     """Check one criterion entry of one component in the dictionary."""
     where = f"{name} {criterion}"
@@ -74,14 +92,17 @@ def check_criterion(name: str, criterion: str, entry: object, children: set[str]
     if status not in CRITERION_STATUSES:
         return [f"{where}: status {status!r} is not one of {sorted(CRITERION_STATUSES)}"]
     findings: list[str] = []
+    # Checked for every status that may carry it, not only `met`: a `partial` entry citing a file
+    # that is not there is the same false statement, made about half a criterion.
+    evidence = entry.get("evidence")
+    if evidence is not None and status != "not-applicable":
+        if not isinstance(evidence, list):
+            findings.append(f"{where}: evidence must be a list of repository paths")
+        else:
+            findings.extend(f"{where}: {problem}" for path in evidence if (problem := evidence_problem(root, path)))
     if status == "met":
-        evidence = entry.get("evidence")
         if not isinstance(evidence, list) or not evidence:
             findings.append(f"{where}: 'met' names no evidence")
-        else:
-            for path in evidence:
-                if not isinstance(path, str) or not (root / path).exists():
-                    findings.append(f"{where}: evidence path {path!r} does not exist")
     elif status in SHORTFALLS:
         if criterion in FLOOR:
             findings.append(f"{where}: a floor criterion cannot be '{status}'; the component may not be in the dictionary")
@@ -126,6 +147,11 @@ def check(root: Path) -> list[str]:
 
     if tuple(inventory.get("floor", ())) != FLOOR:
         findings.append(f"floor is {inventory.get('floor')!r}; {DECISION} fixes it at {list(FLOOR)}")
+    # The floor is fixed here, so it must also be *declared*: a floor criterion deleted from the
+    # decision, the inventory's list and every component at once would otherwise leave all three in
+    # agreement and nothing checking it.
+    if missing := [identifier for identifier in FLOOR if identifier not in criterion_ids]:
+        findings.append(f"floor criteria {missing} are not among the declared criteria; the floor cannot be removed by omission")
 
     children = {item.get("id") for item in inventory.get("children", [])}
     if len(children) != len(inventory.get("children", [])):

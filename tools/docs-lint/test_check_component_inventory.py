@@ -93,6 +93,37 @@ class CheckComponentInventoryTests(unittest.TestCase):
         document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-01"].pop("evidence"))
         self.assert_one_finding(document, "'met' names no evidence")
 
+    def test_rejects_missing_evidence_on_a_shortfall(self) -> None:
+        """Refuse a partial criterion citing a file that is not there, though it needs none."""
+        def change(document: dict) -> None:
+            document["components"][0]["criteria"]["AC-03"]["evidence"] = ["missing.txt"]
+        self.assert_one_finding(self.mutated(change), "'missing.txt' does not exist")
+
+    def test_a_shortfall_may_cite_existing_evidence(self) -> None:
+        """Accept a partial criterion naming the half that is there."""
+        def change(document: dict) -> None:
+            document["components"][0]["criteria"]["AC-03"]["evidence"] = ["evidence.txt"]
+        self.assertEqual(self.findings_for(self.mutated(change)), [])
+
+    def test_rejects_evidence_outside_the_repository(self) -> None:
+        """Refuse an absolute path and one that climbs out: both exist and neither is evidence."""
+        for path, fragment in (("/", "is absolute"), ("../", "leaves the repository"), ("", "is not a path")):
+            with self.subTest(path=path):
+                def change(document: dict, path: str = path) -> None:
+                    document["components"][0]["criteria"]["AC-01"]["evidence"] = [path]
+                self.assert_one_finding(self.mutated(change), fragment)
+
+    def test_rejects_a_floor_criterion_removed_everywhere(self) -> None:
+        """Refuse dropping a floor criterion from the decision, the list and every component at once."""
+        def change(document: dict) -> None:
+            document["criteria"] = [item for item in document["criteria"] if item["id"] != "AC-04"]
+            del document["components"][0]["criteria"]["AC-04"]
+        decision = DECISION.replace("### AC-04 Draw\n\ntext\n\n", "")
+        self.assertNotIn("AC-04", decision)
+        findings = self.findings_for(self.mutated(change), decision=decision)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("cannot be removed by omission", findings[0])
+
     def test_rejects_a_gap_nobody_owns(self) -> None:
         """Refuse a shortfall with no declared child to close it, or no statement of what it is."""
         document = self.mutated(lambda d: d["components"][0]["criteria"]["AC-03"].update(closedBy="Z9"))
