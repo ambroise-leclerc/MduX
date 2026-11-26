@@ -22,9 +22,27 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the run for the previous one. Pushes to develop and master
+# are never cancelled: the post-merge run is the evidence a stacked successor waits for (AGENTS.md
+# "Stacked delivery").
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # A pull request that only edits prose skips the build job below; see the called workflow for the
+  # rule. The build job's condition is `code != 'false'` under `!cancelled()`, so a classifier that
+  # failed or produced nothing selects the build rather than skipping it.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   analyze:
     name: Analyze (C++)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write

@@ -17,7 +17,7 @@ the ten; it does nothing about the eleventh. Worse, the drift has a second cost 
 touch: review bots cite `CONTRIBUTING.md`, find the tree contradicting it, and raise the same finding
 on unrelated pull requests, which trains everyone to wave it through.
 
-So this runs in `Documentation Lint`, on a job that needs no C++ toolchain, and answers the question
+So this runs in `Lint`, on a job that needs no C++ toolchain, and answers the question
 a reviewer would otherwise have to ask by hand.
 
 ## What it checks, and what it deliberately does not

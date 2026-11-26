@@ -181,11 +181,17 @@ in `include/` or `src/`.
   `risk-assessment-templates.md` and the Catch2 implementation plan are all retired there, each
   superseded by the clause corpus above or by an ADR. Read that file before concluding content was
   lost — `git log --follow --diff-filter=D -- <path>` recovers any of them in full.
-- `.github/workflows/*.yml` — one file per CI job (`windows-build.yml`, `linux-gcc16-build.yml`,
-  `macos-arm64-build.yml`,
-  `security-analysis.yml`, `compliance-docs.yml`, `docs-lint.yml`, `evidence-lint.yml`, plus
-  `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`), the authoritative description of what actually
-  gets built/tested in CI.
+- `.github/workflows/*.yml` — the authoritative description of what actually gets built/tested in
+  CI: `windows-build.yml`, `linux-gcc16-build.yml`, `clang-build.yml`, `sanitizers.yml`,
+  `macos-arm64-build.yml` (a Release job and a parallel ASan/UBSan job, sharing
+  `.github/actions/setup-macos-toolchain`), `security-analysis.yml`, `compliance-docs.yml`,
+  `lint.yml` (every Python lint and the CI classifier's tests, one job), `branch-topology.yml`,
+  plus `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`. The toolchain workflows call the reusable
+  `changes.yml` first, which lets a pull request that only edits prose skip their build job
+  (`tools/ci/classify_changes.py` holds the rule, and fails toward building); every workflow on a
+  pull request cancels the run a newer push supersedes, and none ever cancels a push to `develop`.
+  CTest runs in parallel on every leg, and each test runs once: the full-suite step excludes the
+  labels the named steps assert.
 - `CMakePresets.json` — `ninja-msvc`, `ninja-msvc-debug`, `ninja-gcc`, `ninja-gcc-debug`,
   `ninja-clang`, `ninja-macos-clang` and `ninja-macos-clang-debug`.
 - `CONTRIBUTING.md` — coding style, formatting, and PR conventions.
@@ -369,9 +375,18 @@ required check to report success.
 
 `Branch Topology` is not evidence either, and for the opposite reason: `pull_request_target` needs
 no merge commit, so it runs and passes on an unmergeable PR exactly as it does on a healthy one. It
-is also required on `master`, which makes it the one required check that can report green while the
-other eleven sit pending — the most visible reassurance on precisely the PR that has earned none. It
-says the base branch is legitimate, and nothing whatever about whether the build ran.
+is also required on `master`, which makes it the one required check that can report green while
+every other one sits pending — the most visible reassurance on precisely the PR that has earned
+none. It says the base branch is legitimate, and nothing whatever about whether the build ran.
+
+A **skipped** toolchain job is a third case, and a deliberate one (#386). The toolchain workflows
+first call `changes.yml`, and a pull request whose every changed path is prose that nothing builds
+or tests reads skips their build job; GitHub reports that skip to branch protection as a success.
+The rule is `tools/ci/classify_changes.py`, and it fails toward building: any source, CMake,
+workflow, schema or non-Markdown change, `AGENTS.md`, `docs/getting-started.md`, a skill, or an
+unreadable file list selects the full build. Lint still runs on every PR, and a push to `develop`
+always builds everything. If a skip surprises you, the job's `Classify changed paths` log lists the
+paths it saw.
 
 ### Stacked delivery
 

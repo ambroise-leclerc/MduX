@@ -97,7 +97,7 @@ Two consequences worth stating plainly:
 
 | Layer | Reads | Where | Gates on |
 |---|---|---|---|
-| `mdux-governed-lint` | the source | `tools/governed-lint/`, CI job `Governed Source Lint` | every toolchain |
+| `mdux-governed-lint` | the source | `tools/governed-lint/`, CI job `Lint` | every toolchain |
 | `governed.noThrow.symbolScan` | the emitted objects | `cmake/MduXNoHeapScan.cmake`, a ctest | GCC/Clang; reports only on MSVC |
 | `bugprone-exception-escape` | the AST | `.clang-tidy` | nothing yet — see below |
 

@@ -36,13 +36,34 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the run for the previous one. Pushes to develop and master
+# are never cancelled: the post-merge run is the evidence a stacked successor waits for (AGENTS.md
+# "Stacked delivery").
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # A pull request that only edits prose skips the build job below; see the called workflow for the
+  # rule. The build job's condition is `code != 'false'` under `!cancelled()`, so a classifier that
+  # failed or produced nothing selects the build rather than skipping it.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   clang-build:
     name: Linux (Clang, libc++, Vulkan)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     # Pinned rather than ubuntu-latest (#382): this leg's compiler, libc++ and lavapipe all come
     # from the image's own apt sources, so an image move is a toolchain change and belongs in a diff.
     runs-on: ubuntu-26.04
     env:
+      # Tests are independent processes - no RUN_SERIAL, RESOURCE_LOCK or fixed port anywhere - and
+      # most of a case's wall time is process start-up, so they run in parallel (#386).
+      CTEST_PARALLEL_LEVEL: '4'
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
     steps:
@@ -175,6 +196,30 @@ jobs:
         ls -1 /usr/share/vulkan/icd.d/ || true
         vulkaninfo --summary
 
+    # The compiler cache cmake/Cache.cmake already routes this leg through, made persistent (#386).
+    # Until then every run started with an empty cache, so the launcher cost a process per compile
+    # and saved nothing. This is the one toolchain where it pays: on Clang the launcher hashes every
+    # imported BMI into a module consumer's key, so consumers are cache-eligible, whereas on GCC and
+    # MSVC every named-module compilation bypasses the cache. build.cache.namedModuleIntegrity proves
+    # a changed BMI still invalidates its consumers. Pull requests restore the newest cache develop
+    # saved and never save their own, so one branch cannot seed another's objects.
+    - name: Configure the compiler cache
+      shell: bash
+      run: |
+        {
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_COMPILERCHECK=content"
+          echo "CCACHE_MAXSIZE=1G"
+        } >> "$GITHUB_ENV"
+
+    - name: Restore the compiler cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-linux-clang23-libcxx-${{ github.sha }}
+        restore-keys: ccache-linux-clang23-libcxx-
+
     # The preset, not an equivalent-looking configure line: CMakePresets.json's ninja-clang
     # description exists precisely to keep preset and CI from drifting apart, which a
     # hand-written duplicate of its cache variables would defeat.
@@ -184,11 +229,30 @@ jobs:
     - name: Build
       run: cmake --build --preset ninja-clang
 
+    - name: Report compiler cache statistics
+      if: ${{ !cancelled() }}
+      run: ccache --show-stats
+
+    # Saved straight after the build, so a test failure later in the job does not lose it.
+    - name: Save the compiler cache
+      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-linux-clang23-libcxx-${{ github.sha }}
+
+    # Everything except the labels a named step below asserts, so each test runs exactly once (#386;
+    # this step used to run the whole suite and the named steps then ran their labels a second time).
+    # -L and -LE are regex matches against the same label strings, so this exclusion and the named
+    # steps' selections cover the suite between them: `evidence` here also excludes `evidence-unit`,
+    # which `-L evidence` below then selects.
     - name: Run Tests
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        ctest --preset ninja-clang --output-on-failure
+        ctest --preset ninja-clang --output-on-failure \
+          -LE "evidence|pixel|verify|conformance|studio" \
+          -E '^build\.cache\.namedModuleIntegrity$'
 
     # #280's negative case changes an exported struct without touching its consumer, then proves
     # that the new BMI invalidates the cached object. The second rebuild also has to be a cache hit:
@@ -254,6 +318,17 @@ jobs:
     # is `ignore` because a failure that is not a rendered one (an unreadable artifact, a digest
     # drift) legitimately produces no image, and a red step should not gain a second red mark saying
     # so.
+    # Always, and cheap: the build's own timing record, so the next person tuning this leg's critical
+    # path starts from a measurement rather than a guess (#386). Read it with ninjatracing or any
+    # .ninja_log viewer.
+    - name: Upload the build timing log
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ninja-log-clang
+        path: build-clang/.ninja_log
+        if-no-files-found: ignore
+
     - name: Upload the rendered-truth diff images
       if: failure()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,0 +1,72 @@
+name: Classify Changes
+
+# Called by the toolchain workflows before their build job (#386). It answers one question: does this
+# pull request change anything a build or a test reads? A PR that only edits prose gets `code=false`,
+# and the caller skips its build job. GitHub reports a skipped job as successful to branch
+# protection, so the required checks still pass, while Lint and Branch Topology still run in full.
+#
+# Every other event - a push to develop or master, a schedule, a manual dispatch - answers
+# `code=true` without looking, so the post-merge run always builds everything. The decision itself
+# is tools/ci/classify_changes.py, which fails toward building: anything it does not positively
+# recognise as unread prose, including an unreadable file list, selects the full build.
+
+on:
+  workflow_call:
+    outputs:
+      code:
+        description: "'true' when the toolchain legs must run, 'false' for a prose-only pull request."
+        value: ${{ jobs.classify.outputs.code }}
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    name: Classify changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+
+    steps:
+    - name: Checkout the classifier
+      if: github.event_name == 'pull_request'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        sparse-checkout: tools/ci
+
+    - name: Classify
+      id: classify
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        EVENT_NAME: ${{ github.event_name }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        if [ "$EVENT_NAME" != "pull_request" ]; then
+          echo "code=true" >> "$GITHUB_OUTPUT"
+          echo "Not a pull request: the full build runs."
+          exit 0
+        fi
+        files="$RUNNER_TEMP/changed-files.txt"
+        # The API lists at most 3000 files. A list of exactly that many may be truncated, and a
+        # truncated list could hide the one code change, so it is replaced by an empty one, which
+        # the classifier reads as "build".
+        # An API failure leaves an empty list too: this job must never be the reason a build is
+        # skipped. Callers also gate on `code != 'false'` under `!cancelled()`, so even a failure
+        # of this whole job selects the build rather than skipping it.
+        if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "$files"; then
+          echo "::warning::Could not list the pull request's files; running the full build."
+          : > "$files"
+        fi
+        if [ "$(wc -l < "$files")" -ge 3000 ]; then
+          : > "$files"
+        fi
+        echo "Changed paths:"
+        sed 's/^/  /' "$files"
+        python3 tools/ci/classify_changes.py < "$files" | tee -a "$GITHUB_OUTPUT"

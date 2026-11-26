@@ -17,8 +17,7 @@ An experimental C++23-modules UI library for medical-device software, built on V
 [![Windows CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/windows-build.yml)
 [![Linux (GCC 16) CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/linux-gcc16-build.yml)
 [![macOS Apple Silicon CI](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/macos-arm64-build.yml)
-[![Docs Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/docs-lint.yml)
-[![Evidence Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/evidence-lint.yml)
+[![Lint](https://github.com/ambroise-leclerc/MduX/actions/workflows/lint.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/lint.yml)
 [![Compliance Docs](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/compliance-docs.yml)
 
 [![CodeQL](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml/badge.svg)](https://github.com/ambroise-leclerc/MduX/actions/workflows/codeql.yml)
