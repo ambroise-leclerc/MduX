@@ -3,10 +3,14 @@ name: OSV-Scanner
 # Report-only: uses Google's reusable workflows, which upload results as SARIF to the Security
 # tab. fail-on-vuln must be set explicitly - the reusable workflows default it to true, which
 # would otherwise turn every PR red on a newly-disclosed CVE, the opposite of the non-blocking
-# cppcheck/clang-tidy pattern the rest of CI follows. Covers the three CPM-fetched dependencies
-# (SpecLab in tests/CMakeLists.txt, glfw in examples/CMakeLists.txt, cpp-httplib in
-# tools/CMakeLists.txt) and the pinned GitHub Actions
-# versions used across .github/workflows/.
+# cppcheck/clang-tidy pattern the rest of CI follows.
+#
+# What it can see is whatever manifest or lockfile the checkout contains (`-r ./`). The three
+# CPM-fetched dependencies - SpecLab (tests/CMakeLists.txt), GLFW (examples/CMakeLists.txt) and
+# cpp-httplib (tools/CMakeLists.txt) - have none: their pins live in CMake calls, which the scanner
+# does not read. So this job does not cover them. Their versions and anomaly tracking are recorded
+# in docs/governance/soup-register.toml instead, and giving the scanner an inventory it can read is
+# separate work (#382).
 
 on:
   push:
