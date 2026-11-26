@@ -23,7 +23,7 @@
 #   a whole group SANITIZER_FLAGS enables (say `alignment`, inside `undefined`) is refused, even
 #   when that name was itself enabled earlier, because group/sub-check overlap is not tracked here;
 # - no sanitizer may recover at the end. Recovery is the compilers' default for UBSan, so the
-#   command must carry -fno-sanitize-recover=all (or the bare form) and nothing after it may turn
+#   command must carry -fno-sanitize-recover=all and nothing after it may turn
 #   any recovery back on; without that a UBSan finding prints and the test passes.
 #
 # Each target in REQUIRED_TARGETS must also have at least one compile command, so a renamed or
@@ -53,7 +53,7 @@ string(REPLACE "," ";" REQUIRED_TARGETS "${REQUIRED_TARGETS}")
 # Evaluates sanitizer options in order, the way GCC and Clang do. Sets, in the caller's scope:
 #   <prefix>_ENABLED     sanitizer groups still enabled after the last option
 #   <prefix>_RECOVERING  groups that still recover ("default" is the compilers' own UBSan default,
-#                        cleared only by -fno-sanitize-recover or -fno-sanitize-recover=all)
+#                        cleared only by -fno-sanitize-recover=all)
 #   <prefix>_REFUSED     options this script cannot evaluate precisely and so refuses
 #
 # CMAKE_MATCH_<n> is compared through "${...}" below on purpose: when an optional group does not
@@ -95,8 +95,12 @@ function(mdux_evaluate_sanitizer_options prefix)
                 list(APPEND recovering ${groups})
             endif()
         elseif(arg MATCHES "^-fno-sanitize-recover(=(.+))?$")
-            if("${CMAKE_MATCH_2}" STREQUAL "" OR "${CMAKE_MATCH_2}" STREQUAL "all")
+            if("${CMAKE_MATCH_2}" STREQUAL "all")
                 set(recovering "")
+            elseif("${CMAKE_MATCH_2}" STREQUAL "")
+                # The bare form does not disable recovery for every sanitizer (GCC excludes
+                # address). Its exact scope varies by compiler, so do not infer coverage from it.
+                list(APPEND refused "${arg}")
             else()
                 # Removing one group from `all` or from the compiler default cannot be tracked
                 # precisely, so those stay in the list and fail the command - conservatively.
@@ -156,7 +160,7 @@ foreach(index RANGE 0 ${lastIndex})
         list(APPEND reasons "recovery on for ${recoveringText}")
     endif()
     foreach(option IN LISTS actual_REFUSED)
-        list(APPEND reasons "partially disabled by ${option}")
+        list(APPEND reasons "cannot verify option ${option}")
     endforeach()
     if(reasons)
         string(REPLACE ";" ", " reasonText "${reasons}")

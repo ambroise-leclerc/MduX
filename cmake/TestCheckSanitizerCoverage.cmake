@@ -34,12 +34,11 @@ function(check_case name expectation command)
 endfunction()
 
 # Accepted: the global flags alone, repeated (SpecLab adds its own -fsanitize=), split, reordered
-# so the recover flag comes first, or the bare -fno-sanitize-recover form.
+# so the recover flag comes first.
 check_case(global pass "${base}")
 check_case(repeated pass "${base} -fsanitize=address,undefined")
 check_case(split pass "-fsanitize=address -fsanitize=undefined -fno-sanitize-recover=all")
 check_case(recoverFirst pass "-fno-sanitize-recover=all -fsanitize=address,undefined")
-check_case(bareNoRecover pass "-fsanitize=address,undefined -fno-sanitize-recover")
 check_case(reenabled pass "${base} -fno-sanitize=all -fsanitize=address,undefined")
 check_case(groupReenabledAfterRemoval pass "${base} -fno-sanitize=undefined -fsanitize=undefined")
 check_case(recoverDisabledAgain pass "${base} -fsanitize-recover=all -fno-sanitize-recover=all")
@@ -56,6 +55,8 @@ check_case(subCheckEnabledThenDisabled fail "${base} -fsanitize=alignment -fno-s
 check_case(recoverAll fail "${base} -fsanitize-recover=all")
 check_case(recoverOne fail "${base} -fsanitize-recover=undefined")
 check_case(recoverBare fail "${base} -fsanitize-recover")
+check_case(bareNoRecover fail "-fsanitize=address,undefined -fno-sanitize-recover")
+check_case(addressRecoverThenBare fail "${base} -fsanitize-recover=address -fno-sanitize-recover")
 check_case(recoverDefaultLeft fail "-fsanitize=address,undefined -fno-sanitize-recover=address")
 
 if(failures)
