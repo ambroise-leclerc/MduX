@@ -73,8 +73,13 @@ jobs:
         echo "MDUX_LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
         echo "$llvm_root/bin" >> "$GITHUB_PATH"
 
+    # Pinned to an untagged commit, one past v1.2. LunarG renamed the macOS installer inside the SDK
+    # zip (vulkansdk-macOS-<version>.app), and v1.2 - still the latest tag - exits 7 with
+    # "unrecognized zip/layout" on every SDK that uses it, 1.4.363.1 included. e7d6e7b adds that
+    # layout and nothing else of consequence (the rest of the commit is the action's own CI); move
+    # back to a tag once one carries it.
     - name: Install pinned LunarG SDK with MoltenVK
-      uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+      uses: humbletim/install-vulkan-sdk@e7d6e7b937bde4503c7ba5c9584c9dc68f44c4b8 # v1.2 + macOS layout fix (untagged)
       with:
         version: 1.4.363.1
         cache: true
