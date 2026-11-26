@@ -369,63 +369,10 @@ set_project_warnings(MduX_warnings)
 enable_sanitizers(MduX_options)
 
 
-# Dependencies - Enhanced Vulkan detection for Windows
-if(WIN32)
-    # Common Vulkan SDK installation paths on Windows
-    set(VULKAN_SEARCH_PATHS
-        "$ENV{VULKAN_SDK}"
-        "C:/VulkanSDK/1.3.290.0"
-        "C:/VulkanSDK/1.3.280.0"
-        "C:/VulkanSDK/1.3.275.0"
-        "C:/VulkanSDK/1.3.270.0"
-        "C:/Program Files/VulkanSDK/1.3.290.0"
-        "C:/Program Files/VulkanSDK/1.3.280.0"
-        "C:/Program Files/VulkanSDK/1.3.275.0"
-        "C:/Program Files/VulkanSDK/1.3.270.0"
-    )
-    
-    # Try to find Vulkan in common locations
-    foreach(VULKAN_PATH ${VULKAN_SEARCH_PATHS})
-        if(EXISTS "${VULKAN_PATH}/Include/vulkan/vulkan.h")
-            set(Vulkan_INCLUDE_DIR "${VULKAN_PATH}/Include")
-            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-                # 64-bit build - prefer Lib over Lib32
-                if(EXISTS "${VULKAN_PATH}/Lib/vulkan-1.lib")
-                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib/vulkan-1.lib")
-                elseif(EXISTS "${VULKAN_PATH}/Lib32/vulkan-1.lib")
-                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib32/vulkan-1.lib")
-                    message(WARNING "Using 32-bit Vulkan library on 64-bit system")
-                endif()
-            else()
-                # 32-bit build
-                if(EXISTS "${VULKAN_PATH}/Lib32/vulkan-1.lib")
-                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib32/vulkan-1.lib")
-                elseif(EXISTS "${VULKAN_PATH}/Lib/vulkan-1.lib")
-                    set(Vulkan_LIBRARY "${VULKAN_PATH}/Lib/vulkan-1.lib")
-                    message(WARNING "Using 64-bit Vulkan library on 32-bit system")
-                endif()
-            endif()
-            if(Vulkan_LIBRARY)
-                message(STATUS "Found Vulkan at: ${VULKAN_PATH}")
-                message(STATUS "Vulkan library: ${Vulkan_LIBRARY}")
-                break()
-            endif()
-        endif()
-    endforeach()
-endif()
-
+# FindVulkan honours the VULKAN_SDK environment variable the LunarG installer sets, on Windows
+# as everywhere else, so no hardcoded SDK paths are searched here.
 find_package(Vulkan REQUIRED)
 
-# Provide helpful error message for Windows Vulkan SDK installation
-if(WIN32 AND NOT Vulkan_FOUND)
-    message(FATAL_ERROR 
-        "Vulkan SDK not found on Windows. Please:\n"
-        "  1. Download from: https://vulkan.lunarg.com/sdk/home#windows\n"
-        "  2. Install the Vulkan SDK\n"
-        "  3. Set environment variable: set VULKAN_SDK=C:\\VulkanSDK\\1.3.xxx.x\n"
-        "  4. Or specify manually: cmake .. -DVulkan_INCLUDE_DIR=\"C:/VulkanSDK/1.3.xxx.x/Include\" -DVulkan_LIBRARY=\"C:/VulkanSDK/1.3.xxx.x/Lib/vulkan-1.lib\"\n"
-        "Current VULKAN_SDK: $ENV{VULKAN_SDK}")
-endif()
 find_package(Threads REQUIRED)
 target_link_libraries(MduX_options INTERFACE Vulkan::Vulkan Threads::Threads)
 

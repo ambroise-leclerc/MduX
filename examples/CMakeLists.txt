@@ -82,12 +82,9 @@ if(UNIX)
     target_link_libraries(VulkanSCTriangleExample PRIVATE Threads::Threads)
 endif()
 
-# Platform-specific libraries for file watching
 if(UNIX)
-    # Linux needs pthread for threading support
     find_package(Threads REQUIRED)
     target_link_libraries(MedicalUiExample PRIVATE Threads::Threads)
-    # target_link_libraries(MduXExample PRIVATE Threads::Threads) # Disabled legacy example
 endif()
 
 # Set C++23 standard for examples and enable import std; support
@@ -106,8 +103,6 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(MedicalUiExample PRIVATE /experimental:module)
     target_compile_options(MedicalUiExample PRIVATE /std:c++latest)
-    # target_compile_options(MduXExample PRIVATE /experimental:module) # Disabled legacy example
-    # target_compile_options(MduXExample PRIVATE /std:c++latest) # Disabled legacy example
 endif()
 
 # The ECG classifier demonstrator (issue #64, ADR-008).
