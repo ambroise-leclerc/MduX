@@ -235,6 +235,8 @@ std::string_view describe(ReadingError error) noexcept {
             return "the value is negative, and no pattern here renders a sign";
         case ReadingError::NoDigitSlots:
             return "a value was offered to a pattern with no digit slot to put it in";
+        case ReadingError::FieldOutOfRange:
+            return "a clock field is outside its range, or the date does not exist";
         case ReadingError::ListRejected:
             return "the draw list refused a rectangle - budget, or a degenerate extent";
     }
@@ -388,6 +390,27 @@ mdux::core::ResultVoid<ReadingError> recordClock(mdux::draw::DrawList&          
                               : fits(now.year, 4) && fits(now.month, 2) && fits(now.day, 2) && fits(now.hour, 2) && fits(now.minute, 2) && fits(now.second, 2);
     if (format != ClockFormat::Unspecified && !drawable) {
         return mdux::core::err(ReadingError::ValueTooLarge);
+    }
+
+    // Fitting the slots is not being a time: 99 fits two slots and `99:00:00` reads as one. So the
+    // fields the format draws are held to the ranges `CivilTime` documents, and a drawn date to one
+    // that exists. Checked after the digit count so that an overflowing field keeps the error it
+    // has always had.
+    const auto timeInRange = [&now]() noexcept {
+        return now.hour <= 23 && now.minute <= 59 && now.second <= 59;
+    };
+    const auto dateExists = [&now]() noexcept {
+        constexpr std::array<std::uint8_t, 12> monthLengths{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        if (now.month < 1 || now.month > 12 || now.day < 1) {
+            return false;
+        }
+        const bool         leap   = (now.year % 4 == 0 && now.year % 100 != 0) || now.year % 400 == 0;
+        const std::uint8_t length = (now.month == 2 && leap) ? std::uint8_t{29} : monthLengths[now.month - 1U];
+        return now.day <= length;
+    };
+    const bool valid = format == ClockFormat::TimeSeconds ? timeInRange() : (timeInRange() && dateExists());
+    if (format != ClockFormat::Unspecified && !valid) {
+        return mdux::core::err(ReadingError::FieldOutOfRange);
     }
 
     const auto push = [&digits, &count](std::int64_t value, std::size_t width) noexcept {

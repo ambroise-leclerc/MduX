@@ -262,6 +262,13 @@ no golden, since that check reads a node's own compiled bounds directly - and a
 `tests/render/ScreenPixelTests.cpp` scenario predicts every cell from this module's own composition
 functions and checks the real rendered bytes against that prediction across two different grids.
 
+All five slot bindings — signal, viewport, reading, status and text input — keep a *view* of slots
+the caller goes on owning, so `render()` runs each binding's `create()` checks again on every frame
+before recording anything, and a slot's target is fixed for the life of its binding: the binding
+keeps a digest of the names its slots carried at creation, in slot order, and a frame whose slots
+name anything else is refused as `SlotRetargeted` rather than drawn with a value under the wrong
+node (ADR-026, `AC-05`). Retargeting is done by making a new binding.
+
 `mdux.medui.reading` (#258) does the same for a `NumericDisplay`'s digits and a `Clock`'s time, and
 it needed an **amendment to ADR-010** to exist at all. That ADR's decision 4 forbade "on-device code
 that advances a pen by a runtime-computed width", while its decision 3 permitted dynamic text — a

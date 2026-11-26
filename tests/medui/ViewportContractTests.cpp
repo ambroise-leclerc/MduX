@@ -788,6 +788,44 @@ const mdux::spec::Register viewportBindingRefusesWhatItCanCheck{
             .Execute();
     }};
 
+const mdux::spec::Register aViewportSlotChangedAfterCreationIsRefused{
+    "A viewport slot renamed after the binding was made refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-viewport-slot-identity-is-rechecked")
+            .Given("a binding made over slots the caller goes on owning", [] {})
+            .When("a slot's stream is changed after create() accepted it", [] {})
+            .Then("the frame is refused rather than drawn with the viewport unbound",
+                  [] {
+                      mdux::spec::Checks                    checks;
+                      static constexpr std::array<float, 4> storage{0.0F, 0.5F, 1.0F, 0.5F};
+                      static const ms::WaterfallGrid        grid = gridOver(storage, 2);
+                      std::array<ms::ViewportSlot, 1>       slots{
+                          ms::ViewportSlot{.streamSource = "ENDOSCOPE_PRIMARY", .grid = &grid, .style = unitRamp}
+                      };
+                      const ms::ViewportBinding binding = requireBound(ms::ViewportBinding::create(viewportScreen, slots), "the binding");
+
+                      slots[0].streamSource = "ENDOSCOPE_PRIMARZ";
+                      Scratch    scratch;
+                      auto       list    = scratch.list();
+                      const auto renamed = ms::render(viewportScreen, list, {}, {}, {}, {}, {}, {}, binding);
+                      checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownViewportSource,
+                                    "a slot renamed after creation is UnknownViewportSource");
+                      checks.expect(list.vertices().empty(), "and nothing is left recorded");
+
+                      // The case the checks of create() cannot see: the other viewport on this
+                      // screen is a valid name, and the primary grid would be drawn in its box.
+                      slots[0].streamSource     = "ENDOSCOPE_SECONDARY";
+                      auto       retargetedList = scratch.list();
+                      const auto retargeted     = ms::render(viewportScreen, retargetedList, {}, {}, {}, {}, {}, {}, binding);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    "a slot renamed to another viewport on the screen is SlotRetargeted");
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 struct AViewportBindingIsNotPortableBetweenScreensState {
     Scratch                        scratch;
     std::optional<ms::ScreenError> error;

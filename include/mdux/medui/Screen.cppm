@@ -350,6 +350,7 @@ enum class ScreenError : std::uint8_t {
     ScreenNotApproved,             ///< a signal binding built for one screen was offered to another
     UnimplementedEvent,            ///< a pressed `CriticalButton` names no member of the closed `SystemEvent` set
     UntracedCriticalControl,       ///< a pressed `CriticalButton` declares no requirement to trace it to
+    SlotRetargeted,                ///< a slot names another node or stream than the one its binding was created for
 };
 
 // The two token failures are kept apart because the schema keeps them apart, and for its reason: a
@@ -648,11 +649,23 @@ public:
         return !bound() || screen.id == screenId_;
     }
 
+    /// Whether `other` joins the same nodes or streams, slot for slot, as this binding does.
+    ///
+    /// `create()` digests the names its slots carry, in slot order, and the binding keeps that
+    /// digest by value - the one thing about a slot it does not merely view. `render()` runs
+    /// `create()` again over the caller's storage and asks this of the result, so a slot renamed to
+    /// another *valid* target is `SlotRetargeted` rather than a value drawn under the wrong node.
+    [[nodiscard]] constexpr bool sameTargetsAs(const SignalBinding& other) const noexcept {
+        return targets_ == other.targets_;
+    }
+
 private:
-    constexpr SignalBinding(std::string_view screenId, std::span<const SignalSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+    constexpr SignalBinding(std::string_view screenId, std::span<const SignalSlot> slots, const mdux::evidence::Digest& targets) noexcept
+        : slots_{slots}, screenId_{screenId}, targets_{targets} {}
 
     std::span<const SignalSlot> slots_{};
     std::string_view            screenId_{};
+    mdux::evidence::Digest      targets_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline -
@@ -724,11 +737,23 @@ public:
         return !bound() || screen.id == screenId_;
     }
 
+    /// Whether `other` joins the same nodes or streams, slot for slot, as this binding does.
+    ///
+    /// `create()` digests the names its slots carry, in slot order, and the binding keeps that
+    /// digest by value - the one thing about a slot it does not merely view. `render()` runs
+    /// `create()` again over the caller's storage and asks this of the result, so a slot renamed to
+    /// another *valid* target is `SlotRetargeted` rather than a value drawn under the wrong node.
+    [[nodiscard]] constexpr bool sameTargetsAs(const ViewportBinding& other) const noexcept {
+        return targets_ == other.targets_;
+    }
+
 private:
-    constexpr ViewportBinding(std::string_view screenId, std::span<const ViewportSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+    constexpr ViewportBinding(std::string_view screenId, std::span<const ViewportSlot> slots, const mdux::evidence::Digest& targets) noexcept
+        : slots_{slots}, screenId_{screenId}, targets_{targets} {}
 
     std::span<const ViewportSlot> slots_{};
     std::string_view              screenId_{};
+    mdux::evidence::Digest        targets_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline -
@@ -872,14 +897,30 @@ public:
         return !bound() || screen.id == screenId_;
     }
 
+    /// Whether `other` joins the same nodes, slot for slot, as this binding does.
+    ///
+    /// `create()` digests the node ids its slots carry, in slot order, and the binding keeps that
+    /// digest by value - the one thing about a slot it does not merely view. `render()` runs
+    /// `create()` again over the caller's storage and asks this of the result, so a slot renamed to
+    /// another *valid* `NumericDisplay` is `SlotRetargeted` rather than a value drawn under the
+    /// wrong node.
+    [[nodiscard]] constexpr bool sameTargetsAs(const ReadingBinding& other) const noexcept {
+        return targets_ == other.targets_;
+    }
+
 private:
-    constexpr ReadingBinding(std::string_view screenId, std::span<const ReadingSlot> readings, const CivilTime* now, std::string_view clockColorToken) noexcept
-        : readings_{readings}, now_{now}, screenId_{screenId}, clockColorToken_{clockColorToken} {}
+    constexpr ReadingBinding(std::string_view              screenId,
+                             std::span<const ReadingSlot>  readings,
+                             const CivilTime*              now,
+                             std::string_view              clockColorToken,
+                             const mdux::evidence::Digest& targets) noexcept
+        : readings_{readings}, now_{now}, screenId_{screenId}, clockColorToken_{clockColorToken}, targets_{targets} {}
 
     std::span<const ReadingSlot> readings_{};
     const CivilTime*             now_{nullptr};
     std::string_view             screenId_{};
     std::string_view             clockColorToken_{};
+    mdux::evidence::Digest       targets_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline -
@@ -986,11 +1027,23 @@ public:
         return !bound() || screen.id == screenId_;
     }
 
+    /// Whether `other` joins the same nodes or streams, slot for slot, as this binding does.
+    ///
+    /// `create()` digests the names its slots carry, in slot order, and the binding keeps that
+    /// digest by value - the one thing about a slot it does not merely view. `render()` runs
+    /// `create()` again over the caller's storage and asks this of the result, so a slot renamed to
+    /// another *valid* target is `SlotRetargeted` rather than a value drawn under the wrong node.
+    [[nodiscard]] constexpr bool sameTargetsAs(const StatusBinding& other) const noexcept {
+        return targets_ == other.targets_;
+    }
+
 private:
-    constexpr StatusBinding(std::string_view screenId, std::span<const StatusSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+    constexpr StatusBinding(std::string_view screenId, std::span<const StatusSlot> slots, const mdux::evidence::Digest& targets) noexcept
+        : slots_{slots}, screenId_{screenId}, targets_{targets} {}
 
     std::span<const StatusSlot> slots_{};
     std::string_view            screenId_{};
+    mdux::evidence::Digest      targets_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline -
@@ -1090,11 +1143,23 @@ public:
         return !bound() || screen.id == screenId_;
     }
 
+    /// Whether `other` joins the same nodes or streams, slot for slot, as this binding does.
+    ///
+    /// `create()` digests the names its slots carry, in slot order, and the binding keeps that
+    /// digest by value - the one thing about a slot it does not merely view. `render()` runs
+    /// `create()` again over the caller's storage and asks this of the result, so a slot renamed to
+    /// another *valid* target is `SlotRetargeted` rather than a value drawn under the wrong node.
+    [[nodiscard]] constexpr bool sameTargetsAs(const TextInputBinding& other) const noexcept {
+        return targets_ == other.targets_;
+    }
+
 private:
-    constexpr TextInputBinding(std::string_view screenId, std::span<const TextInputSlot> slots) noexcept : slots_{slots}, screenId_{screenId} {}
+    constexpr TextInputBinding(std::string_view screenId, std::span<const TextInputSlot> slots, const mdux::evidence::Digest& targets) noexcept
+        : slots_{slots}, screenId_{screenId}, targets_{targets} {}
 
     std::span<const TextInputSlot> slots_{};
     std::string_view               screenId_{};
+    mdux::evidence::Digest         targets_{};
 };
 
 // The guarantee `create()` is documented to give, held by the language rather than by discipline -
@@ -1159,6 +1224,20 @@ struct FrameStats {
  *
  * Allocation-free and `noexcept`: the list is the only storage written, and it was sized before the
  * first frame. On any error the list is restored to its state at entry.
+ *
+ * The signal, reading, status, text-input and viewport bindings hold a *view* of slots the caller
+ * owns, so each is validated again here, by its own `create()`, before anything is recorded. A slot
+ * whose node id, stream, pattern, state or ring was changed after the binding was made refuses the
+ * frame with the error `create()` would have returned, rather than silently no longer matching its
+ * node. Passing those checks is not enough on its own: a slot renamed to *another* node or stream
+ * this screen carries passes every one of them, and would draw its value under the wrong component.
+ * So each binding keeps, by value, a digest of the names its slots carried when it was made, in slot
+ * order, and a frame whose slots no longer produce that digest is `SlotRetargeted`. The rule is
+ * that a slot's target is fixed for the life of its binding; a caller that means to join a slot to
+ * a different node makes a new binding, which is where that join is proved. What stays free to
+ * change between frames is what a slot *carries* - its value, state, text, caret, ring contents,
+ * pattern and style - each validated again as above. The text and image bindings are not re-proved: one holds values only, and the other a baked
+ * package authenticated by digest at creation, whose bytes the caller must not change afterwards.
  *
  * Two budgets are in play and both are enforced. `DrawList` fails closed against the budget it was
  * created with, and this function additionally holds the frame to `screen.budget` - the ceiling the

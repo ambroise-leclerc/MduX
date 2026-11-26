@@ -461,6 +461,81 @@ const mdux::spec::Register aClockFieldPastItsSlotsIsRefused{
             .Execute();
     }};
 
+struct AClockFieldOutsideItsRangeIsRefusedState {
+    Scratch                                      scratch;
+    std::vector<std::optional<ms::ReadingError>> refused;
+    std::vector<std::optional<ms::ReadingError>> accepted;
+    std::size_t                                  verticesAfterRefusals{0};
+};
+
+const mdux::spec::Register aClockFieldOutsideItsRangeIsRefused{
+    "A clock field that fits its slots but is outside its range is refused, and so is a date that does not exist",
+    "evidence-unit",
+    [] {
+        return speclab::Test<AClockFieldOutsideItsRangeIsRefusedState>("reading-clock-field-out-of-range")
+            .Given("times that fit their slots and are not times, and the boundary times that are",
+                   [](AClockFieldOutsideItsRangeIsRefusedState& state) {
+                       // Every one of these has two-digit fields, so the digit count passes them all:
+                       // `99:00:00` drew, and read as a time. The range is what refuses them.
+                       struct Case {
+                           ms::ClockFormat format;
+                           ms::CivilTime   time;
+                       };
+                       constexpr auto                 time = ms::ClockFormat::TimeSeconds;
+                       constexpr auto                 date = ms::ClockFormat::DateTimeSeconds;
+                       constexpr std::array<Case, 12> outside{
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 99, .minute = 0, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 24, .minute = 0, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 0, .minute = 60, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 0, .minute = 0, .second = 60}},
+                           Case{date, {.year = 2026, .month = 1, .day = 1, .hour = 24, .minute = 0, .second = 0}},
+                           Case{date,  {.year = 2026, .month = 0, .day = 1, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 13, .day = 1, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date,  {.year = 2026, .month = 1, .day = 0, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 1, .day = 32, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 4, .day = 31, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2100, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}}
+                       };
+                       // The last second of a day, the leap days of an ordinary and a 400-year leap
+                       // year, and a time-only clock whose date fields no format of its own draws.
+                       constexpr std::array<Case, 5> inside{
+                           Case{time,   {.year = 2026, .month = 1, .day = 1, .hour = 23, .minute = 59, .second = 59}},
+                           Case{date, {.year = 2026, .month = 12, .day = 31, .hour = 23, .minute = 59, .second = 59}},
+                           Case{date,     {.year = 2028, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date,     {.year = 2000, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{time,    {.year = 2026, .month = 13, .day = 0, .hour = 12, .minute = 0, .second = 0}}
+                       };
+                       draw::DrawList list = state.scratch.list();
+                       for (const Case& each : outside) {
+                           const auto result = ms::recordClock(list, theFont(), node, each.format, each.time, digits);
+                           state.refused.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                       }
+                       state.verticesAfterRefusals = list.vertices().size();
+                       for (const Case& each : inside) {
+                           draw::DrawList fresh  = state.scratch.list();
+                           const auto     result = ms::recordClock(fresh, theFont(), node, each.format, each.time, digits);
+                           state.accepted.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                       }
+                   })
+            .When("each is offered to a format that draws the field", [] {})
+            .Then("the first are FieldOutOfRange with nothing recorded, and the boundary times are drawn",
+                  [](AClockFieldOutsideItsRangeIsRefusedState& state) {
+                      mdux::spec::Checks checks;
+                      for (std::size_t index = 0; index < state.refused.size(); ++index) {
+                          checks.expect(state.refused[index] == ms::ReadingError::FieldOutOfRange,
+                                        std::format("out-of-range time {} is refused as FieldOutOfRange", index));
+                      }
+                      checks.expect(state.verticesAfterRefusals == 0,
+                                    std::format("a refused clock draws nothing, got {} vertices", state.verticesAfterRefusals));
+                      for (std::size_t index = 0; index < state.accepted.size(); ++index) {
+                          checks.expect(!state.accepted[index].has_value(), std::format("boundary time {} is drawn", index));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 struct ATimeOnlyClockIgnoresTheYearState {
     Scratch                         scratch;
     std::optional<ms::ReadingError> error;
@@ -703,13 +778,14 @@ const mdux::spec::Register everyReadingErrorDescribesItself{"Every ReadingError 
                                                                     .When("each is described", [] {})
                                                                     .Then("each has a unique, non-empty description",
                                                                           [] {
-                                                                              constexpr std::array<ms::ReadingError, 8> all{ms::ReadingError::PatternEmpty,
+                                                                              constexpr std::array<ms::ReadingError, 9> all{ms::ReadingError::PatternEmpty,
                                                                                                                             ms::ReadingError::PatternTooLong,
                                                                                                                             ms::ReadingError::GlyphNotInPackage,
                                                                                                                             ms::ReadingError::PenMovedBackwards,
                                                                                                                             ms::ReadingError::ValueTooLarge,
                                                                                                                             ms::ReadingError::ValueNegative,
                                                                                                                             ms::ReadingError::NoDigitSlots,
+                                                                                                                            ms::ReadingError::FieldOutOfRange,
                                                                                                                             ms::ReadingError::ListRejected};
                                                                               std::vector<std::string_view>             seen;
                                                                               mdux::spec::Checks                        checks;
@@ -759,6 +835,24 @@ constexpr ms::ScreenPackage readingScreen{.id                   = "readings",
                                           .budget               = readingBudget};
 
 static_assert(readingScreen.validate().has_value(), "the screen under test must be one a device could hold");
+
+/// Two `NumericDisplay` nodes, so a slot can be renamed from one valid target to another.
+constexpr ms::NumericDisplaySpec flow{.requirement = "REQ-2", .templateId = "TPL-PRESSURE-MMHG", .source = "FLOW", .colorToken = "Theme.Colors.ScoreDigits"};
+
+constexpr std::array<ms::CompiledNode, 2> twoReadingNodes{
+    ms::CompiledNode{.id = "pressure",  .bounds = {0, 0, 300, 40}, .payload = pressure},
+    ms::CompiledNode{    .id = "flow", .bounds = {0, 40, 300, 40},     .payload = flow}
+};
+
+constexpr ms::ScreenPackage twoReadingScreen{.id                   = "two-readings",
+                                             .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                             .surfaceWidth         = 300,
+                                             .surfaceHeight        = 100,
+                                             .approvedTextPackages = placeholderApprovals,
+                                             .nodes                = twoReadingNodes,
+                                             .budget               = readingBudget};
+
+static_assert(twoReadingScreen.validate().has_value(), "the two-reading screen must be one a device could hold");
 
 constexpr ms::CivilTime    noon{.year = 2026, .month = 9, .day = 5, .hour = 12, .minute = 0, .second = 0};
 constexpr std::string_view clockTint = "Theme.Colors.Neutral";
@@ -997,6 +1091,108 @@ const mdux::spec::Register aBindingIsNotPortableBetweenScreens{
                   [](ABindingIsNotPortableBetweenScreensState& state) {
                       mdux::spec::Checks checks;
                       checks.expect(state.error == ms::ScreenError::ScreenNotApproved, "the frame is refused as ScreenNotApproved");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aReadingSlotChangedAfterCreationIsRefused{
+    "A reading slot renamed or duplicated after the binding was made refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-reading-slot-identity-is-rechecked")
+            .Given("a binding made over slots the caller goes on owning", [] {})
+            .When("a slot's node id is changed after create() accepted it", [] {})
+            .Then("the frame is refused rather than drawn with the node's unbound field",
+                  [] {
+                      mdux::spec::Checks             checks;
+                      std::array<ms::ReadingSlot, 2> slots{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137},
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
+                      };
+                      const ms::ScreenPackage                screen = approve(readingScreen);
+                      const std::span<const ms::ReadingSlot> one{slots.data(), 1};
+                      const ms::ReadingBinding               binding = requireBound(ms::ReadingBinding::create(screen, one), "the binding");
+                      const ms::TextBinding                  text    = bindText(screen);
+
+                      Scratch scratch;
+                      auto    list = scratch.list();
+                      checks.expect(ms::render(screen, list, text, {}, {}, binding).has_value(), "the frame is drawn while the slot is as validated");
+
+                      // The binding holds a view, so this is all a producer has to do.
+                      slots[0].nodeId        = "pressurf";
+                      auto       renamedList = scratch.list();
+                      const auto renamed     = ms::render(screen, renamedList, text, {}, {}, binding);
+                      checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownReadingNode,
+                                    "a slot renamed after creation is UnknownReadingNode");
+                      checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+
+                      slots[0].nodeId        = "pressure";
+                      slots[0].rendering     = "";
+                      auto       emptiedList = scratch.list();
+                      const auto emptied     = ms::render(screen, emptiedList, text, {}, {}, binding);
+                      checks.expect(!emptied.has_value() && emptied.error() == ms::ScreenError::MalformedPattern,
+                                    "a pattern emptied after creation is MalformedPattern");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aReadingSlotRenamedToAnotherNodeIsRefused{
+    "A reading slot renamed to another NumericDisplay on the screen refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-reading-slot-retargeted-is-refused")
+            .Given("a screen with two NumericDisplay nodes and a binding over the caller's slots", [] {})
+            .When("a slot is renamed to the other node, or two slots exchange their node ids", [] {})
+            .Then("the frame is SlotRetargeted rather than a value drawn under the wrong node",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const ms::ScreenPackage screen = approve(twoReadingScreen);
+                      const ms::TextBinding   text   = bindText(screen);
+                      Scratch                 scratch;
+
+                      // One slot, renamed from a valid node to the other valid node. Every check
+                      // create() makes passes: the name exists, it is a NumericDisplay, it is unique.
+                      std::array<ms::ReadingSlot, 1> one{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
+                      };
+                      const ms::ReadingBinding single = requireBound(ms::ReadingBinding::create(screen, one), "the one-slot binding");
+                      auto                     before = scratch.list();
+                      checks.expect(ms::render(screen, before, text, {}, {}, single).has_value(), "the frame is drawn while the slot names its own node");
+
+                      one[0].nodeId             = "flow";
+                      auto       retargetedList = scratch.list();
+                      const auto retargeted     = ms::render(screen, retargetedList, text, {}, {}, single);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    std::format("a slot renamed to another node is SlotRetargeted, got '{}'",
+                                                retargeted.has_value() ? "a frame" : ms::describe(retargeted.error())));
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
+
+                      one[0].nodeId = "pressure";
+                      auto restored = scratch.list();
+                      checks.expect(ms::render(screen, restored, text, {}, {}, single).has_value(),
+                                    "the frame is drawn again once the slot names its own node");
+
+                      // Two slots that exchange names: the set of names is unchanged, and each
+                      // value would be drawn in the other's box. The digest is ordered for this.
+                      std::array<ms::ReadingSlot, 2> two{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137},
+                          ms::ReadingSlot{    .nodeId = "flow", .rendering = "##.# mmHg",  .value = 42}
+                      };
+                      const ms::ReadingBinding both = requireBound(ms::ReadingBinding::create(screen, two), "the two-slot binding");
+                      two[0].nodeId                 = "flow";
+                      two[1].nodeId                 = "pressure";
+                      auto       swappedList        = scratch.list();
+                      const auto swapped            = ms::render(screen, swappedList, text, {}, {}, both);
+                      checks.expect(!swapped.has_value() && swapped.error() == ms::ScreenError::SlotRetargeted,
+                                    "two slots exchanging node ids is SlotRetargeted");
+                      checks.expect(swappedList.vertices().empty(), "and nothing is left recorded");
+
+                      // A new binding over the same storage is how a caller retargets on purpose.
+                      const ms::ReadingBinding rebound     = requireBound(ms::ReadingBinding::create(screen, two), "the rebuilt binding");
+                      auto                     reboundList = scratch.list();
+                      checks.expect(ms::render(screen, reboundList, text, {}, {}, rebound).has_value(), "a binding made over the new names is accepted");
                       checks.raise();
                   })
             .Execute();

@@ -1,0 +1,1394 @@
+{
+  "schemaVersion": 1,
+  "epic": 388,
+  "decision": "docs/adr/ADR-026-component-admission-criteria.md",
+  "note": "Names of proposed components are proposals from epic #388, not existing APIs. Gated by tools/docs-lint/check_component_inventory.py.",
+  "criteria": [
+    {
+      "id": "AC-01",
+      "title": "Contract status"
+    },
+    {
+      "id": "AC-02",
+      "title": "Closed grammar and governed schema"
+    },
+    {
+      "id": "AC-03",
+      "title": "Declared worst-case cost"
+    },
+    {
+      "id": "AC-04",
+      "title": "Governed draw path"
+    },
+    {
+      "id": "AC-05",
+      "title": "Bounded binding"
+    },
+    {
+      "id": "AC-06",
+      "title": "Interaction"
+    },
+    {
+      "id": "AC-07",
+      "title": "Interaction and data-quality states"
+    },
+    {
+      "id": "AC-08",
+      "title": "Rendered verification"
+    },
+    {
+      "id": "AC-09",
+      "title": "International text"
+    },
+    {
+      "id": "AC-10",
+      "title": "Tests"
+    },
+    {
+      "id": "AC-11",
+      "title": "Authoring and tooling"
+    },
+    {
+      "id": "AC-12",
+      "title": "Lifecycle records"
+    }
+  ],
+  "floor": [
+    "AC-01",
+    "AC-02",
+    "AC-04",
+    "AC-05"
+  ],
+  "children": [
+    {
+      "id": "A1",
+      "title": "Component admission criteria"
+    },
+    {
+      "id": "A2",
+      "title": "Upstream dictionary-extension proposal"
+    },
+    {
+      "id": "A3",
+      "title": "Draw primitives"
+    },
+    {
+      "id": "A4",
+      "title": "Theme tokens beyond colour"
+    },
+    {
+      "id": "A5",
+      "title": "Interaction and data states"
+    },
+    {
+      "id": "A6",
+      "title": "Layout"
+    },
+    {
+      "id": "A7",
+      "title": "Screens, layers and navigation"
+    },
+    {
+      "id": "A8",
+      "title": "Focus traversal and non-touch operation"
+    },
+    {
+      "id": "A9",
+      "title": "Deterministic animation"
+    },
+    {
+      "id": "B1",
+      "title": "Binary and exclusive choice"
+    },
+    {
+      "id": "B2",
+      "title": "Range"
+    },
+    {
+      "id": "B3",
+      "title": "Selection from a closed list"
+    },
+    {
+      "id": "B4",
+      "title": "Button families"
+    },
+    {
+      "id": "B5",
+      "title": "Text entry"
+    },
+    {
+      "id": "B6",
+      "title": "Date and time entry"
+    },
+    {
+      "id": "C1",
+      "title": "Text"
+    },
+    {
+      "id": "C2",
+      "title": "Iconography"
+    },
+    {
+      "id": "C3",
+      "title": "Scalar indicators"
+    },
+    {
+      "id": "C4",
+      "title": "Charts"
+    },
+    {
+      "id": "C5",
+      "title": "Tabular and list data"
+    },
+    {
+      "id": "C6",
+      "title": "Machine-readable marks"
+    },
+    {
+      "id": "D1",
+      "title": "Grouping"
+    },
+    {
+      "id": "D2",
+      "title": "Dialogs"
+    },
+    {
+      "id": "D3",
+      "title": "Menus and drawers"
+    },
+    {
+      "id": "D4",
+      "title": "Guided flows"
+    },
+    {
+      "id": "D5",
+      "title": "Transient notices"
+    },
+    {
+      "id": "E1",
+      "title": "Alarm presentation"
+    },
+    {
+      "id": "E2",
+      "title": "ParameterTile"
+    },
+    {
+      "id": "E3",
+      "title": "Data-quality presentation"
+    },
+    {
+      "id": "E4",
+      "title": "Confirmed actions"
+    },
+    {
+      "id": "E5",
+      "title": "Bounded quantity entry"
+    },
+    {
+      "id": "E6",
+      "title": "LimitEditor"
+    },
+    {
+      "id": "E7",
+      "title": "Clinical waveforms"
+    },
+    {
+      "id": "E8",
+      "title": "TrendChart"
+    },
+    {
+      "id": "E9",
+      "title": "Time-critical displays"
+    },
+    {
+      "id": "E10",
+      "title": "Device status"
+    },
+    {
+      "id": "E11",
+      "title": "PatientBanner"
+    },
+    {
+      "id": "E12",
+      "title": "ScreenLock and cleaning mode"
+    },
+    {
+      "id": "E13",
+      "title": "RegionSelector"
+    },
+    {
+      "id": "E14",
+      "title": "Role-gated controls"
+    },
+    {
+      "id": "F5",
+      "title": "Layout direction"
+    },
+    {
+      "id": "F10",
+      "title": "Locale-aware dynamic values"
+    },
+    {
+      "id": "F11",
+      "title": "Text entry across scripts"
+    },
+    {
+      "id": "H1",
+      "title": "Component gallery"
+    },
+    {
+      "id": "H2",
+      "title": "Tooling parity for every new entry"
+    },
+    {
+      "id": "H4",
+      "title": "Lifecycle records"
+    }
+  ],
+  "components": [
+    {
+      "name": "Row",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 194,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "tools/medui/Layout.cppm",
+            "include/mdux/medui/Schema.cppm",
+            "docs/parity/behavior-matrix.md"
+          ],
+          "note": "under AC-02's exception for a construct the compiler resolves entirely: no Row node reaches the artifact; it resolves into its children's rectangles and, with a background, one synthetic Panel, each a validated node"
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "not-applicable",
+          "reason": "a layout construct the compiler resolves; no value reaches it at run time"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
+        },
+        "AC-07": {
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
+        },
+        "AC-08": {
+          "status": "unmet",
+          "closedBy": "A6",
+          "note": "its background is drawn as a synthetic Panel the golden stage skips, and a Row carries neither requirement: nor position:, so no golden can name it"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "layout and parser unit tests exist, and a pixel test compares its synthetic panel; no noheap case renders a compiled Row; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "Label",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 242,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "not-applicable",
+          "reason": "draws a text key resolved and measured at build time; no value is bound at run time"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
+        },
+        "AC-07": {
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit, noheap and pixel tests exist; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "Image",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 256,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/image/Schema.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "not-applicable",
+          "reason": "draws an image baked and named at build time; no value is bound at run time"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
+        },
+        "AC-07": {
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "unit and pixel tests exist; no noheap case names this component; the pinned corpus carries PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "Button",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 261,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "not-applicable",
+          "reason": "its label is a build-time text key and it draws no caller-supplied value; the press it resolves is AC-06's subject"
+        },
+        "AC-06": {
+          "status": "partial",
+          "closedBy": "A8",
+          "note": "a press resolves; no compiled focus order, so no non-pointer operation"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no interaction or data-quality state has an appearance"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of its face and a pointer step in a replayed scenario exist; the pinned corpus carries INTERACTION, PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "CriticalButton",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 261,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "not-applicable",
+          "reason": "its label is a build-time text key and it draws no caller-supplied value; the press it resolves is AC-06's subject"
+        },
+        "AC-06": {
+          "status": "partial",
+          "closedBy": "A8",
+          "note": "a press resolves; no compiled focus order, so no non-pointer operation"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no interaction or data-quality state has an appearance"
+        },
+        "AC-08": {
+          "status": "met",
+          "evidence": [
+            "generated/screen/endoscope-monitor/goldens.json",
+            "tests/render/ScreenPixelTests.cpp"
+          ]
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of its face and label and a pointer step in the committed scenario exist; the pinned corpus carries INTERACTION, PRESENTATION and PIXELS vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "NumericDisplay",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 258,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/ReadingTests.cpp"
+          ],
+          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no interaction or data-quality state has an appearance"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "A5",
+          "note": "a committed golden pins bounds and tint, never the value; a scenario capture claims only that the region was painted"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": [
+            "F10",
+            "A2"
+          ],
+          "note": "two shortfalls, and closing one does not close the other. (1) One template serves every locale. (2) The pattern drawn is not the pattern measured: the compiled node carries templateId, a name, and what is drawn is ReadingSlot::rendering, supplied by the host. create() and render() check that pattern's length and that its ink fits the node; nothing checks that it is the one the compiler measured for this template. A different pattern that fits the box is drawn - other decimals, or another unit beside the same digits. Screen.cppm states this limit. F10 owns the template (per-locale forms, units as part of it); binding the drawn pattern to the measured one needs the artifact or its approval to carry the resolved pattern or a digest of it, which is a change to the compiled-screen contract and so A2's"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares drawn digits - the rendered checks reach only the node's bounds; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "Clock",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 258,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm",
+            "src/medui/Reading.cpp",
+            "tests/medui/ReadingTests.cpp",
+            "src/medui/Screen.cpp"
+          ],
+          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no interaction or data-quality state has an appearance"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "no committed screen carries a golden for one, and its tint is the caller's rather than a declared token, so only bounds could be pinned"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F10",
+          "note": "two closed formats, neither locale-dependent"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares a drawn time; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles. Those BINDING vectors also refuse an impossible date and a five-digit year under TimeSeconds, where recordClock() checks only the fields the format draws - a divergence to settle before that profile is claimed"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "StatusIndicator",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 259,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/StatusTests.cpp"
+          ],
+          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no data-quality state, and states are told apart by tint alone until a locale is bound"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "no committed screen carries a golden for one, and ColorHash is refused because the tint varies per state"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "key-based and budget-checked across approved locales; no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case and a pixel test of each bound state exist; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "TextInput",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 260,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Field.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Field.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/FieldTests.cpp"
+          ],
+          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "partial",
+          "closedBy": "A8",
+          "note": "editing and caret exist; no compiled focus order to reach the field without a pointer"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no interaction or data-quality state has an appearance"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "a golden can name it, but no committed screen carries one"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F11",
+          "note": "a fixed-pitch grid, which fits neither joining nor stacking scripts"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "A2"
+          ],
+          "note": "unit tests of each refusal, a noheap case, a pixel test of a bound value and caret, and key and text steps in the committed scenario exist; the pinned corpus carries BINDING, INTERACTION and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "SignalTrace",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 257,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Trace.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Trace.cppm",
+            "src/medui/Trace.cpp",
+            "src/medui/Screen.cpp",
+            "tests/medui/TraceTests.cpp"
+          ],
+          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no data-quality state has an appearance; in particular a sample saturated at a rail is not marked as out of range"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "A5",
+          "note": "a committed golden pins bounds only; a scenario capture claims only that the region was painted"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "no declared direction behaviour; a waveform must be recorded as never mirrored"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H1",
+            "A2"
+          ],
+          "note": "unit tests of each refusal and a noheap case exist; no pixel test compares a drawn waveform - the rendered checks reach only the node's bounds; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "VulkanViewport",
+      "status": "provisional",
+      "workstream": "baseline",
+      "issue": 323,
+      "criteria": {
+        "AC-01": {
+          "status": "met",
+          "evidence": [
+            "medui-conformance.toml"
+          ]
+        },
+        "AC-02": {
+          "status": "met",
+          "evidence": [
+            "docs/medui/grammar.json",
+            "include/mdux/medui/Schema.cppm"
+          ]
+        },
+        "AC-03": {
+          "status": "unmet",
+          "closedBy": "H2",
+          "note": "no cost function; the recipe declares the budget and no diagnostic compares a screen with it"
+        },
+        "AC-04": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Viewport.cppm"
+          ]
+        },
+        "AC-05": {
+          "status": "met",
+          "evidence": [
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Viewport.cppm",
+            "src/medui/Screen.cpp",
+            "tests/medui/ViewportContractTests.cpp"
+          ],
+          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
+        },
+        "AC-06": {
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
+        },
+        "AC-07": {
+          "status": "unmet",
+          "closedBy": "A5",
+          "note": "no data-quality state has an appearance; in particular a cell saturated at a rail colour is not marked as out of range"
+        },
+        "AC-08": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "no committed screen carries a golden for one, and with no governed tint only bounds could be pinned"
+        },
+        "AC-09": {
+          "status": "partial",
+          "closedBy": "F5",
+          "note": "no declared direction behaviour"
+        },
+        "AC-10": {
+          "status": "partial",
+          "closedBy": [
+            "H2",
+            "A2"
+          ],
+          "note": "unit tests and a pixel test of a bound waterfall exist; no noheap case names this component; the pinned corpus carries BINDING and PRESENTATION vectors naming this component, and MduX claims and runs only the compiler phases and the RENDERED and EVIDENCE profiles"
+        },
+        "AC-11": {
+          "status": "partial",
+          "closedBy": "H1",
+          "note": "documented, in the grammar, serialized and previewed; no component gallery"
+        },
+        "AC-12": {
+          "status": "partial",
+          "closedBy": "H4",
+          "note": "no per-component requirement and hazard record"
+        }
+      }
+    },
+    {
+      "name": "Checkbox",
+      "status": "proposed",
+      "workstream": "B1"
+    },
+    {
+      "name": "Switch",
+      "status": "proposed",
+      "workstream": "B1"
+    },
+    {
+      "name": "RadioGroup",
+      "status": "proposed",
+      "workstream": "B1"
+    },
+    {
+      "name": "SegmentedControl",
+      "status": "proposed",
+      "workstream": "B1"
+    },
+    {
+      "name": "ToggleButton",
+      "status": "proposed",
+      "workstream": "B1"
+    },
+    {
+      "name": "Slider",
+      "status": "proposed",
+      "workstream": "B2"
+    },
+    {
+      "name": "Stepper",
+      "status": "proposed",
+      "workstream": "B2"
+    },
+    {
+      "name": "RangeSlider",
+      "status": "proposed",
+      "workstream": "B2"
+    },
+    {
+      "name": "Dropdown",
+      "status": "proposed",
+      "workstream": "B3"
+    },
+    {
+      "name": "WheelPicker",
+      "status": "proposed",
+      "workstream": "B3"
+    },
+    {
+      "name": "OptionList",
+      "status": "proposed",
+      "workstream": "B3"
+    },
+    {
+      "name": "IconButton",
+      "status": "proposed",
+      "workstream": "B4"
+    },
+    {
+      "name": "ButtonGroup",
+      "status": "proposed",
+      "workstream": "B4"
+    },
+    {
+      "name": "TextArea",
+      "status": "proposed",
+      "workstream": "B5"
+    },
+    {
+      "name": "Keyboard",
+      "status": "proposed",
+      "workstream": "B5"
+    },
+    {
+      "name": "NumericKeypad",
+      "status": "proposed",
+      "workstream": "B5"
+    },
+    {
+      "name": "DatePicker",
+      "status": "proposed",
+      "workstream": "B6"
+    },
+    {
+      "name": "TimePicker",
+      "status": "proposed",
+      "workstream": "B6"
+    },
+    {
+      "name": "Calendar",
+      "status": "proposed",
+      "workstream": "B6"
+    },
+    {
+      "name": "Paragraph",
+      "status": "proposed",
+      "workstream": "C1"
+    },
+    {
+      "name": "Divider",
+      "status": "proposed",
+      "workstream": "C1"
+    },
+    {
+      "name": "Icon",
+      "status": "proposed",
+      "workstream": "C2"
+    },
+    {
+      "name": "ProgressBar",
+      "status": "proposed",
+      "workstream": "C3"
+    },
+    {
+      "name": "Bar",
+      "status": "proposed",
+      "workstream": "C3"
+    },
+    {
+      "name": "ArcGauge",
+      "status": "proposed",
+      "workstream": "C3"
+    },
+    {
+      "name": "Scale",
+      "status": "proposed",
+      "workstream": "C3"
+    },
+    {
+      "name": "ActivityIndicator",
+      "status": "proposed",
+      "workstream": "C3"
+    },
+    {
+      "name": "LineChart",
+      "status": "proposed",
+      "workstream": "C4"
+    },
+    {
+      "name": "BarChart",
+      "status": "proposed",
+      "workstream": "C4"
+    },
+    {
+      "name": "ScatterChart",
+      "status": "proposed",
+      "workstream": "C4"
+    },
+    {
+      "name": "Table",
+      "status": "proposed",
+      "workstream": "C5"
+    },
+    {
+      "name": "List",
+      "status": "proposed",
+      "workstream": "C5"
+    },
+    {
+      "name": "QrCode",
+      "status": "proposed",
+      "workstream": "C6"
+    },
+    {
+      "name": "Barcode",
+      "status": "proposed",
+      "workstream": "C6"
+    },
+    {
+      "name": "Panel",
+      "status": "proposed",
+      "workstream": "D1"
+    },
+    {
+      "name": "Tabs",
+      "status": "proposed",
+      "workstream": "D1"
+    },
+    {
+      "name": "Pager",
+      "status": "proposed",
+      "workstream": "D1"
+    },
+    {
+      "name": "Dialog",
+      "status": "proposed",
+      "workstream": "D2"
+    },
+    {
+      "name": "MessageBox",
+      "status": "proposed",
+      "workstream": "D2"
+    },
+    {
+      "name": "Menu",
+      "status": "proposed",
+      "workstream": "D3"
+    },
+    {
+      "name": "Drawer",
+      "status": "proposed",
+      "workstream": "D3"
+    },
+    {
+      "name": "Wizard",
+      "status": "proposed",
+      "workstream": "D4"
+    },
+    {
+      "name": "Checklist",
+      "status": "proposed",
+      "workstream": "D4"
+    },
+    {
+      "name": "Toast",
+      "status": "proposed",
+      "workstream": "D5"
+    },
+    {
+      "name": "AlarmBanner",
+      "status": "proposed",
+      "workstream": "E1"
+    },
+    {
+      "name": "AlarmList",
+      "status": "proposed",
+      "workstream": "E1"
+    },
+    {
+      "name": "ParameterTile",
+      "status": "proposed",
+      "workstream": "E2"
+    },
+    {
+      "name": "ConfirmAction",
+      "status": "proposed",
+      "workstream": "E4"
+    },
+    {
+      "name": "QuantityInput",
+      "status": "proposed",
+      "workstream": "E5"
+    },
+    {
+      "name": "LimitEditor",
+      "status": "proposed",
+      "workstream": "E6"
+    },
+    {
+      "name": "SweepWaveform",
+      "status": "proposed",
+      "workstream": "E7"
+    },
+    {
+      "name": "TrendChart",
+      "status": "proposed",
+      "workstream": "E8"
+    },
+    {
+      "name": "Timer",
+      "status": "proposed",
+      "workstream": "E9"
+    },
+    {
+      "name": "Countdown",
+      "status": "proposed",
+      "workstream": "E9"
+    },
+    {
+      "name": "Stopwatch",
+      "status": "proposed",
+      "workstream": "E9"
+    },
+    {
+      "name": "DeviceStatus",
+      "status": "proposed",
+      "workstream": "E10"
+    },
+    {
+      "name": "PatientBanner",
+      "status": "proposed",
+      "workstream": "E11"
+    },
+    {
+      "name": "ScreenLock",
+      "status": "proposed",
+      "workstream": "E12"
+    },
+    {
+      "name": "RegionSelector",
+      "status": "proposed",
+      "workstream": "E13"
+    }
+  ]
+}

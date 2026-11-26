@@ -85,6 +85,12 @@ jobs:
     - name: Check schemas have not drifted from the types and bakers they document
       run: python3 tools/docs-lint/check_schema_type_drift.py
 
+    # Issue #390: the component inventory records each dictionary entry against ADR-026's admission
+    # criteria. Whether a criterion is met is a reviewed judgement; that the inventory lists exactly
+    # the components the compiler accepts, and rests on evidence paths that exist, is not.
+    - name: Check the component inventory against the grammar and ADR-026
+      run: python3 tools/docs-lint/check_component_inventory.py
+
     # Bans decimal float formatting anywhere in the evidence pipeline (ADR-007). There used to be a
     # check that every committed report.json's toolGitSha was not "unknown"; that field no longer
     # exists (ADR-007 decision 5, issue #52), and toolVersion needs no check beyond validate()'s
