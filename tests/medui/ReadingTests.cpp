@@ -836,6 +836,24 @@ constexpr ms::ScreenPackage readingScreen{.id                   = "readings",
 
 static_assert(readingScreen.validate().has_value(), "the screen under test must be one a device could hold");
 
+/// Two `NumericDisplay` nodes, so a slot can be renamed from one valid target to another.
+constexpr ms::NumericDisplaySpec flow{.requirement = "REQ-2", .templateId = "TPL-PRESSURE-MMHG", .source = "FLOW", .colorToken = "Theme.Colors.ScoreDigits"};
+
+constexpr std::array<ms::CompiledNode, 2> twoReadingNodes{
+    ms::CompiledNode{.id = "pressure",  .bounds = {0, 0, 300, 40}, .payload = pressure},
+    ms::CompiledNode{    .id = "flow", .bounds = {0, 40, 300, 40},     .payload = flow}
+};
+
+constexpr ms::ScreenPackage twoReadingScreen{.id                   = "two-readings",
+                                             .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                             .surfaceWidth         = 300,
+                                             .surfaceHeight        = 100,
+                                             .approvedTextPackages = placeholderApprovals,
+                                             .nodes                = twoReadingNodes,
+                                             .budget               = readingBudget};
+
+static_assert(twoReadingScreen.validate().has_value(), "the two-reading screen must be one a device could hold");
+
 constexpr ms::CivilTime    noon{.year = 2026, .month = 9, .day = 5, .hour = 12, .minute = 0, .second = 0};
 constexpr std::string_view clockTint = "Theme.Colors.Neutral";
 
@@ -1115,6 +1133,66 @@ const mdux::spec::Register aReadingSlotChangedAfterCreationIsRefused{
                       const auto emptied     = ms::render(screen, emptiedList, text, {}, {}, binding);
                       checks.expect(!emptied.has_value() && emptied.error() == ms::ScreenError::MalformedPattern,
                                     "a pattern emptied after creation is MalformedPattern");
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
+const mdux::spec::Register aReadingSlotRenamedToAnotherNodeIsRefused{
+    "A reading slot renamed to another NumericDisplay on the screen refuses the frame",
+    "evidence-unit",
+    [] {
+        return speclab::Test("screen-reading-slot-retargeted-is-refused")
+            .Given("a screen with two NumericDisplay nodes and a binding over the caller's slots", [] {})
+            .When("a slot is renamed to the other node, or two slots exchange their node ids", [] {})
+            .Then("the frame is SlotRetargeted rather than a value drawn under the wrong node",
+                  [] {
+                      mdux::spec::Checks      checks;
+                      const ms::ScreenPackage screen = approve(twoReadingScreen);
+                      const ms::TextBinding   text   = bindText(screen);
+                      Scratch                 scratch;
+
+                      // One slot, renamed from a valid node to the other valid node. Every check
+                      // create() makes passes: the name exists, it is a NumericDisplay, it is unique.
+                      std::array<ms::ReadingSlot, 1> one{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137}
+                      };
+                      const ms::ReadingBinding single = requireBound(ms::ReadingBinding::create(screen, one), "the one-slot binding");
+                      auto                     before = scratch.list();
+                      checks.expect(ms::render(screen, before, text, {}, {}, single).has_value(), "the frame is drawn while the slot names its own node");
+
+                      one[0].nodeId             = "flow";
+                      auto       retargetedList = scratch.list();
+                      const auto retargeted     = ms::render(screen, retargetedList, text, {}, {}, single);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    std::format("a slot renamed to another node is SlotRetargeted, got '{}'",
+                                                retargeted.has_value() ? "a frame" : ms::describe(retargeted.error())));
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
+
+                      one[0].nodeId = "pressure";
+                      auto restored = scratch.list();
+                      checks.expect(ms::render(screen, restored, text, {}, {}, single).has_value(),
+                                    "the frame is drawn again once the slot names its own node");
+
+                      // Two slots that exchange names: the set of names is unchanged, and each
+                      // value would be drawn in the other's box. The digest is ordered for this.
+                      std::array<ms::ReadingSlot, 2> two{
+                          ms::ReadingSlot{.nodeId = "pressure", .rendering = "##.# mmHg", .value = 137},
+                          ms::ReadingSlot{    .nodeId = "flow", .rendering = "##.# mmHg",  .value = 42}
+                      };
+                      const ms::ReadingBinding both = requireBound(ms::ReadingBinding::create(screen, two), "the two-slot binding");
+                      two[0].nodeId                 = "flow";
+                      two[1].nodeId                 = "pressure";
+                      auto       swappedList        = scratch.list();
+                      const auto swapped            = ms::render(screen, swappedList, text, {}, {}, both);
+                      checks.expect(!swapped.has_value() && swapped.error() == ms::ScreenError::SlotRetargeted,
+                                    "two slots exchanging node ids is SlotRetargeted");
+                      checks.expect(swappedList.vertices().empty(), "and nothing is left recorded");
+
+                      // A new binding over the same storage is how a caller retargets on purpose.
+                      const ms::ReadingBinding rebound     = requireBound(ms::ReadingBinding::create(screen, two), "the rebuilt binding");
+                      auto                     reboundList = scratch.list();
+                      checks.expect(ms::render(screen, reboundList, text, {}, {}, rebound).has_value(), "a binding made over the new names is accepted");
                       checks.raise();
                   })
             .Execute();

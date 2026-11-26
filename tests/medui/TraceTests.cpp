@@ -859,6 +859,22 @@ const mdux::spec::Register aSignalSlotChangedAfterCreationIsRefused{
                       const ms::SignalBinding binding = requireBound(ms::SignalBinding::create(traceScreen, slots), "the binding");
 
                       Scratch scratch;
+
+                      // The case the checks of create() cannot see: `PLETH` is a trace this screen
+                      // carries, so the renamed slot is valid in every respect - and would draw the
+                      // ECG's samples in the plethysmograph's box.
+                      slots[0].streamSource     = "PLETH";
+                      auto       retargetedList = scratch.list();
+                      const auto retargeted     = ms::render(traceScreen, retargetedList, {}, {}, binding);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    "a slot renamed to another trace on the screen is SlotRetargeted");
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
+
+                      slots[0].streamSource = "ECG_LEAD_II";
+                      auto restoredList     = scratch.list();
+                      checks.expect(ms::render(traceScreen, restoredList, {}, {}, binding).has_value(),
+                                    "the frame is drawn again once the slot names its own trace");
+
                       slots[0].streamSource  = "ECG_LEAD_IX";
                       auto       renamedList = scratch.list();
                       const auto renamed     = ms::render(traceScreen, renamedList, {}, {}, binding);

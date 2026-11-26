@@ -204,6 +204,22 @@ constexpr ms::ScreenPackage inputScreen{.id                   = "field",
 
 static_assert(inputScreen.validate().has_value(), "the reference screen must be one a device could hold");
 
+/// Two inputs, so a slot can be renamed from one valid target to another.
+constexpr std::array<ms::CompiledNode, 2> pairedInputNodes{
+    ms::CompiledNode{.id = "entry", .bounds = {20, 10, 100, 40}, .payload = patientId},
+    ms::CompiledNode{ .id = "ward", .bounds = {20, 55, 100, 40}, .payload = patientId}
+};
+
+constexpr ms::ScreenPackage pairedInputScreen{.id                   = "field-paired",
+                                              .schemaVersion        = mdux::evidence::kSchemaVersion,
+                                              .surfaceWidth         = 200,
+                                              .surfaceHeight        = 100,
+                                              .approvedTextPackages = placeholderApprovals,
+                                              .nodes                = pairedInputNodes,
+                                              .budget               = testBudget};
+
+static_assert(pairedInputScreen.validate().has_value(), "the paired screen must be one a device could hold");
+
 /**
  * @brief The text binding a field needs, for the font it carries rather than for its words.
  *
@@ -1002,6 +1018,24 @@ const mdux::spec::Register aBindingBuiltForOneScreenIsRefusedByAnother{
                           checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownTextInputNode,
                                         "a slot renamed after creation is UnknownTextInputNode");
                           checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+                      }
+
+                      // The rename those checks cannot see: `ward` is an input this screen carries,
+                      // so the slot is valid in every respect - and the operator's entry would be
+                      // displayed in the other field.
+                      std::array pairedSlots{
+                          ms::TextInputSlot{.nodeId = "entry", .text = value, .caret = std::nullopt}
+                      };
+                      auto paired = ms::TextInputBinding::create(pairedInputScreen, pairedSlots);
+                      checks.expect(paired.has_value(), "the paired binding is made");
+                      if (paired.has_value()) {
+                          pairedSlots[0].nodeId = "ward";
+                          Scratch    retargetedScratch;
+                          auto       retargetedList = retargetedScratch.list();
+                          const auto retargeted     = ms::render(pairedInputScreen, retargetedList, {}, {}, {}, {}, {}, *paired);
+                          checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                        "a slot renamed to another input on the screen is SlotRetargeted");
+                          checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
                       }
                       checks.raise();
                   })

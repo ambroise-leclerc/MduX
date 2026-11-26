@@ -158,6 +158,17 @@ node drawn as though nothing had been offered. The first phase holds only what t
 by value, and a baked package it authenticated by digest: that storage is the build's, not the
 producer's, and rehashing it on every frame would cost time linear in its size.
 
+Running the checks again is necessary and not sufficient. A slot renamed to *another* node or
+stream of the right kind on the same screen passes every one of them, and the value is then drawn
+under the wrong component — the failure this criterion most exists to prevent, and the one that
+looks most like a working screen. So **the target of a slot is fixed for the life of its
+binding**: the binding keeps, by value, a digest of the names its slots carried at creation, in
+slot order, and a frame whose slots no longer produce it is refused by a named error
+(`SlotRetargeted`). Order is part of the identity, because two slots that exchange names draw each
+value in the other's box. A caller that means to join a slot elsewhere makes a new binding, which
+is where a join is proved. What a slot *carries* — its value, state, text, storage and style —
+stays free to change between frames, and is what the second phase checks.
+
 The range checked is the one the value's type *documents*, not the one its representation happens
 to hold. A value that fits its storage, or its digit slots, and lies outside its documented domain
 is a violation like any other: an hour of 99 fits two slots and reads as a time. Where values are

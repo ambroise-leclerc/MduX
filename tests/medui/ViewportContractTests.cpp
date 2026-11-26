@@ -812,6 +812,15 @@ const mdux::spec::Register aViewportSlotChangedAfterCreationIsRefused{
                       checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownViewportSource,
                                     "a slot renamed after creation is UnknownViewportSource");
                       checks.expect(list.vertices().empty(), "and nothing is left recorded");
+
+                      // The case the checks of create() cannot see: the other viewport on this
+                      // screen is a valid name, and the primary grid would be drawn in its box.
+                      slots[0].streamSource     = "ENDOSCOPE_SECONDARY";
+                      auto       retargetedList = scratch.list();
+                      const auto retargeted     = ms::render(viewportScreen, retargetedList, {}, {}, {}, {}, {}, {}, binding);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    "a slot renamed to another viewport on the screen is SlotRetargeted");
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
                       checks.raise();
                   })
             .Execute();

@@ -244,6 +244,48 @@ mdux::core::Result<ImageBinding, ScreenError> ImageBinding::create(const ScreenP
     return ImageBinding{packageSha256, image.width, image.height};
 }
 
+namespace {
+
+/**
+ * @brief The digest of the names a binding's slots carry, in slot order.
+ *
+ * What a slot-viewing binding keeps *by value*, so that `render()` can tell a slot that still names
+ * the node or stream it was created for from one renamed to another valid one. The slot count and
+ * each name's length are absorbed with the names, so no two different sequences share an encoding;
+ * the order is part of it, so two slots that exchange names are a different join, which they are -
+ * each value would be drawn under the other's node.
+ *
+ * SHA-256 rather than a short hash, for the module's existing reason: it is the one digest this
+ * zone already carries, and it leaves no collision to argue about. The input is a handful of short
+ * names, so the cost per frame is a few compression rounds; nothing is allocated. A binding with no
+ * slots keeps the all-zero digest a default-constructed one has, so the two stay interchangeable.
+ */
+template <typename Slot, typename Name>
+[[nodiscard]] mdux::evidence::Digest slotTargets(std::span<const Slot> slots, Name name) noexcept {
+    if (slots.empty()) {
+        return {};
+    }
+    mdux::evidence::Sha256 hash;
+    const auto             absorbSize = [&hash](std::size_t size) noexcept {
+        std::array<std::byte, 8> bytes{};
+        auto                     value = static_cast<std::uint64_t>(size);
+        for (std::byte& byte : bytes) {
+            byte    = static_cast<std::byte>(value & 0xFFU);
+            value >>= 8U;
+        }
+        hash.update(bytes);
+    };
+    absorbSize(slots.size());
+    for (const Slot& slot : slots) {
+        const std::string_view target = name(slot);
+        absorbSize(target.size());
+        hash.update(std::as_bytes(std::span<const char>{target.data(), target.size()}));
+    }
+    return hash.finish();
+}
+
+}  // namespace
+
 mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const ScreenPackage& screen, std::span<const SignalSlot> slots) noexcept {
     for (std::size_t index = 0; index < slots.size(); ++index) {
         const SignalSlot& slot = slots[index];
@@ -287,7 +329,9 @@ mdux::core::Result<SignalBinding, ScreenError> SignalBinding::create(const Scree
         }
     }
 
-    return SignalBinding{screen.id, slots};
+    return SignalBinding{screen.id, slots, slotTargets(slots, [](const SignalSlot& slot) noexcept {
+                             return slot.streamSource;
+                         })};
 }
 
 mdux::core::Result<ViewportBinding, ScreenError> ViewportBinding::create(const ScreenPackage& screen, std::span<const ViewportSlot> slots) noexcept {
@@ -324,7 +368,9 @@ mdux::core::Result<ViewportBinding, ScreenError> ViewportBinding::create(const S
         }
     }
 
-    return ViewportBinding{screen.id, slots};
+    return ViewportBinding{screen.id, slots, slotTargets(slots, [](const ViewportSlot& slot) noexcept {
+                               return slot.streamSource;
+                           })};
 }
 
 mdux::core::Result<ReadingBinding, ScreenError>
@@ -366,7 +412,9 @@ ReadingBinding::create(const ScreenPackage& screen, std::span<const ReadingSlot>
         }
     }
 
-    return ReadingBinding{screen.id, readings, now, clockColorToken};
+    return ReadingBinding{screen.id, readings, now, clockColorToken, slotTargets(readings, [](const ReadingSlot& slot) noexcept {
+                              return slot.nodeId;
+                          })};
 }
 
 mdux::core::Result<StatusBinding, ScreenError> StatusBinding::create(const ScreenPackage& screen, std::span<const StatusSlot> slots) noexcept {
@@ -411,7 +459,9 @@ mdux::core::Result<StatusBinding, ScreenError> StatusBinding::create(const Scree
         }
     }
 
-    return StatusBinding{screen.id, slots};
+    return StatusBinding{screen.id, slots, slotTargets(slots, [](const StatusSlot& slot) noexcept {
+                             return slot.nodeId;
+                         })};
 }
 
 mdux::core::Result<TextInputBinding, ScreenError> TextInputBinding::create(const ScreenPackage& screen, std::span<const TextInputSlot> slots) noexcept {
@@ -463,7 +513,9 @@ mdux::core::Result<TextInputBinding, ScreenError> TextInputBinding::create(const
         }
     }
 
-    return TextInputBinding{screen.id, slots};
+    return TextInputBinding{screen.id, slots, slotTargets(slots, [](const TextInputSlot& slot) noexcept {
+                                return slot.nodeId;
+                            })};
 }
 
 std::string_view describe(ScreenError error) noexcept {
@@ -528,6 +580,8 @@ std::string_view describe(ScreenError error) noexcept {
             return "a bound waterfall's node is too small to hold one pixel per row or bin";
         case ScreenError::ScreenNotApproved:
             return "the binding was built for a different screen";
+        case ScreenError::SlotRetargeted:
+            return "a slot names another node or stream than the one its binding was created for";
         case ScreenError::UnknownReadingNode:
             return "a reading slot names no NumericDisplay on this screen";
         case ScreenError::DuplicateReading:
@@ -780,20 +834,36 @@ mdux::core::Result<FrameStats, ScreenError> render(const ScreenPackage&    scree
     // the frame was accepted. Running the same checks here refuses that frame by the error
     // `create()` would have given. It is the same function rather than a second copy of its rules,
     // so the two cannot drift; it allocates nothing, and an unbound binding has no slots to walk.
-    if (const auto again = SignalBinding::create(screen, signals.slots()); !again.has_value()) {
-        return refuse(again.error());
+    //
+    // Those checks pass for a slot renamed to *another* node or stream this screen carries, and that
+    // is the case that matters most: nothing is unbound-looking about it, the value is simply drawn
+    // under the wrong component. So the result is not discarded - it carries the digest of the
+    // names the slots hold now, and the binding carries the one they held when it was made. A
+    // difference is `SlotRetargeted`. A slot's target is fixed for the life of its binding; joining
+    // it elsewhere means making a new binding, which is where a join is proved.
+    const auto signalsAgain = SignalBinding::create(screen, signals.slots());
+    if (!signalsAgain.has_value()) {
+        return refuse(signalsAgain.error());
     }
-    if (const auto again = ReadingBinding::create(screen, readings.readings(), readings.now(), readings.clockColorToken()); !again.has_value()) {
-        return refuse(again.error());
+    const auto readingsAgain = ReadingBinding::create(screen, readings.readings(), readings.now(), readings.clockColorToken());
+    if (!readingsAgain.has_value()) {
+        return refuse(readingsAgain.error());
     }
-    if (const auto again = StatusBinding::create(screen, status.slots()); !again.has_value()) {
-        return refuse(again.error());
+    const auto statusAgain = StatusBinding::create(screen, status.slots());
+    if (!statusAgain.has_value()) {
+        return refuse(statusAgain.error());
     }
-    if (const auto again = TextInputBinding::create(screen, inputs.slots()); !again.has_value()) {
-        return refuse(again.error());
+    const auto inputsAgain = TextInputBinding::create(screen, inputs.slots());
+    if (!inputsAgain.has_value()) {
+        return refuse(inputsAgain.error());
     }
-    if (const auto again = ViewportBinding::create(screen, viewports.slots()); !again.has_value()) {
-        return refuse(again.error());
+    const auto viewportsAgain = ViewportBinding::create(screen, viewports.slots());
+    if (!viewportsAgain.has_value()) {
+        return refuse(viewportsAgain.error());
+    }
+    if (!signalsAgain->sameTargetsAs(signals) || !readingsAgain->sameTargetsAs(readings) || !statusAgain->sameTargetsAs(status)
+        || !inputsAgain->sameTargetsAs(inputs) || !viewportsAgain->sameTargetsAs(viewports)) {
+        return refuse(ScreenError::SlotRetargeted);
     }
 
     // Where the list stood before this frame. The screen's own budget bounds what *this screen*

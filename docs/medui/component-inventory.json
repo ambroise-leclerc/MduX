@@ -652,7 +652,7 @@
             "src/medui/Screen.cpp",
             "tests/medui/ReadingTests.cpp"
           ],
-          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -733,7 +733,7 @@
             "tests/medui/ReadingTests.cpp",
             "src/medui/Screen.cpp"
           ],
-          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -811,7 +811,7 @@
             "src/medui/Screen.cpp",
             "tests/medui/StatusTests.cpp"
           ],
-          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -890,7 +890,7 @@
             "src/medui/Screen.cpp",
             "tests/medui/FieldTests.cpp"
           ],
-          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "partial",
@@ -971,7 +971,7 @@
             "src/medui/Screen.cpp",
             "tests/medui/TraceTests.cpp"
           ],
-          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "not-applicable",
@@ -1051,7 +1051,7 @@
             "src/medui/Screen.cpp",
             "tests/medui/ViewportContractTests.cpp"
           ],
-          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame"
+          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention. Everything create() checked is checked again on every frame, because the binding views slots the caller still owns: a slot renamed after creation refuses the frame, as SlotRetargeted when the new name is another valid target on the screen"
         },
         "AC-06": {
           "status": "not-applicable",

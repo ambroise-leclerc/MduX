@@ -213,6 +213,13 @@ constexpr ms::ScreenPackage narrowScreen    = screenOver(narrowNodes, "status");
 constexpr ms::ScreenPackage mixedScreen     = screenOver(mixedNodes, "status-mixed");
 constexpr ms::ScreenPackage shortenedScreen = screenOver(shortenedNodes, "status");
 
+/// Two tinted indicators, so a slot can be renamed from one valid target to another.
+constexpr std::array<ms::CompiledNode, 2> pairedNodes{
+    ms::CompiledNode{.id = "status", .bounds = {20, 10, 100, 40}, .payload = tinted},
+    ms::CompiledNode{ .id = "mains", .bounds = {20, 55, 100, 40}, .payload = tinted}
+};
+constexpr ms::ScreenPackage pairedScreen = screenOver(pairedNodes, "status-paired");
+
 static_assert(tintedScreen.validate().has_value(), "the reference screen must be one a device could hold");
 static_assert(untintedScreen.validate().has_value(), "a StatusIndicator with no colors: is a screen the schema admits");
 static_assert(mixedScreen.validate().has_value(), "and so is one with a panel beside it");
@@ -411,6 +418,21 @@ const mdux::spec::Register slotsAreCheckedAgainstTheScreen{
                       checks.expect(!renamed.has_value() && renamed.error() == ms::ScreenError::UnknownStatusNode,
                                     "a slot renamed after creation is UnknownStatusNode");
                       checks.expect(renamedList.vertices().empty(), "and nothing is left recorded");
+
+                      // The rename the checks above cannot see: `mains` is an indicator this screen
+                      // carries, with the same closed list, so the slot is valid in every respect -
+                      // and its state would be shown by the wrong indicator.
+                      std::array pairedSlots{
+                          ms::StatusSlot{.nodeId = "status", .state = 1}
+                      };
+                      const auto paired     = bindStatus(pairedScreen, pairedSlots);
+                      pairedSlots[0].nodeId = "mains";
+                      Scratch    retargetedScratch;
+                      auto       retargetedList = retargetedScratch.list();
+                      const auto retargeted     = ms::render(pairedScreen, retargetedList, {}, {}, {}, {}, paired);
+                      checks.expect(!retargeted.has_value() && retargeted.error() == ms::ScreenError::SlotRetargeted,
+                                    "a slot renamed to another indicator on the screen is SlotRetargeted");
+                      checks.expect(retargetedList.vertices().empty(), "and nothing is left recorded");
                       checks.raise();
                   })
             .Execute();
