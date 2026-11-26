@@ -94,7 +94,7 @@ appInfo.apiVersion = VK_MAKE_API_VERSION(1, 1, 0, 0);  // variant=1 for Vulkan S
 2. **DeviceObjectManager** - Object reservation tracking
 3. **Medical Application Profiling** - Pre-calculating resource needs
 4. **Object Reservation Calculator** - Pre-sizing all Vulkan objects
-5. **Device-lifetime object awareness** - Not destroying command pools
+5. **Device-lifetime object awareness** - In the triangle example, the command pool is created once at initialisation and destroyed only during teardown, immediately before `vkDestroyDevice()`; the example never destroys and recreates it while the device lives. This is the example's discipline, not a guarantee of `DeviceObjectManager`: its `cleanup()` is public and destroys every tracked pool, and `initialize()` accepts the same device again afterwards, so a caller can destroy and recreate pools mid-life (invalidating handles obtained before `cleanup()`). Under true Vulkan SC that sequence would be invalid; nothing in the manager rejects it yet
 
 ### ❌ Still Using Standard Vulkan For:
 1. **Swapchain** - Uses `VK_KHR_swapchain` (doesn't exist in Vulkan SC)

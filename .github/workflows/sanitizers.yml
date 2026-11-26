@@ -25,9 +25,30 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the run for the previous one. Every other run - a push to
+# develop or master, a schedule, a dispatch - gets a group of its own (its run id), so it is never
+# cancelled and never replaced. A shared per-branch group would not be enough even without
+# cancel-in-progress: GitHub keeps one pending run per group, so a third push would silently replace
+# the second's queued run, and that develop commit would never get the post-merge run a stacked
+# successor waits for (AGENTS.md "Stacked delivery").
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # A pull request that only edits prose skips the build job below; see the called workflow for the
+  # rule. The build job's condition is `code != 'false'` under `!cancelled()`, so a classifier that
+  # failed or produced nothing selects the build rather than skipping it.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   sanitize:
     name: ASan + UBSan (GCC 16)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     # Pinned to a patch release, not the floating `gcc:16` tag. That tag moved from 16.1.0 to
     # 16.2.0 on 2026-08-12 and turned develop red on a markdown-only commit (#205): GCC 16.2 could
@@ -42,6 +63,9 @@ jobs:
     # the change breaks.
     container: gcc:16.1.0
     env:
+      # Tests are independent processes - no RUN_SERIAL, RESOURCE_LOCK or fixed port anywhere - and
+      # most of a case's wall time is process start-up, so they run in parallel (#386).
+      CTEST_PARALLEL_LEVEL: '4'
       MEDUI_CONFORMANCE_DIR: ${{ github.workspace }}/.medui-conformance
 
     steps:
@@ -97,7 +121,8 @@ jobs:
           libxi-dev \
           xvfb \
           wget \
-          gnupg
+          gnupg \
+          gcovr
 
     - name: Install pinned CMake
       run: |
@@ -120,6 +145,10 @@ jobs:
     # ASan's reports are unreadable without frame pointers and line numbers, and examples off
     # because nothing here runs them.
     #
+    # It also carries --coverage (#386): this is already the one Debug build that runs every test,
+    # so it measures line coverage for the price of the instrumentation rather than a build of its
+    # own. Through CMAKE_<LANG>_FLAGS, so every translation unit - MduXCore included - is counted.
+    #
     # `enable_sanitizers()` in cmake/Sanitizers.cmake already carries these options; this job is
     # the first thing to switch them on. It also adds -fno-sanitize-recover=all, so a UBSan
     # violation aborts instead of printing into a passing log. Since #360 it puts both on every
@@ -133,7 +162,11 @@ jobs:
           -DMDUX_BUILD_TESTS=ON \
           -DMDUX_BUILD_EXAMPLES=OFF \
           -DENABLE_SANITIZER_ADDRESS=ON \
-          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=ON \
+          "-DCMAKE_CXX_FLAGS=--coverage" \
+          "-DCMAKE_C_FLAGS=--coverage" \
+          "-DCMAKE_EXE_LINKER_FLAGS=--coverage" \
+          "-DCMAKE_SHARED_LINKER_FLAGS=--coverage"
 
     # detect_leaks=0 for the build itself, which became a thing that renders when #254 made
     # verification.json a bake output: `mdux-verify-bake` runs here, sanitized, against lavapipe,
@@ -174,9 +207,15 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # Wait for the display before any test needs it (#386). This used to be implicit: ctest ran
+        # serially and reached the windowed smoke test hundreds of tests later. In parallel it gets there
+        # in under a second, before Xvfb listens, and GLFW then fails to initialise.
+        for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+        [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
         # --no-tests=error: a filter that matched nothing would otherwise be a pass. The whole
         # point of this job is that it ran.
-        ctest --test-dir build-asan -LE 'pixel|verify' --output-on-failure --no-tests=error
+        # `conformance` and `sanitizer-coverage` are excluded too: a named step runs each (#386).
+        ctest --test-dir build-asan -LE 'pixel|verify|conformance|sanitizer-coverage' --output-on-failure --no-tests=error
 
     # Shared MedUI observation-profile conformance (#314), broken out with -V so the vector count and
     # pinned SHA are visible, and run under the sanitizers because the R04 ROI slicing and the JSON
@@ -206,6 +245,11 @@ jobs:
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        # Wait for the display before any test needs it (#386). This used to be implicit: ctest ran
+        # serially and reached the windowed smoke test hundreds of tests later. In parallel it gets there
+        # in under a second, before Xvfb listens, and GLFW then fails to initialise.
+        for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+        [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
         # offscreen_tests and verify_ui_pixel_test exit 77 with no loader, no ICD or no device, and
         # tests/CMakeLists.txt sets SKIP_RETURN_CODE 77 so CTest reports that as Skipped - which does
         # not fail a run. The verify.screen.<id> gates have no such status and fail outright; the
@@ -227,6 +271,64 @@ jobs:
 
     # The same attachment the three render legs make, for the same reason (#255): a sanitized
     # verification failure is still a failure a reader should be able to see rather than reconstruct.
+    # Line coverage of the code this job just exercised (#386): every test above ran in this build,
+    # so the counters cover the whole suite. A measurement, not a gate - there is no threshold yet,
+    # and a reporting failure (a gcov format gcovr does not know, say) warns rather than turning a
+    # clean sanitizer run red. The summary lands on the run page; the HTML report is an artifact.
+    #
+    # Read tools/preview's figure with care: the preview tests stop mdux-preview with a signal, and a
+    # process that does not exit normally never writes its counters, so that directory reports far
+    # less than the tests actually execute.
+    - name: Report line coverage
+      if: ${{ !cancelled() }}
+      continue-on-error: true
+      run: |
+        set -o pipefail
+        mkdir -p "$RUNNER_TEMP/coverage"
+        # The gcov that matches the compiler: the image's GCC 16 one comes first on PATH, and a
+        # gcov from another GCC release cannot read these notes files ("version 'B61*', prefer
+        # 'B52*'"). The nested builds the install-tree and compiler-cache tests run are excluded:
+        # their sources are not in this checkout.
+        gcov --version | head -1
+        if ! gcovr --root . --object-directory build-asan -j 4 \
+               --gcov-executable "$(command -v gcov)" \
+               --gcov-exclude-directories '.*/_test_consumer_build/.*' \
+               --gcov-exclude-directories '.*/CMakeFiles/[0-9.]+/.*' \
+               --filter 'src/' --filter 'include/' --filter 'tools/' \
+               --exclude-unreachable-branches --exclude-throw-branches \
+               --txt-summary --html-details "$RUNNER_TEMP/coverage/index.html" \
+               | tee "$RUNNER_TEMP/coverage/summary.txt"; then
+          echo "::warning::gcovr could not produce a coverage report for this build."
+          exit 1
+        fi
+        {
+          echo '### Line coverage (ASan + UBSan, GCC 16)'
+          echo '```'
+          cat "$RUNNER_TEMP/coverage/summary.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload the coverage report
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: coverage-asan-gcc16
+        path: ${{ runner.temp }}/coverage/
+        if-no-files-found: ignore
+
+    # Always, and cheap: the build's own timing record, so the next person tuning this leg's critical
+    # path starts from a measurement rather than a guess (#386). Read it with ninjatracing or any
+    # .ninja_log viewer.
+    - name: Upload the build timing log
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ninja-log-asan
+        path: build-asan/.ninja_log
+        if-no-files-found: warn
+        # The log is a dotfile, and upload-artifact skips hidden files unless told otherwise.
+        include-hidden-files: true
+
     - name: Upload the rendered-truth diff images
       if: failure()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

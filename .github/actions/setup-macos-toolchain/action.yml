@@ -1,0 +1,161 @@
+name: Set up the verified macOS toolchain
+description: >
+  The one verified macOS tuple (ADR-013): arm64, upstream LLVM/Clang 23.1.6 with libc++, CMake 4.3.6,
+  Ninja, ccache, and the LunarG Vulkan SDK 1.4.363.1 with MoltenVK selected and verified. Also checks
+  out the pinned MedUI conformance corpus. Shared by the Release and the ASan/UBSan jobs of
+  macos-arm64-build.yml so that the two cannot drift onto different toolchains (#386).
+
+runs:
+  using: composite
+  steps:
+  - name: Resolve the pinned MedUI contract commit
+    id: medui-contract
+    shell: bash
+    run: |
+      set -euo pipefail
+      commit="$(sed -n 's/^commit = "\([0-9a-f]\{40\}\)"$/\1/p' medui-conformance.toml)"
+      test -n "$commit"
+      echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  - name: Checkout pinned MedUI conformance contract
+    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    with:
+      repository: Compliatory/MedUI
+      ref: ${{ steps.medui-contract.outputs.commit }}
+      path: .medui-conformance
+      persist-credentials: false
+
+  - name: Setup pinned CMake
+    uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+    with:
+      cmake-version: '4.3.6'
+
+  # Homebrew's unversioned `llvm` formula moves with every LLVM patch release, and a versioned
+  # `llvm@23` will only exist once LLVM 24 ships - so installing a formula by name cannot hold
+  # ADR-013's exact version. The bottle is pinned instead: the file Homebrew itself publishes for
+  # `llvm` 23.1.6 on arm64 Tahoe, addressed by its SHA-256 and checked before it is installed. Its
+  # runtime dependencies (zstd, z3) come from the current formulae, as they did before. ccache is the
+  # launcher's cache (cmake/Cache.cmake), persisted by the calling job.
+  #
+  # Pouring that bottle - decompressing it, relocating its paths and re-signing every Mach-O file -
+  # took 71 s of every run, and downloading it 18 s more (#386). What `brew install` leaves in the
+  # Cellar is therefore cached under a key derived from the bottle's own SHA-256, so the cached keg
+  # can only ever be the product of that exact bottle. A miss pours as before and saves the result.
+  - name: Restore the poured LLVM keg
+    id: llvm-keg
+    uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    with:
+      path: /opt/homebrew/Cellar/llvm/23.1.6
+      key: llvm-keg-arm64-tahoe-e8479b14cf92f2c1092ef31531a89b8c9b88e97207e3b80e330f2037e594963b
+
+  - name: Install pinned upstream LLVM and host tools
+    shell: bash
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_UPGRADE: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+      LLVM_VERSION: '23.1.6'
+      LLVM_BOTTLE_SHA256: 'e8479b14cf92f2c1092ef31531a89b8c9b88e97207e3b80e330f2037e594963b'
+      KEG_RESTORED: ${{ steps.llvm-keg.outputs.cache-hit }}
+    run: |
+      set -euo pipefail
+      brew install ninja glfw zstd z3 ccache
+      prefix="$(brew --prefix)"
+      if [ "$KEG_RESTORED" = "true" ]; then
+        # The keg is exactly what `brew install` poured; only the opt link brew would have made
+        # beside it is missing, and the relocated install names point through it.
+        ln -sfn "../Cellar/llvm/${LLVM_VERSION}" "$prefix/opt/llvm"
+      else
+        bottle="$RUNNER_TEMP/llvm--${LLVM_VERSION}.arm64_tahoe.bottle.tar.gz"
+        curl -fsSL --retry 3 -H 'Authorization: Bearer QQ==' -o "$bottle" \
+          "https://ghcr.io/v2/homebrew/core/llvm/blobs/sha256:${LLVM_BOTTLE_SHA256}"
+        echo "${LLVM_BOTTLE_SHA256}  ${bottle}" | shasum -a 256 -c -
+        brew install "$bottle"
+      fi
+      llvm_root="$prefix/opt/llvm"
+      test "$("$llvm_root/bin/clang++" --version | sed -n 's/.*clang version \([0-9.]*\).*/\1/p' | head -1)" = "$LLVM_VERSION"
+      echo "MDUX_LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
+      echo "$llvm_root/bin" >> "$GITHUB_PATH"
+
+  - name: Save the poured LLVM keg
+    if: steps.llvm-keg.outputs.cache-hit != 'true'
+    uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    with:
+      path: /opt/homebrew/Cellar/llvm/23.1.6
+      key: llvm-keg-arm64-tahoe-e8479b14cf92f2c1092ef31531a89b8c9b88e97207e3b80e330f2037e594963b
+
+  # The installed SDK, cached (#386). The action below caches only LunarG's installer, so every run
+  # still extracted 2.6 GB through it - about a minute. This restores what an install left behind
+  # instead, pruned to what a build and its tests read: the headers, the loader, MoltenVK and the
+  # layers (lib/*.dylib), their manifests (share/vulkan) and vulkaninfo. The key names the version;
+  # bump its suffix whenever the pruning rule changes.
+  - name: Restore the installed Vulkan SDK
+    id: vulkan-sdk
+    uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    with:
+      path: ${{ github.workspace }}/VULKAN_SDK
+      key: vulkan-sdk-macos-arm64-1.4.363.1-pruned-v1
+
+  # Pinned to an untagged commit, one past v1.2. LunarG renamed the macOS installer inside the SDK
+  # zip (vulkansdk-macOS-<version>.app), and v1.2 - still the latest tag - exits 7 with
+  # "unrecognized zip/layout" on every SDK that uses it, 1.4.363.1 included. e7d6e7b adds that
+  # layout and nothing else of consequence (the rest of the commit is the action's own CI); move
+  # back to a tag once one carries it.
+  - name: Install pinned LunarG SDK with MoltenVK
+    if: steps.vulkan-sdk.outputs.cache-hit != 'true'
+    uses: humbletim/install-vulkan-sdk@e7d6e7b937bde4503c7ba5c9584c9dc68f44c4b8 # v1.2 + macOS layout fix (untagged)
+    with:
+      version: 1.4.363.1
+      cache: true
+
+  - name: Prune the installed Vulkan SDK
+    if: steps.vulkan-sdk.outputs.cache-hit != 'true'
+    shell: bash
+    run: |
+      set -euo pipefail
+      cd "$VULKAN_SDK"
+      find . -mindepth 1 -maxdepth 1 ! -name bin ! -name include ! -name lib ! -name share -exec rm -rf {} +
+      find bin -mindepth 1 ! -name 'vulkaninfo*' -exec rm -rf {} +
+      find lib -mindepth 1 -maxdepth 1 ! -name '*.dylib' -exec rm -rf {} +
+      find share -mindepth 1 -maxdepth 1 ! -name vulkan -exec rm -rf {} +
+      du -hs "$VULKAN_SDK"
+
+  - name: Save the installed Vulkan SDK
+    if: steps.vulkan-sdk.outputs.cache-hit != 'true'
+    uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    with:
+      path: ${{ github.workspace }}/VULKAN_SDK
+      key: vulkan-sdk-macos-arm64-1.4.363.1-pruned-v1
+
+  # What the install action exports, exported by hand when it did not run.
+  - name: Export the restored Vulkan SDK
+    if: steps.vulkan-sdk.outputs.cache-hit == 'true'
+    shell: bash
+    run: |
+      set -euo pipefail
+      {
+        echo "VULKAN_SDK=$GITHUB_WORKSPACE/VULKAN_SDK"
+        echo "VULKAN_SDK_VERSION=1.4.363.1"
+        echo "VULKAN_SDK_PLATFORM=mac"
+      } >> "$GITHUB_ENV"
+      echo "$GITHUB_WORKSPACE/VULKAN_SDK/bin" >> "$GITHUB_PATH"
+
+  - name: Select and verify MoltenVK
+    shell: bash
+    run: |
+      set -euo pipefail
+      test "$(uname -m)" = "arm64"
+      test "$VULKAN_SDK_VERSION" = "1.4.363.1"
+      icd="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json"
+      test -f "$icd"
+      export DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}"
+      export VK_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d"
+      export VK_DRIVER_FILES="$icd"
+      {
+        echo "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
+        echo "VK_LAYER_PATH=$VK_LAYER_PATH"
+        echo "VK_DRIVER_FILES=$icd"
+      } >> "$GITHUB_ENV"
+      set -o pipefail
+      vulkaninfo --summary 2>&1 | tee "$RUNNER_TEMP/vulkaninfo.log"
+      grep -Eiq 'MoltenVK|Apple M[0-9]' "$RUNNER_TEMP/vulkaninfo.log"

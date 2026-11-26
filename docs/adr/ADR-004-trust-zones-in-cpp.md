@@ -62,7 +62,7 @@ existing precedent):
    accidental use of SDK-private headers that are reachable only through those targets. It does
    **not** make system-installed headers unreachable: a compiler may still find Vulkan, platform,
    or OS headers in its default search paths.
-2. **`mdux-governed-lint`** (`tools/governed-lint/`, CI job `Governed Source Lint`, issue #116)
+2. **`mdux-governed-lint`** (`tools/governed-lint/`, CI job `Lint`, issue #116)
    rejects direct inclusion of Vulkan, GLFW, platform and OS headers (GOV009), plus
    `reinterpret_cast`, `const_cast`, raw `new`/`delete`/`malloc`, `<random>`,
    `std::chrono::*_clock`, `std::fma`, `getenv`, `std::filesystem`, console streams, `throw`,

@@ -62,13 +62,13 @@ know will fail or guessing at results.
    ```
    Known target names (verify against `cmake --build build --target help` if the list may have
    changed since this skill was written): library `MduX`; examples `MedicalUiExample`,
-   `VulkanSCTriangleExample`; tests `unit_tests`, `compliance_tests`, `vulkansc_memory_tests`,
+   `VulkanSCTriangleExample`; tests `compliance_tests`, `vulkansc_memory_tests`,
    `vulkansc_object_tests`; docs `doxygen-docs` (only exists when `MDUX_BUILD_DOCS=ON`).
 
 3. **Test**, focused before broad:
    ```bash
    ctest --test-dir build --output-on-failure                                             # full suite
-   ctest --test-dir build -R '^unit_tests::' --no-tests=error --output-on-failure          # one target's cases
+   ctest --test-dir build -R '^compliance_tests::' --no-tests=error --output-on-failure    # one target's cases
    ctest --test-dir build -L evidence --no-tests=error --output-on-failure                 # one label
    ```
    `mdux_discover_tests()` registers one CTest entry per `TEST_CASE`, named `<target>::<case>` -

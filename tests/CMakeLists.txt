@@ -7,6 +7,52 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/MduXTestDiscovery.cmake)
 
+# Test code is compiled at -O1 in optimised configurations (#386). This changes the harness, not the
+# code under test: MduXCore, MduX and every host library are defined outside this directory and keep
+# their configuration's flags, so the objects a test exercises are the objects that ship. (The
+# generated screen, shader, model and scenario modules a few suites compile in directly are the
+# exception: they are data plus small accessors, and their shipped copies are the examples'.) Test
+# translation units were half of the whole build's compile time, and the -O3 pass was most of
+# theirs - -O1 compiles them in about 60 % of the time. The ASan/UBSan jobs already run this suite
+# at -O0, so nothing here depends on the harness being optimised.
+#
+# Directory-scoped on purpose: this rewrites only this directory's copy of the variables, so it
+# reaches the test targets and SpecLab (added below by CPM) and nothing else.
+#
+# MSVC has no middle level that saves compile time (/O1 is a full optimiser tuned for size), so its
+# test code is compiled /Od, which is what the GCC and Clang sanitizer jobs already do with -O0.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(mdux_test_config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REGEX REPLACE "(^| )-O[23s]( |$)" "\\1-O1\\2"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+    endforeach()
+elseif(MSVC)
+    foreach(mdux_test_config RELEASE RELWITHDEBINFO MINSIZEREL)
+        string(REGEX REPLACE "(^| )[/-]O[12xs]( |$)" "\\1/Od\\2"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+        string(REGEX REPLACE "(^| )[/-]Ob[123]( |$)" "\\1"
+               CMAKE_CXX_FLAGS_${mdux_test_config} "${CMAKE_CXX_FLAGS_${mdux_test_config}}")
+    endforeach()
+endif()
+
+# The MduXTest runner as one library, so its module interface is compiled once rather than once per
+# executable that uses it (it was compiled eight times, #386). The macros in MduXTest.hpp still come
+# in through each suite's include path.
+add_library(mdux_test_framework STATIC)
+target_sources(mdux_test_framework PUBLIC FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
+set_target_properties(mdux_test_framework
+    PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+if(TARGET __CMAKE::CXX23)
+    set_target_properties(mdux_test_framework PROPERTIES CXX_MODULE_STD ON)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(mdux_test_framework PRIVATE /experimental:module /std:c++latest)
+endif()
+
 # Issue #280: Ccache does not model C++20 named-module dependencies. The classifier test is always
 # present and pins the fail-closed response-file parser. The integration test needs real ccache and
 # Clang's explicit BMI paths; the Linux Clang workflow installs ccache so this negative layout-change
@@ -45,8 +91,7 @@ add_executable(core_tests
     core/CoreTests.cpp
 )
 
-target_sources(core_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(core_tests PRIVATE MduX::Core)
+target_link_libraries(core_tests PRIVATE mdux_test_framework MduX::Core)
 target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(core_tests
@@ -80,8 +125,7 @@ add_executable(evidence_tests
     governance/ComplianceTests.cpp
 )
 
-target_sources(evidence_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(evidence_tests PRIVATE MduX::Core)
+target_link_libraries(evidence_tests PRIVATE mdux_test_framework MduX::Core)
 target_include_directories(evidence_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(evidence_tests
@@ -109,8 +153,7 @@ add_executable(tools_tests
     tools/TomlTests.cpp
 )
 
-target_sources(tools_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(tools_tests PRIVATE MduX::ToolsCommon)
+target_link_libraries(tools_tests PRIVATE mdux_test_framework MduX::ToolsCommon)
 target_include_directories(tools_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(tools_tests
@@ -258,8 +301,7 @@ add_executable(render_tests
     render/VulkanRendererTests.cpp
 )
 
-target_sources(render_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(render_tests PRIVATE MduX::MduX)
+target_link_libraries(render_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(render_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(render_tests
@@ -299,7 +341,6 @@ add_executable(offscreen_tests
 
 target_sources(offscreen_tests
     PRIVATE
-        FILE_SET CXX_MODULES FILES framework/MduXTest.cppm
         FILE_SET generated_modules
             TYPE CXX_MODULES
             BASE_DIRS ${MDUX_GENERATED_SHADER_DIR}
@@ -318,7 +359,7 @@ add_dependencies(offscreen_tests emit-shader-mdux-ui emit-screen-endoscope-monit
 # source tree rather than anything the build produces. It reads only; the source-tree-cleanliness
 # gate in CI stays satisfied.
 target_compile_definitions(offscreen_tests PRIVATE MDUX_REPO_ROOT="${CMAKE_SOURCE_DIR}")
-target_link_libraries(offscreen_tests PRIVATE MduX::MduX)
+target_link_libraries(offscreen_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(offscreen_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${MDUX_GENERATED_SHADER_DIR}
@@ -347,46 +388,12 @@ endif()
 add_test(NAME offscreen_tests COMMAND offscreen_tests)
 set_tests_properties(offscreen_tests PROPERTIES LABELS "pixel" SKIP_RETURN_CODE 77)
 
-# Basic unit tests
-add_executable(unit_tests
-    TestMain.cpp
-    TestVersion.cpp
-    TestCompliance.cpp
-)
-
-target_sources(unit_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(unit_tests PRIVATE MduX::MduX)
-target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-# Set C++23 standard for tests and enable module imports
-set_target_properties(unit_tests
-    PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-)
-
-# Only set CXX_MODULE_STD if __CMAKE::CXX23 target is available
-if(TARGET __CMAKE::CXX23)
-    set_target_properties(unit_tests PROPERTIES CXX_MODULE_STD ON)
-endif()
-
-# MSVC-specific configuration for import std support
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(unit_tests PRIVATE /experimental:module)
-    target_compile_options(unit_tests PRIVATE /std:c++latest)
-endif()
-
-mdux_discover_tests(unit_tests)
-
-# Medical device compliance tests
 add_executable(compliance_tests
     ComplianceTestMain.cpp
     TestRegulatoryCompliance.cpp
 )
 
-target_sources(compliance_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(compliance_tests PRIVATE MduX::MduX)
+target_link_libraries(compliance_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(compliance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(compliance_tests
@@ -414,8 +421,7 @@ add_executable(vulkansc_memory_tests
     vulkansc/MemoryPoolManagerTests.cpp
 )
 
-target_sources(vulkansc_memory_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(vulkansc_memory_tests PRIVATE MduX::MduX)
+target_link_libraries(vulkansc_memory_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(vulkansc_memory_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_memory_tests
@@ -454,8 +460,7 @@ add_executable(vulkansc_object_tests
     vulkansc/DeviceObjectManagerTests.cpp
 )
 
-target_sources(vulkansc_object_tests PRIVATE FILE_SET CXX_MODULES FILES framework/MduXTest.cppm)
-target_link_libraries(vulkansc_object_tests PRIVATE MduX::MduX)
+target_link_libraries(vulkansc_object_tests PRIVATE mdux_test_framework MduX::MduX)
 target_include_directories(vulkansc_object_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set_target_properties(vulkansc_object_tests
@@ -1731,11 +1736,13 @@ set_tests_properties(sanitizers.coverage.selftest PROPERTIES LABELS "build")
 # fails instead of passing. It reads compile_commands.json and fails if any translation unit lacks
 # the sanitizer flags, or if a target named here compiled nothing. The targets are the ones the
 # ASan+UBSan job used to leave uninstrumented: the governed library, the host libraries, and the
-# MduXTest suites that link only MduX::Core.
+# MduXTest suites that link only MduX::Core. mdux_test_framework is named because, since #386, it is
+# the one target that compiles MduXTest.cppm; compliance_tests replaced the removed unit_tests.
 if(MDUX_SANITIZER_FLAGS)
     set(MDUX_SANITIZER_REQUIRED_TARGETS
         MduXCore MduX MduXToolsCommon MduXMeduiLib MduXShaderBakeLib MduXMlBakeLib MduXTextBakeLib
-        MduXImageBakeLib core_tests evidence_tests tools_tests unit_tests draw_spec)
+        MduXImageBakeLib mdux_test_framework core_tests evidence_tests tools_tests compliance_tests
+        draw_spec)
     # Comma-joined: a semicolon list would be split into separate arguments on its way to CTest.
     string(JOIN "," MDUX_SANITIZER_REQUIRED_TARGETS ${MDUX_SANITIZER_REQUIRED_TARGETS})
     add_test(NAME sanitizers.coverage

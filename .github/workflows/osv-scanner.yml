@@ -35,6 +35,16 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request supersedes the run for the previous one. Every other run - a push to
+# develop or master, a schedule, a dispatch - gets a group of its own (its run id), so it is never
+# cancelled and never replaced. A shared per-branch group would not be enough even without
+# cancel-in-progress: GitHub keeps one pending run per group, so a third push would silently replace
+# the second's queued run, and that develop commit would never get the post-merge run a stacked
+# successor waits for (AGENTS.md "Stacked delivery").
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scan-scheduled:
     permissions:

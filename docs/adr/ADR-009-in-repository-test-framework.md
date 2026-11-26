@@ -26,9 +26,11 @@ project uses a framework it has never linked. That is the specific problem this 
 
 What actually exists on `develop`:
 
-- **`tests/framework/MduXTest.cppm` + `MduXTest.hpp`** — a small in-repository framework used by nine
-  test executables (`core_tests`, `evidence_tests`, `tools_tests`, `unit_tests`, `compliance_tests`,
-  `render_tests`, `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`).
+- **`tests/framework/MduXTest.cppm` + `MduXTest.hpp`** — a small in-repository framework used by eight
+  test executables (`core_tests`, `evidence_tests`, `tools_tests`, `compliance_tests`,
+  `render_tests`, `offscreen_tests`, `vulkansc_memory_tests`, `vulkansc_object_tests`). Its module
+  interface is compiled once, into the `mdux_test_framework` library, since #386 removed
+  `unit_tests` as a duplicate of `compliance_tests`.
 - **[SpecLab](https://github.com/ambroise-leclerc/SpecLab)** — a Given/When/Then BDD library, pinned
   by commit in `tests/CMakeLists.txt` and fetched with CPM, used by seven spec executables
   (`shader_spec`, `draw_spec`, `tools_spec`, `bridge_spec`, `ml_spec`, `ml_tools_spec`,

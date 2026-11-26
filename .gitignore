@@ -127,3 +127,6 @@ __pycache__/
 
 # Ephemeral exact-SHA checkout of the shared MedUI conformance contract in CI.
 .medui-conformance/
+
+# GCC module cache written by an out-of-tree-unaware compile in the source root
+gcm.cache/
