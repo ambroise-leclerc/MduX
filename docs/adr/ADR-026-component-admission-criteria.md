@@ -68,9 +68,24 @@ quietly comes to mean "merged".
   workstream is reported complete, while one of its components is provisional.
 - **Admitted.** Every criterion is `met` or `not-applicable`.
 
-Each criterion has an identifier, because the inventory and later issues cite it. A criterion that
-does not apply to a component is recorded as `not-applicable` with the reason implied by the
-component's nature (a `Label` has no binding); it is never left blank.
+Each criterion has an identifier, because the inventory and later issues cite it.
+
+`not-applicable` is a statement about the component, not a way to set a criterion aside, and it is
+available for four criteria only — the ones whose subject a component may simply lack:
+
+- AC-05, for a component that draws no value supplied at run time;
+- AC-06, for a component that takes neither focus nor input;
+- AC-07, for a component that is neither actionable nor bound, so has no state to show;
+- AC-08, for a container that draws nothing.
+
+Every such entry states its reason in the inventory, in words a reviewer can check against the
+component (a `Label` draws a build-time text key and binds nothing). The other eight criteria are
+universal: a contract status, a closed grammar, a declared cost, a governed draw path, a direction
+behaviour, tests, tooling and lifecycle records are owed by every entry of the dictionary, so for
+them the only statuses are `met`, `partial` and `unmet`. Three of the four floor criteria are
+universal. The fourth, AC-05, may not apply, but then nothing is bound and there is nothing left
+unbounded; a component with a binding can never record it so without the reason being false on its
+face.
 
 ### AC-01 Contract status
 
@@ -225,18 +240,22 @@ statuses:
 
 - `admitted` or `provisional` — in the dictionary today, as defined above. Either carries a status
   per criterion (`met`, `partial`, `unmet`, `not-applicable`); every `partial` or `unmet` names the
-  epic child that closes it, and every `met` names a repository path as evidence.
+  epic child that closes it, every `met` names a repository path as evidence, and every
+  `not-applicable` names its reason.
 - `proposed` — named by the epic, not in the dictionary. Carries its workstream and nothing else,
   since asserting criteria for a component nobody has designed would be fiction.
 - `declined` — considered and closed with a recorded reason.
 
 `tools/docs-lint/check_component_inventory.py` gates it: the `admitted` and `provisional` entries
 together must equal the component set in `docs/medui/grammar.json`; every criterion identifier must
-be one this record defines; every evidence path must exist; a floor criterion must be `met` or
-`not-applicable`; an `admitted` entry must have no shortfall and a `provisional` one at least one.
+be one this record defines; every evidence path must exist; a floor criterion must not be `partial` or
+`unmet`; `not-applicable` is refused on a universal criterion and refused without a reason on the
+others; an `admitted` entry must have no shortfall and a `provisional` one at least one.
 The file therefore cannot disagree with the compiler about what exists, cannot claim a criterion on
 the strength of a file that is not there, and cannot call a component admitted while it records
-something owed on it.
+something owed on it, and cannot reach `admitted` by declaring criteria inapplicable. What it still
+cannot do is judge a reason: that a stated reason is true of the component is a reviewed claim, like
+every `met`.
 
 ### The existing eleven are audited, not grandfathered
 

@@ -280,13 +280,16 @@
           ]
         },
         "AC-05": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "a layout construct the compiler resolves; no value reaches it at run time"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
         },
         "AC-07": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
         },
         "AC-08": {
           "status": "unmet",
@@ -348,13 +351,16 @@
           ]
         },
         "AC-05": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "draws a text key resolved and measured at build time; no value is bound at run time"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
         },
         "AC-07": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
         },
         "AC-08": {
           "status": "partial",
@@ -417,13 +423,16 @@
           ]
         },
         "AC-05": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "draws an image baked and named at build time; no value is bound at run time"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "takes neither focus nor input; nothing in it can be pressed or edited"
         },
         "AC-07": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "neither actionable nor bound, so it has no interaction state and no data whose quality could be shown"
         },
         "AC-08": {
           "status": "partial",
@@ -483,7 +492,8 @@
           ]
         },
         "AC-05": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "its label is a build-time text key and it draws no caller-supplied value; the press it resolves is AC-06's subject"
         },
         "AC-06": {
           "status": "partial",
@@ -555,7 +565,8 @@
           ]
         },
         "AC-05": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "its label is a build-time text key and it draws no caller-supplied value; the press it resolves is AC-06's subject"
         },
         "AC-06": {
           "status": "partial",
@@ -638,7 +649,8 @@
           "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
         },
         "AC-07": {
           "status": "unmet",
@@ -714,7 +726,8 @@
           "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer and drawn in the build-measured format; a null time leaves every Clock deferred"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
         },
         "AC-07": {
           "status": "unmet",
@@ -788,7 +801,8 @@
           "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
         },
         "AC-07": {
           "status": "unmet",
@@ -943,7 +957,8 @@
           "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's count is refused as TooManySamples past maxSamplesPerTrace, a non-finite sample as NonFiniteSample and a degenerate range as MalformedStyle. A finite sample outside the display range is drawn at its rail, under AC-05's display-saturation convention"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
         },
         "AC-07": {
           "status": "unmet",
@@ -1019,7 +1034,8 @@
           "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape, a non-finite sample (NonFiniteSample) and a degenerate range (MalformedStyle) are refused. A finite sample outside the ramp's domain is painted the rail colour, under AC-05's display-saturation convention"
         },
         "AC-06": {
-          "status": "not-applicable"
+          "status": "not-applicable",
+          "reason": "display only: it shows a bound value and takes neither focus nor input"
         },
         "AC-07": {
           "status": "unmet",

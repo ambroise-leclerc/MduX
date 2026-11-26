@@ -35,7 +35,7 @@ BASE = {
                 "AC-02": {"status": "met", "evidence": ["evidence.txt"]},
                 "AC-03": {"status": "partial", "closedBy": "A5", "note": "no cost function"},
                 "AC-04": {"status": "met", "evidence": ["evidence.txt"]},
-                "AC-05": {"status": "not-applicable"},
+                "AC-05": {"status": "not-applicable", "reason": "static text; no value is bound at run time"},
             },
         },
         {"name": "Checkbox", "status": "proposed", "workstream": "B1"},
@@ -126,6 +126,44 @@ class CheckComponentInventoryTests(unittest.TestCase):
         self.assert_one_finding(document, "'provisional' but records no shortfall")
         document["components"][0]["status"] = "admitted"
         self.assertEqual(self.findings_for(document), [])
+
+    def test_rejects_not_applicable_on_a_universal_criterion(self) -> None:
+        """Refuse waiving a criterion that holds for every entry, floor or not, with or without a reason."""
+        for criterion in ("AC-01", "AC-02", "AC-03", "AC-04"):
+            document = self.mutated(
+                lambda d, c=criterion: d["components"][0]["criteria"].update(
+                    {c: {"status": "not-applicable", "reason": "said not to apply"}}
+                )
+            )
+            self.assert_one_finding(document, f"Label {criterion}: 'not-applicable' is not available")
+
+    def test_rejects_admission_by_waiving_every_criterion(self) -> None:
+        """Refuse the bypass itself: every criterion waived and the component declared admitted."""
+        document = self.mutated(
+            lambda d: d["components"][0].update(
+                status="admitted",
+                criteria={c["id"]: {"status": "not-applicable", "reason": "waived"} for c in d["criteria"]},
+            )
+        )
+        findings = self.findings_for(document)
+        for criterion in ("AC-01", "AC-02", "AC-03", "AC-04"):
+            self.assertTrue(any(f"Label {criterion}: 'not-applicable' is not available" in f for f in findings), findings)
+        self.assertFalse(any(f.startswith("Label AC-05") for f in findings), findings)
+
+    def test_rejects_not_applicable_without_a_reason(self) -> None:
+        """Refuse a conditional criterion waived with no reason, a blank one, or a claim attached."""
+        for entry in ({"status": "not-applicable"}, {"status": "not-applicable", "reason": "  "},
+                      {"status": "not-applicable", "reason": 3}):
+            document = self.mutated(lambda d, e=entry: d["components"][0]["criteria"].update({"AC-05": e}))
+            self.assert_one_finding(document, "Label AC-05: 'not-applicable' must say why in reason")
+        document = self.mutated(
+            lambda d: d["components"][0]["criteria"]["AC-05"].update(evidence=["evidence.txt"])
+        )
+        self.assert_one_finding(document, "it carries only a reason")
+
+    def test_the_conditional_set_never_reaches_the_universal_floor(self) -> None:
+        """Hold the constant itself: of the floor, only the binding criterion may not apply."""
+        self.assertEqual(inventory.CONDITIONAL & set(inventory.FLOOR), {"AC-05"})
 
     def test_rejects_an_unknown_status(self) -> None:
         """Refuse statuses outside both closed sets."""

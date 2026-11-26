@@ -468,7 +468,8 @@ records every component epic `#388` names against the twelve admission criteria 
 `admitted` when it meets all twelve and `provisional` when it meets the four floor criteria and
 still owes others; the eleven present today are all provisional.
 `check_component_inventory.py` gates the mechanical half (the dictionary set equals the grammar's,
-every evidence path exists, the floor is never short, a status matches what the criteria record,
+every evidence path exists, the floor is never short, `not-applicable` is refused on the eight universal criteria and needs a
+stated reason on the other four, a status matches what the criteria record,
 every shortfall names the epic child that closes it); whether a criterion is met is a reviewed
 claim. Read it before adding a component, and update it when one
 changes status.

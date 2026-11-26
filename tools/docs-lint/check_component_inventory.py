@@ -17,6 +17,10 @@ half that goes stale without anyone noticing:
 - the criteria are exactly the `AC-NN` headings ADR-026 carries, in order;
 - a component in the dictionary states every criterion, with a status from the closed set;
 - a `met` names evidence, and every evidence path exists;
+- a `not-applicable` is recorded only against a criterion ADR-026 makes conditional, and states
+  why in `reason`; a universal criterion - one whose requirement holds for every entry of the
+  dictionary, AC-01, AC-02 and AC-04 among them - is never `not-applicable`, so the status cannot
+  be used to step around the floor or to reach `admitted` without evidence;
 - a `partial` or `unmet` names the epic child that closes it, and that child is declared;
 - a `proposed` component names a declared workstream and asserts no criteria, because nobody can
   have met a criterion for a component that has not been designed;
@@ -44,6 +48,11 @@ IN_DICTIONARY = frozenset({"admitted", "provisional"})
 # ADR-026's floor: the criteria a component may not fall short of in any status. Fixed here rather
 # than read from the inventory alone, so that editing the file cannot lower it.
 FLOOR = ("AC-01", "AC-02", "AC-04", "AC-05")
+# The criteria whose subject a component may simply lack: a value bound at run time (AC-05), an
+# interaction (AC-06), an interaction or data-quality state (AC-07), a drawn face (AC-08). Every
+# other criterion is universal, and that is the default on purpose: a criterion added to ADR-026
+# cannot be waived until someone lists it here, in a reviewed change to this file.
+CONDITIONAL = frozenset({"AC-05", "AC-06", "AC-07", "AC-08"})
 SHORTFALLS = frozenset({"partial", "unmet"})
 CRITERION_STATUSES = frozenset({"met", "partial", "unmet", "not-applicable"})
 CRITERION_HEADING = re.compile(r"^### (?P<id>AC-\d{2}) (?P<title>.+?)\s*$", re.MULTILINE)
@@ -80,6 +89,17 @@ def check_criterion(name: str, criterion: str, entry: object, children: set[str]
             findings.append(f"{where}: '{status}' must name a declared child in closedBy, found {closed_by!r}")
         if not entry.get("note"):
             findings.append(f"{where}: '{status}' must say what is missing in note")
+    else:
+        if criterion not in CONDITIONAL:
+            findings.append(
+                f"{where}: 'not-applicable' is not available for a universal criterion; "
+                f"only {sorted(CONDITIONAL)} may not apply"
+            )
+        reason = entry.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            findings.append(f"{where}: 'not-applicable' must say why in reason")
+        if "evidence" in entry or "closedBy" in entry:
+            findings.append(f"{where}: 'not-applicable' claims nothing and owes nothing; it carries only a reason")
     return findings
 
 
