@@ -721,9 +721,11 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Reading.cppm"
+            "include/mdux/medui/Reading.cppm",
+            "src/medui/Reading.cpp",
+            "tests/medui/ReadingTests.cpp"
           ],
-          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer and drawn in the build-measured format; a null time leaves every Clock deferred"
+          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer; each field the format draws must fit its slots (ValueTooLarge) and lie in the range CivilTime documents, and a drawn date must exist (FieldOutOfRange), or the frame is refused; a null time leaves every Clock deferred"
         },
         "AC-06": {
           "status": "not-applicable",

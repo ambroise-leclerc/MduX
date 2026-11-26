@@ -461,6 +461,81 @@ const mdux::spec::Register aClockFieldPastItsSlotsIsRefused{
             .Execute();
     }};
 
+struct AClockFieldOutsideItsRangeIsRefusedState {
+    Scratch                                      scratch;
+    std::vector<std::optional<ms::ReadingError>> refused;
+    std::vector<std::optional<ms::ReadingError>> accepted;
+    std::size_t                                  verticesAfterRefusals{0};
+};
+
+const mdux::spec::Register aClockFieldOutsideItsRangeIsRefused{
+    "A clock field that fits its slots but is outside its range is refused, and so is a date that does not exist",
+    "evidence-unit",
+    [] {
+        return speclab::Test<AClockFieldOutsideItsRangeIsRefusedState>("reading-clock-field-out-of-range")
+            .Given("times that fit their slots and are not times, and the boundary times that are",
+                   [](AClockFieldOutsideItsRangeIsRefusedState& state) {
+                       // Every one of these has two-digit fields, so the digit count passes them all:
+                       // `99:00:00` drew, and read as a time. The range is what refuses them.
+                       struct Case {
+                           ms::ClockFormat format;
+                           ms::CivilTime   time;
+                       };
+                       constexpr auto                 time = ms::ClockFormat::TimeSeconds;
+                       constexpr auto                 date = ms::ClockFormat::DateTimeSeconds;
+                       constexpr std::array<Case, 12> outside{
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 99, .minute = 0, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 24, .minute = 0, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 0, .minute = 60, .second = 0}},
+                           Case{time, {.year = 2026, .month = 1, .day = 1, .hour = 0, .minute = 0, .second = 60}},
+                           Case{date, {.year = 2026, .month = 1, .day = 1, .hour = 24, .minute = 0, .second = 0}},
+                           Case{date,  {.year = 2026, .month = 0, .day = 1, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 13, .day = 1, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date,  {.year = 2026, .month = 1, .day = 0, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 1, .day = 32, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 4, .day = 31, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2026, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date, {.year = 2100, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}}
+                       };
+                       // The last second of a day, the leap days of an ordinary and a 400-year leap
+                       // year, and a time-only clock whose date fields no format of its own draws.
+                       constexpr std::array<Case, 5> inside{
+                           Case{time,   {.year = 2026, .month = 1, .day = 1, .hour = 23, .minute = 59, .second = 59}},
+                           Case{date, {.year = 2026, .month = 12, .day = 31, .hour = 23, .minute = 59, .second = 59}},
+                           Case{date,     {.year = 2028, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{date,     {.year = 2000, .month = 2, .day = 29, .hour = 0, .minute = 0, .second = 0}},
+                           Case{time,    {.year = 2026, .month = 13, .day = 0, .hour = 12, .minute = 0, .second = 0}}
+                       };
+                       draw::DrawList list = state.scratch.list();
+                       for (const Case& each : outside) {
+                           const auto result = ms::recordClock(list, theFont(), node, each.format, each.time, digits);
+                           state.refused.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                       }
+                       state.verticesAfterRefusals = list.vertices().size();
+                       for (const Case& each : inside) {
+                           draw::DrawList fresh  = state.scratch.list();
+                           const auto     result = ms::recordClock(fresh, theFont(), node, each.format, each.time, digits);
+                           state.accepted.push_back(result.has_value() ? std::nullopt : std::optional{result.error()});
+                       }
+                   })
+            .When("each is offered to a format that draws the field", [] {})
+            .Then("the first are FieldOutOfRange with nothing recorded, and the boundary times are drawn",
+                  [](AClockFieldOutsideItsRangeIsRefusedState& state) {
+                      mdux::spec::Checks checks;
+                      for (std::size_t index = 0; index < state.refused.size(); ++index) {
+                          checks.expect(state.refused[index] == ms::ReadingError::FieldOutOfRange,
+                                        std::format("out-of-range time {} is refused as FieldOutOfRange", index));
+                      }
+                      checks.expect(state.verticesAfterRefusals == 0,
+                                    std::format("a refused clock draws nothing, got {} vertices", state.verticesAfterRefusals));
+                      for (std::size_t index = 0; index < state.accepted.size(); ++index) {
+                          checks.expect(!state.accepted[index].has_value(), std::format("boundary time {} is drawn", index));
+                      }
+                      checks.raise();
+                  })
+            .Execute();
+    }};
+
 struct ATimeOnlyClockIgnoresTheYearState {
     Scratch                         scratch;
     std::optional<ms::ReadingError> error;
@@ -703,13 +778,14 @@ const mdux::spec::Register everyReadingErrorDescribesItself{"Every ReadingError 
                                                                     .When("each is described", [] {})
                                                                     .Then("each has a unique, non-empty description",
                                                                           [] {
-                                                                              constexpr std::array<ms::ReadingError, 8> all{ms::ReadingError::PatternEmpty,
+                                                                              constexpr std::array<ms::ReadingError, 9> all{ms::ReadingError::PatternEmpty,
                                                                                                                             ms::ReadingError::PatternTooLong,
                                                                                                                             ms::ReadingError::GlyphNotInPackage,
                                                                                                                             ms::ReadingError::PenMovedBackwards,
                                                                                                                             ms::ReadingError::ValueTooLarge,
                                                                                                                             ms::ReadingError::ValueNegative,
                                                                                                                             ms::ReadingError::NoDigitSlots,
+                                                                                                                            ms::ReadingError::FieldOutOfRange,
                                                                                                                             ms::ReadingError::ListRejected};
                                                                               std::vector<std::string_view>             seen;
                                                                               mdux::spec::Checks                        checks;

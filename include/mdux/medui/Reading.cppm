@@ -164,6 +164,7 @@ enum class ReadingError : std::uint8_t {
     ValueTooLarge,      ///< the value has more digits than the pattern's slots can hold
     ValueNegative,      ///< a negative reading, which no pattern here can render
     NoDigitSlots,       ///< a value was offered to a pattern with nowhere to put it
+    FieldOutOfRange,    ///< a clock field the format draws is outside its range, or the date does not exist
     ListRejected,       ///< `DrawList` refused a rectangle - budget, or a degenerate extent
 };
 
@@ -219,9 +220,15 @@ measurePattern(const mdux::font::FontPackage& font, std::string_view pattern, Pa
  * available (ADR-004). Every real-time clock a device carries reports broken-down fields already,
  * so this asks the host for what it has rather than for what it would have to compute.
  *
- * No validation of the *calendar* here - the 31st of February is the host's error to make and this
- * module has no basis to correct it. What is checked is what the pattern needs: a field with more
- * digits than its slots is `ValueTooLarge` rather than a truncated year.
+ * The ranges below are checked by `recordClock()` on every frame, for the fields its format draws:
+ * a field outside its range, or a day its month does not have in that year of the proleptic
+ * Gregorian calendar, is `FieldOutOfRange` and nothing is drawn. An hour of 99 fits two slots as
+ * well as an hour of 09 does, and `99:00:00` reads as a time; the digit count alone cannot refuse
+ * it. Refusing is not correcting - nothing here guesses what the host meant - and it needs no
+ * calendar *arithmetic*: a table of month lengths and the leap-year rule, no time zone, no epoch.
+ *
+ * A leap second is outside `second`'s range and is refused with the rest; a host whose clock
+ * service can report one decides what its display shows for that second before calling.
  */
 struct CivilTime {
     std::int32_t year{0};    ///< the full year, e.g. 2026
@@ -275,6 +282,11 @@ struct CivilTime {
  * fragile thing to infer from a string when the set of strings is closed and has two members. The
  * contract fixes the renderings, so the mapping is fixed too, and writing it out is transcription
  * rather than invention.
+ *
+ * Refuses, drawing nothing: a field with more digits than its slots (`ValueTooLarge`), and a field
+ * outside the range `CivilTime` documents or a date that does not exist (`FieldOutOfRange`). Only
+ * the fields `format` draws are checked, so a `TimeSeconds` clock is drawn whatever the date fields
+ * hold.
  */
 [[nodiscard]] mdux::core::ResultVoid<ReadingError> recordClock(mdux::draw::DrawList&          list,
                                                                const mdux::font::FontPackage& font,

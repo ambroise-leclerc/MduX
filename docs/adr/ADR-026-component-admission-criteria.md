@@ -149,6 +149,13 @@ and the data behind it is not:
   afterwards proves nothing about the frame that draws it, so these are checked afresh before each
   use, and a violation refuses the frame by a named error — never clamped, truncated or wrapped.
 
+The range checked is the one the value's type *documents*, not the one its representation happens
+to hold. A value that fits its storage, or its digit slots, and lies outside its documented domain
+is a violation like any other: an hour of 99 fits two slots and reads as a time. Where values are
+only valid together — a day against its month and year — the combination is part of the domain.
+A component may not meet this criterion by leaving such a check to its caller; a bound it does not
+enforce is a bound it does not have.
+
 **One convention is admitted beside refusal, and only for one kind of value: display saturation of
 a continuous sample.** A component that plots a continuous measurement against a *display range*
 the caller supplies — a waveform's vertical scale, a colour ramp's domain — may draw a finite
