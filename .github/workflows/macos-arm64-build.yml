@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   macos-arm64:
-    name: macOS 26 arm64 (Clang 23, MoltenVK)
+    name: macOS arm64 (Clang, MoltenVK)
     # Explicitly the arm64 image; do not replace this with macos-latest, whose architecture and
     # installed toolchain can move independently of this verified target.
     runs-on: macos-26

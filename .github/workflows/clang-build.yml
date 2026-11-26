@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   clang-build:
-    name: Linux (Clang 23, libc++, Vulkan)
+    name: Linux (Clang, libc++, Vulkan)
     # Pinned rather than ubuntu-latest (#382): this leg's compiler, libc++ and lavapipe all come
     # from the image's own apt sources, so an image move is a toolchain change and belongs in a diff.
     runs-on: ubuntu-26.04
