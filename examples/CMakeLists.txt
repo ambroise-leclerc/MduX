@@ -32,7 +32,8 @@ target_link_libraries(MedicalUiExample PRIVATE MduX::MduX)
 # find_package and possibly a source download for a target that would not be built.
 find_package(glfw3 QUIET)
 if(NOT glfw3_FOUND)
-    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG 3.4
+    # GLFW 3.5.1, pinned by commit rather than by tag, like SpecLab and cpp-httplib.
+    CPMAddPackage(NAME glfw GITHUB_REPOSITORY glfw/glfw GIT_TAG d9d6f0f1f967807ffade6598ea9a631ebaf37a56
                   OPTIONS "GLFW_BUILD_DOCS OFF" "GLFW_BUILD_TESTS OFF" "GLFW_BUILD_EXAMPLES OFF" "GLFW_INSTALL OFF")
     message(STATUS "Using CPM GLFW for VulkanSCTriangleExample")
 else()
