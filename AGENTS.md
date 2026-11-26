@@ -462,6 +462,14 @@ from the tree rather than written about it: [`docs/tools/manifest.json`](docs/to
 `docs-lint`, so one that stops describing the tree fails a build rather than misleading a reader.
 `mdux-meduic --dump-ir <recipe>` answers the fourth question — what one compile actually resolved.
 
+A fifth document is partly judgement and says so: [`docs/medui/component-inventory.json`](docs/medui/component-inventory.json)
+records every component epic `#388` names — the eleven delivered and those proposed — against the
+twelve admission criteria of [ADR-026](docs/adr/ADR-026-component-admission-criteria.md).
+`check_component_inventory.py` gates the mechanical half (the delivered set equals the grammar's,
+every evidence path exists, every shortfall names the epic child that closes it); whether a
+criterion is met is a reviewed claim. Read it before adding a component, and update it when one
+changes status.
+
 ## 8. Definition of done
 
 - Relevant build and tests were executed where the environment permits, with results reported

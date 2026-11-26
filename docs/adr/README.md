@@ -32,8 +32,9 @@ in the index below, numbers contiguous from ADR-001.
 | [ADR-023](ADR-023-medui-host-editing-api-and-round-trip-source-contract.md) | MedUI host editing API and round-trip source contract | **Proposed** (maintainer acceptance) | 2026-09-13 |
 | [ADR-024](ADR-024-local-native-preview-service.md) | Local native preview service | **Proposed** (preview-fidelity review) | 2026-09-13 |
 | [ADR-025](ADR-025-medui-studio-editing-and-reviewable-change-proposals.md) | MedUI Studio editing and reviewable change proposals | **Proposed** (maintainer acceptance, domain review) | 2026-09-14 |
+| [ADR-026](ADR-026-component-admission-criteria.md) | Component admission criteria | **Proposed** (maintainer acceptance) | 2026-11-26 |
 
-Every number from 001 to 025 appears exactly once. A superseded decision keeps its number and its
+Every number from 001 to 026 appears exactly once. A superseded decision keeps its number and its
 file — the trail is only useful if the abandoned turns are still visible.
 
 ## What is not here
