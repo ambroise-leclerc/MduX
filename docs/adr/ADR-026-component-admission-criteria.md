@@ -88,6 +88,23 @@ validation refuses every malformed instance by a named error, so a screen assemb
 time meets the same checks a compiled one did. Each new diagnostic has a stable code and an
 `--explain` entry.
 
+**A construct the compiler resolves entirely is the one stated exception to the compiled-form
+clause.** `Row` is the present case: the layout solver turns it into its children's absolute
+rectangles and, when it declares a background, one synthetic `Panel` node, and no node of kind
+`Row` reaches the artifact — in MduX and in its sibling alike, as `docs/parity/behavior-matrix.md`
+records. There is then no compiled form whose fields could be validated, and a screen built by hand
+at run time cannot contain one. For such a construct AC-02 requires instead that:
+
+- the grammar half holds in full — closed field set, domains, diagnostics, examples;
+- everything it resolves into is itself a governed, validated node, so nothing it produced reaches
+  a device unchecked;
+- the inventory entry says what it resolves into.
+
+The exception is narrow on purpose. It covers a construct that leaves *nothing* of its own kind
+behind; a container that survives into the artifact in any form — because it clips, scrolls, takes
+focus or is switched at run time — has a compiled form and meets the clause as written. What the
+exception costs is recorded where it is paid: such a construct cannot be named by a golden (AC-08).
+
 ### AC-03 Declared worst-case cost
 
 The component states its worst-case vertices, indices and commands as a function of its compiled
@@ -105,9 +122,25 @@ Its appearance when nothing is bound is defined and drawn, or its absence is a s
 ### AC-05 Bounded binding
 
 A component showing run-time data receives it through a slot type over caller-owned storage, with
-every size bounded by a named constant and every binding validated when it is created rather than
-when it is drawn. Nothing about the number or sequence of primitives drawn is a function of the
-bound value beyond what AC-03 already bounded.
+every size bounded by a named constant. Validation is in two phases, because a binding is made once
+and the data behind it is not:
+
+- **At creation, everything that cannot change afterwards.** That the slot names a node of the
+  right kind on *this* screen, that it carries the storage it needs, and any property of the slot
+  itself that is fixed for the binding's life. The binding type is obtainable only through its
+  `create()`, so an unchecked binding cannot be constructed.
+- **On every frame, everything the producer may change between frames.** A ring's length, a grid's
+  shape, a value's range, a state's index. A check made once on data that is written again
+  afterwards proves nothing about the frame that draws it, so these are checked afresh before each
+  use, and a violation refuses the frame by a named error — never clamped, truncated or wrapped.
+
+A check that could be made at creation and is instead left to the first frame is a shortfall; a
+per-frame check of mutable data is the criterion being met, not deferred. Where the same property
+is checked in both phases, the creation check is for the diagnostic and the per-frame check is the
+one that protects the frame.
+
+Nothing about the number or sequence of primitives drawn is a function of the bound value beyond
+what AC-03 already bounded.
 
 ### AC-06 Interaction
 
@@ -183,7 +216,8 @@ something owed on it.
 ### The existing eleven are audited, not grandfathered
 
 The inventory records the eleven present components against all twelve criteria as they stand. All
-eleven meet the floor; none meets all twelve, so all eleven are `provisional`. The shortfalls are systematic rather than per-component, and each belongs to a
+eleven meet the floor — `Row` under AC-02's stated exception, and the six bound components under
+AC-05's two phases, each entry naming which checks fall in which — none meets all twelve, so all eleven are `provisional`. The shortfalls are systematic rather than per-component, and each belongs to a
 child of epic #388:
 
 - **AC-03 is unmet for every component**: no cost function exists and no diagnostic compares a

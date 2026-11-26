@@ -262,8 +262,11 @@
           "status": "met",
           "evidence": [
             "docs/medui/grammar.json",
-            "include/mdux/medui/Schema.cppm"
-          ]
+            "tools/medui/Layout.cppm",
+            "include/mdux/medui/Schema.cppm",
+            "docs/parity/behavior-matrix.md"
+          ],
+          "note": "under AC-02's exception for a construct the compiler resolves entirely: no Row node reaches the artifact; it resolves into its children's rectangles and, with a background, one synthetic Panel, each a validated node"
         },
         "AC-03": {
           "status": "unmet",
@@ -629,8 +632,10 @@
         "AC-05": {
           "status": "met",
           "evidence": [
-            "include/mdux/medui/Screen.cppm"
-          ]
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm"
+          ],
+          "note": "at creation: the slot names a NumericDisplay on this screen and its pattern is non-empty and within maxPatternLength. Per frame: the reading, refused as ReadingOverflowsNode when it does not fit"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -703,8 +708,10 @@
         "AC-05": {
           "status": "met",
           "evidence": [
-            "include/mdux/medui/Screen.cppm"
-          ]
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Reading.cppm"
+          ],
+          "note": "at creation: a supplied clock tint resolves through the governed colour table. Per frame: the caller's time, read through the pointer and drawn in the build-measured format; a null time leaves every Clock deferred"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -717,7 +724,7 @@
         "AC-08": {
           "status": "partial",
           "closedBy": "H1",
-          "note": "a golden can name it, but no committed screen carries one"
+          "note": "no committed screen carries a golden for one, and its tint is the caller's rather than a declared token, so only bounds could be pinned"
         },
         "AC-09": {
           "status": "partial",
@@ -777,7 +784,8 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm"
-          ]
+          ],
+          "note": "at creation: the slot names a StatusIndicator on this screen that declares colors:, and its state is a position in the closed list. Per frame: the state index again, refused as StateOutOfRange"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -851,8 +859,9 @@
           "status": "met",
           "evidence": [
             "include/mdux/medui/Screen.cppm",
-            "include/mdux/medui/Input.cppm"
-          ]
+            "include/mdux/medui/Field.cppm"
+          ],
+          "note": "at creation: the slot names a TextInput on this screen, the value fits max_length and the caret is a position in the field. Per frame: the same two again, and each character against the charset"
         },
         "AC-06": {
           "status": "partial",
@@ -927,8 +936,10 @@
         "AC-05": {
           "status": "met",
           "evidence": [
-            "include/mdux/medui/Screen.cppm"
-          ]
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Trace.cppm"
+          ],
+          "note": "at creation: the slot names a stream a SignalTrace on this screen carries, and has a ring and a usable style. Per frame: the ring's oldest and count, refused as TooManySamples past maxSamplesPerTrace"
         },
         "AC-06": {
           "status": "not-applicable"
@@ -1001,8 +1012,10 @@
         "AC-05": {
           "status": "met",
           "evidence": [
-            "include/mdux/medui/Screen.cppm"
-          ]
+            "include/mdux/medui/Screen.cppm",
+            "include/mdux/medui/Viewport.cppm"
+          ],
+          "note": "at creation: the slot names a distinct VulkanViewport on this screen and carries a grid. Per frame: the grid's shape and the style's range, because the producer moves both between frames"
         },
         "AC-06": {
           "status": "not-applicable"
