@@ -37,9 +37,11 @@ because the history is unavailable.
 - **`build.cache.namedModuleIntegrity` covers cppmcache**, and with it runs on GCC and MSVC as well
   as Clang. It is the negative case of #280: a changed exported layout must reach a consumer whose
   source did not change, and a content-identical rebuild must be a real cache hit.
-- Measured locally with GCC 16.1 on the `ninja-gcc` preset: a clean build takes 54.5 s with an empty
-  cache and 8.9 s from a clean build directory with a populated one (332 hits), and all 953 tests
-  pass on the second. Nothing was measured on Clang, MSVC or macOS before this entry was written.
+- Measured locally with GCC 16.1 on the `ninja-gcc` preset, one run per cell: with the cppmcache
+  0.1.0 binary, a clean build takes 60.9 s with an empty cache (53.5 s without a cache) and 9.2 s from
+  a clean build directory with a populated one (332 hits); with 0.1.1, the populated-cache build took
+  9.5 s and 9.8 s. All 953 tests pass on the build served from the cache. Nothing was measured on
+  Clang, MSVC or macOS before this entry was written.
 - **0.1.1, not 0.1.0.** cppmcache 0.1.0 did not detect a header created earlier in the search order
   than one a unit included: a pull request adding `include/vulkan/vulkan.h` could have been tested
   with objects compiled against the SDK's header (ambroise-leclerc/cppmcache#24). 0.1.1 detects it,
@@ -49,6 +51,15 @@ because the history is unavailable.
 - The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
   and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
   has grown past 1 GiB.
+- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs: cppmcache's
+  setup action pinned by commit, and the archive it downloads checked against a SHA-256 recorded in
+  this repository, since the action only compares it with a checksum file from the same release.
+- **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
+  step when cppmcache is missing or not recognised, instead of warning and falling back, and
+  `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on every cached leg, not
+  only on Clang. Its header case also checks that the fresh build directory was served from the
+  populated cache, so it cannot pass by missing everything.
+- cppmcache is recorded in `docs/governance/soup-register.toml` as a build tool.
 
 ### Toolchain, CI and dependency versions (#382)
 

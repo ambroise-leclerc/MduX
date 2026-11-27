@@ -136,11 +136,14 @@ module consumer holds the content of each BMI it imports, under the module's nam
 module interface restores its BMI along with its object. MduX therefore makes it the compiler
 launcher directly, without the triage described above, and module interfaces and consumers are both
 cached on GCC, Clang and MSVC. A command it does not understand is passed to the compiler unchanged.
+Unlike the other caches, it is never the default, so a cppmcache that is missing or does not
+report a cppmcache version fails the configure step rather than being skipped with a warning.
 
 With cppmcache selected, `build.cache.namedModuleIntegrity` is registered on every compiler rather
 than on Clang alone, and has a second negative case: a header created earlier in the include search
-order than one a cached object was compiled with must reach its includer. cppmcache 0.1.1 or later
-is required for that. cppmcache has no eviction yet: bound its cache directory yourself, as the CI
+order than one a cached object was compiled with must reach its includer, in a fresh build
+directory that the populated cache must still serve for the unchanged units. cppmcache 0.1.1 or
+later is required for that. cppmcache has no eviction yet: bound its cache directory yourself, as the CI
 workflows do. It is a prototype; ccache remains the default for local builds.
 
 ### Selecting suites
