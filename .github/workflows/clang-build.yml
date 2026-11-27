@@ -202,7 +202,7 @@ jobs:
     # restoring stay below, under this repository's policy. Pull requests restore the newest cache
     # develop saved and never save their own, so one branch cannot seed another's objects.
     - name: Install cppmcache
-      uses: ambroise-leclerc/cppmcache@8bd44f6f33544ed2af142420ae3be7e63bb1894d # v0.1.0
+      uses: ambroise-leclerc/cppmcache@1f553a46b43cef643387abd6587b378afd5c2cad # v0.1.0 + setup action fix (cppmcache#8)
       with:
         version: 0.1.0
         cache: "false"
