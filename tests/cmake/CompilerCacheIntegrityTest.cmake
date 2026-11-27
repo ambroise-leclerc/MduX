@@ -178,46 +178,53 @@ run_checked("Content-identical consumer rebuild"
     ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
 assert_probe("16" "${fixture_build}")
 
-execute_process(
-    COMMAND ${cache_environment} "${CACHE_BINARY}" --print-stats
-    RESULT_VARIABLE stats_result
-    OUTPUT_VARIABLE stats_output
-    ERROR_VARIABLE stats_error
-)
-if(NOT stats_result EQUAL 0)
-    message(FATAL_ERROR "Reading ${CACHE_KIND} statistics failed: ${stats_error}")
-endif()
-if(CACHE_KIND STREQUAL "cppmcache")
-    # cppmcache prints one "name<TAB>value" line per counter.
-    string(REGEX MATCH "(^|\n)hit[	 ]+([0-9]+)" unused "${stats_output}")
-    set(cache_hits "${CMAKE_MATCH_2}")
-    if(cache_hits STREQUAL "")
-        set(cache_hits 0)
+# Fails the test, with cppmcache's per-compilation log, if the cache has recorded fewer than
+# `minimum` hits since its statistics were last zeroed. `what` heads the failure message.
+function(assert_cache_hits minimum what)
+    execute_process(
+        COMMAND ${cache_environment} "${CACHE_BINARY}" --print-stats
+        RESULT_VARIABLE stats_result
+        OUTPUT_VARIABLE stats_output
+        ERROR_VARIABLE stats_error
+    )
+    if(NOT stats_result EQUAL 0)
+        message(FATAL_ERROR "Reading ${CACHE_KIND} statistics failed: ${stats_error}")
     endif()
-else()
-    string(REGEX MATCH "direct_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
-    set(direct_hits "${CMAKE_MATCH_1}")
-    string(REGEX MATCH "preprocessed_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
-    set(preprocessed_hits "${CMAKE_MATCH_1}")
-    if(direct_hits STREQUAL "")
-        set(direct_hits 0)
+    if(CACHE_KIND STREQUAL "cppmcache")
+        # cppmcache prints one "name<TAB>value" line per counter.
+        string(REGEX MATCH "(^|\n)hit[	 ]+([0-9]+)" unused "${stats_output}")
+        set(cache_hits "${CMAKE_MATCH_2}")
+        if(cache_hits STREQUAL "")
+            set(cache_hits 0)
+        endif()
+    else()
+        string(REGEX MATCH "direct_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
+        set(direct_hits "${CMAKE_MATCH_1}")
+        string(REGEX MATCH "preprocessed_cache_hit[	 ]+([0-9]+)" unused "${stats_output}")
+        set(preprocessed_hits "${CMAKE_MATCH_1}")
+        if(direct_hits STREQUAL "")
+            set(direct_hits 0)
+        endif()
+        if(preprocessed_hits STREQUAL "")
+            set(preprocessed_hits 0)
+        endif()
+        math(EXPR cache_hits "${direct_hits} + ${preprocessed_hits}")
     endif()
-    if(preprocessed_hits STREQUAL "")
-        set(preprocessed_hits 0)
+    if(cache_hits LESS minimum)
+        # cppmcache records, for each compilation, whether it was a hit, a miss or passed through,
+        # and why: without that, a failure here says only that something went wrong.
+        set(cache_log "")
+        if(EXISTS "${fixture_root}/cppmcache.log")
+            file(READ "${fixture_root}/cppmcache.log" cache_log)
+            set(cache_log "\nCache log:\n${cache_log}")
+        endif()
+        message(FATAL_ERROR
+            "${what}: expected at least ${minimum} ${CACHE_KIND} hit(s), got ${cache_hits}:\n"
+            "${stats_output}${cache_log}")
     endif()
-    math(EXPR cache_hits "${direct_hits} + ${preprocessed_hits}")
-endif()
-if(cache_hits LESS 1)
-    # cppmcache records, for each compilation, whether it was a hit, a miss or passed through, and
-    # why: without that, a failure here says only that something went wrong.
-    set(cache_log "")
-    if(EXISTS "${fixture_root}/cppmcache.log")
-        file(READ "${fixture_root}/cppmcache.log" cache_log)
-        set(cache_log "\nCache log:\n${cache_log}")
-    endif()
-    message(FATAL_ERROR
-        "The unchanged module consumer did not produce a ${CACHE_KIND} hit:\n${stats_output}${cache_log}")
-endif()
+endfunction()
+
+assert_cache_hits(1 "The unchanged module consumer did not hit the cache")
 
 message(STATUS
     "Compiler cache integrity: layout change invalidated the consumer and an unchanged rebuild hit ${CACHE_KIND}")
@@ -239,8 +246,15 @@ if(CACHE_KIND STREQUAL "cppmcache")
         -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
         "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}"
         "-DCMAKE_EXE_LINKER_FLAGS=${EXE_LINKER_FLAGS}")
+    run_checked("Cache statistics reset before the fresh build"
+        ${cache_environment} "${CACHE_BINARY}" --zero-stats)
     run_checked("Build with a shadowing header and a populated cache"
         ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
     assert_probe("2" "${fixture_build}" shadowprobe)
+    # The positive control. Api.cppm, Consumer.cpp and Main.cpp are unchanged since the cache last
+    # stored them, so this build must serve them from it; without that, a build that missed
+    # everything - a key that came to depend on the build directory, say - would print 2 as well
+    # and the check above would prove nothing about a populated cache.
+    assert_cache_hits(3 "The fresh build directory was not served from the populated cache")
     message(STATUS "Compiler cache integrity: a header added earlier in the search order reached its includer")
 endif()
