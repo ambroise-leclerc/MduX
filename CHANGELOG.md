@@ -51,13 +51,16 @@ because the history is unavailable.
 - The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
   and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
   has grown past 1 GiB.
-- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs: cppmcache's
-  setup action pinned by commit, and the archive it downloads checked against a SHA-256 recorded in
-  this repository, since the action only compares it with a checksum file from the same release.
+- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs, which
+  downloads the release archive and compares it with a SHA-256 recorded in this repository before
+  extracting it or running anything from it. cppmcache's own setup action is not used: it checks the
+  archive only against a checksum file from the same release, then runs the binary, and takes no
+  digest, so a release whose two files were replaced together would have run on the runner first.
 - **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
   step when cppmcache is missing or not recognised, instead of warning and falling back, and
-  `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on every cached leg, not
-  only on Clang. Its header case also checks that the fresh build directory was served from the
+  `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on all four toolchains,
+  not only on Clang; on macOS the Release job runs it, and the sanitizer job, whose objects differ
+  only by instrumentation, excludes it. Its header case also checks that the fresh build directory was served from the
   populated cache, so it cannot pass by missing everything.
 - cppmcache is recorded in `docs/governance/soup-register.toml` as a build tool.
 
