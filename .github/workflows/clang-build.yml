@@ -215,7 +215,9 @@ jobs:
         restore-keys: cppmcache-linux-clang23-libcxx-
 
     # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
-    # allowed here is dropped whole, and this run repopulates it.
+    # allowed here is dropped whole, and this run repopulates it. The check is made before the
+    # build on purpose: made before the save, it would have develop save an empty cache. What is
+    # saved can therefore exceed the limit, by at most what one build adds, until the next run.
     - name: Bound the compiler cache
       shell: bash
       run: |
