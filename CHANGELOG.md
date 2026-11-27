@@ -27,7 +27,7 @@ because the history is unavailable.
 
 ### Compiler cache: named-module compilations are cached in CI (#392)
 
-- **CI builds go through [cppmcache](https://github.com/ambroise-leclerc/cppmcache) 0.1.1 on all four
+- **CI builds go through [cppmcache](https://github.com/ambroise-leclerc/cppmcache) 0.1.2 on all four
   toolchains**, in place of ccache. ccache could only be trusted with Clang module consumers (#280,
   #386): module interfaces always compiled directly, and on GCC and MSVC every named-module
   compilation bypassed the cache. cppmcache keys a consumer on the content of the BMIs it imports and
@@ -51,11 +51,13 @@ because the history is unavailable.
 - The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
   and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
   has grown past 1 GiB.
-- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs, which
-  downloads the release archive and compares it with a SHA-256 recorded in this repository before
-  extracting it or running anything from it. cppmcache's own setup action is not used: it checks the
-  archive only against a checksum file from the same release, then runs the binary, and takes no
-  digest, so a release whose two files were replaced together would have run on the runner first.
+- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs, with
+  cppmcache's setup action pinned by commit and given the archives' SHA-256 digests, which it
+  compares with the download before extracting it or running anything from it. Until 0.1.2 the
+  action took no digest and checked the archive only against a checksum file from the same release,
+  so a release whose two files were replaced together would have run on the runner first
+  (ambroise-leclerc/cppmcache#31). 0.1.2 adds that input and changes nothing in the binary but its
+  version; `build.cache.namedModuleIntegrity` passes with it.
 - **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
   step when cppmcache is missing or not recognised, instead of warning and falling back, and
   `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on all four toolchains,
