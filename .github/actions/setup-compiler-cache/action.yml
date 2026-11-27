@@ -1,7 +1,7 @@
 name: Set up the compiler cache
 description: >
-  Installs cppmcache with its project's setup action, checks the archive that action downloaded
-  against a digest pinned here, restores the cache develop saved, and bounds its size (#392).
+  Installs the cppmcache release binary after checking its archive against a digest pinned here,
+  restores the cache develop saved, and bounds its size (#392).
   Saving stays with the calling job, after its build: a composite action has no post step, and the
   save policy (develop pushes only) belongs to the workflow.
 
@@ -18,56 +18,78 @@ runs:
     # cppmcache keys a module consumer on the content of every BMI it imports and restores the BMI
     # a provider produces, so named-module providers and consumers are cached on every toolchain;
     # ccache, which #386 made persistent, could only be trusted with Clang consumers.
-    # build.cache.namedModuleIntegrity proves a changed BMI still invalidates its consumers. The
-    # action sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; its own
-    # actions/cache step is off, because saving and restoring follow this repository's policy.
-    - name: Install cppmcache
-      uses: ambroise-leclerc/cppmcache@0b942162c5c6e751372b0eed9c4c4f9413618eed # v0.1.1
-      with:
-        version: 0.1.1
-        cache: "false"
-
-    # The commit pin above covers the action's script, not the binary: the action downloads the
-    # archive by version and checks it against a SHA256SUMS file from the same release, which
-    # detects corruption but not a replaced release asset. The digests below are the v0.1.1
-    # release's, recorded here so that a substituted upload fails this step, as lavapipe's does in
-    # windows-build.yml. A change of version is a change of these three lines. The archive path is
-    # the action's own; if it moves, the file is missing and the step fails rather than passing.
-    - name: Check the cppmcache archive against its pinned digest
+    # build.cache.namedModuleIntegrity proves a changed BMI still invalidates its consumers.
+    #
+    # Installed here rather than with cppmcache's own setup action. That action compares the archive
+    # only with a SHA256SUMS file from the same release, then extracts it and runs the binary; it has
+    # no input for a digest. A release whose archive and SHA256SUMS were replaced together would
+    # therefore run its binary on the runner before any check of ours could refuse it. Here the
+    # archive is compared with the digest recorded below before it is extracted, and nothing from
+    # it runs until that comparison has passed, as windows-build.yml does for lavapipe. No token is
+    # passed: the version is fixed, so there is no release lookup. A change of version is a change
+    # of the version and of these three digests. The environment is the one the setup action sets.
+    - name: Install cppmcache from a pinned digest
       shell: bash
       run: |
         set -euo pipefail
+        version="0.1.1"
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
           Linux-X64)
-            name="cppmcache-0.1.1-linux-x86_64.tar.gz"
+            platform="linux-x86_64"; archive="tar.gz"; executable="cppmcache"
             expected="e42298417afdeafb9cddde5b0126702578423235ee968a23a4fe354229de8671" ;;
           macOS-ARM64)
-            name="cppmcache-0.1.1-macos-arm64.tar.gz"
+            platform="macos-arm64"; archive="tar.gz"; executable="cppmcache"
             expected="4742849d49aa7507290b07e0b41da981e4073fc5fb52b81bf961efd7a66c5e18" ;;
           Windows-X64)
-            name="cppmcache-0.1.1-windows-x86_64.zip"
+            platform="windows-x86_64"; archive="zip"; executable="cppmcache.exe"
             expected="1bfa02d521f4defd344783e6fdc84ee0f4adfb1f8185528cf4dfd9ea5344cf16" ;;
           *)
             echo "::error::No pinned cppmcache digest for ${RUNNER_OS} ${RUNNER_ARCH}."
             exit 1 ;;
         esac
-        archive="${RUNNER_TEMP}/cppmcache-download/${name}"
-        if [ ! -f "$archive" ]; then
-          echo "::error::${archive} not found: the setup action no longer leaves its download there."
-          exit 1
-        fi
-        # Read from standard input, as the action does: given a Windows path, sha256sum prefixes
-        # its digest with a backslash.
+        name="cppmcache-${version}-${platform}"
+        download="${RUNNER_TEMP}/cppmcache-download"
+        rm -rf "$download"
+        mkdir -p "$download"
+        curl -fsSL --retry 3 -o "${download}/${name}.${archive}" \
+          "https://github.com/ambroise-leclerc/cppmcache/releases/download/v${version}/${name}.${archive}"
+
+        # Read from standard input: given a Windows path, sha256sum prefixes its digest with a
+        # backslash.
         if command -v sha256sum > /dev/null; then
-          actual="$(sha256sum < "$archive" | cut -d' ' -f1)"
+          actual="$(sha256sum < "${download}/${name}.${archive}" | cut -d' ' -f1)"
         else
-          actual="$(shasum -a 256 < "$archive" | cut -d' ' -f1)"
+          actual="$(shasum -a 256 < "${download}/${name}.${archive}" | cut -d' ' -f1)"
         fi
         if [ "$actual" != "$expected" ]; then
-          echo "::error::${name} has digest ${actual}; the pinned digest is ${expected}."
+          echo "::error::${name}.${archive} has digest ${actual}; the pinned digest is ${expected}. Nothing was extracted."
           exit 1
         fi
-        echo "${name}: ${actual}"
+        echo "${name}.${archive}: ${actual}"
+
+        install_root="${RUNNER_TOOL_CACHE:-${RUNNER_TEMP}}/cppmcache/${version}"
+        rm -rf "$install_root"
+        mkdir -p "$install_root"
+        if [ "$archive" = "zip" ]; then
+          unzip -q "${download}/${name}.zip" -d "$install_root"
+        else
+          tar -xzf "${download}/${name}.tar.gz" -C "$install_root"
+        fi
+        bin_directory="${install_root}/${name}/bin"
+        cache_directory="${RUNNER_TEMP}/cppmcache-cache"
+        mkdir -p "$cache_directory"
+
+        # Windows tools are given Windows paths.
+        native() { if command -v cygpath > /dev/null; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+
+        "${bin_directory}/${executable}" --version
+        echo "$(native "$bin_directory")" >> "$GITHUB_PATH"
+        {
+          echo "CPPMCACHE_DIR=$(native "$cache_directory")"
+          # Runners of the same image have the same compiler, but not always with the same dates.
+          echo "CPPMCACHE_COMPILERCHECK=content"
+          echo "CPPMCACHE_BASEDIR=${GITHUB_WORKSPACE}"
+        } >> "$GITHUB_ENV"
 
     # Pull requests restore the newest cache develop saved and never save their own, so one branch
     # cannot seed another's objects.
