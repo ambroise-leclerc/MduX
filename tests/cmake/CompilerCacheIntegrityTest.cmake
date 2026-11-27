@@ -122,6 +122,11 @@ run_checked("Fixture configure"
     ${cache_environment} "${CMAKE_COMMAND}"
     -S "${fixture_source}" -B "${fixture_build}" -G "${GENERATOR}"
     "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}"
+    # With no build type, CMake configures MSVC for Debug, whose default debug format is a PDB
+    # shared between compilations (/Zi). No cache can restore that, and cppmcache passes such a
+    # command straight to the compiler, which left this check with nothing to observe. Embedded
+    # debug information (/Z7) lives in the object. The variable means nothing to other compilers.
+    -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
     "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}"
     "-DCMAKE_EXE_LINKER_FLAGS=${EXE_LINKER_FLAGS}")
 file(READ "${fixture_build}/CMakeCache.txt" fixture_cache_contents)
