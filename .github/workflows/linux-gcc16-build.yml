@@ -143,39 +143,12 @@ jobs:
         cmake --version
         ninja --version
 
-    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
-    # imports and restores the BMI a provider produces, so named-module providers and consumers are
-    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
-    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
-    # consumers. The action installs the released binary, checked against the release's checksums,
-    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
-    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
-    # develop saved and never save their own, so one branch cannot seed another's objects.
-    - name: Install cppmcache
-      uses: ambroise-leclerc/cppmcache@0b942162c5c6e751372b0eed9c4c4f9413618eed # v0.1.1
+    # The compiler cache (#392): cppmcache, installed from a digest pinned in the action, with the
+    # cache develop saved restored and bounded. Saved below, after the build, on develop pushes only.
+    - name: Set up the compiler cache
+      uses: ./.github/actions/setup-compiler-cache
       with:
-        version: 0.1.1
-        cache: "false"
-
-    - name: Restore the compiler cache
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/cppmcache-cache
-        key: cppmcache-linux-gcc16-${{ github.sha }}
-        restore-keys: cppmcache-linux-gcc16-
-
-    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
-    # allowed here is dropped whole, and this run repopulates it. The check is made before the
-    # build on purpose: made before the save, it would have develop save an empty cache. What is
-    # saved can therefore exceed the limit, by at most what one build adds, until the next run.
-    - name: Bound the compiler cache
-      shell: bash
-      run: |
-        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
-        echo "compiler cache: ${size_mb:-0} MiB"
-        if [ "${size_mb:-0}" -gt 1024 ]; then
-          cppmcache -C
-        fi
+        key: cppmcache-linux-gcc16
 
     # Through the preset, not a hand-written configure line. CMakePresets.json describes
     # ninja-gcc as mirroring what this job runs, and the only way that statement stays true is
@@ -212,7 +185,16 @@ jobs:
         # in under a second, before Xvfb listens, and GLFW then fails to initialise.
         for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
         [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
-        ctest --preset ninja-gcc --output-on-failure -LE "evidence|determinism|governed|pixel|verify|conformance"
+        ctest --preset ninja-gcc --output-on-failure -LE "evidence|determinism|governed|pixel|verify|conformance" \
+          -E '^build\.cache\.namedModuleIntegrity$'
+
+    # #280's negative case and, with cppmcache, that of ambroise-leclerc/cppmcache#24: a changed BMI
+    # must invalidate a cached consumer, a content-identical rebuild must be a real hit, and a header
+    # added earlier in the search order must reach its includer. Kept as a named step with --no-tests=error, as on Clang,
+    # so losing the registration - cppmcache not found, or not recognised by cmake/Cache.cmake -
+    # cannot masquerade as a green run (#392).
+    - name: Verify the compiler cache invalidates named-module consumers
+      run: ctest --preset ninja-gcc -R '^build\.cache\.namedModuleIntegrity$' -V --no-tests=error
 
     # The second toolchain for the byte-identity check (ADR-007). With the GCC 15 leg retired
     # this pairs with MSVC: an artifact that is byte-identical on two unrelated toolchains is the

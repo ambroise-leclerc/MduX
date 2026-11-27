@@ -193,39 +193,12 @@ jobs:
         ls -1 /usr/share/vulkan/icd.d/ || true
         vulkaninfo --summary
 
-    # The compiler cache (#392). cppmcache keys a module consumer on the content of every BMI it
-    # imports and restores the BMI a provider produces, so named-module providers and consumers are
-    # cached on this toolchain; ccache, which #386 made persistent, could only be trusted with Clang
-    # consumers. build.cache.namedModuleIntegrity proves a changed BMI still invalidates its
-    # consumers. The action installs the released binary, checked against the release's checksums,
-    # and sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; saving and
-    # restoring stay below, under this repository's policy. Pull requests restore the newest cache
-    # develop saved and never save their own, so one branch cannot seed another's objects.
-    - name: Install cppmcache
-      uses: ambroise-leclerc/cppmcache@0b942162c5c6e751372b0eed9c4c4f9413618eed # v0.1.1
+    # The compiler cache (#392): cppmcache, installed from a digest pinned in the action, with the
+    # cache develop saved restored and bounded. Saved below, after the build, on develop pushes only.
+    - name: Set up the compiler cache
+      uses: ./.github/actions/setup-compiler-cache
       with:
-        version: 0.1.1
-        cache: "false"
-
-    - name: Restore the compiler cache
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/cppmcache-cache
-        key: cppmcache-linux-clang23-libcxx-${{ github.sha }}
-        restore-keys: cppmcache-linux-clang23-libcxx-
-
-    # cppmcache 0.1.0 has no eviction. A restored cache that has grown past the size ccache was
-    # allowed here is dropped whole, and this run repopulates it. The check is made before the
-    # build on purpose: made before the save, it would have develop save an empty cache. What is
-    # saved can therefore exceed the limit, by at most what one build adds, until the next run.
-    - name: Bound the compiler cache
-      shell: bash
-      run: |
-        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
-        echo "compiler cache: ${size_mb:-0} MiB"
-        if [ "${size_mb:-0}" -gt 1024 ]; then
-          cppmcache -C
-        fi
+        key: cppmcache-linux-clang23-libcxx
 
     # The preset, not an equivalent-looking configure line: CMakePresets.json's ninja-clang
     # description exists precisely to keep preset and CI from drifting apart, which a

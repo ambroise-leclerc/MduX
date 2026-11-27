@@ -29,7 +29,15 @@ if(CACHE_BINARY)
 else()
     find_program(mdux_resolved_cache_binary NAMES "${CACHE_OPTION}" NO_CACHE)
 endif()
+# cppmcache is never the default, so selecting it is a request rather than a preference: a build
+# that asked for it and silently fell back would cache differently from what it claims, and CI
+# would lose the cache #392 exists for without a red run.
 if(NOT mdux_resolved_cache_binary)
+    if(CACHE_OPTION STREQUAL "cppmcache")
+        message(FATAL_ERROR
+            "CACHE_OPTION=cppmcache, but cppmcache was not found. Put it on PATH, set CACHE_BINARY, "
+            "or choose another CACHE_OPTION (-DENABLE_CACHE=OFF disables the compiler cache).")
+    endif()
     message(WARNING "${CACHE_OPTION} is enabled but was not found. Not using it")
     return()
 endif()
@@ -63,6 +71,11 @@ elseif(mdux_cache_version_result EQUAL 0 AND
        mdux_cache_version_banner MATCHES "(^|\n)cppmcache version ([0-9]+(\\.[0-9]+)+)")
     set(MDUX_CACHE_KIND "cppmcache" CACHE INTERNAL "Resolved compiler cache kind" FORCE)
     set(mdux_cache_version "${CMAKE_MATCH_2}")
+endif()
+if(CACHE_OPTION STREQUAL "cppmcache" AND NOT MDUX_CACHE_KIND STREQUAL "cppmcache")
+    message(FATAL_ERROR
+        "CACHE_OPTION=cppmcache, but '${MDUX_CACHE_BINARY} --version' did not report a cppmcache "
+        "version:\n${mdux_cache_version_banner}")
 endif()
 
 # cppmcache (https://github.com/ambroise-leclerc/cppmcache) is the one cache here that models
