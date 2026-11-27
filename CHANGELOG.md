@@ -27,7 +27,7 @@ because the history is unavailable.
 
 ### Compiler cache: named-module compilations are cached in CI (#392)
 
-- **CI builds go through [cppmcache](https://github.com/ambroise-leclerc/cppmcache) 0.1.0 on all four
+- **CI builds go through [cppmcache](https://github.com/ambroise-leclerc/cppmcache) 0.1.1 on all four
   toolchains**, in place of ccache. ccache could only be trusted with Clang module consumers (#280,
   #386): module interfaces always compiled directly, and on GCC and MSVC every named-module
   compilation bypassed the cache. cppmcache keys a consumer on the content of the BMIs it imports and
@@ -40,6 +40,12 @@ because the history is unavailable.
 - Measured locally with GCC 16.1 on the `ninja-gcc` preset: a clean build takes 54.5 s with an empty
   cache and 8.9 s from a clean build directory with a populated one (332 hits), and all 953 tests
   pass on the second. Nothing was measured on Clang, MSVC or macOS before this entry was written.
+- **0.1.1, not 0.1.0.** cppmcache 0.1.0 did not detect a header created earlier in the search order
+  than one a unit included: a pull request adding `include/vulkan/vulkan.h` could have been tested
+  with objects compiled against the SDK's header (ambroise-leclerc/cppmcache#24). 0.1.1 detects it,
+  and `build.cache.namedModuleIntegrity` now has that negative case: in a fresh build directory with
+  a populated cache, a header added earlier in the search order must reach its includer. With 0.1.0
+  the check fails.
 - The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
   and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
   has grown past 1 GiB.

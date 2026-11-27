@@ -26,8 +26,13 @@ if(NOT CACHE_KIND MATCHES "^(ccache|cppmcache)$")
 endif()
 
 function(assert_probe expected fixture_build)
+    # An optional third argument names another executable of the fixture.
+    set(probe_name probe)
+    if(ARGC GREATER 2)
+        set(probe_name "${ARGV2}")
+    endif()
     # CMAKE_EXECUTABLE_SUFFIX is not set in script mode, hence the lookup.
-    set(probe "${fixture_build}/probe")
+    set(probe "${fixture_build}/${probe_name}")
     if(EXISTS "${probe}.exe")
         set(probe "${probe}.exe")
     endif()
@@ -73,6 +78,11 @@ target_sources(fixture
     PRIVATE Consumer.cpp)
 add_executable(probe Main.cpp)
 target_link_libraries(probe PRIVATE fixture)
+
+# The header case: Shadow.cpp includes <fixture/value.h>, found in `second`, which is searched after
+# `first`. A file of that name created in `first` must reach it.
+add_executable(shadowprobe Shadow.cpp)
+target_include_directories(shadowprobe PRIVATE "${CMAKE_SOURCE_DIR}/first" "${CMAKE_SOURCE_DIR}/second")
 ]=] fixture_cmakelists @ONLY)
 file(WRITE "${fixture_source}/CMakeLists.txt" "${fixture_cmakelists}")
 file(WRITE "${fixture_source}/Api.cppm" [=[
@@ -82,6 +92,13 @@ export struct Layout { int first; };
 file(WRITE "${fixture_source}/Consumer.cpp" [=[
 import fixture.api;
 int compiledLayoutSize() { return sizeof(Layout); }
+]=])
+file(MAKE_DIRECTORY "${fixture_source}/first" "${fixture_source}/second/fixture")
+file(WRITE "${fixture_source}/second/fixture/value.h" "#define FIXTURE_VALUE 1\n")
+file(WRITE "${fixture_source}/Shadow.cpp" [=[
+#include <cstdio>
+#include <fixture/value.h>
+int main() { std::printf("%d\n", FIXTURE_VALUE); }
 ]=])
 file(WRITE "${fixture_source}/Main.cpp" [=[
 #include <cstdio>
@@ -204,3 +221,26 @@ endif()
 
 message(STATUS
     "Compiler cache integrity: layout change invalidated the consumer and an unchanged rebuild hit ${CACHE_KIND}")
+
+# The negative case of ambroise-leclerc/cppmcache#24, which is how CI uses a restored cache: a fresh
+# build directory, a populated cache, and a pull request that adds a header earlier in the search
+# order than one the cached objects were compiled with. No file those compilations read has changed,
+# so a cache that checks only the files it recorded serves the object built with the old header.
+# Only cppmcache is held to it: ccache's direct mode documents the same limitation.
+if(CACHE_KIND STREQUAL "cppmcache")
+    assert_probe("1" "${fixture_build}" shadowprobe)
+    file(MAKE_DIRECTORY "${fixture_source}/first/fixture")
+    file(WRITE "${fixture_source}/first/fixture/value.h" "#define FIXTURE_VALUE 2\n")
+    file(REMOVE_RECURSE "${fixture_build}")
+    run_checked("Fixture configure in a fresh build directory"
+        ${cache_environment} "${CMAKE_COMMAND}"
+        -S "${fixture_source}" -B "${fixture_build}" -G "${GENERATOR}"
+        "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}"
+        -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+        "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}"
+        "-DCMAKE_EXE_LINKER_FLAGS=${EXE_LINKER_FLAGS}")
+    run_checked("Build with a shadowing header and a populated cache"
+        ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
+    assert_probe("2" "${fixture_build}" shadowprobe)
+    message(STATUS "Compiler cache integrity: a header added earlier in the search order reached its includer")
+endif()

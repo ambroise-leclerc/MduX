@@ -138,7 +138,9 @@ launcher directly, without the triage described above, and module interfaces and
 cached on GCC, Clang and MSVC. A command it does not understand is passed to the compiler unchanged.
 
 With cppmcache selected, `build.cache.namedModuleIntegrity` is registered on every compiler rather
-than on Clang alone. cppmcache has no eviction yet: bound its cache directory yourself, as the CI
+than on Clang alone, and has a second negative case: a header created earlier in the include search
+order than one a cached object was compiled with must reach its includer. cppmcache 0.1.1 or later
+is required for that. cppmcache has no eviction yet: bound its cache directory yourself, as the CI
 workflows do. It is a prototype; ccache remains the default for local builds.
 
 ### Selecting suites
