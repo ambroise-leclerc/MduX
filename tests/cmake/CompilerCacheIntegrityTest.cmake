@@ -44,8 +44,16 @@ function(assert_probe expected fixture_build)
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     if(NOT probe_result EQUAL 0 OR NOT probe_output STREQUAL "${expected}")
+        # A wrong value usually means a cached object was served where it should not have been;
+        # cppmcache's log says, per compilation, which entry it used and why.
+        set(cache_log "")
+        if(EXISTS "${fixture_root}/cppmcache.log")
+            file(READ "${fixture_root}/cppmcache.log" cache_log)
+            set(cache_log "\nCache log:\n${cache_log}")
+        endif()
         message(FATAL_ERROR
-            "Probe reported '${probe_output}' with status ${probe_result}; expected '${expected}'.\n${probe_error}")
+            "Probe reported '${probe_output}' with status ${probe_result}; expected '${expected}'.\n"
+            "${probe_error}${cache_log}")
     endif()
 endfunction()
 
