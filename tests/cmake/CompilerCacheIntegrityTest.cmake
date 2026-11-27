@@ -98,7 +98,7 @@ if(CACHE_KIND STREQUAL "cppmcache")
         --unset=CPPMCACHE_RECACHE
         --unset=CPPMCACHE_REMOTE
         --unset=CPPMCACHE_BASEDIR
-        --unset=CPPMCACHE_LOG
+        "CPPMCACHE_LOG=${fixture_root}/cppmcache.log"
         "CPPMCACHE_DIR=${fixture_cache}")
     set(expected_cache_entries
         "CACHE_BINARY:FILEPATH=${CACHE_BINARY}"
@@ -186,8 +186,15 @@ else()
     math(EXPR cache_hits "${direct_hits} + ${preprocessed_hits}")
 endif()
 if(cache_hits LESS 1)
+    # cppmcache records, for each compilation, whether it was a hit, a miss or passed through, and
+    # why: without that, a failure here says only that something went wrong.
+    set(cache_log "")
+    if(EXISTS "${fixture_root}/cppmcache.log")
+        file(READ "${fixture_root}/cppmcache.log" cache_log)
+        set(cache_log "\nCache log:\n${cache_log}")
+    endif()
     message(FATAL_ERROR
-        "The unchanged module consumer did not produce a ${CACHE_KIND} hit:\n${stats_output}")
+        "The unchanged module consumer did not produce a ${CACHE_KIND} hit:\n${stats_output}${cache_log}")
 endif()
 
 message(STATUS
