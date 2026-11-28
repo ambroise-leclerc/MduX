@@ -31,7 +31,9 @@ function(assert_probe expected fixture_build)
     if(ARGC GREATER 2)
         set(probe_name "${ARGV2}")
     endif()
-    # CMAKE_EXECUTABLE_SUFFIX is not set in script mode, hence the lookup.
+    # The fixture puts its executables at the top of its build directory whatever the generator (see
+    # CMAKE_RUNTIME_OUTPUT_DIRECTORY there). CMAKE_EXECUTABLE_SUFFIX is not set in script mode,
+    # hence the lookup.
     set(probe "${fixture_build}/${probe_name}")
     if(EXISTS "${probe}.exe")
         set(probe "${probe}.exe")
@@ -97,15 +99,24 @@ set(CACHE_OPTION "@CACHE_KIND@" CACHE STRING "" FORCE)
 set(CACHE_BINARY "@CACHE_BINARY@" CACHE FILEPATH "" FORCE)
 include("@cache_module@")
 
-# MSVC links Debug executables incrementally, and the incremental linker decides whether a library
-# member changed by a timestamp with one-second resolution. The whole fixture builds in about a
-# second, so a recompiled Consumer.cpp could keep its old timestamp inside fixture.lib and the probe
-# be relinked with its old code: every compilation correct, the value wrong. A full link removes that
-# from what this test can observe.
+# The probes are run from the top of the build directory. A multi-config generator (Ninja
+# Multi-Config) would otherwise put them under a per-configuration subdirectory; a generator
+# expression in the value, even an empty one, tells CMake not to append it.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}$<0:>")
+
+# MSVC links Debug and RelWithDebInfo executables incrementally, and the incremental linker decides
+# whether a library member changed by a timestamp with one-second resolution. The whole fixture
+# builds in about a second, so a recompiled Consumer.cpp could keep its old timestamp inside
+# fixture.lib and the probe be relinked with its old code: every compilation correct, the value
+# wrong. A full link, in whichever configuration is built, removes that from what this test can
+# observe.
 if(MSVC)
-    string(REGEX REPLACE "/INCREMENTAL(:[A-Z]+)?" "" CMAKE_EXE_LINKER_FLAGS_DEBUG
-        "${CMAKE_EXE_LINKER_FLAGS_DEBUG}")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG " /INCREMENTAL:NO")
+    foreach(link_configuration _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
+        string(REGEX REPLACE "/INCREMENTAL(:[A-Z]+)?" ""
+            CMAKE_EXE_LINKER_FLAGS${link_configuration}
+            "${CMAKE_EXE_LINKER_FLAGS${link_configuration}}")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS${link_configuration} " /INCREMENTAL:NO")
+    endforeach()
 endif()
 
 add_library(fixture)

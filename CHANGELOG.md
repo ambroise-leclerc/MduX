@@ -67,7 +67,11 @@ because the history is unavailable.
   MSVC leg reported the old layout after a change although every compilation was a correct miss:
   the fixture builds in about a second, and the incremental linker judges a library member by a
   timestamp of one-second resolution. That had nothing to do with the cache, so the fixture now
-  links with `/INCREMENTAL:NO`.
+  links with `/INCREMENTAL:NO`, in every configuration.
+- **The fixture's executables stay at the top of its build directory under any generator.** With
+  Ninja Multi-Config they went to a per-configuration subdirectory where the test did not look, so
+  it failed however the cache behaved; now that cppmcache registers it on every compiler, that
+  would have reached any build using that generator.
 - **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
   step when cppmcache is missing, not recognised or older than 0.1.1, or when `CACHE_BINARY`
   reports ccache or cppmcache while `CACHE_OPTION` names the other, instead of warning and falling
