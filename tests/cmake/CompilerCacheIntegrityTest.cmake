@@ -51,9 +51,26 @@ function(assert_probe expected fixture_build)
             file(READ "${fixture_root}/cppmcache.log" cache_log)
             set(cache_log "\nCache log:\n${cache_log}")
         endif()
+        # And what the build thinks of its outputs: whether it still considers anything out of date,
+        # and the modification times it compared. A wrong value with every compilation a miss
+        # means the link, not the cache, used old inputs.
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" --build "${fixture_build}" -- -n -d explain
+            OUTPUT_VARIABLE explain_output
+            ERROR_VARIABLE explain_output)
+        file(GLOB_RECURSE fixture_outputs LIST_DIRECTORIES false
+            "${fixture_build}/*.obj" "${fixture_build}/*.o" "${fixture_build}/*.lib" "${fixture_build}/*.a"
+            "${fixture_build}/*.exe" "${fixture_build}/*.ifc" "${fixture_build}/*.pcm" "${fixture_build}/*.gcm"
+            "${fixture_build}/probe" "${fixture_build}/shadowprobe")
+        set(output_times "")
+        foreach(output IN LISTS fixture_outputs)
+            file(TIMESTAMP "${output}" stamp "%Y-%m-%dT%H:%M:%S.%f" UTC)
+            file(RELATIVE_PATH relative "${fixture_build}" "${output}")
+            string(APPEND output_times "  ${stamp}  ${relative}\n")
+        endforeach()
         message(FATAL_ERROR
             "Probe reported '${probe_output}' with status ${probe_result}; expected '${expected}'.\n"
-            "${probe_error}${cache_log}")
+            "${probe_error}${cache_log}\nOutputs:\n${output_times}\nninja -n -d explain:\n${explain_output}")
     endif()
 endfunction()
 
