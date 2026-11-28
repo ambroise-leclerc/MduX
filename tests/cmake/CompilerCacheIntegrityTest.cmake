@@ -97,6 +97,17 @@ set(CACHE_OPTION "@CACHE_KIND@" CACHE STRING "" FORCE)
 set(CACHE_BINARY "@CACHE_BINARY@" CACHE FILEPATH "" FORCE)
 include("@cache_module@")
 
+# MSVC links Debug executables incrementally, and the incremental linker decides whether a library
+# member changed by a timestamp with one-second resolution. The whole fixture builds in about a
+# second, so a recompiled Consumer.cpp could keep its old timestamp inside fixture.lib and the probe
+# be relinked with its old code: every compilation correct, the value wrong. A full link removes that
+# from what this test can observe.
+if(MSVC)
+    string(REGEX REPLACE "/INCREMENTAL(:[A-Z]+)?" "" CMAKE_EXE_LINKER_FLAGS_DEBUG
+        "${CMAKE_EXE_LINKER_FLAGS_DEBUG}")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_DEBUG " /INCREMENTAL:NO")
+endif()
+
 add_library(fixture)
 target_sources(fixture
     PUBLIC FILE_SET CXX_MODULES FILES Api.cppm
@@ -271,15 +282,30 @@ if(CACHE_KIND STREQUAL "cppmcache")
         -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
         "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}"
         "-DCMAKE_EXE_LINKER_FLAGS=${EXE_LINKER_FLAGS}")
-    run_checked("Cache statistics reset before the fresh build"
-        ${cache_environment} "${CACHE_BINARY}" --zero-stats)
+    # The log is started afresh so that what it holds below is this build's alone.
+    file(REMOVE "${fixture_root}/cppmcache.log")
     run_checked("Build with a shadowing header and a populated cache"
         ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
     assert_probe("2" "${fixture_build}" shadowprobe)
     # The positive control. Api.cppm, Consumer.cpp and Main.cpp are unchanged since the cache last
-    # stored them, so this build must serve them from it; without that, a build that missed
-    # everything - a key that came to depend on the build directory, say - would print 2 as well
-    # and the check above would prove nothing about a populated cache.
-    assert_cache_hits(3 "The fresh build directory was not served from the populated cache")
+    # stored them, so this build must serve each of their objects from it; without that, a build
+    # that missed everything - a key that came to depend on the build directory, say - would print 2
+    # as well and the check above would prove nothing about a populated cache. It is checked per
+    # object, from cppmcache's log, rather than by counting hits: a count could be made up by other
+    # commands the launcher sees, such as module dependency scans, while every object missed.
+    set(cache_log "")
+    if(EXISTS "${fixture_root}/cppmcache.log")
+        file(READ "${fixture_root}/cppmcache.log" cache_log)
+    endif()
+    foreach(unchanged_object Api.cppm Consumer.cpp Main.cpp)
+        string(REPLACE "." "\\." object_pattern "${unchanged_object}")
+        # One "<outcome>\t<object>\t<detail>" line per compilation; the object path uses the
+        # platform's separator and suffix.
+        if(NOT cache_log MATCHES "(^|\n)hit\t[^\t\n]*[/\\\\]${object_pattern}\\.(o|obj)\t")
+            message(FATAL_ERROR
+                "The fresh build directory was not served from the populated cache: no hit for "
+                "${unchanged_object}'s object.\nCache log:\n${cache_log}")
+        endif()
+    endforeach()
     message(STATUS "Compiler cache integrity: a header added earlier in the search order reached its includer")
 endif()
