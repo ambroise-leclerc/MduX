@@ -105,7 +105,7 @@ build and a plain `build/` one do not collide.
 | `MDUX_BUILD_DOCS` | `OFF` |
 | `MDUX_ENABLE_REGULATORY_DOCS` | `ON` |
 | `ENABLE_CACHE` | `ON` |
-| `CACHE_OPTION` | `ccache` |
+| `CACHE_OPTION` | `ccache` (`cppmcache` in CI) |
 | `CACHE_BINARY` | empty (search `PATH` for `CACHE_OPTION`) |
 
 ### Compiler cache
@@ -126,7 +126,29 @@ cache executable, for example when bisecting a ccache version regression.
 
 `build.cache.namedModuleIntegrity` is the negative check behind this policy: it changes the layout
 of an exported struct without touching its consumer, asserts that the consumer observes the new
-layout, then forces a content-identical rebuild and asserts that it was a real ccache hit.
+layout, then forces a content-identical rebuild and asserts that it was a real cache hit.
+
+#### cppmcache
+
+`-DCACHE_OPTION=cppmcache` selects [cppmcache](https://github.com/ambroise-leclerc/cppmcache), which
+CI uses on every toolchain (#392). Unlike ccache it models named-module state itself: the key of a
+module consumer holds the content of each BMI it imports, under the module's name, and a hit on a
+module interface restores its BMI along with its object. MduX therefore makes it the compiler
+launcher directly, without the triage described above, and module interfaces and consumers are both
+cached on GCC, Clang and MSVC. A command it does not understand is passed to the compiler unchanged.
+Unlike the other caches, it is never the default, so a cppmcache that is missing or does not
+report a cppmcache version fails the configure step rather than being skipped with a warning. So
+does a cppmcache older than 0.1.1, and a `CACHE_BINARY` that reports ccache or cppmcache when
+`CACHE_OPTION` names the other: the option, the launcher and the registered tests always describe
+the same cache.
+
+With cppmcache selected, `build.cache.namedModuleIntegrity` is registered on every compiler rather
+than on Clang alone, and has a second negative case: a header created earlier in the include search
+order than one a cached object was compiled with must reach its includer, and so must a header that
+a `__has_include` test looked for and did not find, in a fresh build directory that the populated
+cache must still serve, object by object, for the unchanged units.
+cppmcache has no eviction yet: bound its cache directory yourself, as the CI
+workflows do. It is a prototype; ccache remains the default for local builds.
 
 ### Selecting suites
 

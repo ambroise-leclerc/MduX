@@ -225,3 +225,27 @@ support_model = "Vendor maintained; no qualification claim."
 boundary_rationale = "Test-only: it loads the Studio's compiled-in files from a loopback service. A defect could hide or invent a frontend failure, so the risk is to verification integrity, not device behaviour."
 risk_controls = ["Assertions read the service's own outputs (rendered PNG digests, git branch contents), not only DOM state", "Uncaught exceptions, console errors and CSP violations fail the test", "--no-tests=error on each CI step so a missing browser fails instead of passing over nothing"]
 known_anomaly_tracking = "Track findings against chromium-test-browser; no qualification claim."
+
+[[entries]]
+component_id = "cppmcache-0.1.2"
+name = "cppmcache"
+version = "0.1.2 (setup action pinned by commit afa2235828b356a00bd15f743affce3f17ad4868; release archives pinned by SHA-256 in .github/actions/setup-compiler-cache/action.yml)"
+classification = "build-tool"
+supplier = "ambroise-leclerc / cppmcache contributors"
+repository = "https://github.com/ambroise-leclerc/cppmcache"
+license = "GPL-3.0-or-later"
+usage = "The compiler cache of the Linux GCC, Linux Clang, Windows MSVC and both macOS CI jobs (#392), selected with -DCACHE_OPTION=cppmcache and run as CMAKE_CXX_COMPILER_LAUNCHER. On a hit it restores an object file, and for a module interface its BMI, that the same compiler produced from the same inputs on an earlier develop run, instead of compiling it. CI only: ccache stays the default for local builds, and nothing it produces is committed or released."
+trust_zone = "build"
+integration_path = "cmake/Cache.cmake (CACHE_OPTION=cppmcache, used as the launcher directly; a missing or unrecognised binary fails the configure step); .github/actions/setup-compiler-cache/action.yml (install, digest check, restore, size bound), called by clang-build.yml, linux-gcc16-build.yml, windows-build.yml and macos-arm64-build.yml, which save the cache on develop pushes only"
+pinned_by = [".github/actions/setup-compiler-cache/action.yml"]
+runtime_deployment = false
+support_model = "Single-maintainer prototype, same steward as this repository; no medical-device qualification and no support agreement. It has no eviction: .github/actions/setup-compiler-cache bounds the cache directory instead."
+boundary_rationale = "A CI-host tool, and unlike CMake it does supply bytes to what CI tests: a cached object stands in for a compilation. A defect that served a stale object would let CI test a binary that does not correspond to the sources under review, so the risk is to the integrity of verification rather than to device behaviour. No released artifact is built through it, and the committed evidence under generated/ is re-derived and byte-compared on these cached builds, so a stale baker would fail evidence rather than change it."
+risk_controls = [
+    "build.cache.namedModuleIntegrity runs as a named step with --no-tests=error on the four toolchains - GCC, Linux Clang, MSVC, and macOS through its Release job; the macOS sanitizer job uses the cache but excludes the test: a changed exported layout must reach a consumer whose source did not change, a content-identical rebuild must be a real hit, and a header added earlier in the include search order must reach its includer in a fresh build directory served by a populated cache (ambroise-leclerc/cppmcache#24), with a positive control that the populated cache did serve the unchanged units.",
+    "cmake/Cache.cmake fails the configure step when cppmcache is requested but missing or not recognised, so a job cannot fall back to another launcher and stay green.",
+    "The setup action is pinned by commit, and each release archive by SHA-256, passed to the action as its sha256sums input; the action compares the download with that digest before the archive is extracted or anything from it runs, so a substituted upload fails the step without executing. Before 0.1.2 the action took no digest and checked only against the release's own checksum file, which a replaced release would replace too (ambroise-leclerc/cppmcache#31). The archives also carry a build provenance attestation, verified for 0.1.2 before it was pinned.",
+    "Pull requests restore the cache develop saved and never save their own, so one branch cannot seed objects into another's build.",
+    "The evidence and determinism suites re-derive every committed artifact on the cached build and byte-compare it.",
+]
+known_anomaly_tracking = "Track findings against cppmcache-0.1.2 in the upstream issue tracker, with full ambroise-leclerc/cppmcache#N references. Resolved before adoption: 0.1.0 did not detect a header shadowing a recorded one (ambroise-leclerc/cppmcache#24), fixed in 0.1.1; 0.1.2, which this entry pins, adds the setup action's sha256sums input (ambroise-leclerc/cppmcache#31) and changes nothing in the binary but its version. No qualification claim."

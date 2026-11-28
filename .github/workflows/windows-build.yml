@@ -184,13 +184,32 @@ jobs:
       with:
         arch: x64
 
+    # The compiler cache (#392): cppmcache, installed from a digest pinned in the action, with the
+    # cache develop saved restored and bounded. Saved below, after the build, on develop pushes only.
+    - name: Set up the compiler cache
+      uses: ./.github/actions/setup-compiler-cache
+      with:
+        key: cppmcache-windows-msvc
+
     - name: Configure CMake (MSVC with Ninja)
-      run: cmake --preset ninja-msvc -DMDUX_BUILD_PREVIEW=ON
+      run: cmake --preset ninja-msvc -DMDUX_BUILD_PREVIEW=ON -DCACHE_OPTION=cppmcache
       shell: cmd
 
     - name: Build
       run: cmake --build --preset ninja-msvc
       shell: cmd
+
+    - name: Report compiler cache statistics
+      if: ${{ !cancelled() }}
+      run: cppmcache -s
+
+    # Saved straight after the build, so a test failure later in the job does not lose it.
+    - name: Save the compiler cache
+      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-windows-msvc-${{ github.sha }}
 
     # Everything except the labels a named step below asserts, so each test runs exactly once (#386;
     # this step used to run the whole suite and the named steps then ran their labels a second time).
@@ -198,7 +217,16 @@ jobs:
     # steps' selections cover the suite between them: `evidence` here also excludes `evidence-unit`,
     # which `-L evidence` below then selects.
     - name: Run Tests
-      run: ctest --preset ninja-msvc -LE "evidence|pixel|verify|conformance|studio|determinism|governed"
+      run: ctest --preset ninja-msvc -LE "evidence|pixel|verify|conformance|studio|determinism|governed" -E "^build\.cache\.namedModuleIntegrity$"
+      shell: cmd
+
+    # #280's negative case and, with cppmcache, that of ambroise-leclerc/cppmcache#24: a changed BMI
+    # must invalidate a cached consumer, a content-identical rebuild must be a real hit, and a header
+    # added earlier in the search order must reach its includer. Kept as a named step with --no-tests=error, as on Clang,
+    # so losing the registration - cppmcache not found, or not recognised by cmake/Cache.cmake -
+    # cannot masquerade as a green run (#392).
+    - name: Verify the compiler cache invalidates named-module consumers
+      run: ctest --preset ninja-msvc -R "^build\.cache\.namedModuleIntegrity$" -V --no-tests=error
       shell: cmd
 
     # Byte-identity of every baked artifact, on this toolchain (ADR-007). Run as its own step

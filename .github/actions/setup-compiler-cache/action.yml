@@ -1,0 +1,74 @@
+name: Set up the compiler cache
+description: >
+  Installs cppmcache with its project's setup action, which checks the archive against digests
+  pinned here before running anything from it, restores the cache develop saved, and bounds its
+  size (#392).
+  Saving stays with the calling job, after its build: a composite action has no post step, and the
+  save policy (develop pushes only) belongs to the workflow.
+
+inputs:
+  key:
+    description: >
+      Prefix of the actions/cache key, unique per job: jobs that build differently (compiler,
+      sanitizers) must not restore each other's caches.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # cppmcache keys a module consumer on the content of every BMI it imports and restores the BMI
+    # a provider produces, so named-module providers and consumers are cached on every toolchain;
+    # ccache, which #386 made persistent, could only be trusted with Clang consumers.
+    # build.cache.namedModuleIntegrity proves a changed BMI still invalidates its consumers.
+    #
+    # The action is pinned by commit, and the binary by the digests below, which the action compares
+    # with the archive before extracting it or running anything from it. Without them it would
+    # check the archive only against the release's own SHA256SUMS, which a replaced release would
+    # replace too (ambroise-leclerc/cppmcache#31, added in 0.1.2 for this repository). The token it
+    # uses to look up a release is not needed with a fixed version, and it drops it before the
+    # binary runs. It sets CPPMCACHE_DIR, CPPMCACHE_BASEDIR and CPPMCACHE_COMPILERCHECK=content; its
+    # own actions/cache step is off, because saving and restoring follow this repository's policy.
+    # A change of version is a change of the commit, the version and these three digests.
+    - name: Install cppmcache
+      uses: ambroise-leclerc/cppmcache@afa2235828b356a00bd15f743affce3f17ad4868 # v0.1.2
+      with:
+        version: 0.1.2
+        sha256sums: |
+          e0fc0f6405ed96d58d34fd84c3274bedb1167428d04af49950b60687616720e6  cppmcache-0.1.2-linux-x86_64.tar.gz
+          a25826d1666f3496287716c9f617598d31f240abdc759a87748c6a95a109dffb  cppmcache-0.1.2-macos-arm64.tar.gz
+          0e37e7548700ec9d21a167a2d5405b7945e8dc0a58645e2b4230451c0d0b36e5  cppmcache-0.1.2-windows-x86_64.zip
+        cache: "false"
+
+    # Pull requests restore the newest cache develop saved and never save their own, so one branch
+    # cannot seed another's objects.
+    - name: Restore the compiler cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: ${{ inputs.key }}-${{ github.sha }}
+        restore-keys: ${{ inputs.key }}-
+
+    # cppmcache has no eviction. A restored cache that has grown past 1 GiB, the limit the Clang and
+    # macOS jobs gave ccache, is dropped whole, and this run repopulates it. The check is made
+    # before the build on purpose: made before the save, it would have develop save an empty cache.
+    # What is saved can therefore exceed the limit, by at most what one build adds, until the next
+    # run. Superseded caches are deleted by prune-compiler-cache.yml once develop has saved a newer one.
+    #
+    # A measurement that fails fails the step: read as 0 MiB, it would switch the bound off for good.
+    # CPPMCACHE_DIR is a native path on Windows, so the directory is named here by the POSIX form of
+    # the path the restore step used.
+    - name: Bound the compiler cache
+      shell: bash
+      run: |
+        set -euo pipefail
+        cache_directory="${RUNNER_TEMP}/cppmcache-cache"
+        if command -v cygpath > /dev/null; then cache_directory="$(cygpath -u "$cache_directory")"; fi
+        size_mb="$(du -sm "$cache_directory" | cut -f1)"
+        if ! [[ "$size_mb" =~ ^[0-9]+$ ]]; then
+          echo "::error::Could not measure the compiler cache at ${cache_directory}: du printed '${size_mb}'."
+          exit 1
+        fi
+        echo "compiler cache: ${size_mb} MiB"
+        if [ "$size_mb" -gt 1024 ]; then
+          cppmcache -C
+        fi

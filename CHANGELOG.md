@@ -25,6 +25,70 @@ because the history is unavailable.
 
 ## Unreleased
 
+### Compiler cache: named-module compilations are cached in CI (#392)
+
+- **CI builds go through [cppmcache](https://github.com/ambroise-leclerc/cppmcache) 0.1.2 on all four
+  toolchains**, in place of ccache. ccache could only be trusted with Clang module consumers (#280,
+  #386): module interfaces always compiled directly, and on GCC and MSVC every named-module
+  compilation bypassed the cache. cppmcache keys a consumer on the content of the BMIs it imports and
+  restores the BMI an interface produces, so both are cached on every compiler.
+- **`-DCACHE_OPTION=cppmcache`** is the new value of an existing option. ccache stays the default
+  for local builds, with unchanged behaviour.
+- **`build.cache.namedModuleIntegrity` covers cppmcache**, and with it runs on GCC and MSVC as well
+  as Clang. It is the negative case of #280: a changed exported layout must reach a consumer whose
+  source did not change, and a content-identical rebuild must be a real cache hit.
+- Measured locally with GCC 16.1 on the `ninja-gcc` preset, one run per cell: with the cppmcache
+  0.1.0 binary, a clean build takes 60.9 s with an empty cache (53.5 s without a cache) and 9.2 s from
+  a clean build directory with a populated one (332 hits); with 0.1.1, the populated-cache build took
+  9.5 s and 9.8 s. All 953 tests pass on the build served from the cache. Nothing was measured on
+  Clang, MSVC or macOS before this entry was written.
+- **0.1.1, not 0.1.0.** cppmcache 0.1.0 did not detect a header created earlier in the search order
+  than one a unit included: a pull request adding `include/vulkan/vulkan.h` could have been tested
+  with objects compiled against the SDK's header (ambroise-leclerc/cppmcache#24). 0.1.1 detects it,
+  and `build.cache.namedModuleIntegrity` now has that negative case: in a fresh build directory with
+  a populated cache, a header added earlier in the search order must reach its includer. With 0.1.0
+  the check fails.
+- The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
+  and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
+  has grown past 1 GiB, and a measurement of that size that fails now fails the step instead of
+  reading as 0 MiB. `prune-compiler-cache.yml` runs after each toolchain workflow's `develop` push
+  and deletes every cppmcache cache but the newest of each job, so the five jobs' superseded
+  per-commit entries do not crowd other caches out of the repository's 10 GB limit. It checks
+  nothing out, and holds the `actions: write` permission so that the build jobs, which run pull
+  request code, do not.
+- **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs, with
+  cppmcache's setup action pinned by commit and given the archives' SHA-256 digests, which it
+  compares with the download before extracting it or running anything from it. Until 0.1.2 the
+  action took no digest and checked the archive only against a checksum file from the same release,
+  so a release whose two files were replaced together would have run on the runner first
+  (ambroise-leclerc/cppmcache#31). 0.1.2 adds that input and changes nothing in the binary but its
+  version, which a byte comparison of the two Windows executables confirms.
+- **The fixture links MSVC executables in full.** With incremental linking, the Debug default, the
+  MSVC leg reported the old layout after a change although every compilation was a correct miss:
+  the fixture builds in about a second, and the incremental linker judges a library member by a
+  timestamp of one-second resolution. That had nothing to do with the cache, so the fixture now
+  links with `/INCREMENTAL:NO`, in every configuration.
+- **The fixture's executables stay at the top of its build directory under any generator.** With
+  Ninja Multi-Config they went to a per-configuration subdirectory where the test did not look, so
+  it failed however the cache behaved; now that cppmcache registers it on every compiler, that
+  would have reached any build using that generator.
+- **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
+  step when cppmcache is missing, not recognised or older than 0.1.1, or when `CACHE_BINARY`
+  reports ccache or cppmcache while `CACHE_OPTION` names the other, instead of warning and falling
+  back, and
+  `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on all four toolchains,
+  not only on Clang; on macOS the Release job runs it, and the sanitizer job, whose objects differ
+  only by instrumentation, excludes it. Its header case also checks, object by object in
+  cppmcache's log, that the fresh build directory was served from the populated cache, so it can
+  pass neither by missing everything nor on hits counted from other commands.
+- **A header that `__has_include` looked for and did not find must reach its includer when it
+  appears.** cppmcache 0.1.2 records only the files a compilation read, so such a header, absent
+  when the object was cached, was not detected when a pull request created it: the object kept its
+  fallback. The integrity test's fresh-build case now creates one, and fails with 0.1.2. The fix is
+  in cppmcache (ambroise-leclerc/cppmcache#33); this check stays red until a release that contains
+  it is pinned here.
+- cppmcache is recorded in `docs/governance/soup-register.toml` as a build tool.
+
 ### Toolchain, CI and dependency versions (#382)
 
 - **CMake 4.3.6 on every CI leg**, where legs had run 4.1.1 or 4.3.1. The qualified window stays

@@ -143,14 +143,33 @@ jobs:
         cmake --version
         ninja --version
 
+    # The compiler cache (#392): cppmcache, installed from a digest pinned in the action, with the
+    # cache develop saved restored and bounded. Saved below, after the build, on develop pushes only.
+    - name: Set up the compiler cache
+      uses: ./.github/actions/setup-compiler-cache
+      with:
+        key: cppmcache-linux-gcc16
+
     # Through the preset, not a hand-written configure line. CMakePresets.json describes
     # ninja-gcc as mirroring what this job runs, and the only way that statement stays true is
     # for the job to actually use it - otherwise the preset is unexercised by CI and free to rot.
     - name: Configure CMake
-      run: cmake --preset ninja-gcc -DMDUX_BUILD_PREVIEW=ON
+      run: cmake --preset ninja-gcc -DMDUX_BUILD_PREVIEW=ON -DCACHE_OPTION=cppmcache
 
     - name: Build
       run: cmake --build --preset ninja-gcc
+
+    - name: Report compiler cache statistics
+      if: ${{ !cancelled() }}
+      run: cppmcache -s
+
+    # Saved straight after the build, so a test failure later in the job does not lose it.
+    - name: Save the compiler cache
+      if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/cppmcache-cache
+        key: cppmcache-linux-gcc16-${{ github.sha }}
 
     # Everything except the labels a named step below asserts, so each test runs exactly once (#386;
     # this step used to run the whole suite and the named steps then ran their labels a second time).
@@ -166,7 +185,16 @@ jobs:
         # in under a second, before Xvfb listens, and GLFW then fails to initialise.
         for _ in $(seq 1 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
         [ -S /tmp/.X11-unix/X99 ] || { echo "::error::Xvfb did not start on :99"; exit 1; }
-        ctest --preset ninja-gcc --output-on-failure -LE "evidence|determinism|governed|pixel|verify|conformance"
+        ctest --preset ninja-gcc --output-on-failure -LE "evidence|determinism|governed|pixel|verify|conformance" \
+          -E '^build\.cache\.namedModuleIntegrity$'
+
+    # #280's negative case and, with cppmcache, that of ambroise-leclerc/cppmcache#24: a changed BMI
+    # must invalidate a cached consumer, a content-identical rebuild must be a real hit, and a header
+    # added earlier in the search order must reach its includer. Kept as a named step with --no-tests=error, as on Clang,
+    # so losing the registration - cppmcache not found, or not recognised by cmake/Cache.cmake -
+    # cannot masquerade as a green run (#392).
+    - name: Verify the compiler cache invalidates named-module consumers
+      run: ctest --preset ninja-gcc -R '^build\.cache\.namedModuleIntegrity$' -V --no-tests=error
 
     # The second toolchain for the byte-identity check (ADR-007). With the GCC 15 leg retired
     # this pairs with MSVC: an artifact that is byte-identical on two unrelated toolchains is the

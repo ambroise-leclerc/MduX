@@ -4,7 +4,7 @@ set(CACHE_OPTION
     CACHE STRING "Compiler cache to be used")
 set(CACHE_BINARY "" CACHE FILEPATH
     "Compiler cache executable override; empty searches for CACHE_OPTION")
-set(CACHE_OPTION_VALUES "ccache" "sccache")
+set(CACHE_OPTION_VALUES "ccache" "sccache" "cppmcache")
 set_property(CACHE CACHE_OPTION PROPERTY STRINGS ${CACHE_OPTION_VALUES})
 list(FIND CACHE_OPTION_VALUES "${CACHE_OPTION}" CACHE_OPTION_INDEX)
 
@@ -29,7 +29,15 @@ if(CACHE_BINARY)
 else()
     find_program(mdux_resolved_cache_binary NAMES "${CACHE_OPTION}" NO_CACHE)
 endif()
+# cppmcache is never the default, so selecting it is a request rather than a preference: a build
+# that asked for it and silently fell back would cache differently from what it claims, and CI
+# would lose the cache #392 exists for without a red run.
 if(NOT mdux_resolved_cache_binary)
+    if(CACHE_OPTION STREQUAL "cppmcache")
+        message(FATAL_ERROR
+            "CACHE_OPTION=cppmcache, but cppmcache was not found. Put it on PATH, set CACHE_BINARY, "
+            "or choose another CACHE_OPTION (-DENABLE_CACHE=OFF disables the compiler cache).")
+    endif()
     message(WARNING "${CACHE_OPTION} is enabled but was not found. Not using it")
     return()
 endif()
@@ -59,6 +67,48 @@ if(mdux_cache_version_result EQUAL 0 AND
         set(MDUX_CACHE_CAN_HASH_BMIS ON CACHE INTERNAL
             "Whether the compiler cache accepts per-compilation BMI inputs" FORCE)
     endif()
+elseif(mdux_cache_version_result EQUAL 0 AND
+       mdux_cache_version_banner MATCHES "(^|\n)cppmcache version ([0-9]+(\\.[0-9]+)+)")
+    set(MDUX_CACHE_KIND "cppmcache" CACHE INTERNAL "Resolved compiler cache kind" FORCE)
+    set(mdux_cache_version "${CMAKE_MATCH_2}")
+endif()
+if(CACHE_OPTION STREQUAL "cppmcache" AND NOT MDUX_CACHE_KIND STREQUAL "cppmcache")
+    message(FATAL_ERROR
+        "CACHE_OPTION=cppmcache, but '${MDUX_CACHE_BINARY} --version' did not report a cppmcache "
+        "version:\n${mdux_cache_version_banner}")
+endif()
+# The other direction. The kind decides the launcher and which tests are registered, so a
+# CACHE_BINARY that names a different cache from CACHE_OPTION would leave the configuration saying
+# one thing while the build does another. Each of the two caches recognised here must therefore be
+# the one CACHE_OPTION asked for.
+if(MDUX_CACHE_KIND MATCHES "^(ccache|cppmcache)$" AND NOT CACHE_OPTION STREQUAL MDUX_CACHE_KIND)
+    message(FATAL_ERROR
+        "CACHE_OPTION=${CACHE_OPTION}, but '${MDUX_CACHE_BINARY} --version' reports ${MDUX_CACHE_KIND} "
+        "${mdux_cache_version}. Set CACHE_OPTION=${MDUX_CACHE_KIND}, or point CACHE_BINARY at a "
+        "${CACHE_OPTION} executable.")
+endif()
+# cppmcache 0.1.0 can serve an object compiled against a header that one created earlier in the
+# include search order should have replaced (ambroise-leclerc/cppmcache#24). ccache below 4.8 still
+# has a safe degraded mode, module consumers compiled directly; cppmcache is the launcher for every
+# compilation and has none, so an older one is refused rather than used.
+if(MDUX_CACHE_KIND STREQUAL "cppmcache" AND mdux_cache_version VERSION_LESS "0.1.1")
+    message(FATAL_ERROR
+        "cppmcache ${mdux_cache_version} at '${MDUX_CACHE_BINARY}' is too old: 0.1.1 or later is "
+        "required, because 0.1.0 can serve an object compiled against the wrong header "
+        "(ambroise-leclerc/cppmcache#24).")
+endif()
+
+# cppmcache (https://github.com/ambroise-leclerc/cppmcache) is the one cache here that models
+# named-module state itself: a consumer's key holds the content of every BMI it imports, under the
+# module's name, and a hit on a provider restores its BMI along with its object. It therefore needs
+# none of the triage below and is the launcher directly. Anything it does not understand it passes
+# to the compiler unchanged, which is the same fail-closed behaviour the triage script gives the
+# other caches. build.cache.namedModuleIntegrity holds it to the same negative case as ccache.
+if(MDUX_CACHE_KIND STREQUAL "cppmcache")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${MDUX_CACHE_BINARY}")
+    message(STATUS
+        "cppmcache ${mdux_cache_version} found: named-module providers and consumers are cached")
+    return()
 endif()
 
 set(CMAKE_CXX_COMPILER_LAUNCHER

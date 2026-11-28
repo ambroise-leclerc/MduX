@@ -1,0 +1,58 @@
+name: Prune Compiler Cache
+
+# The five build jobs that use cppmcache (#392) each save their cache under a key per commit, on
+# develop pushes only, and restore the newest one. Every older entry of the same job is then dead
+# weight: nothing restores it again, but it counts against the repository's 10 GB Actions cache limit
+# until GitHub evicts it, and an eviction can take a cache that is still in use, such as the macOS
+# LLVM keg. This deletes them as soon as a newer one exists, keeping the newest entry of each job.
+#
+# It runs after a build workflow's develop push, from develop's own copy of this file (workflow_run
+# always uses the default branch's), and checks nothing out: the only code it runs is the script
+# below. That is why the write permission it needs lives here rather than in the build jobs, which
+# run a pull request's code.
+
+on:
+  workflow_run:
+    workflows:
+      - Windows Build
+      - Linux GCC 16 Build
+      - Linux Clang Build
+      - macOS Apple Silicon Build
+    types: [completed]
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-compiler-cache
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Delete superseded compiler caches
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+    - name: Keep the newest cppmcache entry of each job
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        # Keys are "<job prefix>-<40-hex commit>"; the prefix identifies the job.
+        gh cache list --key cppmcache- --limit 1000 --json id,key,createdAt \
+          | jq -r '
+              map(select(.key | test("-[0-9a-f]{40}$")))
+              | group_by(.key | sub("-[0-9a-f]{40}$"; ""))
+              | .[]
+              | sort_by(.createdAt) | reverse
+              | .[1:][]
+              | "\(.id) \(.key)"' \
+          | while read -r id key; do
+              echo "Deleting ${key}"
+              gh cache delete "$id"
+            done

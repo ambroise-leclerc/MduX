@@ -1,7 +1,7 @@
 name: Set up the verified macOS toolchain
 description: >
   The one verified macOS tuple (ADR-013): arm64, upstream LLVM/Clang 23.1.6 with libc++, CMake 4.3.6,
-  Ninja, ccache, and the LunarG Vulkan SDK 1.4.363.1 with MoltenVK selected and verified. Also checks
+  Ninja, and the LunarG Vulkan SDK 1.4.363.1 with MoltenVK selected and verified. Also checks
   out the pinned MedUI conformance corpus. Shared by the Release and the ASan/UBSan jobs of
   macos-arm64-build.yml so that the two cannot drift onto different toolchains (#386).
 
@@ -34,8 +34,8 @@ runs:
   # `llvm@23` will only exist once LLVM 24 ships - so installing a formula by name cannot hold
   # ADR-013's exact version. The bottle is pinned instead: the file Homebrew itself publishes for
   # `llvm` 23.1.6 on arm64 Tahoe, addressed by its SHA-256 and checked before it is installed. Its
-  # runtime dependencies (zstd, z3) come from the current formulae, as they did before. ccache is the
-  # launcher's cache (cmake/Cache.cmake), persisted by the calling job.
+  # runtime dependencies (zstd, z3) come from the current formulae, as they did before. The compiler
+  # cache is installed by the calling job (#392).
   #
   # Pouring that bottle - decompressing it, relocating its paths and re-signing every Mach-O file -
   # took 71 s of every run, and downloading it 18 s more (#386). What `brew install` leaves in the
@@ -59,7 +59,7 @@ runs:
       KEG_RESTORED: ${{ steps.llvm-keg.outputs.cache-hit }}
     run: |
       set -euo pipefail
-      brew install ninja glfw zstd z3 ccache
+      brew install ninja glfw zstd z3
       prefix="$(brew --prefix)"
       if [ "$KEG_RESTORED" = "true" ]; then
         # The keg is exactly what `brew install` poured; only the opt link brew would have made
