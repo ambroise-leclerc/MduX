@@ -186,7 +186,9 @@ in `include/` or `src/`.
   `macos-arm64-build.yml` (a Release job and a parallel ASan/UBSan job, sharing
   `.github/actions/setup-macos-toolchain`), `security-analysis.yml`, `compliance-docs.yml`,
   `lint.yml` (every Python lint and the CI classifier's tests, one job), `branch-topology.yml`,
-  plus `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`. The toolchain workflows call the reusable
+  plus `codeql.yml`/`osv-scanner.yml`/`scorecard.yml`, and `prune-compiler-cache.yml`, which runs
+  after a toolchain workflow's `develop` push and deletes all but the newest cppmcache cache of each
+  job (#392). The toolchain workflows call the reusable
   `changes.yml` first, which lets a pull request that only edits prose skip their build job
   (`tools/ci/classify_changes.py` holds the rule, and fails toward building); every workflow on a
   pull request cancels the run a newer push supersedes, and none ever cancels a push to `develop`.

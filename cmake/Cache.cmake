@@ -77,6 +77,26 @@ if(CACHE_OPTION STREQUAL "cppmcache" AND NOT MDUX_CACHE_KIND STREQUAL "cppmcache
         "CACHE_OPTION=cppmcache, but '${MDUX_CACHE_BINARY} --version' did not report a cppmcache "
         "version:\n${mdux_cache_version_banner}")
 endif()
+# The other direction. The kind decides the launcher and which tests are registered, so a
+# CACHE_BINARY that names a different cache from CACHE_OPTION would leave the configuration saying
+# one thing while the build does another. Each of the two caches recognised here must therefore be
+# the one CACHE_OPTION asked for.
+if(MDUX_CACHE_KIND MATCHES "^(ccache|cppmcache)$" AND NOT CACHE_OPTION STREQUAL MDUX_CACHE_KIND)
+    message(FATAL_ERROR
+        "CACHE_OPTION=${CACHE_OPTION}, but '${MDUX_CACHE_BINARY} --version' reports ${MDUX_CACHE_KIND} "
+        "${mdux_cache_version}. Set CACHE_OPTION=${MDUX_CACHE_KIND}, or point CACHE_BINARY at a "
+        "${CACHE_OPTION} executable.")
+endif()
+# cppmcache 0.1.0 can serve an object compiled against a header that one created earlier in the
+# include search order should have replaced (ambroise-leclerc/cppmcache#24). ccache below 4.8 still
+# has a safe degraded mode, module consumers compiled directly; cppmcache is the launcher for every
+# compilation and has none, so an older one is refused rather than used.
+if(MDUX_CACHE_KIND STREQUAL "cppmcache" AND mdux_cache_version VERSION_LESS "0.1.1")
+    message(FATAL_ERROR
+        "cppmcache ${mdux_cache_version} at '${MDUX_CACHE_BINARY}' is too old: 0.1.1 or later is "
+        "required, because 0.1.0 can serve an object compiled against the wrong header "
+        "(ambroise-leclerc/cppmcache#24).")
+endif()
 
 # cppmcache (https://github.com/ambroise-leclerc/cppmcache) is the one cache here that models
 # named-module state itself: a consumer's key holds the content of every BMI it imports, under the

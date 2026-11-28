@@ -70,6 +70,9 @@ if(MDUX_CACHE_KIND STREQUAL "cppmcache" OR
    (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
     MDUX_CACHE_KIND STREQUAL "ccache" AND
     MDUX_CACHE_CAN_HASH_BMIS))
+    # The TIMEOUT is a guard against a hang, not a budget: on the pull request that brought the
+    # test to every compiler (#392), it took 1.4-3.7 s with MSVC, 1.7 s with GCC 16, 1.9 s with
+    # Clang 23 on Linux and 6.0 s on macOS, two configures and four builds included.
     add_test(NAME build.cache.namedModuleIntegrity
         COMMAND ${CMAKE_COMMAND}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}

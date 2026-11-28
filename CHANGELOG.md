@@ -50,20 +50,33 @@ because the history is unavailable.
   the check fails.
 - The pull-request policy of #386 is unchanged: a pull request restores the cache `develop` saved
   and never saves its own. cppmcache has no eviction, so each workflow drops a restored cache that
-  has grown past 1 GiB.
+  has grown past 1 GiB, and a measurement of that size that fails now fails the step instead of
+  reading as 0 MiB. `prune-compiler-cache.yml` runs after each toolchain workflow's `develop` push
+  and deletes every cppmcache cache but the newest of each job, so the five jobs' superseded
+  per-commit entries do not crowd other caches out of the repository's 10 GB limit. It checks
+  nothing out, and holds the `actions: write` permission so that the build jobs, which run pull
+  request code, do not.
 - **Installed through `.github/actions/setup-compiler-cache`**, shared by the five jobs, with
   cppmcache's setup action pinned by commit and given the archives' SHA-256 digests, which it
   compares with the download before extracting it or running anything from it. Until 0.1.2 the
   action took no digest and checked the archive only against a checksum file from the same release,
   so a release whose two files were replaced together would have run on the runner first
   (ambroise-leclerc/cppmcache#31). 0.1.2 adds that input and changes nothing in the binary but its
-  version; `build.cache.namedModuleIntegrity` passes with it.
+  version, which a byte comparison of the two Windows executables confirms.
+- **The fixture links MSVC executables in full.** With incremental linking, the Debug default, the
+  MSVC leg reported the old layout after a change although every compilation was a correct miss:
+  the fixture builds in about a second, and the incremental linker judges a library member by a
+  timestamp of one-second resolution. That had nothing to do with the cache, so the fixture now
+  links with `/INCREMENTAL:NO`.
 - **Losing the cache can no longer pass silently.** `-DCACHE_OPTION=cppmcache` fails the configure
-  step when cppmcache is missing or not recognised, instead of warning and falling back, and
+  step when cppmcache is missing, not recognised or older than 0.1.1, or when `CACHE_BINARY`
+  reports ccache or cppmcache while `CACHE_OPTION` names the other, instead of warning and falling
+  back, and
   `build.cache.namedModuleIntegrity` is a named step with `--no-tests=error` on all four toolchains,
   not only on Clang; on macOS the Release job runs it, and the sanitizer job, whose objects differ
-  only by instrumentation, excludes it. Its header case also checks that the fresh build directory was served from the
-  populated cache, so it cannot pass by missing everything.
+  only by instrumentation, excludes it. Its header case also checks, object by object in
+  cppmcache's log, that the fresh build directory was served from the populated cache, so it can
+  pass neither by missing everything nor on hits counted from other commands.
 - cppmcache is recorded in `docs/governance/soup-register.toml` as a build tool.
 
 ### Toolchain, CI and dependency versions (#382)

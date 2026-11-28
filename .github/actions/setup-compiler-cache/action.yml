@@ -52,12 +52,23 @@ runs:
     # macOS jobs gave ccache, is dropped whole, and this run repopulates it. The check is made
     # before the build on purpose: made before the save, it would have develop save an empty cache.
     # What is saved can therefore exceed the limit, by at most what one build adds, until the next
-    # run.
+    # run. Superseded caches are deleted by prune-compiler-cache.yml once develop has saved a newer one.
+    #
+    # A measurement that fails fails the step: read as 0 MiB, it would switch the bound off for good.
+    # CPPMCACHE_DIR is a native path on Windows, so the directory is named here by the POSIX form of
+    # the path the restore step used.
     - name: Bound the compiler cache
       shell: bash
       run: |
-        size_mb="$(du -sm "$CPPMCACHE_DIR" 2>/dev/null | cut -f1)"
-        echo "compiler cache: ${size_mb:-0} MiB"
-        if [ "${size_mb:-0}" -gt 1024 ]; then
+        set -euo pipefail
+        cache_directory="${RUNNER_TEMP}/cppmcache-cache"
+        if command -v cygpath > /dev/null; then cache_directory="$(cygpath -u "$cache_directory")"; fi
+        size_mb="$(du -sm "$cache_directory" | cut -f1)"
+        if ! [[ "$size_mb" =~ ^[0-9]+$ ]]; then
+          echo "::error::Could not measure the compiler cache at ${cache_directory}: du printed '${size_mb}'."
+          exit 1
+        fi
+        echo "compiler cache: ${size_mb} MiB"
+        if [ "$size_mb" -gt 1024 ]; then
           cppmcache -C
         fi
