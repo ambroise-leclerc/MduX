@@ -130,6 +130,11 @@ target_link_libraries(probe PRIVATE fixture)
 # `first`. A file of that name created in `first` must reach it.
 add_executable(shadowprobe Shadow.cpp)
 target_include_directories(shadowprobe PRIVATE "${CMAKE_SOURCE_DIR}/first" "${CMAKE_SOURCE_DIR}/second")
+
+# The optional-header case: Optional.cpp tests for <fixture/optional.h> with __has_include and falls
+# back to a default when it is absent, so no file of that name is among what its compilation read.
+add_executable(optionalprobe Optional.cpp)
+target_include_directories(optionalprobe PRIVATE "${CMAKE_SOURCE_DIR}/first" "${CMAKE_SOURCE_DIR}/second")
 ]=] fixture_cmakelists @ONLY)
 file(WRITE "${fixture_source}/CMakeLists.txt" "${fixture_cmakelists}")
 file(WRITE "${fixture_source}/Api.cppm" [=[
@@ -146,6 +151,16 @@ file(WRITE "${fixture_source}/Shadow.cpp" [=[
 #include <cstdio>
 #include <fixture/value.h>
 int main() { std::printf("%d\n", FIXTURE_VALUE); }
+]=])
+file(WRITE "${fixture_source}/Optional.cpp" [=[
+#include <cstdio>
+#if __has_include(<fixture/optional.h>)
+#include <fixture/optional.h>
+#endif
+#ifndef FIXTURE_OPTIONAL
+#define FIXTURE_OPTIONAL 1
+#endif
+int main() { std::printf("%d\n", FIXTURE_OPTIONAL); }
 ]=])
 file(WRITE "${fixture_source}/Main.cpp" [=[
 #include <cstdio>
@@ -281,10 +296,17 @@ message(STATUS
 # order than one the cached objects were compiled with. No file those compilations read has changed,
 # so a cache that checks only the files it recorded serves the object built with the old header.
 # Only cppmcache is held to it: ccache's direct mode documents the same limitation.
+#
+# With it, the case a test for a header gives: Optional.cpp was cached while <fixture/optional.h> was
+# absent, so its compilation read no file of that name, and the pull request creates one. Nothing
+# recorded changes there either; the header has to be found from the name the test was given. With
+# cppmcache 0.1.2, which recorded only the files a compilation read, the probe still prints 1.
 if(CACHE_KIND STREQUAL "cppmcache")
     assert_probe("1" "${fixture_build}" shadowprobe)
+    assert_probe("1" "${fixture_build}" optionalprobe)
     file(MAKE_DIRECTORY "${fixture_source}/first/fixture")
     file(WRITE "${fixture_source}/first/fixture/value.h" "#define FIXTURE_VALUE 2\n")
+    file(WRITE "${fixture_source}/first/fixture/optional.h" "#define FIXTURE_OPTIONAL 2\n")
     file(REMOVE_RECURSE "${fixture_build}")
     run_checked("Fixture configure in a fresh build directory"
         ${cache_environment} "${CMAKE_COMMAND}"
@@ -298,6 +320,7 @@ if(CACHE_KIND STREQUAL "cppmcache")
     run_checked("Build with a shadowing header and a populated cache"
         ${cache_environment} "${CMAKE_COMMAND}" --build "${fixture_build}")
     assert_probe("2" "${fixture_build}" shadowprobe)
+    assert_probe("2" "${fixture_build}" optionalprobe)
     # The positive control. Api.cppm, Consumer.cpp and Main.cpp are unchanged since the cache last
     # stored them, so this build must serve each of their objects from it; without that, a build
     # that missed everything - a key that came to depend on the build directory, say - would print 2
@@ -318,5 +341,7 @@ if(CACHE_KIND STREQUAL "cppmcache")
                 "${unchanged_object}'s object.\nCache log:\n${cache_log}")
         endif()
     endforeach()
-    message(STATUS "Compiler cache integrity: a header added earlier in the search order reached its includer")
+    message(STATUS
+        "Compiler cache integrity: a header added earlier in the search order, and one a test looked "
+        "for, reached their includers")
 endif()

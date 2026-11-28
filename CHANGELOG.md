@@ -81,6 +81,12 @@ because the history is unavailable.
   only by instrumentation, excludes it. Its header case also checks, object by object in
   cppmcache's log, that the fresh build directory was served from the populated cache, so it can
   pass neither by missing everything nor on hits counted from other commands.
+- **A header that `__has_include` looked for and did not find must reach its includer when it
+  appears.** cppmcache 0.1.2 records only the files a compilation read, so such a header, absent
+  when the object was cached, was not detected when a pull request created it: the object kept its
+  fallback. The integrity test's fresh-build case now creates one, and fails with 0.1.2. The fix is
+  in cppmcache (ambroise-leclerc/cppmcache#33); this check stays red until a release that contains
+  it is pinned here.
 - cppmcache is recorded in `docs/governance/soup-register.toml` as a build tool.
 
 ### Toolchain, CI and dependency versions (#382)

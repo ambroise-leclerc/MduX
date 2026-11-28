@@ -144,8 +144,9 @@ the same cache.
 
 With cppmcache selected, `build.cache.namedModuleIntegrity` is registered on every compiler rather
 than on Clang alone, and has a second negative case: a header created earlier in the include search
-order than one a cached object was compiled with must reach its includer, in a fresh build
-directory that the populated cache must still serve, object by object, for the unchanged units.
+order than one a cached object was compiled with must reach its includer, and so must a header that
+a `__has_include` test looked for and did not find, in a fresh build directory that the populated
+cache must still serve, object by object, for the unchanged units.
 cppmcache has no eviction yet: bound its cache directory yourself, as the CI
 workflows do. It is a prototype; ccache remains the default for local builds.
 
